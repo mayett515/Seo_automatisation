@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Body, Controller, Get, Injectable, Module, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Injectable, Module, Param, Post, UseGuards } from "@nestjs/common";
 import {
   QueueJobSchema,
   CreateReleasePlanRequestSchema,
@@ -16,6 +16,7 @@ import {
 } from "@localseo/contracts";
 import { decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
 import { QueueProducerService } from "../queue-producer.js";
+import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 
 @Injectable()
 class ReleasesService {
@@ -174,6 +175,7 @@ class ReleasesService {
 }
 
 @Controller()
+@UseGuards(ProjectAccessGuard)
 class ReleasesController {
   constructor(private readonly releases: ReleasesService) {}
 

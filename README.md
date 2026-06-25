@@ -30,3 +30,7 @@ Start from `AGENTS.md`. The TypeScript rules live in `.ai-rules/`; Local SEO pro
 ## Decision Log
 
 Human-readable architecture decisions live in [docs/architecture/decisions](docs/architecture/decisions).
+
+## Progress Log
+
+Chronological project progress lives in [docs/progress](docs/progress).

@@ -17,10 +17,12 @@ priority_schema: "critical > strong > guideline"
 - Use Nest testing utilities for controllers/services/modules with mocked providers.
 - Test queue producer behavior so queued responses require actual queue calls.
 - Test worker idempotency for retry paths.
+- Add focused behavioral tests for review findings that would not be caught by typecheck alone.
 - Keep typecheck and lint in CI, but do not treat them as substitutes for behavioral tests.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT call `test` complete when it only runs `tsc --noEmit` for high-risk backend logic.
 - DO NOT leave OAuth, queue, tenancy, or deployment decision logic without targeted tests once real customer data is involved.
+- DO NOT leave an ADR regression guard without either a test, lint rule, CI check, or explicit deferred note.
 </absolute-constraints>

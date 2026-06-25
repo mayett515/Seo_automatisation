@@ -13,6 +13,7 @@ This project uses a portable hidden-folder rules system. Codex should treat this
 - For NestJS/Fastify provider wiring, controllers, validation, queues, workers, guards, lifecycle shutdown, readiness, exceptions, or backend tests, load `.ai-nest-rules/00-system-index.md`.
 - For Fastify adapter behavior, Fastify plugins/ecosystem, hooks, validation/serialization, errors/logging, or production recommendations, load `.ai-fastify-rules/00-system-index.md`.
 - For architecture decisions, production hardening decisions, repeated review findings, or regression guards, read the relevant ADR in `docs/architecture/decisions/`.
+- For chronological project progress, review responses, completed slices, or remaining next steps, update `docs/progress/`.
 
 ## Frozen References
 
@@ -64,3 +65,4 @@ Architecture guidance (read-only, locked for implementation quality):
 - Do not copy external code verbatim from GitHub or the web without checking license and recording attribution.
 - Do not bypass preview, approval, release preflight, or post-deploy verification in product plans.
 - Do not re-decide accepted architecture decisions silently; update or supersede the relevant ADR when the direction changes.
+- Do not use ADRs as a running changelog; use `docs/progress/` for chronological progress notes.

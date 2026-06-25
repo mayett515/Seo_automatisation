@@ -36,12 +36,14 @@ import {
   Post,
   Query,
   Res,
+  UseGuards,
   type OnModuleDestroy,
   type Provider
 } from "@nestjs/common";
 import { and, desc, eq, ne } from "drizzle-orm";
 import type { FastifyReply } from "fastify";
 import { Queue } from "bullmq";
+import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 
 const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -348,6 +350,7 @@ class GscService implements OnModuleDestroy {
 }
 
 @Controller("projects/:projectId/gsc")
+@UseGuards(ProjectAccessGuard)
 class GscController {
   constructor(private readonly gsc: GscService) {}
 

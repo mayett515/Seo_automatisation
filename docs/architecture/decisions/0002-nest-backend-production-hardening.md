@@ -100,7 +100,9 @@ The API is not production-safe until routes are protected by:
 current user -> project/customer membership -> permission check -> handler
 ```
 
-This should be implemented with Nest guards and must happen before real customer GSC data flows through the system.
+Project-scoped controllers now use a Nest guard boundary. For local/demo flow, `demo-project` remains explicitly allowed. Persisted projects require authenticated project context.
+
+This is not final SaaS auth. Before real customer GSC data flows through the system, the guard must be wired to Better Auth/session-backed project membership instead of header-based context.
 
 ### Fake Queued Non-GSC Jobs
 
@@ -149,10 +151,16 @@ Lint and typecheck are now real guardrails, but important behavior still needs t
 - OAuth state signing/verifying
 - GSC opportunity classification
 - date-range defaults
-- release readiness decisions
 - worker job parsing
 - idempotent retry behavior
 - queue producer truthfulness
+
+Already covered with first behavioral tests:
+
+- release readiness decisions
+- release verification decisions
+- Redis URL parsing and `rediss://` TLS behavior
+- project guard behavior
 
 ## Rule Of Thumb Going Forward
 

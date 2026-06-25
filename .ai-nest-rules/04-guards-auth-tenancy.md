@@ -19,12 +19,14 @@ priority_schema: "critical > strong > guideline"
 - Model access as current user -> customer/project membership -> permission check -> handler.
 - Keep GSC, reports, deployments, approvals, and customer data behind project-level authorization before real customer data exists.
 - Treat auth/tenant isolation as a production blocker, not polish.
+- Keep local demo access explicit; do not let demo bypasses apply to persisted customer projects.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT treat UUID-like route params as authorization.
 - DO NOT expose GSC data, reports, leads, deployments, or tracking data without project access checks in production.
 - DO NOT let agents or workers bypass the same project/tenant boundary when they act on persisted data.
+- DO NOT treat header-based project context as production auth; wire it to Better Auth/session membership before real customers.
 </absolute-constraints>
 
 <conditional-logic>

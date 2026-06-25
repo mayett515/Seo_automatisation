@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ProjectAccessGuard } from "./auth/project-access.guard.js";
 import { HealthController } from "./health.controller.js";
 import { GscModule } from "./modules/gsc.module.js";
 import { LeadsModule } from "./modules/leads.module.js";
@@ -9,6 +10,7 @@ import { TrackingModule } from "./modules/tracking.module.js";
 
 @Module({
   imports: [QueueProducerModule, GscModule, LeadsModule, ProjectsModule, ReleasesModule, TrackingModule],
-  controllers: [HealthController]
+  controllers: [HealthController],
+  providers: [ProjectAccessGuard]
 })
 export class AppModule {}
