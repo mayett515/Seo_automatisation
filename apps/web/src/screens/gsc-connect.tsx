@@ -1,20 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
-import type { GscConnection, GscOAuthIntent, QueueJob } from "@localseo/contracts";
+import {
+  GscConnectionSchema,
+  GscOAuthIntentSchema,
+  GscSyncQueueResponseSchema,
+  type GscSyncQueueResponse
+} from "@localseo/contracts";
 
-const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const apiUrl = getApiUrl();
 
 export function GscConnectScreen() {
   const projectId = useProjectId();
   const queryClient = useQueryClient();
   const connection = useQuery({
     queryKey: ["gsc-connection", projectId],
-    queryFn: () => getJson<GscConnection>(projectApiPath(projectId, "/gsc/connection")),
+    queryFn: () => getJson(projectApiPath(projectId, "/gsc/connection"), GscConnectionSchema),
     retry: false
   });
   const connect = useMutation({
-    mutationFn: () => postJson<GscOAuthIntent>(projectApiPath(projectId, "/gsc/connect"), {}),
+    mutationFn: () => postJson(projectApiPath(projectId, "/gsc/connect"), {}, GscOAuthIntentSchema),
     onSuccess: (intent) => {
       if (intent.authUrl) {
         window.location.href = intent.authUrl;
@@ -22,7 +27,7 @@ export function GscConnectScreen() {
     }
   });
   const sync = useMutation({
-    mutationFn: () => postJson<QueueJob | GscConnection>(projectApiPath(projectId, "/gsc/sync"), {}),
+    mutationFn: () => postJson(projectApiPath(projectId, "/gsc/sync"), {}, GscSyncQueueResponseSchema),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["gsc-connection", projectId] });
       await queryClient.invalidateQueries({ queryKey: ["gsc-performance", projectId] });
@@ -54,7 +59,7 @@ export function GscConnectScreen() {
       </div>
 
       {connect.data && !connect.data.authUrl ? <Notice text={connect.data.message} /> : null}
-      {sync.data ? <Notice text={"status" in sync.data ? `Sync response: ${sync.data.status}` : "Sync queued"} /> : null}
+      {sync.data ? <Notice text={syncResponseMessage(sync.data)} /> : null}
       {connection.error ? <Notice text="Connection status could not be loaded." tone="danger" /> : null}
     </section>
   );
@@ -65,23 +70,27 @@ function Notice(props: { text: string; tone?: "neutral" | "danger" }) {
 }
 
 function useProjectId(): string {
-  const params = useParams({ strict: false }) as { projectId?: string };
-  return params.projectId ?? "demo-project";
+  const params = useParams({ strict: false });
+  return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }
 
 function projectApiPath(projectId: string, suffix: string): string {
   return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }
 
-async function getJson<T>(path: string): Promise<T> {
+type JsonSchema<T> = {
+  parse(input: unknown): T;
+};
+
+async function getJson<T>(path: string, schema: JsonSchema<T>): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`);
   if (!response.ok) {
     throw new Error(`API request failed: ${response.status}`);
   }
-  return response.json() as Promise<T>;
+  return schema.parse(await response.json());
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+async function postJson<T>(path: string, body: unknown, schema: JsonSchema<T>): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, {
     method: "POST",
     headers: {
@@ -94,5 +103,14 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     throw new Error(`API request failed: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  return schema.parse(await response.json());
+}
+
+function syncResponseMessage(response: GscSyncQueueResponse): string {
+  return "type" in response ? `Sync response: ${response.status}` : response.message ?? response.status;
+}
+
+function getApiUrl(): string {
+  const configuredUrl: unknown = import.meta.env.VITE_API_URL;
+  return typeof configuredUrl === "string" ? configuredUrl : "http://localhost:4000";
 }

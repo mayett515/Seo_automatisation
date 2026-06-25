@@ -24,7 +24,7 @@ import {
   gscSearchAnalyticsRows,
   gscSyncRuns
 } from "@localseo/db";
-import { Body, Controller, Get, Inject, Injectable, Module, Param, Post, Query, Res } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Injectable, Logger, Module, Param, Post, Query, Res } from "@nestjs/common";
 import { and, desc, eq, ne } from "drizzle-orm";
 import type { FastifyReply } from "fastify";
 import { Queue, type ConnectionOptions } from "bullmq";
@@ -37,6 +37,7 @@ type Db = DbHandle["db"];
 
 @Injectable()
 class GscService {
+  private readonly logger = new Logger(GscService.name);
   private readonly dbHandle?: DbHandle;
   private readonly searchConsole?: GoogleSearchConsoleAdapter;
   private readonly tokenCipher?: AesGcmTokenCipher;
@@ -161,7 +162,8 @@ class GscService {
       }
 
       return `${redirectTo}?gsc=connected`;
-    } catch {
+    } catch (error) {
+      this.logger.error("GSC OAuth callback failed", normalizeOAuthCallbackFailure(error));
       return `${redirectTo}?gsc=error&reason=oauth_callback_failed`;
     }
   }
@@ -178,6 +180,10 @@ class GscService {
 
     if (!persistedConnection?.encryptedRefreshToken) {
       return connectionRequired(projectId, "Reconnect Google Search Console before syncing performance data.");
+    }
+
+    if (!this.gscQueue) {
+      return connectionRequired(projectId, "GSC sync queue is not configured. REDIS_URL is required before sync jobs can be queued.");
     }
 
     const dateRange = request.dateRange ?? defaultFinalizedDateRange();
@@ -205,7 +211,7 @@ class GscService {
       createdAt: new Date().toISOString()
     });
 
-    await this.gscQueue?.add("gsc_sync", {
+    await this.gscQueue.add("gsc_sync", {
       projectId,
       syncRunId: syncRun.id
     }, {
@@ -274,11 +280,6 @@ class GscController {
   @Get("connection")
   getConnection(@Param("projectId") projectId: string) {
     return this.gsc.getConnection(projectId);
-  }
-
-  @Get("connect")
-  getConnectIntent(@Param("projectId") projectId: string) {
-    return this.gsc.createOAuthIntent(projectId);
   }
 
   @Post("connect")
@@ -429,4 +430,24 @@ function createRedisConnection(redisUrl: string): ConnectionOptions {
     password: url.password || undefined,
     maxRetriesPerRequest: null
   };
+}
+
+function normalizeOAuthCallbackFailure(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "unknown_oauth_callback_failure";
+  }
+
+  if (error.message.includes("Search Console API request failed")) {
+    return "search_console_api_request_failed";
+  }
+
+  if (error.message.includes("OAuth state")) {
+    return "oauth_state_invalid";
+  }
+
+  if (error.message.includes("Google OAuth")) {
+    return "google_oauth_exchange_failed";
+  }
+
+  return "oauth_callback_failed";
 }

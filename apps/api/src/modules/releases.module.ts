@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { Body, Controller, Get, Injectable, Module, Param, Post } from "@nestjs/common";
 import {
+  CreateReleasePlanRequestSchema,
   ReleaseCheckSchema,
   ReleaseNoteSchema,
   ReleasePlanSchema,
   ReleaseVerificationSchema,
   RollbackPointSchema,
+  VerifyReleaseRequestSchema,
   type ReleaseCheck,
   type ReleaseNote,
   type ReleaseVerification,
@@ -16,16 +18,14 @@ import { decideReleaseReadiness, decideReleaseVerificationStatus } from "@locals
 @Injectable()
 class ReleasesService {
   createPlan(projectId: string, body: unknown) {
-    const pageVersionIds = Array.isArray((body as { pageVersionIds?: unknown }).pageVersionIds)
-      ? (body as { pageVersionIds: unknown[] }).pageVersionIds
-      : [];
+    const input = CreateReleasePlanRequestSchema.parse(body ?? {});
 
     return ReleasePlanSchema.parse({
       releasePlanId: randomUUID(),
       projectId,
       status: "draft",
       riskLevel: "low",
-      blockerCount: pageVersionIds.length === 0 ? 1 : 0,
+      blockerCount: input.pageVersionIds.length === 0 ? 1 : 0,
       warningCount: 0
     });
   }
@@ -79,9 +79,7 @@ class ReleasesService {
   }
 
   verify(releasePlanId: string, body: unknown): ReleaseVerification {
-    const deploymentId = typeof (body as { deploymentId?: unknown }).deploymentId === "string"
-      ? (body as { deploymentId: string }).deploymentId
-      : undefined;
+    const input = VerifyReleaseRequestSchema.parse(body ?? {});
 
     const checks = [
       ReleaseCheckSchema.parse({
@@ -125,7 +123,7 @@ class ReleasesService {
 
     return ReleaseVerificationSchema.parse({
       releasePlanId,
-      deploymentId,
+      deploymentId: input.deploymentId,
       verificationStatus,
       summary: verificationStatus === "live_healthy"
         ? "Post-deploy verification passed."

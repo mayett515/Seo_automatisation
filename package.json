@@ -6,6 +6,7 @@
   "scripts": {
     "build": "corepack pnpm -r --if-present run build",
     "dev": "corepack pnpm -r --parallel --if-present run dev",
+    "lint": "eslint .",
     "typecheck": "corepack pnpm -r --if-present run typecheck",
     "test": "corepack pnpm -r --if-present run test",
     "turbo:build": "turbo run build",
@@ -13,9 +14,14 @@
     "db:generate": "corepack pnpm --filter @localseo/db db:generate"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tanstack/eslint-plugin-query": "^5.101.1",
     "@types/node": "^24.0.0",
+    "eslint": "^10.5.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "tsx": "4.22.4",
     "turbo": "2.10.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.62.0"
   }
 }

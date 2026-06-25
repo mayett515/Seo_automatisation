@@ -10,6 +10,7 @@ dependencies:
   - "https://tanstack.com/query/v5/docs/framework/react/guides/query-keys"
   - "https://tanstack.com/query/v5/docs/framework/react/guides/invalidations-from-mutations"
   - "https://tanstack.com/router/latest/docs/guide/path-params"
+  - ".ai-stack-rules/09-tanstack-ecosystem-schema.md"
 priority_schema: "critical > strong > guideline"
 ---
 
@@ -21,10 +22,14 @@ priority_schema: "critical > strong > guideline"
 - Invalidate affected queries after successful mutations.
 - Prefer route-owned typed params. Use `useParams({ strict: false })` only in shared components that are intentionally route-ambiguous.
 - Encode route params when manually constructing API URLs.
+- For TanStack CLI scaffolding, add-ons, or ecosystem choices, use installed TanStack CLI skills and official CLI metadata discovery before choosing flags.
+- Use `.ai-stack-rules/09-tanstack-ecosystem-schema.md` when the TanStack question is broader than Query/Router component code.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT treat `data === undefined` as the same thing as a business-level blocked state.
 - DO NOT build query keys that omit project/customer/date-range/provider variables.
 - DO NOT let demo route-param fallbacks hide production route bugs.
+- DO NOT run `tanstack create`, `tanstack add`, or other scaffold-mutating CLI commands without explicit user approval.
+- DO NOT run TanStack CLI metadata commands that may use network/telemetry unless the task explicitly calls for current TanStack metadata or the user approves it.
 </absolute-constraints>

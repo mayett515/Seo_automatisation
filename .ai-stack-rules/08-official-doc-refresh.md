@@ -17,7 +17,7 @@ Use this workflow after implementation reviews, external LLM reviews, recurring 
 </meta-instruction>
 
 <positive-directives>
-- Prefer official sources first: React, TanStack, NestJS, MDN, Google OAuth, TypeScript, typescript-eslint, and Microsoft/Azure API guidance.
+- Prefer official sources first: React, TanStack, NestJS, Fastify, Drizzle, Mastra, MDN, Google OAuth, TypeScript, typescript-eslint, and Microsoft/Azure API guidance.
 - Categorize each finding by stack surface: TypeScript static safety, React render/hooks, TanStack Query/Router/Form/Table, Nest/Fastify runtime DI, OAuth/provider security, URL/Web API safety, REST/API semantics, async DB/workers, observability, testing, or smoke verification.
 - When opening an official source, check the directly relevant page plus nearby official docs/sidebar headings for adjacent practices we may have missed.
 - Record exploratory findings, copied review notes, and weaker/non-authoritative references in `.ai-stack-findings/`.
@@ -41,6 +41,9 @@ THEN research the official docs for that surface and add a candidate note under 
 
 IF a source suggests a best practice but the project has not hit that failure mode yet:
 THEN keep it in `.ai-stack-findings/` as a candidate; do not harden it into a rule yet.
+
+IF the stack area is TanStack CLI scaffolding, add-ons, ecosystem choices, or docs metadata:
+THEN prefer the installed official TanStack CLI skills and metadata commands; ask before running any command that mutates files, installs dependencies, or may emit telemetry.
 
 IF a stack rule would affect product behavior:
 THEN route through `.ai-project-rules/00-system-index.md` and let product truth decide behavior.

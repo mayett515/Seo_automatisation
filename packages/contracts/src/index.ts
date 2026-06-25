@@ -372,6 +372,26 @@ export const TrackingIngestResultSchema = z.object({
   occurredAt: z.string().datetime()
 });
 
+export const CreateReleasePlanRequestSchema = z.object({
+  pageVersionIds: z.array(z.string().min(1)).default([])
+});
+
+export const VerifyReleaseRequestSchema = z.object({
+  deploymentId: z.string().min(1).optional()
+});
+
+export const HealthResponseSchema = z.object({
+  status: z.enum(["ok", "degraded", "down"]),
+  service: z.string().min(1),
+  stack: z.object({
+    http: z.string().min(1),
+    workers: z.string().min(1),
+    ai: z.string().min(1)
+  })
+});
+
+export const GscSyncQueueResponseSchema = z.union([QueueJobSchema, GscConnectionSchema]);
+
 export type CreateLeadInput = z.output<typeof CreateLeadSchema>;
 export type Lead = z.output<typeof LeadSchema>;
 export type PotentialReport = z.output<typeof PotentialReportSchema>;
@@ -398,6 +418,10 @@ export type GscUrlInspectionResult = z.output<typeof GscUrlInspectionResultSchem
 export type GscSitemapSubmission = z.output<typeof GscSitemapSubmissionSchema>;
 export type TrackingEvent = z.output<typeof TrackingEventSchema>;
 export type TrackingIngestResult = z.output<typeof TrackingIngestResultSchema>;
+export type CreateReleasePlanRequest = z.output<typeof CreateReleasePlanRequestSchema>;
+export type VerifyReleaseRequest = z.output<typeof VerifyReleaseRequestSchema>;
+export type HealthResponse = z.output<typeof HealthResponseSchema>;
+export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type JobStatus = z.output<typeof JobStatusSchema>;
 export type JobType = z.output<typeof JobTypeSchema>;
 export type DomainEventName = z.output<typeof DomainEventNameSchema>;

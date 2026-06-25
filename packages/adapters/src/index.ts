@@ -118,10 +118,10 @@ export interface RollbackPort {
 }
 
 export class NotConfiguredSiteHostingAdapter implements SiteHostingPort {
-  async deployRelease(input: DeployReleaseInput): Promise<DeployReleaseResult> {
-    return {
+  deployRelease(input: DeployReleaseInput): Promise<DeployReleaseResult> {
+    return Promise.resolve({
       deploymentId: `dry_run_${input.releasePlanId}`,
       liveUrls: []
-    };
+    });
   }
 }

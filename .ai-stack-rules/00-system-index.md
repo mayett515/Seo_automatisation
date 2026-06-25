@@ -26,6 +26,9 @@ THEN load `.ai-stack-rules/02-react-render-hooks.md`.
 IF the task touches TanStack Query, Router, Store, Table, Form, route params, query keys, mutations, invalidation, or async UI states:
 THEN load `.ai-stack-rules/03-tanstack-query-router.md`.
 
+IF the task touches TanStack ecosystem decisions, CLI scaffolding, add-ons, docs metadata discovery, Form/Table/Store/Virtual adoption, or compatibility between TanStack guidance and this monorepo:
+THEN load `.ai-stack-rules/09-tanstack-ecosystem-schema.md`.
+
 IF the task touches NestJS modules/controllers/providers, Fastify runtime behavior, dependency injection, provider tokens, or backend route wiring:
 THEN load `.ai-stack-rules/04-nest-fastify-runtime-di.md`.
 

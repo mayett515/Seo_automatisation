@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { HealthResponseSchema } from "@localseo/contracts";
 import { StatusPill } from "@localseo/ui";
 
-const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const apiUrl = getApiUrl();
 
 export function MissionControlPage() {
   const health = useQuery({
@@ -11,7 +12,7 @@ export function MissionControlPage() {
       if (!response.ok) {
         throw new Error("API health check failed");
       }
-      return response.json() as Promise<{ status: string; service: string }>;
+      return HealthResponseSchema.parse(await response.json());
     },
     retry: false
   });
@@ -40,3 +41,7 @@ function Metric(props: { title: string; value: string; tone: "neutral" | "succes
   );
 }
 
+function getApiUrl(): string {
+  const configuredUrl: unknown = import.meta.env.VITE_API_URL;
+  return typeof configuredUrl === "string" ? configuredUrl : "http://localhost:4000";
+}

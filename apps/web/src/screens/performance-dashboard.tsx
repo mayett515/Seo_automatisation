@@ -1,15 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
-import type { GscPerformanceSummary } from "@localseo/contracts";
+import { GscPerformanceSummarySchema, type GscPerformanceSummary } from "@localseo/contracts";
 
-const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const apiUrl = getApiUrl();
 
 export function PerformanceDashboardScreen() {
   const projectId = useProjectId();
   const performance = useQuery({
     queryKey: ["gsc-performance", projectId],
-    queryFn: () => getJson<GscPerformanceSummary>(projectApiPath(projectId, "/gsc/performance")),
+    queryFn: () => getJson(projectApiPath(projectId, "/gsc/performance"), GscPerformanceSummarySchema),
     retry: false
   });
   const data = performance.data;
@@ -104,8 +104,8 @@ function signalsForRow(summary: GscPerformanceSummary, query: string, pageUrl: s
 }
 
 function useProjectId(): string {
-  const params = useParams({ strict: false }) as { projectId?: string };
-  return params.projectId ?? "demo-project";
+  const params = useParams({ strict: false });
+  return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }
 
 function projectApiPath(projectId: string, suffix: string): string {
@@ -120,10 +120,19 @@ function safePathname(pageUrl: string): string {
   }
 }
 
-async function getJson<T>(path: string): Promise<T> {
+type JsonSchema<T> = {
+  parse(input: unknown): T;
+};
+
+async function getJson<T>(path: string, schema: JsonSchema<T>): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`);
   if (!response.ok) {
     throw new Error(`API request failed: ${response.status}`);
   }
-  return response.json() as Promise<T>;
+  return schema.parse(await response.json());
+}
+
+function getApiUrl(): string {
+  const configuredUrl: unknown = import.meta.env.VITE_API_URL;
+  return typeof configuredUrl === "string" ? configuredUrl : "http://localhost:4000";
 }
