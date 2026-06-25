@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AesGcmTokenCipher, GoogleSearchConsoleAdapter } from "@localseo/adapters";
+import { AesGcmTokenCipher, GoogleSearchConsoleAdapter, createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import {
   GscConnectionSchema,
@@ -41,7 +41,7 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, ne } from "drizzle-orm";
 import type { FastifyReply } from "fastify";
-import { Queue, type ConnectionOptions } from "bullmq";
+import { Queue } from "bullmq";
 
 const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -507,18 +507,6 @@ function formatIsoDate(date: Date): string {
 
 function isPersistedProjectId(projectId: string): boolean {
   return uuidPattern.test(projectId);
-}
-
-function createRedisConnection(redisUrl: string): ConnectionOptions {
-  const url = new URL(redisUrl);
-
-  return {
-    host: url.hostname,
-    port: Number(url.port || "6379"),
-    username: url.username || undefined,
-    password: url.password || undefined,
-    maxRetriesPerRequest: null
-  };
 }
 
 function normalizeOAuthCallbackFailure(error: unknown): string {

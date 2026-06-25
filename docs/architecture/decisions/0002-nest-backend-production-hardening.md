@@ -64,7 +64,7 @@ The goal is to route future Nest work through official NestJS/BullMQ guidance be
 
 ## Stale Review Point
 
-The review said `.env.example` looked like one line. Locally it is already one variable per line:
+The review said `.env.example` and other files looked like one line. A direct GitHub raw fetch and local `git show HEAD` showed the files are multiline.
 
 ```text
 NODE_ENV=development
@@ -73,7 +73,11 @@ WEB_ORIGIN=http://localhost:5173
 ...
 ```
 
-No fix was needed there.
+To prevent this becoming a real regression later, the repo now has:
+
+- `.gitattributes` for LF text normalization
+- GitHub Actions CI running format, lint, typecheck, build, and test
+- Prettier checks in CI
 
 ## Deferred On Purpose
 
@@ -120,9 +124,9 @@ The API now exposes:
 /health/ready
 ```
 
-`/health` remains backward-compatible for the frontend. `/health/live` is liveness. `/health/ready` reports whether required DB/Redis configuration exists.
+`/health` remains backward-compatible for the frontend. `/health/live` is liveness. `/health/ready` checks DB and Redis reachability.
 
-Future readiness should perform real DB, Redis, queue ability, and required provider checks before traffic is considered safe.
+Future readiness should expand from DB/Redis reachability into queue ability, required provider checks, and worker reachability before traffic is considered fully safe.
 
 ### Production Builds
 
@@ -131,6 +135,12 @@ API, worker, and shared packages now emit `dist/` artifacts with TypeScript `tsc
 Shared packages keep TypeScript source as the default development export and expose built JS through the `production` export condition. API/worker production start scripts run Node with `--conditions=production`.
 
 This avoids introducing a bundler before decorator metadata and Nest DI are deliberately verified.
+
+### Redis TLS
+
+`REDIS_URL` accepts `redis://` and `rediss://`.
+
+`rediss://` must configure TLS on the BullMQ/ioredis connection. Redis URL parsing now lives in the shared adapter helper instead of being duplicated across API, GSC, and worker code.
 
 ### Tests
 
@@ -156,3 +166,5 @@ project rules decide product behavior
 ```
 
 Do not let a route return a successful queued/deployed/verified-looking response unless the backing side effect really happened or the response is explicitly dry-run/demo.
+
+Do not accept a secure Redis URL scheme without carrying that security behavior into the actual connection options.

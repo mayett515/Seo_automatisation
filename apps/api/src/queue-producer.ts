@@ -1,6 +1,7 @@
 import { Global, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
+import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import { Queue, type ConnectionOptions, type JobsOptions } from "bullmq";
+import { Queue, type JobsOptions } from "bullmq";
 
 const env = parseAppEnv(process.env);
 
@@ -62,15 +63,3 @@ export class QueueProducerService implements OnModuleDestroy {
   exports: [QueueProducerService]
 })
 export class QueueProducerModule {}
-
-function createRedisConnection(redisUrl: string): ConnectionOptions {
-  const url = new URL(redisUrl);
-
-  return {
-    host: url.hostname,
-    port: Number(url.port || "6379"),
-    username: url.username || undefined,
-    password: url.password || undefined,
-    maxRetriesPerRequest: null
-  };
-}

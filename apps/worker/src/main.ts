@@ -1,5 +1,6 @@
+import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import { Worker, type ConnectionOptions } from "bullmq";
+import { Worker } from "bullmq";
 import { closeWorkerResources, handleJob } from "./handlers.js";
 import { queueNames } from "./queue-names.js";
 
@@ -11,14 +12,7 @@ if (!env.REDIS_URL) {
   process.exit(0);
 }
 
-const redisUrl = new URL(env.REDIS_URL);
-const connection: ConnectionOptions = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || "6379"),
-  username: redisUrl.username || undefined,
-  password: redisUrl.password || undefined,
-  maxRetriesPerRequest: null
-};
+const connection = createRedisConnection(env.REDIS_URL);
 
 const workers = queueNames.map(
   (queueName) =>

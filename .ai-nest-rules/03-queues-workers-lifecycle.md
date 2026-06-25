@@ -22,6 +22,7 @@ priority_schema: "critical > strong > guideline"
 - Add worker error listeners.
 - Close workers gracefully on shutdown and close shared resources after workers stop.
 - Mark scaffold-only fake queued behavior as dry-run/demo, not production-ready.
+- Use the shared Redis connection helper for API and worker BullMQ connections, including `rediss://` TLS handling.
 </positive-directives>
 
 <absolute-constraints>
@@ -29,6 +30,7 @@ priority_schema: "critical > strong > guideline"
 - DO NOT return `queued` for real product workflows unless a job was actually enqueued.
 - DO NOT start BullMQ workers without an `error` listener.
 - DO NOT deploy workers without graceful shutdown handling.
+- DO NOT accept `rediss://` without configuring TLS on the Redis/BullMQ connection.
 </absolute-constraints>
 
 <conditional-logic>

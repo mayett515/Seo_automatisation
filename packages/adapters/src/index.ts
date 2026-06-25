@@ -11,6 +11,7 @@ import type {
 } from "@localseo/contracts";
 
 export * from "./google-search-console.js";
+export * from "./redis-connection.js";
 export * from "./token-cipher.js";
 
 export type DeployReleaseInput = {

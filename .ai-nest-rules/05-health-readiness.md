@@ -15,6 +15,7 @@ priority_schema: "critical > strong > guideline"
 <positive-directives>
 - Keep liveness simple: the HTTP process is up.
 - Use readiness for dependencies: DB, Redis, queues, required provider configuration, and worker reachability where relevant.
+- Prefer real dependency checks over configuration-only checks when the dependency gates production traffic.
 - Prefer `/health/live` and `/health/ready` before production deployment.
 - Use health checks to prevent routing traffic to instances that cannot process required work.
 </positive-directives>
@@ -22,6 +23,7 @@ priority_schema: "critical > strong > guideline"
 <absolute-constraints>
 - DO NOT treat a static `/health` response as proof of production readiness.
 - DO NOT mark queue-backed features ready when Redis or queue producers are unavailable.
+- DO NOT mark a dependency `up` just because its environment variable exists.
 </absolute-constraints>
 
 <conditional-logic>

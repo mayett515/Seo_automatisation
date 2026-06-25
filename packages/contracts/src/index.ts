@@ -384,8 +384,8 @@ export const HealthProbeResponseSchema = HealthResponseSchema.extend({
   probe: z.enum(["liveness", "readiness"]),
   dependencies: z
     .object({
-      database: z.enum(["configured", "down", "not_configured"]),
-      redis: z.enum(["configured", "down", "not_configured"])
+      database: z.enum(["up", "down", "not_configured"]),
+      redis: z.enum(["up", "down", "not_configured"])
     })
     .optional()
 });
