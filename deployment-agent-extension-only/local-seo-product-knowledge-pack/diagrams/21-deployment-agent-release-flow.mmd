@@ -1,0 +1,18 @@
+flowchart TD
+  A[Customer approves page version] --> B[Deployment Agent preflight]
+  B --> C{Release ready?}
+  C -- Blocked --> D[Explain blockers]
+  D --> E[Fix notes/routes/SEO/tracking]
+  E --> B
+  C -- Ready with warnings --> F[Show risk and recommendation]
+  C -- Ready --> G[Create release plan]
+  F --> H{Customer deploys?}
+  G --> H
+  H -- No --> I[Hold release or add notes]
+  H -- Yes --> J[Queue Deploy Worker]
+  J --> K[Netlify build and deploy]
+  K --> L[Post-deploy verification]
+  L --> M{Healthy?}
+  M -- Yes --> N[Release report and monitoring]
+  M -- No --> O[Rollback recommended]
+  O --> P[Rollback Worker]

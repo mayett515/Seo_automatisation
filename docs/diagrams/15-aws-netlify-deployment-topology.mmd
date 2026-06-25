@@ -1,0 +1,12 @@
+flowchart TB
+  Dev[Developer] --> NetlifyWeb[Netlify Control Panel Build]
+  NetlifyWeb --> Browser[Customer Browser]
+  Browser --> ALB[AWS ALB]
+  ALB --> API[ECS Fargate API]
+  API --> RDS[(RDS Postgres)]
+  API --> Redis[(ElastiCache Redis)]
+  Redis --> Worker[ECS Fargate Workers]
+  Worker --> S3[(S3 Artifacts)]
+  Worker --> NetlifySites[Netlify Customer Sites and Previews]
+  Worker --> GSC[Google Search Console]
+

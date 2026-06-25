@@ -1,0 +1,17 @@
+sequenceDiagram
+  participant FE as Frontend
+  participant API as API
+  participant W as Deploy Worker
+  participant N as Netlify
+  participant G as GSC
+  participant DB as DB
+  FE->>API: approve version
+  API->>DB: save approval
+  API->>W: queue deploy
+  W->>DB: load approved version
+  W->>W: build static site
+  W->>N: deploy files
+  N-->>W: deploy URL/status
+  W->>W: update sitemap
+  W->>G: submit/sync sitemap
+  W->>DB: save deployment

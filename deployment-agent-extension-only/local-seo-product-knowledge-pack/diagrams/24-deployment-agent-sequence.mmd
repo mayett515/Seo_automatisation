@@ -1,0 +1,28 @@
+sequenceDiagram
+  participant Customer
+  participant FE as Frontend
+  participant API as NestJS API
+  participant Agent as Deployment Agent
+  participant Queue as Redis Queue
+  participant Deploy as Deploy Worker
+  participant Netlify
+  participant Verify as Verification Worker
+  participant DB as Postgres
+
+  Customer->>FE: Approve page version
+  FE->>API: create release plan
+  API->>Agent: run preflight
+  Agent->>DB: read approvals, notes, routes, SEO data
+  Agent->>DB: save checks and release plan
+  API-->>FE: release ready / blocked / warnings
+  Customer->>FE: Approve deploy
+  FE->>API: approve release deploy
+  API->>Queue: deploy_worker.execute_release
+  Queue->>Deploy: start release deployment
+  Deploy->>Netlify: build and deploy
+  Netlify-->>Deploy: deploy result
+  Deploy->>DB: save deployment
+  Deploy->>Queue: verification_worker.verify_release
+  Queue->>Verify: verify live URLs
+  Verify->>DB: save verification results
+  API-->>FE: live status and release notes

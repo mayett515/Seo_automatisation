@@ -1,0 +1,14 @@
+stateDiagram-v2
+  [*] --> VersionGenerated
+  VersionGenerated --> CustomerReview
+  CustomerReview --> NotesAdded
+  NotesAdded --> Regenerating
+  Regenerating --> VersionGenerated
+  CustomerReview --> Approved
+  CustomerReview --> Rejected
+  CustomerReview --> Postponed
+  Approved --> BuildQueued
+  BuildQueued --> Deployed
+  Deployed --> Monitoring
+  Rejected --> Backlog
+  Postponed --> Backlog

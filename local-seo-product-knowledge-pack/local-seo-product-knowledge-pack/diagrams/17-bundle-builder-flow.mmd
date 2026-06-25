@@ -1,0 +1,16 @@
+flowchart TD
+  A[Keywords/pages/cities/services] --> B[Customer selects items]
+  A --> C[Auto clustering]
+  B --> D[Bundle]
+  C --> D
+  D --> E[Average position]
+  D --> F[Clicks/impressions]
+  D --> G[Competition]
+  D --> H[Business value]
+  E --> I[Bundle score]
+  F --> I
+  G --> I
+  H --> I
+  I --> J{Show prominently?}
+  J -- yes --> K[Winner/Momentum bundle]
+  J -- no --> L[Internal/backlog]

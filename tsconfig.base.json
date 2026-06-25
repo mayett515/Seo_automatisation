@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "useDefineForClassFields": false,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@localseo/contracts": ["packages/contracts/src/index.ts"],
+      "@localseo/db": ["packages/db/src/index.ts"],
+      "@localseo/domain": ["packages/domain/src/index.ts"],
+      "@localseo/adapters": ["packages/adapters/src/index.ts"],
+      "@localseo/seo": ["packages/seo/src/index.ts"],
+      "@localseo/ai": ["packages/ai/src/index.ts"],
+      "@localseo/ui": ["packages/ui/src/index.ts"],
+      "@localseo/config": ["packages/config/src/index.ts"]
+    }
+  }
+}

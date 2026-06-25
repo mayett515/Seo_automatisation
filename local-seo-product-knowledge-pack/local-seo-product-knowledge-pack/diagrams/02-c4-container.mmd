@@ -1,0 +1,12 @@
+flowchart TB
+  FE[React TypeScript Frontend] --> API[NestJS Backend API]
+  API --> PG[(Postgres)]
+  API --> Redis[(Redis Queue)]
+  Redis --> Workers[Worker Layer]
+  Workers --> Agents[Mastra Agents / Workflows]
+  Workers --> Storage[(Object Storage)]
+  Workers --> Netlify[Netlify API]
+  Workers --> GSC[Google Search Console]
+  API --> Tracking[Tracking Endpoint]
+  Tracking --> Events[(Analytics Store / ClickHouse optional)]
+  FE --> Reports[Dashboard / Map / Reports]

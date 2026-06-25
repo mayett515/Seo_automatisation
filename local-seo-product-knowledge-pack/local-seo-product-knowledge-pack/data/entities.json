@@ -1,0 +1,31 @@
+{
+  "entities": [
+    "Lead",
+    "PreAudit",
+    "PotentialReport",
+    "Customer",
+    "Project",
+    "MainWebsite",
+    "Domain",
+    "Subdomain",
+    "Area",
+    "Service",
+    "Competitor",
+    "Opportunity",
+    "PageProposal",
+    "PageVersion",
+    "ComponentTemplate",
+    "ComponentInstance",
+    "ComponentNote",
+    "Approval",
+    "Deployment",
+    "GscConnection",
+    "PerformanceSnapshot",
+    "TrackingEvent",
+    "SeoObservation",
+    "Bundle",
+    "BundleItem",
+    "Experiment",
+    "Report"
+  ]
+}

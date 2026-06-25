@@ -1,0 +1,68 @@
+{
+  "name": "local-seo-product-knowledge-pack",
+  "version": "1.0.0",
+  "purpose": "LLM and human readable source of truth for a gamified Local SEO automation product",
+  "read_order": [
+    "00-AI-INGESTION-GUIDE.md",
+    "01-PRODUCT-SNAPSHOT.md",
+    "02-DIAGRAM-CATALOG.md",
+    "product/01-end-to-end-product.md",
+    "architecture/01-system-overview.md",
+    "ux/01-customer-experience.md",
+    "diagrams/00-diagram-index.md"
+  ],
+  "core_loops": [
+    "pre_sales_potential_report",
+    "website_rebuild",
+    "template_preview_approval",
+    "local_seo_generation",
+    "gsc_tracking_reporting",
+    "gamified_map_bundles",
+    "experiment_retention_loop"
+  ],
+  "stacks": {
+    "frontend": [
+      "React",
+      "TypeScript",
+      "TanStack Router",
+      "TanStack Query",
+      "TanStack Form",
+      "TanStack Table",
+      "TanStack Store optional",
+      "TanStack Virtual optional"
+    ],
+    "backend": [
+      "NestJS",
+      "PostgreSQL",
+      "Redis Queue",
+      "Object Storage",
+      "ClickHouse optional",
+      "Vector DB optional"
+    ],
+    "ai": [
+      "Mastra Workflows",
+      "Mastra Agents",
+      "Research Agent",
+      "SEO Strategy Agent",
+      "Content Agent",
+      "Template Agent",
+      "SEO Analyst Agent",
+      "Report Agent"
+    ],
+    "deploy": [
+      "Netlify",
+      "Customer Domain/DNS",
+      "Sitemap",
+      "Google Search Console"
+    ],
+    "analytics": [
+      "Google Search Console",
+      "own event tracking",
+      "GA4 optional",
+      "Plausible optional",
+      "Matomo optional",
+      "PostHog optional",
+      "Clarity optional"
+    ]
+  }
+}

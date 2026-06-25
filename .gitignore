@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.turbo/
+.cache/
+.env
+.env.*
+!.env.example
+coverage/
+*.tsbuildinfo
+apps/web/dist/
+*.zip

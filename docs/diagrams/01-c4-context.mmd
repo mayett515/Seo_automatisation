@@ -1,0 +1,11 @@
+flowchart TB
+  Lead[Lead or Customer] --> Web[Local SEO Control Panel]
+  Web --> Api[NestJS Fastify API]
+  Api --> Workers[Worker Layer]
+  Workers --> Mastra[Mastra Workflows and Agents]
+  Workers --> Netlify[Netlify Customer Sites]
+  Workers --> GSC[Google Search Console]
+  Api --> Postgres[(RDS Postgres)]
+  Workers --> Redis[(ElastiCache Redis)]
+  Workers --> S3[(S3 Artifacts)]
+

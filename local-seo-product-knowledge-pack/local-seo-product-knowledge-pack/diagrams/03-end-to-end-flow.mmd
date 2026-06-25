@@ -1,0 +1,20 @@
+flowchart TD
+  A[Lead enters website] --> B[Website + services + questions]
+  B --> C[Pre-Audit Worker]
+  C --> D[Potential report]
+  D --> E{Start project?}
+  E -- no --> F[Lead nurturing]
+  E -- yes --> G[Project onboarding]
+  G --> H[Import own website]
+  H --> I[React rebuild]
+  I --> J[Preview + approval]
+  J --> K[Netlify deploy]
+  K --> L[Local SEO opportunities]
+  L --> M[Page/subdomain proposals]
+  M --> N[Preview + notes]
+  N --> O[Approve version]
+  O --> P[Deploy local pages]
+  P --> Q[GSC + tracking]
+  Q --> R[SEO analyst report]
+  R --> S[Map/bundles/next actions]
+  S --> M

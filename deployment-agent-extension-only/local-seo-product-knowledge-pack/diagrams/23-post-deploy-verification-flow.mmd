@@ -1,0 +1,13 @@
+flowchart TD
+  A[Deploy completed] --> B[Fetch live URLs]
+  B --> C[HTTP status check]
+  C --> D[Canonical and robots check]
+  D --> E[Schema and metadata check]
+  E --> F[Tracking hook check]
+  F --> G[Sitemap inclusion check]
+  G --> H[GSC readiness check]
+  H --> I{Critical issue?}
+  I -- No --> J[Mark live healthy or live with warnings]
+  I -- Yes --> K[Mark rollback recommended]
+  K --> L[Prepare rollback point]
+  J --> M[Start monitoring window]

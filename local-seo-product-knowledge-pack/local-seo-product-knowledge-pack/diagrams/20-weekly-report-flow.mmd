@@ -1,0 +1,17 @@
+flowchart TD
+  A[7 days after deploy] --> B[Collect data]
+  B --> C[GSC]
+  B --> D[Tracking]
+  B --> E[Deploy status]
+  C --> F[SEO Analyst]
+  D --> F
+  E --> F
+  F --> G[Good signals]
+  F --> H[Weak signals]
+  F --> I[No data]
+  F --> J[Recommendations]
+  G --> K[Weekly report]
+  H --> K
+  I --> K
+  J --> K
+  K --> L[Customer decisions]

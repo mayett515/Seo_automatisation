@@ -1,0 +1,19 @@
+flowchart TD
+  A[Page proposal] --> B[Template selector]
+  B --> C[Component layout]
+  C --> D[Preview mode]
+  D --> E[Customer clicks component]
+  E --> F[Side panel]
+  F --> G[Choose component variant]
+  F --> H[Text note]
+  F --> I[Image note]
+  F --> J[Layout note]
+  G --> K[Instruction layer]
+  H --> K
+  I --> K
+  J --> K
+  K --> L[Regenerate version]
+  L --> M[Preview new version]
+  M --> N{Approve?}
+  N -- yes --> O[Build/deploy]
+  N -- no --> D

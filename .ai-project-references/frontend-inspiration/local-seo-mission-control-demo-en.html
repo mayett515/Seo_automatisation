@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local SEO Mission Control · Product Demo</title>
+  <meta name="description" content="Interactive product demo for a Local SEO automation platform: website rebuild, subdomains, reports, gamified expansion map, SEO analyst, tracking and architecture." />
+  <style>
+    :root {
+      --bg: #07111f;
+      --bg-2: #0b1728;
+      --panel: rgba(255,255,255,.075);
+      --panel-2: rgba(255,255,255,.11);
+      --card: rgba(255,255,255,.09);
+      --line: rgba(255,255,255,.18);
+      --text: #ecf5ff;
+      --muted: #9cafc7;
+      --muted-2: #71829a;
+      --orange: #ff7a18;
+      --orange-2: #ffb86b;
+      --green: #2ce37c;
+      --green-2: #9ff5c2;
+      --blue: #52a8ff;
+      --cyan: #24d7ff;
+      --yellow: #ffd166;
+      --red: #ff4f6d;
+      --purple: #9b7cff;
+      --pink: #ff4fb5;
+      --shadow: 0 30px 90px rgba(0,0,0,.42);
+      --radius: 26px;
+      --radius-sm: 16px;
+      --max: 1240px;
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(255,122,24,.26), transparent 32rem),
+        radial-gradient(circle at 80% 12%, rgba(82,168,255,.18), transparent 34rem),
+        radial-gradient(circle at 65% 55%, rgba(44,227,124,.12), transparent 30rem),
+        linear-gradient(180deg, #06101d 0%, #081426 46%, #060b14 100%);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    a { color: inherit; }
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .18;
+      background-image:
+        linear-gradient(rgba(255,255,255,.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.08) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(180deg, black, transparent 84%);
+      z-index: -2;
+    }
+    .orb {
+      position: fixed;
+      width: 480px;
+      height: 480px;
+      border-radius: 999px;
+      filter: blur(42px);
+      opacity: .15;
+      pointer-events: none;
+      animation: floaty 16s ease-in-out infinite;
+      z-index: -1;
+    }
+    .orb.one { background: var(--orange); left: -180px; top: 8vh; }
+    .orb.two { background: var(--blue); right: -120px; top: 24vh; animation-delay: -7s; }
+    .orb.three { background: var(--green); left: 35%; bottom: -210px; animation-delay: -3s; }
+    @keyframes floaty { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-38px) scale(1.06); } }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(22px);
+      background: rgba(4, 10, 20, .66);
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .nav {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 900;
+      letter-spacing: -.03em;
+      white-space: nowrap;
+    }
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--orange), #ff3d00);
+      box-shadow: 0 12px 35px rgba(255,122,24,.35);
+    }
+    nav.links {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .links a, .pill-btn, button {
+      border: 1px solid rgba(255,255,255,.13);
+      background: rgba(255,255,255,.07);
+      color: var(--text);
+      padding: 10px 13px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: .2s ease;
+      outline: none;
+    }
+    .links a:hover, .pill-btn:hover, button:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,.12);
+      border-color: rgba(255,255,255,.25);
+    }
+    .primary {
+      background: linear-gradient(135deg, var(--orange), #ff3d00) !important;
+      border-color: rgba(255,255,255,.0) !important;
+      box-shadow: 0 16px 35px rgba(255,122,24,.25);
+    }
+    .secondary { background: rgba(82,168,255,.14) !important; }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+    .hero { padding: 72px 0 42px; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+      gap: 28px;
+      align-items: stretch;
+    }
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 12px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+      color: var(--orange-2);
+      font-size: 13px;
+      font-weight: 900;
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(44px, 7vw, 88px);
+      line-height: .88;
+      letter-spacing: -.075em;
+      max-width: 850px;
+    }
+    .gradient-text {
+      background: linear-gradient(135deg, #fff, #d8edff 42%, var(--orange-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero p {
+      color: #b9c7d9;
+      font-size: clamp(18px, 2.2vw, 23px);
+      line-height: 1.5;
+      max-width: 790px;
+      margin: 22px 0 0;
+    }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+    .glass {
+      background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.055));
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .demo-card { padding: 22px; position: relative; overflow: hidden; min-height: 420px; }
+    .demo-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 25% 10%, rgba(255,122,24,.22), transparent 18rem), radial-gradient(circle at 78% 35%, rgba(44,227,124,.16), transparent 18rem);
+      pointer-events: none;
+    }
+    .mini-window { position: relative; z-index: 2; border-radius: 20px; overflow: hidden; background: rgba(8,15,28,.85); border: 1px solid rgba(255,255,255,.14); }
+    .window-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.11); background: rgba(255,255,255,.05); }
+    .dots { display: flex; gap: 6px; }
+    .dots span { width: 10px; height: 10px; border-radius: 50%; display: block; background: #ff5f57; }
+    .dots span:nth-child(2) { background: #ffbd2e; }
+    .dots span:nth-child(3) { background: #28c840; }
+    .window-body { padding: 16px; }
+    .map-mini { position: relative; min-height: 270px; border-radius: 18px; background: rgba(255,255,255,.045); overflow: hidden; }
+    .pulse-node {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 6px rgba(44,227,124,.14), 0 0 35px rgba(44,227,124,.55);
+      animation: pulse 1.8s infinite;
+    }
+    .pulse-node.orange { background: var(--orange); box-shadow: 0 0 0 6px rgba(255,122,24,.16), 0 0 35px rgba(255,122,24,.58); }
+    .pulse-node.blue { background: var(--blue); box-shadow: 0 0 0 6px rgba(82,168,255,.16), 0 0 35px rgba(82,168,255,.58); }
+    .pulse-node.red { background: var(--red); box-shadow: 0 0 0 6px rgba(255,79,109,.16), 0 0 35px rgba(255,79,109,.58); }
+    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.22); } 100% { transform: scale(1); } }
+    .mini-tag {
+      position: absolute;
+      padding: 7px 9px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.09);
+      border: 1px solid rgba(255,255,255,.13);
+      font-size: 12px;
+      font-weight: 900;
+      color: white;
+    }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 28px 0 0; }
+    .stat { padding: 18px; border-radius: 20px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07); }
+    .stat b { font-size: 34px; display: block; letter-spacing: -.04em; }
+    .stat span { color: var(--muted); font-weight: 800; font-size: 13px; }
+    .stat.orange b { color: var(--orange-2); }
+    .stat.green b { color: var(--green-2); }
+    .stat.blue b { color: #9dccff; }
+    .stat.red b { color: #ffb3bf; }
+
+    section { padding: 42px 0; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+    .section-head h2 { margin: 0; font-size: clamp(28px, 4vw, 48px); letter-spacing: -.055em; line-height: 1; }
+    .section-head p { color: var(--muted); margin: 8px 0 0; max-width: 620px; line-height: 1.55; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .card { padding: 22px; border-radius: var(--radius); background: rgba(255,255,255,.075); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 18px 52px rgba(0,0,0,.22); }
+    .card h3 { margin: 0 0 10px; font-size: 21px; letter-spacing: -.03em; }
+    .card p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); color: var(--muted); font-size: 12px; font-weight: 900; margin-bottom: 12px; }
+    .badge.good { color: var(--green-2); background: rgba(44,227,124,.12); }
+    .badge.warn { color: var(--yellow); background: rgba(255,209,102,.12); }
+    .badge.hot { color: var(--orange-2); background: rgba(255,122,24,.12); }
+    .badge.blue { color: #aad4ff; background: rgba(82,168,255,.12); }
+    .timeline { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
+    .step { padding: 16px; border-radius: 18px; background: rgba(255,255,255,.075); border: 1px solid rgba(255,255,255,.12); min-height: 160px; position: relative; overflow: hidden; }
+    .step::before { content: attr(data-step); display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 12px; background: rgba(255,122,24,.18); color: var(--orange-2); font-weight: 1000; margin-bottom: 18px; }
+    .step h3 { margin: 0 0 8px; font-size: 16px; }
+    .step p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+
+    .map-shell { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(310px, .75fr); gap: 18px; align-items: stretch; }
+    .map-board { padding: 18px; min-height: 620px; position: relative; overflow: hidden; }
+    .map-toolbar { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .legend span { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); font-weight: 800; }
+    .dot { width: 10px; height: 10px; display: inline-block; border-radius: 50%; }
+    svg#strategyMap { width: 100%; height: 530px; display: block; border-radius: 22px; background: radial-gradient(circle at center, rgba(255,255,255,.08), rgba(255,255,255,.03)); border: 1px solid rgba(255,255,255,.08); }
+    .map-node { cursor: pointer; transition: .2s ease; }
+    .map-node circle { stroke: rgba(255,255,255,.55); stroke-width: 2; filter: drop-shadow(0 8px 16px rgba(0,0,0,.45)); transition: .2s ease; }
+    .map-node text { fill: white; font-size: 13px; font-weight: 900; paint-order: stroke; stroke: rgba(5,12,23,.75); stroke-width: 4px; stroke-linejoin: round; }
+    .map-node:hover circle, .map-node.active circle { r: 18; stroke: #fff; stroke-width: 3; }
+    .map-link { stroke: rgba(255,255,255,.18); stroke-width: 2; stroke-dasharray: 6 8; }
+    .panel-title { display:flex; align-items:center; justify-content:space-between; gap: 12px; }
+    .score-ring { width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--green) var(--value), rgba(255,255,255,.12) 0); position: relative; flex: 0 0 auto; }
+    .score-ring::after { content:""; position:absolute; inset: 9px; border-radius:50%; background: #0b1728; }
+    .score-ring b { position: relative; z-index: 1; font-size: 22px; }
+    .kv { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top: 16px; }
+    .kv div { padding: 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: rgba(255,255,255,.055); }
+    .kv small { display:block; color: var(--muted-2); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+    .kv strong { display:block; margin-top: 4px; font-size: 17px; }
+    .keyword-list { display:grid; gap:8px; margin-top: 16px; }
+    .keyword-pill { display:flex; justify-content:space-between; gap:12px; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: var(--muted); font-size: 13px; }
+    .keyword-pill b { color: var(--text); }
+    .danger { color: #ffb3bf; }
+    .ok { color: var(--green-2); }
+    .hot-text { color: var(--orange-2); }
+
+    .bundle-shell { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+    .bundle-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: 640px; overflow: auto; padding-right: 4px; }
+    .bundle-item { display:flex; gap: 12px; align-items: start; padding: 14px; border-radius: 18px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); cursor: pointer; transition:.2s; }
+    .bundle-item:hover { background: rgba(255,255,255,.1); }
+    .bundle-item input { margin-top: 4px; accent-color: var(--orange); }
+    .bundle-item strong { display:block; font-size: 14px; }
+    .bundle-item span { display:block; color: var(--muted); font-size: 12px; margin-top:4px; line-height: 1.4; }
+    .preset-row { display:flex; gap:8px; flex-wrap: wrap; margin: 0 0 14px; }
+    .big-metric { font-size: 54px; font-weight: 1000; letter-spacing: -.07em; line-height: .9; margin: 12px 0; }
+    .meter { height: 12px; background: rgba(255,255,255,.1); border-radius:999px; overflow:hidden; margin: 12px 0 8px; }
+    .meter span { display:block; height:100%; width: 0; border-radius:inherit; background: linear-gradient(90deg, var(--orange), var(--green)); transition: width .35s ease; }
+
+    .preview-shell { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); gap: 18px; }
+    .website-preview { background: #f4f8ff; color: #102033; border-radius: 24px; overflow: hidden; border: 1px solid rgba(255,255,255,.15); min-height: 520px; }
+    .web-nav { display:flex; justify-content:space-between; align-items:center; padding: 18px 22px; background: #ffffff; border-bottom: 1px solid #e7edf6; }
+    .web-logo { font-weight: 1000; letter-spacing:-.04em; }
+    .web-links { display:flex; gap: 14px; color: #60708a; font-size: 13px; font-weight: 800; }
+    .web-hero { padding: 42px 26px; background: linear-gradient(135deg, #fff3e8, #eaf5ff); }
+    .web-hero h3 { font-size: 38px; letter-spacing: -.06em; line-height: 1; margin: 0 0 12px; color: #07111f; }
+    .web-hero p { color: #5b6b80; max-width: 600px; margin: 0 0 20px; line-height: 1.5; }
+    .web-btn { display:inline-flex; background:#ff7a18; color:#fff; padding: 12px 16px; border-radius: 999px; font-weight: 1000; box-shadow: 0 14px 25px rgba(255,122,24,.25); }
+    .web-section { padding: 22px 26px; border-top: 1px solid #e7edf6; background: #fff; }
+    .web-section.alt { background:#f8fbff; }
+    .component-stack { display:grid; gap:10px; }
+    .component-row { display:flex; justify-content:space-between; gap:10px; align-items:center; padding: 14px; border-radius: 17px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); cursor:pointer; }
+    .component-row.active { border-color: rgba(255,122,24,.65); background: rgba(255,122,24,.12); }
+    .component-row span { color: var(--muted); font-size: 12px; }
+    .notes textarea { width:100%; min-height: 120px; resize: vertical; border:1px solid rgba(255,255,255,.15); border-radius: 16px; padding: 14px; background: rgba(0,0,0,.24); color: var(--text); font: inherit; line-height: 1.45; }
+    .status-line { display:flex; justify-content:space-between; gap:10px; align-items:center; padding: 12px; border-radius:16px; background: rgba(44,227,124,.08); border:1px solid rgba(44,227,124,.22); color: var(--green-2); font-weight: 900; margin-top: 12px; }
+
+    .report-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .report-card { padding: 18px; border-radius: 22px; background: rgba(255,255,255,.075); border:1px solid rgba(255,255,255,.12); min-height: 220px; display:flex; flex-direction:column; justify-content:space-between; }
+    .report-card h3 { margin: 8px 0; font-size: 20px; letter-spacing: -.04em; }
+    .report-card p { color: var(--muted); line-height:1.45; font-size: 14px; margin: 0; }
+    .bar-chart { display: grid; gap: 10px; margin-top: 18px; }
+    .bar-row { display: grid; grid-template-columns: 110px 1fr 50px; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
+    .bar { height: 12px; border-radius:999px; background: rgba(255,255,255,.1); overflow:hidden; }
+    .bar span { display:block; height:100%; background: linear-gradient(90deg, var(--blue), var(--green)); border-radius: inherit; }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .tab { background: rgba(255,255,255,.07); }
+    .tab.active { background: rgba(255,122,24,.18); border-color: rgba(255,122,24,.5); color: #fff; }
+    .arch-board { display: grid; grid-template-columns: 250px 1fr; gap: 18px; }
+    .stack-list { display:grid; gap:8px; }
+    .stack-chip { padding: 11px 12px; border-radius: 14px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); color: var(--muted); font-weight: 800; font-size: 13px; }
+    .arch-pane { min-height: 440px; }
+    .arch-flow { display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+    .arch-box { padding: 16px; border-radius: 18px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); min-height: 120px; }
+    .arch-box b { display:block; margin-bottom:8px; }
+    .arch-box span { color: var(--muted); font-size: 13px; line-height: 1.45; display:block; }
+    .codebox { background: rgba(0,0,0,.32); border:1px solid rgba(255,255,255,.12); border-radius: 18px; padding: 14px; color:#c9d8e8; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; line-height: 1.45; }
+
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px); opacity:0; pointer-events:none; background: rgba(5,11,22,.94); border:1px solid rgba(255,255,255,.14); border-radius: 999px; padding: 12px 16px; box-shadow: var(--shadow); color: var(--text); z-index: 100; transition:.25s; font-weight: 900; }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity:1; }
+    .mobile-bottom { display: none; position: fixed; bottom: 0; left:0; right:0; z-index: 60; padding: 10px; background: rgba(4,10,20,.82); backdrop-filter: blur(16px); border-top:1px solid rgba(255,255,255,.1); }
+    .mobile-bottom .links { justify-content: center; }
+    footer { padding: 50px 20px; color: var(--muted); text-align: center; border-top: 1px solid rgba(255,255,255,.1); margin-top: 40px; }
+    .small { color: var(--muted); font-size: 13px; line-height:1.5; }
+
+    @media (max-width: 1050px) {
+      .hero-grid, .map-shell, .bundle-shell, .preview-shell, .arch-board { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .timeline { grid-template-columns: repeat(2, 1fr); }
+      .report-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 720px) {
+      .nav nav.links { display:none; }
+      .mobile-bottom { display:block; }
+      .hero { padding-top: 42px; }
+      .hero-grid { gap: 18px; }
+      .stats, .grid-3, .grid-2, .timeline, .report-grid, .bundle-grid, .arch-flow { grid-template-columns: 1fr; }
+      h1 { font-size: 48px; }
+      .section-head { display:block; }
+      svg#strategyMap { height: 450px; }
+      .web-links { display:none; }
+      .web-hero h3 { font-size: 30px; }
+      section { padding: 32px 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="orb one"></div><div class="orb two"></div><div class="orb three"></div>
+
+  <header>
+    <div class="nav">
+      <div class="brand"><div class="brand-mark">🗺️</div><span>Local SEO Mission Control</span></div>
+      <nav class="links">
+        <a href="#story">Story</a>
+        <a href="#map">Map</a>
+        <a href="#bundles">Bundles</a>
+        <a href="#preview">Templates</a>
+        <a href="#analyst">Analyst</a>
+        <a href="#architecture">Architecture</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero wrap" id="story">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow">⚡ AI-readable product demo · React / TanStack / NestJS / Netlify</div>
+          <h1><span class="gradient-text">Local SEO</span><br/>as a strategy game.</h1>
+          <p>
+            Customers enter their website, receive a potential report, control website rebuilds,
+            subdomains, templates, SEO bundles and growth attacks. AI advises — the customer controls.
+          </p>
+          <div class="hero-actions">
+            <a class="pill-btn primary" href="#map">Start demo</a>
+            <button class="secondary" onclick="startPitchMode()">90s Pitch Mode</button>
+            <button onclick="copyPitch()">Copy pitch</button>
+          </div>
+          <div class="stats">
+            <div class="stat orange"><b data-count="5">0</b><span>Rank #1 keywords collectible</span></div>
+            <div class="stat green"><b data-count="15">0</b><span>Top-3 Momentum</span></div>
+            <div class="stat blue"><b data-count="54">0</b><span>Page-one rankings as target state</span></div>
+            <div class="stat red"><b>Boss</b><span>Dachau as a hard market</span></div>
+          </div>
+        </div>
+        <div class="demo-card glass">
+          <div class="mini-window">
+            <div class="window-bar"><div class="dots"><span></span><span></span><span></span></div><b>SEO World Map</b></div>
+            <div class="window-body">
+              <div class="map-mini">
+                <svg viewBox="0 0 480 280" style="position:absolute; inset:0; width:100%; height:100%; opacity:.9">
+                  <defs>
+                    <linearGradient id="g1" x1="0" x2="1"><stop stop-color="#ff7a18"/><stop offset="1" stop-color="#2ce37c"/></linearGradient>
+                  </defs>
+                  <path d="M228 140 L160 82 L96 130 L124 208 L228 140 L340 92 L400 178 L300 222 L228 140" fill="none" stroke="rgba(255,255,255,.23)" stroke-width="2" stroke-dasharray="5 7"/>
+                  <circle cx="228" cy="140" r="45" fill="rgba(255,122,24,.10)" stroke="rgba(255,122,24,.35)"/>
+                  <circle cx="400" cy="178" r="62" fill="rgba(255,79,109,.07)" stroke="rgba(255,79,109,.28)"/>
+                </svg>
+                <div class="pulse-node orange" style="left:47%; top:48%"></div>
+                <div class="pulse-node" style="left:31%; top:25%"></div>
+                <div class="pulse-node" style="left:18%; top:45%"></div>
+                <div class="pulse-node blue" style="left:70%; top:28%"></div>
+                <div class="pulse-node red" style="left:84%; top:60%"></div>
+                <div class="mini-tag" style="left:36%; top:36%">Hub: Indersdorf</div>
+                <div class="mini-tag" style="right:7%; top:47%">Dachau · Boss-Level</div>
+                <div class="mini-tag" style="left:10%; bottom:18%">Quick Wins</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap" id="product-loop">
+      <div class="section-head">
+        <div><h2>The product in 7 steps</h2><p>From the pre-sales potential report to the ongoing SEO game with reports, updates and new territories.</p></div>
+      </div>
+      <div class="timeline">
+        <div class="step" data-step="1"><h3>Enter website</h3><p>Customer enters URL, services, target area, average order value and goals.</p></div>
+        <div class="step" data-step="2"><h3>Pre-Audit</h3><p>Worker scans the website, competitors, locations, technical SEO and opportunities.</p></div>
+        <div class="step" data-step="3"><h3>Potential report</h3><p>2–3 month plan, 6-month plan and estimated return.</p></div>
+        <div class="step" data-step="4"><h3>Website Rebuild</h3><p>The customer's own website is rebuilt as a better React/Netlify version.</p></div>
+        <div class="step" data-step="5"><h3>Preview & notes</h3><p>Customer selects components/templates, writes notes and approves versions.</p></div>
+        <div class="step" data-step="6"><h3>Subdomains</h3><p>Local pages/subdomains are generated, deployed and monitored in sitemap/GSC.</p></div>
+        <div class="step" data-step="7"><h3>SEO game</h3><p>Map, bundles, competitors, rank-#1 collection, experiments and reports.</p></div>
+      </div>
+    </section>
+
+    <section class="wrap" id="map">
+      <div class="section-head">
+        <div><h2>Dynamic Map: surrounding area first, then boss level</h2><p>Locations feel different: small towns are quick wins, Dachau is a difficult long-term attack. The customer sees expansion instead of dry tables.</p></div>
+        <button class="primary" onclick="selectCity('dachau')">Attack Dachau</button>
+      </div>
+      <div class="map-shell">
+        <div class="map-board glass">
+          <div class="map-toolbar">
+            <div class="legend">
+              <span><i class="dot" style="background:var(--green)"></i>won</span>
+              <span><i class="dot" style="background:var(--blue)"></i>strong</span>
+              <span><i class="dot" style="background:var(--yellow)"></i>momentum</span>
+              <span><i class="dot" style="background:var(--red)"></i>Boss-Level</span>
+              <span><i class="dot" style="background:var(--muted-2)"></i>prepared</span>
+            </div>
+            <button onclick="animateSpread()">Simulate spread</button>
+          </div>
+          <svg id="strategyMap" viewBox="0 0 900 560" role="img" aria-label="Interactive SEO strategy map">
+            <line class="map-link" x1="430" y1="275" x2="260" y2="130"/>
+            <line class="map-link" x1="430" y1="275" x2="250" y2="295"/>
+            <line class="map-link" x1="430" y1="275" x2="420" y2="90"/>
+            <line class="map-link" x1="430" y1="275" x2="550" y2="130"/>
+            <line class="map-link" x1="430" y1="275" x2="555" y2="350"/>
+            <line class="map-link" x1="430" y1="275" x2="720" y2="295"/>
+            <line class="map-link" x1="430" y1="275" x2="305" y2="425"/>
+            <line class="map-link" x1="555" y1="350" x2="720" y2="295"/>
+            <line class="map-link" x1="260" y1="130" x2="145" y2="70"/>
+            <line class="map-link" x1="145" y1="70" x2="80" y2="170"/>
+            <g class="map-node" id="node-indersdorf" onclick="selectCity('indersdorf')"><circle cx="430" cy="275" r="24" fill="#ff7a18"/><text x="430" y="315" text-anchor="middle">Markt Indersdorf</text></g>
+            <g class="map-node" id="node-petershausen" onclick="selectCity('petershausen')"><circle cx="260" cy="130" r="18" fill="#2ce37c"/><text x="260" y="104" text-anchor="middle">Petershausen</text></g>
+            <g class="map-node" id="node-vierkirchen" onclick="selectCity('vierkirchen')"><circle cx="420" cy="90" r="18" fill="#2ce37c"/><text x="420" y="65" text-anchor="middle">Vierkirchen</text></g>
+            <g class="map-node" id="node-jetzendorf" onclick="selectCity('jetzendorf')"><circle cx="550" cy="130" r="18" fill="#2ce37c"/><text x="550" y="105" text-anchor="middle">Jetzendorf</text></g>
+            <g class="map-node" id="node-erdweg" onclick="selectCity('erdweg')"><circle cx="250" cy="295" r="17" fill="#52a8ff"/><text x="250" y="335" text-anchor="middle">Erdweg</text></g>
+            <g class="map-node" id="node-schwabhausen" onclick="selectCity('schwabhausen')"><circle cx="305" cy="425" r="17" fill="#52a8ff"/><text x="305" y="462" text-anchor="middle">Schwabhausen</text></g>
+            <g class="map-node" id="node-heimhausen" onclick="selectCity('heimhausen')"><circle cx="145" cy="70" r="16" fill="#ffd166"/><text x="145" y="45" text-anchor="middle">Heimhausen</text></g>
+            <g class="map-node" id="node-rohrmoos" onclick="selectCity('rohrmoos')"><circle cx="555" cy="350" r="16" fill="#52a8ff"/><text x="555" y="390" text-anchor="middle">Röhrmoos</text></g>
+            <g class="map-node" id="node-dachau" onclick="selectCity('dachau')"><circle cx="720" cy="295" r="26" fill="#ff4f6d"/><text x="720" y="338" text-anchor="middle">Dachau City</text></g>
+            <g class="map-node" id="node-pfaffenhofen" onclick="selectCity('pfaffenhofen')"><circle cx="80" cy="170" r="16" fill="#71829a"/><text x="80" y="205" text-anchor="middle">Pfaffenhofen</text></g>
+          </svg>
+        </div>
+        <aside class="card" id="cityPanel"></aside>
+      </div>
+    </section>
+
+    <section class="wrap" id="bundles">
+      <div class="section-head">
+        <div><h2>Bundle Builder: make good averages visible</h2><p>The customer can bundle services, locations or SERP topics. The system automatically recommends bundles that sound strong and make business sense.</p></div>
+      </div>
+      <div class="bundle-shell">
+        <div class="card">
+          <div class="preset-row">
+            <button onclick="applyBundlePreset('roof')">Roofing & Sheet Metal winner</button>
+            <button onclick="applyBundlePreset('dachau')">Dachau Offensive</button>
+            <button onclick="applyBundlePreset('building')">Building Services expansion</button>
+            <button onclick="applyBundlePreset('quick')">Quick Wins</button>
+            <button onclick="clearBundle()">clear</button>
+          </div>
+          <div class="bundle-grid" id="bundleGrid"></div>
+        </div>
+        <aside class="card">
+          <span class="badge hot">💰 Revenue/ranking bundle</span>
+          <h3 id="bundleName">Roofing & Sheet Metal winner</h3>
+          <div class="big-metric" id="avgPosition">Top 5</div>
+          <p id="bundleSummary">Select keywords to calculate average, status and recommendation.</p>
+          <div class="meter"><span id="bundleMeter"></span></div>
+          <div class="kv">
+            <div><small>Selected</small><strong id="bundleCount">0</strong></div>
+            <div><small>Top 3</small><strong id="bundleTop3">0</strong></div>
+            <div><small>Value score</small><strong id="bundleValue">0</strong></div>
+            <div><small>Recommendation</small><strong id="bundleAction">—</strong></div>
+          </div>
+          <div class="status-line" id="bundleStatus"><span>Ready</span><span>✅</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="wrap" id="preview">
+      <div class="section-head">
+        <div><h2>Template Preview: customer controls, worker builds</h2><p>Not an open construction site like WordPress. The customer sees approved components, writes notes, selects variants and approves one concrete version.</p></div>
+      </div>
+      <div class="preview-shell">
+        <div class="website-preview">
+          <div class="web-nav"><div class="web-logo">Martines · Dachau</div><div class="web-links"><span>Roof</span><span>Sheet Metal</span><span>References</span><span>Contact</span></div></div>
+          <div class="web-hero" id="webHero">
+            <h3 id="previewHeadline">Flat roof renovation in Dachau</h3>
+            <p id="previewCopy">Fast help for roofing, waterproofing and sheet metal work — local, clean and easy to reach.</p>
+            <span class="web-btn">Call now</span>
+          </div>
+          <div class="web-section"><b>Services</b><p style="color:#627189">Roof repair · gutter · flat roof · chimney flashing</p></div>
+          <div class="web-section alt"><b>Local proof</b><p style="color:#627189">References, images, districts and real questions from the region.</p></div>
+          <div class="web-section"><b>FAQ</b><p style="color:#627189">Do you also come to Dachau city? How quickly is an appointment possible?</p></div>
+        </div>
+        <div class="card notes">
+          <span class="badge blue">🧩 Component Control</span>
+          <h3>Showcase mode</h3>
+          <div class="component-stack" id="componentStack"></div>
+          <h3 style="margin-top:18px" id="selectedComponentTitle">Hero</h3>
+          <textarea id="componentNote" placeholder="note für den Worker: Ton, Bilder, CTA, Reihenfolge, lokale Details…"></textarea>
+          <div class="hero-actions">
+            <button onclick="applyComponentNote()">Apply note</button>
+            <button onclick="cycleTemplate()">Switch template</button>
+            <button class="primary" onclick="approvePreview()">Approve version</button>
+          </div>
+          <div class="status-line" id="previewStatus"><span>Status: preview open</span><span>🟡</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap" id="analyst">
+      <div class="section-head">
+        <div><h2>SEO Analyst: catchy, honest, decision-oriented</h2><p>The analyst does not only show green data. It shows wins, momentum, difficult markets, weak pages and concrete next actions.</p></div>
+        <button onclick="toggleReportMode()" id="reportModeBtn">Switch report mode</button>
+      </div>
+      <div class="report-grid" id="reportGrid"></div>
+      <div class="grid-2" style="margin-top:16px">
+        <div class="card">
+          <span class="badge good">🧪 Experiment won</span>
+          <h3>What keeps visitors longer?</h3>
+          <p>More local hero, earlier gallery, higher WhatsApp, more authentic FAQ. Every change is stored as an experiment and compared after 7–30 days.</p>
+          <div class="bar-chart">
+            <div class="bar-row"><span>Visit duration</span><div class="bar"><span style="width:78%"></span></div><b>+41%</b></div>
+            <div class="bar-row"><span>Scroll depth</span><div class="bar"><span style="width:64%"></span></div><b>+28%</b></div>
+            <div class="bar-row"><span>CTA clicks</span><div class="bar"><span style="width:86%"></span></div><b>+55%</b></div>
+          </div>
+        </div>
+        <div class="card">
+          <span class="badge warn">🎯 Forecast vs Actual</span>
+          <h3>Underpromise, then overdeliver</h3>
+          <p>When the data basis is large enough later, the tool shows conservative expectations. The first report can then clearly say: expected +8–14%, actual +19%.</p>
+          <div class="codebox">Recommendation → Customer approves → Deploy → Measurement window → Honest report → Next update</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap" id="architecture">
+      <div class="section-head">
+        <div><h2>Architecture & stack</h2><p>The product is deliberately designed as a controlled automation system: frontend gives control, backend holds state, workers produce, agents advise.</p></div>
+      </div>
+      <div class="arch-board glass" style="padding:18px">
+        <div>
+          <div class="tabs" id="archTabs"></div>
+          <div class="stack-list" id="stackList"></div>
+        </div>
+        <div class="arch-pane card" id="archPane"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <b>Local SEO Mission Control · dynamic HTML demo</b><br/>
+    <span class="small">Single-file prototype. No tracking, no external libraries. Built as a showpiece for software friends and AI inspection.</span>
+  </footer>
+
+  <div class="mobile-bottom"><nav class="links"><a href="#map">Map</a><a href="#bundles">Bundles</a><a href="#preview">Templates</a><a href="#analyst">Analyst</a></nav></div>
+  <div class="toast" id="toast">Copied</div>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+    const showToast = (msg) => { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800); };
+
+    const cities = {
+      indersdorf: { label:'Markt Indersdorf', status:'home base won', color:'var(--orange)', score:94, difficulty:'Medium', plan:'Hold the hub, copy the winner pattern to neighboring towns.', phase:'dominated', cta:'Copy winner pattern', metrics:{Population:'Hub', Competition:'medium', Speed:'strong'}, keywords:[['gutter markt indersdorf','Rank #1'],['storm damage roof','Rank #1'],['roofer markt indersdorf','Top 5']] },
+      petershausen: { label:'Petershausen', status:'strong cluster', color:'var(--green)', score:86, difficulty:'Medium', plan:'Tighten the cluster further, strengthen districts as spokes.', phase:'Top 3 / Top 5', cta:'Expand cluster', metrics:{Population:'~6,500', Competition:'manageable', Speed:'fast'}, keywords:[['roofer petershausen','Rank 3'],['sheet metal petershausen','Rank 3'],['gutter petershausen','Top 10']] },
+      vierkirchen: { label:'Vierkirchen', status:'won', color:'var(--green)', score:91, difficulty:'Easy-Medium', plan:'Hold the rank-#1 signal and add similar services.', phase:'Rank #1 / Top 3', cta:'Defend', metrics:{Population:'~5,000', Competition:'easy', Speed:'fast'}, keywords:[['sheet metal vierkirchen','Rank #1'],['roofer vierkirchen','Rank 3'],['roofer pasenbach','Top 5']] },
+      jetzendorf: { label:'Jetzendorf', status:'dominated', color:'var(--green)', score:93, difficulty:'Easy', plan:'Use as proof territory and spread toward Pfaffenhofen.', phase:'Rank #1 / 2', cta:'Prepare Pfaffenhofen', metrics:{Population:'~3,000', Competition:'easy', Speed:'fast'}, keywords:[['roofer jetzendorf','Rank #1'],['sheet metal jetzendorf','Rank 2'],['Cluster','dominated']] },
+      erdweg: { label:'Erdweg', status:'strong', color:'var(--blue)', score:84, difficulty:'Medium', plan:'Hold gutter/sheet metal, keep pushing metal roof.', phase:'Top 2 / Top 5', cta:'Service-Update', metrics:{Population:'~6,000', Competition:'medium', Speed:'solid'}, keywords:[['sheet metal erdweg','Rank 2'],['gutter erdweg','Top 5'],['metal roof erdweg','Top 10']] },
+      schwabhausen: { label:'Schwabhausen', status:'strong surrounding area', color:'var(--blue)', score:80, difficulty:'Medium', plan:'Use Arnbach/Oberroth as local proof.', phase:'Top 3 / Top 5', cta:'Build district spokes', metrics:{Population:'Cluster', Competition:'medium', Speed:'solid'}, keywords:[['gutter schwabhausen','Rank 3'],['roofer arnbach','Top 5'],['roofer oberroth','Top 5']] },
+      rohrmoos: { label:'Röhrmoos', status:'Page 1', color:'var(--blue)', score:77, difficulty:'Medium', plan:'Hold Top 3, connect neighboring towns.', phase:'Top 3', cta:'Add internal links', metrics:{Population:'region', Competition:'medium', Speed:'solid'}, keywords:[['roofer röhrmoos','Top 3'],['Surroundings','Page 1'],['Linking','expand']] },
+      heimhausen: { label:'Heimhausen', status:'Quick win', color:'var(--yellow)', score:72, difficulty:'Easy', plan:'Test a quick landing page, expand when first data arrives.', phase:'not started', cta:'Build quick-win page', metrics:{Population:'small town', Competition:'easy', Speed:'fast'}, keywords:[['local service','opportunity'],['roof/cleaning','check'],['competition','easy']] },
+      dachau: { label:'Dachau City', status:'Boss level: highly competitive', color:'var(--red)', score:66, difficulty:'Hard', plan:'Do not go all-in blindly. Win the surrounding area first, then push Dachau toward Top 3 with high-ticket pages and proof.', phase:'Top 10 / Top 8', cta:'Prepare Dachau offensive', metrics:{Population:'~48,000', Competition:'high', Speed:'slow'}, keywords:[['roofer dachau','Top 10'],['flat roof renovation dachau','Top 8'],['roof repair dachau','Top 10']] },
+      pfaffenhofen: { label:'Pfaffenhofen-Korridor', status:'prepared', color:'var(--muted-2)', score:58, difficulty:'Hard', plan:'Approach via Jetzendorf/Petershausen/corridor, attack the city later.', phase:'Backlog', cta:'Plan corridor', metrics:{Population:'large search area', Competition:'high', Speed:'later'}, keywords:[['Corridor','prepared'],['Jetzendorf','Rank #1/2'],['Petershausen','Rank 3']] }
+    };
+
+    function selectCity(key) {
+      const city = cities[key];
+      $$('.map-node').forEach(n => n.classList.remove('active'));
+      const node = document.getElementById('node-' + key);
+      if (node) node.classList.add('active');
+      $('#cityPanel').innerHTML = `
+        <div class="panel-title">
+          <div><span class="badge hot">🗺️ Territory analysis</span><h3 style="margin:0">${city.label}</h3><p style="margin-top:8px">${city.status}</p></div>
+          <div class="score-ring" style="--value:${city.score * 3.6}deg"><b>${city.score}</b></div>
+        </div>
+        <div class="kv">
+          ${Object.entries(city.metrics).map(([k,v]) => `<div><small>${k}</small><strong>${v}</strong></div>`).join('')}
+          <div><small>Difficulty</small><strong>${city.difficulty}</strong></div>
+        </div>
+        <div class="keyword-list">
+          ${city.keywords.map(k => `<div class="keyword-pill"><span>${k[0]}</span><b>${k[1]}</b></div>`).join('')}
+        </div>
+        <div style="margin-top:16px" class="card" style="box-shadow:none">
+          <span class="badge blue">🧠 Analyst plan</span>
+          <p>${city.plan}</p>
+          <div class="hero-actions"><button class="primary" onclick="showToast('Action queued: ${city.cta}')">${city.cta}</button><button onclick="showToast('Observation saved')">Observe</button></div>
+        </div>
+      `;
+    }
+
+    function animateSpread() {
+      const order = ['heimhausen','petershausen','vierkirchen','jetzendorf','erdweg','schwabhausen','rohrmoos','dachau'];
+      order.forEach((key, i) => setTimeout(() => selectCity(key), i * 650));
+    }
+
+    const bundleItems = [
+      {id:'dachrinne-ind', keyword:'gutter markt indersdorf', city:'Markt Indersdorf', service:'Roofing & Sheet Metal', pos:1, value:78, intent:'Repair/Emergency'},
+      {id:'sturm-ind', keyword:'storm damage roof m. indersdorf', city:'Markt Indersdorf', service:'Roofing & Sheet Metal', pos:1, value:88, intent:'urgent'},
+      {id:'dachdecker-ind', keyword:'roofer markt indersdorf', city:'Markt Indersdorf', service:'Roofing & Sheet Metal', pos:5, value:82, intent:'Service'},
+      {id:'spengler-vier', keyword:'sheet metal vierkirchen', city:'Vierkirchen', service:'Roofing & Sheet Metal', pos:1, value:76, intent:'Service'},
+      {id:'dachdecker-jetz', keyword:'roofer jetzendorf', city:'Jetzendorf', service:'Roofing & Sheet Metal', pos:1, value:76, intent:'Service'},
+      {id:'spengler-erd', keyword:'sheet metal erdweg', city:'Erdweg', service:'Roofing & Sheet Metal', pos:2, value:74, intent:'Service'},
+      {id:'dachau-dd', keyword:'roofer dachau', city:'Dachau', service:'Roofing & Sheet Metal', pos:10, value:96, intent:'Boss'},
+      {id:'dachau-flat', keyword:'flat roof renovation dachau', city:'Dachau', service:'High Ticket', pos:8, value:100, intent:'High-Ticket'},
+      {id:'dachau-rinne', keyword:'gutter dachau', city:'Dachau', service:'Roofing & Sheet Metal', pos:10, value:83, intent:'Repair'},
+      {id:'haus-dachau', keyword:'property maintenance dachau', city:'Dachau', service:'Building Services', pos:10, value:72, intent:'Property clients'},
+      {id:'fassade-dachau', keyword:'facade cleaning dachau', city:'Dachau', service:'Building Services', pos:10, value:69, intent:'Cleaning'},
+      {id:'reno-ind', keyword:'renovation markt indersdorf', city:'Markt Indersdorf', service:'Renovation', pos:7, value:71, intent:'Cross-Sell'},
+      {id:'dach-berg', keyword:'roofer bergkirchen', city:'Bergkirchen', service:'Roofing & Sheet Metal', pos:2, value:79, intent:'Service'},
+      {id:'dach-rohr', keyword:'roofer röhrmoos', city:'Röhrmoos', service:'Roofing & Sheet Metal', pos:3, value:77, intent:'Service'}
+    ];
+    const presets = {
+      roof: ['dachrinne-ind','sturm-ind','dachdecker-ind','spengler-vier','dachdecker-jetz','spengler-erd','dach-berg','dach-rohr'],
+      dachau: ['dachau-dd','dachau-flat','dachau-rinne','haus-dachau','fassade-dachau'],
+      building: ['haus-dachau','fassade-dachau','reno-ind'],
+      quick: ['spengler-vier','dachdecker-jetz','spengler-erd','dach-berg','dach-rohr']
+    };
+
+    function renderBundleGrid() {
+      $('#bundleGrid').innerHTML = bundleItems.map(item => `
+        <label class="bundle-item">
+          <input type="checkbox" value="${item.id}" onchange="updateBundle()" />
+          <div><strong>${item.keyword}</strong><span>${item.city} · ${item.service} · Pos. ${item.pos} · ${item.intent}</span></div>
+        </label>
+      `).join('');
+    }
+    function selectedBundleItems() {
+      const ids = $$('#bundleGrid input:checked').map(i => i.value);
+      return bundleItems.filter(i => ids.includes(i.id));
+    }
+    function posLabel(avg) {
+      if (!isFinite(avg)) return '—';
+      if (avg <= 1.5) return 'Rank #1–2';
+      if (avg <= 3) return 'Top 3';
+      if (avg <= 5) return 'Top 5';
+      if (avg <= 10) return 'Top 10';
+      return 'Expansion';
+    }
+    function updateBundle() {
+      const items = selectedBundleItems();
+      const count = items.length;
+      const avg = count ? items.reduce((s,i)=>s+i.pos,0)/count : NaN;
+      const top3 = items.filter(i => i.pos <= 3).length;
+      const value = count ? Math.round(items.reduce((s,i)=>s+i.value,0)/count) : 0;
+      const score = count ? Math.round(Math.max(0, 100 - avg*5 + value*.45 + top3*3)) : 0;
+      const services = [...new Set(items.map(i=>i.service))];
+      $('#bundleName').textContent = services.length === 1 ? `${services[0]} Bundle` : count ? 'Custom SEO Bundle' : 'Bundle Builder';
+      $('#avgPosition').textContent = posLabel(avg);
+      $('#bundleCount').textContent = count;
+      $('#bundleTop3').textContent = top3;
+      $('#bundleValue').textContent = value;
+      $('#bundleAction').textContent = score > 95 ? 'Scale' : score > 75 ? 'Expand' : score > 50 ? 'Observe' : 'Select';
+      $('#bundleMeter').style.width = Math.min(score, 100) + '%';
+      const summary = count ? `Ø Position ${avg.toFixed(1)} across ${count} keywords. ${top3} of them are Top 3. The value score is ${value}/100.` : 'Select keywords to calculate average, status and recommendation.';
+      $('#bundleSummary').textContent = summary;
+      $('#bundleStatus').innerHTML = score > 95 ? '<span>Winner bundle: sounds strong and is easy to sell</span><span>🏆</span>' : score > 75 ? '<span>Momentum bundle: good expansion candidate</span><span>🔥</span>' : score > 50 ? '<span>Expansion field: not prominent, but strategic</span><span>🟡</span>' : '<span>Nothing selected yet</span><span>—</span>';
+    }
+    function applyBundlePreset(name) {
+      const set = presets[name] || [];
+      $$('#bundleGrid input').forEach(i => { i.checked = set.includes(i.value); });
+      updateBundle();
+      const names = {roof:'Roofing & Sheet Metal Winner', dachau:'Dachau Offensive', building:'Building Services Expansion', quick:'Quick Wins'};
+      $('#bundleName').textContent = names[name] || 'Custom SEO Bundle';
+    }
+    function clearBundle() { $$('#bundleGrid input').forEach(i => i.checked = false); updateBundle(); }
+
+    const components = [
+      {id:'hero', name:'Hero', desc:'Headline, tone, CTA, image feel', note:'More premium, less cheap. Mention Dachau immediately. WhatsApp and phone visible.'},
+      {id:'services', name:'Service Cards', desc:'Prioritize services per location', note:'Show flat roof and gutter first, property maintenance only as cross-sell.'},
+      {id:'proof', name:'Proof / References', desc:'Reviews, local examples, images', note:'More real project images from the region. Do not feel generic.'},
+      {id:'gallery', name:'Slideshow', desc:'Images, before/after, job sites', note:'Highlight gutter and sheet metal images more strongly.'},
+      {id:'faq', name:'FAQ', desc:'local questions and objections', note:'Add question: Do you also come to Dachau city and districts?'},
+      {id:'cta', name:'Contact CTA', desc:'Phone, WhatsApp, form', note:'Sticky CTA on mobile, but not annoying.'}
+    ];
+    let activeComponent = 'hero';
+    let templateIndex = 0;
+    const templates = [
+      {name:'Premium Local Service', headline:'Flat roof renovation in Dachau', copy:'Fast help for roofing, waterproofing and sheet metal work — local, clean and easy to reach.'},
+      {name:'Emergency / Repair', headline:'Roof repair in Dachau — respond quickly', copy:'When the roof, gutter or chimney flashing causes problems, fast local help matters.'},
+      {name:'Master craft / Quality', headline:'Roofing & sheet metal work for Dachau', copy:'Solid work, clear communication and regional experience for homeowners and property clients.'}
+    ];
+    function renderComponents() {
+      $('#componentStack').innerHTML = components.map(c => `
+        <div class="component-row ${c.id === activeComponent ? 'active' : ''}" onclick="selectComponent('${c.id}')"><div><b>${c.name}</b><span>${c.desc}</span></div><span>✎</span></div>
+      `).join('');
+      const c = components.find(x => x.id === activeComponent);
+      $('#selectedComponentTitle').textContent = c.name;
+      $('#componentNote').value = c.note;
+    }
+    function selectComponent(id) { activeComponent = id; renderComponents(); }
+    function applyComponentNote() {
+      const c = components.find(x => x.id === activeComponent);
+      c.note = $('#componentNote').value;
+      if (activeComponent === 'hero') {
+        $('#previewCopy').textContent = c.note.slice(0, 120) + (c.note.length > 120 ? '…' : '');
+      }
+      $('#previewStatus').innerHTML = '<span>Status: new preview version generated</span><span>🧪</span>';
+      showToast('Note saved as worker instruction');
+    }
+    function cycleTemplate() {
+      templateIndex = (templateIndex + 1) % templates.length;
+      const t = templates[templateIndex];
+      $('#previewHeadline').textContent = t.headline;
+      $('#previewCopy').textContent = t.copy;
+      $('#previewStatus').innerHTML = `<span>Template: ${t.name}</span><span>🔁</span>`;
+    }
+    function approvePreview() {
+      $('#previewStatus').innerHTML = '<span>Version approved → deploy queue ready</span><span>✅</span>';
+      showToast('Version approved. Worker can build subdomain.');
+    }
+
+    const reportModes = {
+      balanced: [
+        {badge:'🟢 Won', cls:'good', title:'Rank-#1 keywords collected', text:'These search terms belong to us right now. Hold winners and transfer the pattern to similar locations.', action:'View winners'},
+        {badge:'🔥 Momentum', cls:'hot', title:'Dachau is moving up', text:'Dachau is hard, but we are on page 1. Now make it stronger locally and push toward Top 3.', action:'Expand Dachau'},
+        {badge:'🟡 Fast da', cls:'warn', title:'Top 10, but still room', text:'Google is already testing us. Titles, local proof, FAQ and internal links can bring the next lift.', action:'Update preview'},
+        {badge:'⚫ Honest', cls:'blue', title:'Not everything is green', text:'Some pages still have little data. Do not scale blindly; observe or improve first.', action:'Check issues'}
+      ],
+      aggressive: [
+        {badge:'⚔️ Competitor almost caught', cls:'hot', title:'2 positions away', text:'For one Dachau keyword, a competitor is just ahead of us. We can prepare a targeted update attack.', action:'Prepare overtake'},
+        {badge:'🗺️ Spread possible', cls:'good', title:'Surrounding area responds', text:'Small towns show fast signals. Take the surrounding area first, then attack Dachau with more authority.', action:'Start spread'},
+        {badge:'💰 High-Ticket', cls:'blue', title:'Flat roof renovation is pulling', text:'The high-ticket search is already visible. More images, proof and CTA could be more valuable than new low-value pages.', action:'Push high-ticket'},
+        {badge:'🧪 Test idea', cls:'warn', title:'Test CTA/images', text:'Visitors need to understand faster: what is offered, where, how fast, how do they contact you?', action:'Start experiment'}
+      ]
+    };
+    let reportMode = 'balanced';
+    function renderReports() {
+      $('#reportGrid').innerHTML = reportModes[reportMode].map(card => `
+        <div class="report-card"><div><span class="badge ${card.cls}">${card.badge}</span><h3>${card.title}</h3><p>${card.text}</p></div><button onclick="showToast('${card.action} queued')">${card.action}</button></div>
+      `).join('');
+      $('#reportModeBtn').textContent = reportMode === 'balanced' ? 'Show aggressive mode' : 'Show honest mode';
+    }
+    function toggleReportMode() { reportMode = reportMode === 'balanced' ? 'aggressive' : 'balanced'; renderReports(); }
+
+    const arch = {
+      Frontend: { chips:['React','TypeScript','TanStack Router','TanStack Query','TanStack Form','TanStack Table','TanStack Store'], boxes:[['Control UI','Onboarding, Potential report, Map, Bundles, Preview, Approvals, Reports.'],['Preview Mode','Click components, save notes, compare versions.'],['Dashboard','Customer sees progress, risk, opportunities and decides.']] },
+      Backend: { chips:['NestJS','REST API','Auth','Project API','Approval API','Report API'], boxes:[['API Layer','Tenants, projects, pages, notes, GSC, reports.'],['State Machine','Draft → Preview → Notes → Approved → Deploy → Monitor.'],['Security','Encrypt tokens, roles, audit logs, consent.']] },
+      Workers: { chips:['Redis Queue','BullMQ optional','Clone Worker','SEO Worker','Deploy Worker','GSC Worker'], boxes:[['Website Rebuild','Crawl the customer’s own website, map components, build React.'],['Generation','Pages/subdomains, text, schema, sitemap, assets.'],['Monitoring','GSC sync, analytics sync, reports, experiments.']] },
+      Agents: { chips:['Mastra','Research Agent','SEO Analyst','Content Agent','Report Agent'], boxes:[['SEO Analyst','Advises, explains, stores observations, slows down when needed.'],['Content Agent','Takes customer notes and creates better local versions.'],['Report Agent','Makes data catchy: winners, momentum, attack, warning.']] },
+      Data: { chips:['Postgres','Object Storage','Vector DB','Audit Logs','Events'], boxes:[['Entities','Customer, Project, PageProposal, PageVersion, ComponentInstance, Bundle.'],['Observations','Ranking, clicks, scrolls, CTA, notes, decisions.'],['Forecasts','2–3 months, 6 months, conservative estimates, actual comparison.']] },
+      Tracking: { chips:['GSC','GA4/Plausible','PostHog/Clarity optional','Own Events'], boxes:[['SEO Data','Keywords, Impressions, Clicks, CTR, Position.'],['Visitor Behavior','Engagement, Scroll depth, CTA, phone, WhatsApp, form.'],['Experiments','Change log, A/B later, winner patterns.']] }
+    };
+    let activeArch = 'Frontend';
+    function renderArch() {
+      $('#archTabs').innerHTML = Object.keys(arch).map(k => `<button class="tab ${k === activeArch ? 'active' : ''}" onclick="activeArch='${k}'; renderArch()">${k}</button>`).join('');
+      const data = arch[activeArch];
+      $('#stackList').innerHTML = data.chips.map(c => `<div class="stack-chip">${c}</div>`).join('');
+      $('#archPane').innerHTML = `
+        <span class="badge blue">${activeArch} Shard</span>
+        <h3>${activeArch} Architecture</h3>
+        <p>AI-readable architecture knowledge from the product pack: separated responsibilities, clear workers, controlled automation.</p>
+        <div class="arch-flow">${data.boxes.map(b => `<div class="arch-box"><b>${b[0]}</b><span>${b[1]}</span></div>`).join('')}</div>
+        <h3 style="margin-top:20px">Mermaid source example</h3>
+        <pre class="codebox">flowchart LR\n  Customer[Customer UI] --> API[NestJS API]\n  API --> Queue[Redis Queue]\n  Queue --> Workers[Workers]\n  Workers --> Netlify[Netlify Deploy]\n  Workers --> GSC[Google Search Console]\n  GSC --> Reports[SEO Reports]\n  Reports --> Customer</pre>
+      `;
+    }
+
+    function copyPitch() {
+      const text = 'Local SEO Mission Control: customers enter their website, receive potential reports, control website rebuilds, local SEO subdomains, templates and SEO bundles. The app turns SEO into a strategy game: conquer locations, collect rank-#1 keywords, overtake competitors, but with an honest analyst, approvals and measurable results.';
+      navigator.clipboard?.writeText(text).then(() => showToast('Pitch copied')).catch(() => showToast('Pitch: Local SEO as a strategy game'));
+    }
+    function startPitchMode() {
+      const sections = ['#story','#map','#bundles','#preview','#analyst','#architecture'];
+      let i = 0;
+      showToast('Pitch Mode starts');
+      const timer = setInterval(() => {
+        document.querySelector(sections[i]).scrollIntoView({behavior:'smooth', block:'start'});
+        i++;
+        if (i >= sections.length) { clearInterval(timer); showToast('Pitch finished'); }
+      }, 2500);
+    }
+    function animateCounters() {
+      $$('[data-count]').forEach(el => {
+        const target = Number(el.dataset.count);
+        let v = 0;
+        const step = Math.max(1, Math.floor(target / 28));
+        const timer = setInterval(() => {
+          v += step;
+          if (v >= target) { v = target; clearInterval(timer); }
+          el.textContent = v + (target === 54 ? '' : '×');
+        }, 30);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      selectCity('dachau');
+      renderBundleGrid();
+      applyBundlePreset('roof');
+      renderComponents();
+      renderReports();
+      renderArch();
+      animateCounters();
+    });
+  </script>
+</body>
+</html>

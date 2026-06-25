@@ -1,0 +1,27 @@
+flowchart LR
+  subgraph FE[Netlify]
+    Web[React TanStack Web]
+  end
+
+  subgraph AWS[AWS eu-central-1]
+    Api[NestJS Fastify API]
+    Worker[Worker Host]
+    DB[(RDS Postgres)]
+    Queue[(Redis BullMQ)]
+    Store[(S3)]
+  end
+
+  subgraph External[External Providers]
+    CustomerSites[Netlify Customer Sites]
+    GSC[Google Search Console]
+  end
+
+  Web --> Api
+  Api --> DB
+  Api --> Queue
+  Queue --> Worker
+  Worker --> DB
+  Worker --> Store
+  Worker --> CustomerSites
+  Worker --> GSC
+

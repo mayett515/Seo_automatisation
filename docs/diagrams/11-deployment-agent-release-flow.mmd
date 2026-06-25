@@ -1,0 +1,14 @@
+flowchart LR
+  Version[Approved Page Version] --> Agent[Deployment Agent]
+  Agent --> Plan[Release Plan]
+  Plan --> Checks[Preflight Checks]
+  Checks --> Decision{Blockers?}
+  Decision -- Yes --> Blocked[BLOCKED]
+  Decision -- No --> Approved[Approved Deploy]
+  Approved --> Deploy[Deploy Worker]
+  Deploy --> Netlify[Netlify Deploy]
+  Netlify --> Verify[Verification Worker]
+  Verify --> Health{Healthy?}
+  Health -- Yes --> Live[LIVE_HEALTHY]
+  Health -- No --> Rollback[ROLLBACK_RECOMMENDED]
+

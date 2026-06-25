@@ -1,0 +1,18 @@
+sequenceDiagram
+  participant C as Customer
+  participant FE as Frontend
+  participant API as NestJS API
+  participant W as Rebuild Worker
+  participant N as Netlify
+  participant DB as Postgres
+  C->>FE: Submit own website URL
+  FE->>API: importWebsite(projectId,url)
+  API->>DB: Create import job
+  API->>W: Queue rebuild
+  W->>W: Crawl HTML/CSS/assets/content
+  W->>W: Map to React components
+  W->>W: Improve SEO/CTA/mobile/speed
+  W->>N: Deploy staging preview noindex
+  W->>DB: Save preview URL
+  FE->>C: Show preview
+  C->>FE: Add notes or approve

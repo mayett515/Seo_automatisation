@@ -1,0 +1,40 @@
+{
+  "extension": "deployment-agent",
+  "version": "1.0.0",
+  "targetPack": "local-seo-product-knowledge-pack",
+  "containsOnly": "deployment-agent",
+  "files": [
+    "DEPLOYMENT_AGENT_EXTENSION_README.md",
+    "product/13-deployment-agent.md",
+    "architecture/10-deployment-agent-architecture.md",
+    "backend/04-deployment-agent-contracts.md",
+    "frontend/04-deployment-agent-customer-ux.md",
+    "prompts/deployment-agent-prompt.md",
+    "decisions/ADR-006-deployment-agent-release-manager.md",
+    "diagrams/21-deployment-agent-release-flow.mmd",
+    "diagrams/22-deployment-agent-state-machine.mmd",
+    "diagrams/23-post-deploy-verification-flow.mmd",
+    "diagrams/24-deployment-agent-sequence.mmd",
+    "data/deployment-agent-manifest.json"
+  ],
+  "readOrder": [
+    "product/13-deployment-agent.md",
+    "architecture/10-deployment-agent-architecture.md",
+    "backend/04-deployment-agent-contracts.md",
+    "frontend/04-deployment-agent-customer-ux.md",
+    "prompts/deployment-agent-prompt.md",
+    "decisions/ADR-006-deployment-agent-release-manager.md",
+    "diagrams/21-deployment-agent-release-flow.mmd",
+    "diagrams/22-deployment-agent-state-machine.mmd",
+    "diagrams/23-post-deploy-verification-flow.mmd",
+    "diagrams/24-deployment-agent-sequence.mmd"
+  ],
+  "coreConcept": "A Deployment Agent acts as a controlled release manager between customer approval and deterministic deploy workers.",
+  "explicitlyNotIncluded": [
+    "TanStack frontend expansion beyond deployment UX",
+    "SEO Analyst Agent updates",
+    "Gamification changes",
+    "Main product pack index rewrites",
+    "Original ZIP regeneration"
+  ]
+}

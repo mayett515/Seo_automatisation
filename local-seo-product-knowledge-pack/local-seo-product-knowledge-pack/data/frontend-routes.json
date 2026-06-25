@@ -1,0 +1,18 @@
+{
+  "routes": [
+    "/",
+    "/audit",
+    "/audit/:leadId/report",
+    "/projects/:projectId",
+    "/projects/:projectId/website",
+    "/projects/:projectId/areas",
+    "/projects/:projectId/opportunities",
+    "/projects/:projectId/pages",
+    "/projects/:projectId/pages/:pageId/preview",
+    "/projects/:projectId/approvals",
+    "/projects/:projectId/performance",
+    "/projects/:projectId/map",
+    "/projects/:projectId/bundles",
+    "/projects/:projectId/reports"
+  ]
+}

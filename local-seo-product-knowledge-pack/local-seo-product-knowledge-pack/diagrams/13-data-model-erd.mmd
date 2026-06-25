@@ -1,0 +1,20 @@
+erDiagram
+  LEAD ||--o{ PRE_AUDIT : starts
+  LEAD ||--o{ POTENTIAL_REPORT : receives
+  LEAD ||--o| CUSTOMER : converts_to
+  CUSTOMER ||--o{ PROJECT : owns
+  PROJECT ||--o{ DOMAIN : uses
+  PROJECT ||--o{ AREA : targets
+  PROJECT ||--o{ SERVICE : offers
+  PROJECT ||--o{ OPPORTUNITY : discovers
+  PROJECT ||--o{ PAGE_PROPOSAL : has
+  PAGE_PROPOSAL ||--o{ PAGE_VERSION : has
+  PAGE_VERSION ||--o{ COMPONENT_INSTANCE : contains
+  COMPONENT_INSTANCE ||--o{ COMPONENT_NOTE : has
+  PAGE_VERSION ||--o{ APPROVAL : requires
+  PROJECT ||--o{ DEPLOYMENT : has
+  PROJECT ||--o{ REPORT : produces
+  PROJECT ||--o{ BUNDLE : has
+  BUNDLE ||--o{ BUNDLE_ITEM : contains
+  PROJECT ||--o{ TRACKING_EVENT : receives
+  PROJECT ||--o{ SEO_OBSERVATION : stores

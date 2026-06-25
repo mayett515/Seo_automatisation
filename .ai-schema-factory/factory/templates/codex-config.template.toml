@@ -1,0 +1,9 @@
+# Project-scoped Codex config.
+# Use only when the codebase needs Codex-specific runtime behavior.
+
+# Example:
+# web_search = "live"
+
+[agents]
+max_threads = 4
+max_depth = 1

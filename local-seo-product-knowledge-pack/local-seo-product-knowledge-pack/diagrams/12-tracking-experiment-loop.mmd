@@ -1,0 +1,11 @@
+flowchart TD
+  A[Change idea] --> B[Prediction]
+  B --> C[Customer approval]
+  C --> D[Deploy new version]
+  D --> E[Track behavior]
+  E --> F[Compare before/after]
+  F --> G{Result}
+  G -- Better --> H[Winner pattern]
+  G -- Worse --> I[Rollback or new test]
+  G -- Unclear --> J[Observe]
+  H --> K[Roll out to similar pages]

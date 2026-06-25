@@ -1,0 +1,13 @@
+flowchart TD
+  A[Opportunity: city + service] --> B{Subdomain or path?}
+  B -- Subdomain --> C[city.customer-domain.de]
+  B -- Path --> D[customer-domain.de/orte/city]
+  C --> E[Template + components]
+  D --> E
+  E --> F[Content + local proof]
+  F --> G[SEO QA]
+  G --> H{Pass?}
+  H -- yes --> I[Customer approval]
+  H -- no --> J[Rewrite/noindex/backlog]
+  I --> K[Netlify deploy]
+  K --> L[Sitemap + GSC]

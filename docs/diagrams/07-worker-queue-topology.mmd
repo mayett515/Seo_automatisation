@@ -1,0 +1,23 @@
+flowchart TB
+  API[NestJS API] --> Q1[queue:pre-audit]
+  API --> Q2[queue:website-import]
+  API --> Q3[queue:local-analysis]
+  API --> Q4[queue:page-generation]
+  API --> Q5[queue:seo-qa]
+  API --> Q6[queue:deploy]
+  API --> Q7[queue:gsc-sync]
+  API --> Q8[queue:analytics]
+  API --> Q9[queue:report]
+  API --> Q10[queue:notifications]
+
+  Q1 --> W1[Pre-Audit Worker]
+  Q2 --> W2[Website Import Worker]
+  Q3 --> W3[Opportunity Worker]
+  Q4 --> W4[Page Generator]
+  Q5 --> W5[SEO QA Worker]
+  Q6 --> W6[Deploy Worker]
+  Q7 --> W7[GSC Sync Worker]
+  Q8 --> W8[Analytics Processor]
+  Q9 --> W9[Report Worker]
+  Q10 --> W10[Notification Worker]
+

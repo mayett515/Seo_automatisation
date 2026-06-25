@@ -1,0 +1,10 @@
+flowchart TD
+  A[City + service] --> B[Scan competitors]
+  B --> C[Difficulty score]
+  C --> D{Difficulty}
+  D -- Easy --> E[Quick win]
+  D -- Medium --> F[Build cluster]
+  D -- Hard --> G[Long-term plan]
+  D -- Boss --> H[Take surrounding towns first]
+  H --> I[Build regional relevance]
+  I --> J[Attack main city]
