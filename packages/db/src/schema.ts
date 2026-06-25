@@ -3,6 +3,9 @@ import {
   approvalStatuses,
   deploymentStatuses,
   gscConnectionStatuses,
+  gscOpportunitySignalStatuses,
+  gscOpportunitySignalTypes,
+  gscSyncStatuses,
   jobStatuses,
   releaseCheckResults,
   releaseCheckSeverities,
@@ -12,6 +15,7 @@ import {
 } from "@localseo/contracts";
 import {
   boolean,
+  doublePrecision,
   integer,
   jsonb,
   pgEnum,
@@ -26,6 +30,9 @@ export const releaseStatusEnum = pgEnum("release_status", releasePlanStatuses);
 export const deploymentStatusEnum = pgEnum("deployment_status", deploymentStatuses);
 export const releaseVerificationStatusEnum = pgEnum("release_verification_status", releaseVerificationStatuses);
 export const gscConnectionStatusEnum = pgEnum("gsc_connection_status", gscConnectionStatuses);
+export const gscSyncStatusEnum = pgEnum("gsc_sync_status", gscSyncStatuses);
+export const gscOpportunitySignalTypeEnum = pgEnum("gsc_opportunity_signal_type", gscOpportunitySignalTypes);
+export const gscOpportunitySignalStatusEnum = pgEnum("gsc_opportunity_signal_status", gscOpportunitySignalStatuses);
 export const releaseNoteAudienceEnum = pgEnum("release_note_audience", releaseNoteAudiences);
 export const releaseSeverityEnum = pgEnum("release_check_severity", releaseCheckSeverities);
 export const releaseCheckResultEnum = pgEnum("release_check_result", releaseCheckResults);
@@ -256,12 +263,55 @@ export const rollbackPoints = pgTable("rollback_points", {
 export const gscConnections = pgTable("gsc_connections", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
-  propertyUrl: text("property_url").notNull(),
+  propertyUrl: text("property_url"),
   status: gscConnectionStatusEnum("status").notNull().default("connection_required"),
   encryptedRefreshToken: text("encrypted_refresh_token"),
   connectedAt: timestamp("connected_at", { withTimezone: true }),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
+  ...timestamps
+});
+
+export const gscSyncRuns = pgTable("gsc_sync_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  connectionId: uuid("connection_id").references(() => gscConnections.id),
+  propertyUrl: text("property_url").notNull(),
+  dateFrom: text("date_from").notNull(),
+  dateTo: text("date_to").notNull(),
+  dimensions: jsonb("dimensions").$type<string[]>().default([]).notNull(),
+  status: gscSyncStatusEnum("status").notNull().default("queued"),
+  rowCount: integer("row_count").default(0).notNull(),
+  failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  ...timestamps
+});
+
+export const gscSearchAnalyticsRows = pgTable("gsc_search_analytics_rows", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  syncRunId: uuid("sync_run_id").notNull().references(() => gscSyncRuns.id),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  propertyUrl: text("property_url").notNull(),
+  query: text("query").notNull(),
+  pageUrl: text("page_url").notNull(),
+  clicks: integer("clicks").default(0).notNull(),
+  impressions: integer("impressions").default(0).notNull(),
+  ctr: doublePrecision("ctr").default(0).notNull(),
+  position: doublePrecision("position").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const gscOpportunitySignals = pgTable("gsc_opportunity_signals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  syncRunId: uuid("sync_run_id").notNull().references(() => gscSyncRuns.id),
+  rowId: uuid("row_id").references(() => gscSearchAnalyticsRows.id),
+  signalType: gscOpportunitySignalTypeEnum("signal_type").notNull(),
+  status: gscOpportunitySignalStatusEnum("status").notNull().default("internal_radar"),
+  query: text("query").notNull(),
+  pageUrl: text("page_url").notNull(),
+  evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
   ...timestamps
 });
 
@@ -303,6 +353,8 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   releasePlans: many(releasePlans),
   deployments: many(deployments),
   gscConnections: many(gscConnections),
+  gscSyncRuns: many(gscSyncRuns),
+  gscOpportunitySignals: many(gscOpportunitySignals),
   reports: many(reports)
 }));
 
@@ -326,4 +378,28 @@ export const deploymentRelations = relations(deployments, ({ many, one }) => ({
   releasePlan: one(releasePlans, { fields: [deployments.releasePlanId], references: [releasePlans.id] }),
   verifications: many(releaseVerifications),
   rollbackPoints: many(rollbackPoints)
+}));
+
+export const gscConnectionRelations = relations(gscConnections, ({ many, one }) => ({
+  project: one(projects, { fields: [gscConnections.projectId], references: [projects.id] }),
+  syncRuns: many(gscSyncRuns)
+}));
+
+export const gscSyncRunRelations = relations(gscSyncRuns, ({ many, one }) => ({
+  project: one(projects, { fields: [gscSyncRuns.projectId], references: [projects.id] }),
+  connection: one(gscConnections, { fields: [gscSyncRuns.connectionId], references: [gscConnections.id] }),
+  rows: many(gscSearchAnalyticsRows),
+  opportunitySignals: many(gscOpportunitySignals)
+}));
+
+export const gscSearchAnalyticsRowRelations = relations(gscSearchAnalyticsRows, ({ one, many }) => ({
+  project: one(projects, { fields: [gscSearchAnalyticsRows.projectId], references: [projects.id] }),
+  syncRun: one(gscSyncRuns, { fields: [gscSearchAnalyticsRows.syncRunId], references: [gscSyncRuns.id] }),
+  opportunitySignals: many(gscOpportunitySignals)
+}));
+
+export const gscOpportunitySignalRelations = relations(gscOpportunitySignals, ({ one }) => ({
+  project: one(projects, { fields: [gscOpportunitySignals.projectId], references: [projects.id] }),
+  syncRun: one(gscSyncRuns, { fields: [gscOpportunitySignals.syncRunId], references: [gscSyncRuns.id] }),
+  row: one(gscSearchAnalyticsRows, { fields: [gscOpportunitySignals.rowId], references: [gscSearchAnalyticsRows.id] })
 }));

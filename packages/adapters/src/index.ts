@@ -1,10 +1,17 @@
 import type {
   DomainEventName,
-  GscConnection,
+  GscOAuthIntent,
+  GscPropertyList,
+  GscSearchAnalyticsRow,
+  GscSitemapSubmission,
+  GscUrlInspectionResult,
   ReleaseVerification,
   RollbackPoint,
   TrackingEvent
 } from "@localseo/contracts";
+
+export * from "./google-search-console";
+export * from "./token-cipher";
 
 export type DeployReleaseInput = {
   releasePlanId: string;
@@ -50,9 +57,26 @@ export interface SiteHostingPort {
 }
 
 export interface SearchConsolePort {
-  getConnection(input: { projectId: string }): Promise<GscConnection>;
-  submitSitemap(input: { projectId: string; sitemapUrl: string }): Promise<void>;
-  syncPerformance(input: { projectId: string; propertyUrl: string }): Promise<{ snapshotId: string }>;
+  createAuthorizationUrl(input: { projectId: string; redirectTo?: string }): GscOAuthIntent;
+  verifyState(input: { state: string }): { projectId: string; expiresAt: string; nonce: string; redirectTo?: string };
+  exchangeCode(input: { code: string }): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string }>;
+  refreshAccessToken(input: { refreshToken: string }): Promise<{ accessToken: string; expiresIn?: number; scope?: string }>;
+  listSites(input: { accessToken: string; projectId: string }): Promise<GscPropertyList>;
+  querySearchAnalytics(input: {
+    accessToken: string;
+    projectId: string;
+    propertyUrl: string;
+    dateRange: { from: string; to: string };
+    dimensions?: string[];
+    rowLimit?: number;
+  }): Promise<GscSearchAnalyticsRow[]>;
+  submitSitemap(input: {
+    accessToken: string;
+    projectId: string;
+    propertyUrl: string;
+    sitemapUrl: string;
+  }): Promise<GscSitemapSubmission>;
+  inspectUrl(input: { accessToken: string; siteUrl: string; inspectionUrl: string }): Promise<GscUrlInspectionResult>;
 }
 
 export interface CrawlerPort {

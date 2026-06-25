@@ -22,6 +22,9 @@ THEN you MUST load and comply with: `.ai-project-rules/01-product-source-of-trut
 IF the task touches stack choice, module ownership, service boundaries, data ownership, or adapters:
 THEN you MUST load and comply with: `.ai-project-rules/02-stack-and-boundaries.md`.
 
+IF the task touches TypeScript static safety, React render/hooks, TanStack Query/Router, NestJS/Fastify runtime DI, OAuth provider security, URL parsing/construction, or smoke verification:
+THEN you MUST load and comply with: `.ai-stack-rules/00-system-index.md`.
+
 IF the task touches architecture style, layering, Clean Architecture dependency direction, Hexagonal ports/adapters, bounded contexts, composition roots, modular monolith vs microservices, or where logic belongs:
 THEN you MUST load and comply with: `.ai-project-rules/14-architecture-direction.md`.
 
@@ -76,6 +79,7 @@ THEN you MUST load and comply with: `.ai-project-rules/13-seo-opportunity-planni
 - Use `.ai-project-rules/12-local-seo-page-quality-gate.md` as the reusable checklist for generated local SEO pages before preview approval, deploy, and report handoff.
 - Use `.ai-project-rules/13-seo-opportunity-planning.md` when deciding future markets, page opportunities, keyword tiers, or execution sequence.
 - Use `.ai-project-rules/14-architecture-direction.md` when judging implementation quality, dependency direction, module boundaries, and provider isolation.
+- Use `.ai-stack-rules/00-system-index.md` for stack-specific implementation guardrails; it complements but does not override `.ai-rules/` or project product rules.
 </positive-directives>
 
 <absolute-constraints>
@@ -116,6 +120,12 @@ Architecture guidance:
 C:\total typescript\Architecture_Karteikarten as read-only architecture guidance
 C:\total typescript\Hexagonal_Architecture_Karteikarten as read-only ports/adapters and dependency-direction guidance
 C:\total typescript\System_Design_101_Karteikarten as read-only system design and scaling guidance
+```
+
+Stack implementation guardrails:
+
+```text
+.ai-stack-rules/00-system-index.md
 ```
 </context>
 

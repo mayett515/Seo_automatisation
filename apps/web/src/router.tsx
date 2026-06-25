@@ -1,6 +1,8 @@
 import { Link, Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { ShellLayout, StatusPill } from "@localseo/ui";
+import { GscConnectScreen } from "./screens/gsc-connect";
 import { MissionControlPage } from "./screens/mission-control";
+import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
 
 function RootLayout() {
@@ -16,6 +18,9 @@ function RootLayout() {
           </Link>
           <Link to="/projects/$projectId/releases" params={{ projectId: "demo-project" }}>
             Releases
+          </Link>
+          <Link to="/projects/$projectId/gsc/connect" params={{ projectId: "demo-project" }}>
+            GSC
           </Link>
         </nav>
       }
@@ -69,8 +74,8 @@ const projectChildRoutes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/checks", component: () => <PlaceholderScreen title="Preflight Checks" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/notes", component: () => <PlaceholderScreen title="Release Notes" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/rollback", component: () => <PlaceholderScreen title="Rollback Panel" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/gsc/connect", component: () => <PlaceholderScreen title="GSC Connection Required" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/performance", component: () => <PlaceholderScreen title="Performance Dashboard" /> }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/gsc/connect", component: GscConnectScreen }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/performance", component: PerformanceDashboardScreen }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/map", component: () => <PlaceholderScreen title="Dynamic SEO Map" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/bundles", component: () => <PlaceholderScreen title="Bundles" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/reports", component: () => <PlaceholderScreen title="Google Lagebericht" /> })

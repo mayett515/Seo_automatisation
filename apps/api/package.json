@@ -10,14 +10,18 @@
     "test": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@localseo/adapters": "workspace:*",
     "@localseo/config": "workspace:*",
     "@localseo/contracts": "workspace:*",
+    "@localseo/db": "workspace:*",
     "@localseo/domain": "workspace:*",
     "@nestjs/common": "11.1.27",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.1.27",
     "@nestjs/platform-fastify": "11.1.27",
     "better-auth": "1.6.20",
+    "bullmq": "5.79.1",
+    "drizzle-orm": "0.45.2",
     "fastify": "^5.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -29,4 +33,3 @@
     "typescript": "6.0.3"
   }
 }
-

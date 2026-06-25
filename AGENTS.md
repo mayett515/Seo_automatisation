@@ -9,6 +9,7 @@ This project uses a portable hidden-folder rules system. Codex should treat this
 - For hidden-folder design, planner mode, schema-factory usage, context sharding, or new Markdown rule files, load `.ai-planning-rules/00-system-index.md`.
 - For repo-catalog research, GitHub/web architecture mining, or "a good artist steals" workflows, load `.ai-stealer-rules/00-system-index.md`.
 - For Mermaid diagrams, architecture visualization, sequence/state/ER/class diagrams, or diagram cleanup, load `.ai-diagram-rules/00-system-index.md`.
+- For React, TanStack, NestJS/Fastify, OAuth, URL safety, API semantics, or stack-doc refresh reviews, load `.ai-stack-rules/00-system-index.md`.
 
 ## Frozen References
 
@@ -16,6 +17,8 @@ This project uses a portable hidden-folder rules system. Codex should treat this
 - `.ai-schema-factory/` is frozen reference material for schema generation.
 - `.ai-stealer-catalog/` is the stable seed catalog for repo-catalog research.
 - `.ai-stealer-findings/` is the editable place for new discovered sources and extracted patterns.
+- `.ai-stack-rules/` is the editable stack implementation guardrail bundle.
+- `.ai-stack-findings/` is the editable place for stack-doc refresh findings before they become rules.
 - `.ai-project-references/` contains local frontend inspiration and field-evidence artifacts.
 - Do not edit frozen/reference seed folders during normal project work.
 - Put project-specific behavior in the editable `.ai-*-rules/` shards.
