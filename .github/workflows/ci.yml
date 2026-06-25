@@ -28,6 +28,9 @@ jobs:
       - name: Check formatting
         run: corepack pnpm format:check
 
+      - name: Check critical text files
+        run: corepack pnpm text:check
+
       - name: Check working tree whitespace
         run: git diff --check
 
