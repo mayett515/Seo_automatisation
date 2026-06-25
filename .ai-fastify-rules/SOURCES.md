@@ -22,3 +22,9 @@ NestJS Fastify docs:
 - HTTP adapter FAQ: https://docs.nestjs.com/faq/http-adapter
 - Lifecycle events: https://docs.nestjs.com/fundamentals/lifecycle-events
 - Terminus health checks: https://docs.nestjs.com/recipes/terminus
+
+Auth/security plugin references:
+
+- Better Auth Fastify integration: https://better-auth.com/docs/integrations/fastify
+- Fastify auth plugin: https://github.com/fastify/fastify-auth
+- Fastify helmet plugin: https://github.com/fastify/fastify-helmet

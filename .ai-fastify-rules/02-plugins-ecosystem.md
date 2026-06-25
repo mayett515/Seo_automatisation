@@ -9,6 +9,7 @@ dependencies:
   - "https://fastify.dev/ecosystem/"
   - "https://fastify.dev/docs/latest/Guides/Ecosystem/"
   - "https://fastify.dev/docs/latest/Guides/Recommendations/"
+  - "https://better-auth.com/docs/integrations/fastify"
 priority_schema: "critical > strong > guideline"
 ---
 
@@ -20,12 +21,14 @@ priority_schema: "critical > strong > guideline"
 - Record plugin choices, configuration defaults, security implications, and ownership boundaries.
 - Ask before installing dependencies or registering new runtime plugins.
 - Keep plugin registration centralized near bootstrap or a dedicated infrastructure module.
+- Use Fastify auth/cookie/CORS/security plugins only for adapter-level behavior; product authorization remains in Nest guards.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT add random Fastify ecosystem plugins without checking maintenance, compatibility, and whether Nest owns the concern.
 - DO NOT register plugins ad hoc inside feature services.
 - DO NOT let plugin behavior bypass Nest guards, validation, CORS policy, logging policy, or tenant isolation.
+- DO NOT install a Fastify auth/security plugin without documenting whether Nest or Better Auth already owns that concern.
 </absolute-constraints>
 
 <conditional-logic>
@@ -34,4 +37,7 @@ THEN prefer the Nest abstraction unless Fastify runtime behavior is explicitly r
 
 IF a plugin handles security, cookies, multipart, static files, compression, or CORS:
 THEN document production defaults and test the affected route behavior.
+
+IF Better Auth requires a Fastify handler, cookie behavior, or CORS compatibility:
+THEN keep the handler/runtime plumbing isolated and keep project authorization in Nest guards.
 </conditional-logic>

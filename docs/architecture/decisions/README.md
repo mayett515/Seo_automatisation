@@ -46,3 +46,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0002 - Nest Backend Production Hardening](0002-nest-backend-production-hardening.md)
 - [0003 - Fastify Adapter And Ecosystem Rules](0003-fastify-adapter-and-ecosystem-rules.md)
 - [0004 - NestJS Production Builds And Decorator Metadata](0004-nestjs-production-builds-and-decorator-metadata.md)
+- [0005 - Production Auth And Tenancy Boundary](0005-production-auth-and-tenancy-boundary.md)

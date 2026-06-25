@@ -27,3 +27,15 @@ Related queue/database docs:
 - BullMQ workers: https://docs.bullmq.io/guide/workers
 - BullMQ graceful shutdown: https://docs.bullmq.io/guide/workers/graceful-shutdown
 - Drizzle indexes/constraints: https://orm.drizzle.team/docs/indexes-constraints
+
+Auth and tenancy docs:
+
+- Better Auth introduction: https://better-auth.com/docs
+- Better Auth installation/handler mounting: https://better-auth.com/docs/installation
+- Better Auth NestJS integration: https://better-auth.com/docs/integrations/nestjs
+- Better Auth Fastify integration: https://better-auth.com/docs/integrations/fastify
+- Better Auth session management: https://better-auth.com/docs/concepts/session-management
+- Better Auth cookies: https://better-auth.com/docs/concepts/cookies
+- Better Auth organization plugin: https://better-auth.com/docs/plugins/organization
+- Better Auth Drizzle adapter: https://better-auth.com/docs/adapters/drizzle
+- Better Auth security reference: https://www.better-auth.com/docs/reference/security
