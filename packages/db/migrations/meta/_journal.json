@@ -15,6 +15,13 @@
       "when": 1782384847617,
       "tag": "0001_mean_magdalene",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782394316861,
+      "tag": "0002_normal_toad",
+      "breakpoints": true
     }
   ]
 }

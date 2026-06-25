@@ -10,6 +10,8 @@ const app = await NestFactory.create<NestFastifyApplication>(AppModule, new Fast
   bufferLogs: true
 });
 
+app.enableShutdownHooks();
+
 app.enableCors({
   origin: env.WEB_ORIGIN,
   credentials: true
@@ -18,4 +20,3 @@ app.enableCors({
 await app.listen(env.PORT, "0.0.0.0");
 
 console.log(`Local SEO API listening on http://localhost:${env.PORT}`);
-

@@ -50,6 +50,11 @@ Use these as the first-pass refresh list when a review finds a recurring stack m
 - Mastra agents overview: https://mastra.ai/docs/agents/overview
 - Mastra workflows overview: https://mastra.ai/docs/workflows/overview
 
+Project-owned backend rule bundles:
+
+- NestJS/Fastify backend rules: `.ai-nest-rules/00-system-index.md`
+- Fastify adapter/runtime/plugin rules: `.ai-fastify-rules/00-system-index.md`
+
 Local read-only stack references:
 
 - `C:\total typescript\total_typescript_learning_path\modules\05_advanced_typescript_patterns\index.md`

@@ -40,14 +40,17 @@ async function handleGscSyncJob(job: Job): Promise<Record<string, unknown>> {
   }
 
   try {
-    return await runGscSync(sharedDbHandle.db, data);
+    return await runGscSync(sharedDbHandle.db, {
+      ...data,
+      jobId: job.id ?? data.syncRunId
+    });
   } catch (error) {
     await markSyncRunFailed(sharedDbHandle.db, data.syncRunId, error);
     throw error;
   }
 }
 
-async function runGscSync(db: Db, data: { projectId: string; syncRunId: string }): Promise<Record<string, unknown>> {
+async function runGscSync(db: Db, data: { projectId: string; syncRunId: string; jobId: string }): Promise<Record<string, unknown>> {
   const searchConsole = createSearchConsoleAdapter();
   const tokenCipher = createTokenCipher();
   const [syncRun] = await db.select().from(gscSyncRuns).where(eq(gscSyncRuns.id, data.syncRunId)).limit(1);
@@ -99,12 +102,17 @@ async function runGscSync(db: Db, data: { projectId: string; syncRunId: string }
   }).where(eq(gscConnections.id, connection.id));
 
   return {
-    jobId: data.syncRunId,
+    jobId: data.jobId,
+    syncRunId: data.syncRunId,
     projectId: data.projectId,
     status: "completed",
     rowCount: rows.length,
     opportunitySignals: storedRows.flatMap((stored) => classifyOpportunitySignals(stored.row)).length
   };
+}
+
+export async function closeWorkerResources(): Promise<void> {
+  await sharedDbHandle?.close();
 }
 
 async function resetSyncRunData(db: Db, syncRunId: string): Promise<void> {

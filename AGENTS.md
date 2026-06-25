@@ -10,6 +10,8 @@ This project uses a portable hidden-folder rules system. Codex should treat this
 - For repo-catalog research, GitHub/web architecture mining, or "a good artist steals" workflows, load `.ai-stealer-rules/00-system-index.md`.
 - For Mermaid diagrams, architecture visualization, sequence/state/ER/class diagrams, or diagram cleanup, load `.ai-diagram-rules/00-system-index.md`.
 - For React, TanStack, NestJS/Fastify, OAuth, URL safety, API semantics, or stack-doc refresh reviews, load `.ai-stack-rules/00-system-index.md`.
+- For NestJS/Fastify provider wiring, controllers, validation, queues, workers, guards, lifecycle shutdown, readiness, exceptions, or backend tests, load `.ai-nest-rules/00-system-index.md`.
+- For Fastify adapter behavior, Fastify plugins/ecosystem, hooks, validation/serialization, errors/logging, or production recommendations, load `.ai-fastify-rules/00-system-index.md`.
 
 ## Frozen References
 
@@ -19,6 +21,8 @@ This project uses a portable hidden-folder rules system. Codex should treat this
 - `.ai-stealer-findings/` is the editable place for new discovered sources and extracted patterns.
 - `.ai-stack-rules/` is the editable stack implementation guardrail bundle.
 - `.ai-stack-findings/` is the editable place for stack-doc refresh findings before they become rules.
+- `.ai-nest-rules/` is the editable NestJS/Fastify backend guardrail bundle.
+- `.ai-fastify-rules/` is the editable Fastify adapter/runtime/plugin guardrail bundle.
 - `.ai-project-references/` contains local frontend inspiration and field-evidence artifacts.
 - Do not edit frozen/reference seed folders during normal project work.
 - Put project-specific behavior in the editable `.ai-*-rules/` shards.

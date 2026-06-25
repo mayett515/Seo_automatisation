@@ -32,6 +32,12 @@ THEN load `.ai-stack-rules/09-tanstack-ecosystem-schema.md`.
 IF the task touches NestJS modules/controllers/providers, Fastify runtime behavior, dependency injection, provider tokens, or backend route wiring:
 THEN load `.ai-stack-rules/04-nest-fastify-runtime-di.md`.
 
+IF the task touches NestJS/Fastify providers, controllers, validation, queues, workers, guards, tenant authorization, lifecycle shutdown, readiness, exception handling, or backend tests:
+THEN load `.ai-nest-rules/00-system-index.md`.
+
+IF the task touches Fastify adapter behavior, Fastify plugins/ecosystem, hooks, validation/serialization, errors/logging, production recommendations, reverse proxy assumptions, or Nest with Fastify as adapter:
+THEN load `.ai-fastify-rules/00-system-index.md`.
+
 IF the task touches OAuth, external provider tokens, refresh tokens, access tokens, callback state, scopes, or provider security:
 THEN load `.ai-stack-rules/05-oauth-provider-security.md`.
 
