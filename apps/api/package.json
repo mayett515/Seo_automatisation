@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --conditions=production dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.json --noEmit"
   },

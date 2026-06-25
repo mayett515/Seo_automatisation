@@ -1,6 +1,7 @@
 # 0003 - Fastify Adapter And Ecosystem Rules
 
 Date: 2026-06-25
+Status: Accepted
 
 ## Why This Decision Exists
 

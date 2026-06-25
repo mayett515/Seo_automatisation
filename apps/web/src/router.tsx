@@ -63,25 +63,95 @@ const projectRoute = createRoute({
 });
 
 const projectChildRoutes = [
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/website", component: () => <PlaceholderScreen title="Main Website Preview" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/areas", component: () => <PlaceholderScreen title="Areas and Radius" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/opportunities", component: () => <PlaceholderScreen title="Opportunities" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/pages", component: () => <PlaceholderScreen title="Local Pages" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/pages/$pageId/preview", component: () => <PlaceholderScreen title="Preview and Notes" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/approvals", component: () => <PlaceholderScreen title="Approval Queue" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases", component: () => <PlaceholderScreen title="Release Queue" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId", component: () => <PlaceholderScreen title="Release Detail" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/checks", component: () => <PlaceholderScreen title="Preflight Checks" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/notes", component: () => <PlaceholderScreen title="Release Notes" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/rollback", component: () => <PlaceholderScreen title="Rollback Panel" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/gsc/connect", component: GscConnectScreen }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/performance", component: PerformanceDashboardScreen }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/map", component: () => <PlaceholderScreen title="Dynamic SEO Map" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/bundles", component: () => <PlaceholderScreen title="Bundles" /> }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/reports", component: () => <PlaceholderScreen title="Google Lagebericht" /> })
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/website",
+    component: () => <PlaceholderScreen title="Main Website Preview" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/areas",
+    component: () => <PlaceholderScreen title="Areas and Radius" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/opportunities",
+    component: () => <PlaceholderScreen title="Opportunities" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/pages",
+    component: () => <PlaceholderScreen title="Local Pages" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/pages/$pageId/preview",
+    component: () => <PlaceholderScreen title="Preview and Notes" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/approvals",
+    component: () => <PlaceholderScreen title="Approval Queue" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/releases",
+    component: () => <PlaceholderScreen title="Release Queue" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/releases/$releasePlanId",
+    component: () => <PlaceholderScreen title="Release Detail" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/releases/$releasePlanId/checks",
+    component: () => <PlaceholderScreen title="Preflight Checks" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/releases/$releasePlanId/notes",
+    component: () => <PlaceholderScreen title="Release Notes" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/releases/$releasePlanId/rollback",
+    component: () => <PlaceholderScreen title="Rollback Panel" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/gsc/connect",
+    component: GscConnectScreen
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/performance",
+    component: PerformanceDashboardScreen
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/map",
+    component: () => <PlaceholderScreen title="Dynamic SEO Map" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/bundles",
+    component: () => <PlaceholderScreen title="Bundles" />
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/reports",
+    component: () => <PlaceholderScreen title="Google Lagebericht" />
+  })
 ];
 
-const routeTree = rootRoute.addChildren([indexRoute, auditRoute, auditReportRoute, projectRoute, ...projectChildRoutes]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  auditRoute,
+  auditReportRoute,
+  projectRoute,
+  ...projectChildRoutes
+]);
 
 export const router = createRouter({ routeTree });
 

@@ -20,4 +20,3 @@ Next diagrams to add as the implementation deepens:
 - `12-deployment-agent-state-machine.mmd`
 - `13-post-deploy-verification-sequence.mmd`
 - `14-gsc-sync-report-loop.mmd`
-

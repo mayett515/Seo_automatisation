@@ -75,6 +75,7 @@ Reporting vertical slice:
 Tenancy/auth vertical slice:
   Better Auth integration, project membership, role checks, audit logs
 ```
+
 </context>
 
 ## 5. Post-Flight Verification

@@ -1,14 +1,20 @@
 import { z } from "zod";
 
-const DatabaseUrlSchema = z.string().url().refine(
-  (value) => value.startsWith("postgres://") || value.startsWith("postgresql://"),
-  "Expected postgres:// or postgresql:// URL"
-);
+const DatabaseUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (value) => value.startsWith("postgres://") || value.startsWith("postgresql://"),
+    "Expected postgres:// or postgresql:// URL"
+  );
 
-const RedisUrlSchema = z.string().url().refine(
-  (value) => value.startsWith("redis://") || value.startsWith("rediss://"),
-  "Expected redis:// or rediss:// URL"
-);
+const RedisUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (value) => value.startsWith("redis://") || value.startsWith("rediss://"),
+    "Expected redis:// or rediss:// URL"
+  );
 
 export const AppEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

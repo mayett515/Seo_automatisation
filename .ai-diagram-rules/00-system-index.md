@@ -43,6 +43,7 @@ Project diagrams live primarily in:
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/diagrams/
 deployment-agent-extension-only/local-seo-product-knowledge-pack/diagrams/
 ```
+
 </context>
 
 <pre-flight-checklist>

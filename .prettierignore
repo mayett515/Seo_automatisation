@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+
+# Frozen/reference rule bundles and copied artifacts
+.ai-rules/
+.ai-schema-factory/
+.ai-stealer-catalog/
+.ai-project-references/
+local-seo-product-knowledge-pack/
+deployment-agent-extension-only/
+
+# Generated/package-manager artifacts
+pnpm-lock.yaml
+packages/db/migrations/
+packages/db/migrations/meta/

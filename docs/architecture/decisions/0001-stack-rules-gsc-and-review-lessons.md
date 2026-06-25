@@ -1,6 +1,7 @@
 # 0001 - Stack Rules, GSC Slice, And Review Lessons
 
 Date: 2026-06-25
+Status: Accepted
 
 ## Why This File Exists
 
@@ -262,7 +263,7 @@ Installed skills
 .ai-stack-findings/
   = research and candidate future rules
 
-architectural_and_coding_decisions/
+docs/architecture/decisions/
   = human-readable decision memory
 ```
 

@@ -47,6 +47,7 @@ Planner source reference:
 ```text
 .ai-schema-factory/schema-files/for_planner_mode/PLANNER-MODE-SPEC.md
 ```
+
 </context>
 
 <pre-flight-checklist>
@@ -54,4 +55,3 @@ Planner source reference:
 2. [ ] Did the blueprint show concrete folder paths?
 3. [ ] Did I wait for explicit approval before file generation?
 </pre-flight-checklist>
-

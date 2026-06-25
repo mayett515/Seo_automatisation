@@ -1,6 +1,7 @@
 # 0002 - Nest Backend Production Hardening
 
 Date: 2026-06-25
+Status: Accepted
 
 ## Why This Decision Exists
 
@@ -78,14 +79,14 @@ No fix was needed there.
 
 ### Full Provider Refactor
 
-`GscService` still constructs several infrastructure dependencies:
+`GscService` infrastructure dependencies now come from Nest providers:
 
 - DB handle
 - Search Console adapter
 - token cipher
 - BullMQ queue
 
-That should become custom providers and composition-root wiring, but it should be done as one focused backend slice.
+The service still owns GSC use-case behavior, but provider construction moved to module-level provider factories and shutdown cleanup moved to `onModuleDestroy`.
 
 ### Auth And Tenant Guards
 
@@ -101,34 +102,35 @@ This should be implemented with Nest guards and must happen before real customer
 
 GSC sync now checks for a real queue before returning `queued`.
 
-Other scaffold endpoints still return queued-looking placeholders:
+Other scaffold endpoints now attempt a real BullMQ enqueue when Redis is configured:
 
 - website import
 - pre-audit
 - release deploy
 
-Those should become real queue producers or be explicitly marked as dry-run/demo in a future queue-producer slice.
+If Redis is not configured, they return explicit `dry_run` job contracts instead of queued-looking placeholders.
 
 ### Readiness
 
-The current health endpoint is a liveness-style endpoint. Production should split:
+The API now exposes:
 
 ```text
+/health
 /health/live
 /health/ready
 ```
 
-Readiness should check DB, Redis, queue ability, and required provider config.
+`/health` remains backward-compatible for the frontend. `/health/live` is liveness. `/health/ready` reports whether required DB/Redis configuration exists.
+
+Future readiness should perform real DB, Redis, queue ability, and required provider checks before traffic is considered safe.
 
 ### Production Builds
 
-Current API/worker build scripts still primarily typecheck. A later deployment slice should decide:
+API, worker, and shared packages now emit `dist/` artifacts with TypeScript `tsc`.
 
-- `tsc` emit
-- `tsup`/esbuild bundling
-- or intentionally running TypeScript with `tsx`
+Shared packages keep TypeScript source as the default development export and expose built JS through the `production` export condition. API/worker production start scripts run Node with `--conditions=production`.
 
-For AWS Fargate, a real deployable artifact is preferable.
+This avoids introducing a bundler before decorator metadata and Nest DI are deliberately verified.
 
 ### Tests
 

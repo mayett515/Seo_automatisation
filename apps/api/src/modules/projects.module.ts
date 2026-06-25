@@ -5,11 +5,15 @@ import {
   ProjectSummarySchema,
   QueueJobSchema,
   type MainPreview,
+  type QueueJob,
   type ProjectSummary
 } from "@localseo/contracts";
+import { QueueProducerService } from "../queue-producer.js";
 
 @Injectable()
 class ProjectsService {
+  constructor(private readonly queues: QueueProducerService) {}
+
   getProject(projectId: string): ProjectSummary {
     return ProjectSummarySchema.parse({
       id: projectId,
@@ -19,13 +23,22 @@ class ProjectsService {
     });
   }
 
-  queueWebsiteImport(projectId: string) {
+  async queueWebsiteImport(projectId: string): Promise<QueueJob> {
+    const jobId = randomUUID();
+    const enqueued = await this.queues.enqueue({
+      queueName: "website-import",
+      jobName: "website_import",
+      jobId,
+      data: { projectId }
+    });
+
     return QueueJobSchema.parse({
-      jobId: randomUUID(),
+      jobId,
       projectId,
       type: "website_import",
-      status: "queued",
+      status: enqueued ? "queued" : "dry_run",
       inputRef: projectId,
+      message: enqueued ? undefined : "Website import queue is not configured. This is an explicit dry-run response.",
       createdAt: new Date().toISOString()
     });
   }

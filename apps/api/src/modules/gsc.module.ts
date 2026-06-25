@@ -24,7 +24,21 @@ import {
   gscSearchAnalyticsRows,
   gscSyncRuns
 } from "@localseo/db";
-import { Body, Controller, Get, Inject, Injectable, Logger, Module, Param, Post, Query, Res } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Injectable,
+  Logger,
+  Module,
+  Param,
+  Post,
+  Query,
+  Res,
+  type OnModuleDestroy,
+  type Provider
+} from "@nestjs/common";
 import { and, desc, eq, ne } from "drizzle-orm";
 import type { FastifyReply } from "fastify";
 import { Queue, type ConnectionOptions } from "bullmq";
@@ -34,36 +48,65 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 type DbHandle = ReturnType<typeof createDatabaseClient>;
 type Db = DbHandle["db"];
+type OptionalSearchConsole = GoogleSearchConsoleAdapter | undefined;
+type OptionalTokenCipher = AesGcmTokenCipher | undefined;
+type OptionalQueue = Queue | undefined;
 
-@Injectable()
-class GscService {
-  private readonly logger = new Logger(GscService.name);
-  private readonly dbHandle?: DbHandle;
-  private readonly searchConsole?: GoogleSearchConsoleAdapter;
-  private readonly tokenCipher?: AesGcmTokenCipher;
-  private readonly gscQueue?: Queue;
+const GSC_DB_HANDLE = Symbol("GSC_DB_HANDLE");
+const GSC_SEARCH_CONSOLE = Symbol("GSC_SEARCH_CONSOLE");
+const GSC_TOKEN_CIPHER = Symbol("GSC_TOKEN_CIPHER");
+const GSC_QUEUE = Symbol("GSC_QUEUE");
 
-  constructor() {
-    this.dbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
+const gscInfrastructureProviders: Provider[] = [
+  {
+    provide: GSC_DB_HANDLE,
+    useFactory: (): DbHandle | undefined => (env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined)
+  },
+  {
+    provide: GSC_SEARCH_CONSOLE,
+    useFactory: (): OptionalSearchConsole => {
+      const redirectUri = env.GOOGLE_OAUTH_REDIRECT_URI ?? `${env.API_PUBLIC_URL}/gsc/callback`;
+      const stateSecret = env.GSC_OAUTH_STATE_SECRET ?? env.BETTER_AUTH_SECRET;
 
-    const redirectUri = env.GOOGLE_OAUTH_REDIRECT_URI ?? `${env.API_PUBLIC_URL}/gsc/callback`;
-    const stateSecret = env.GSC_OAUTH_STATE_SECRET ?? env.BETTER_AUTH_SECRET;
+      if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !stateSecret) {
+        return undefined;
+      }
 
-    if (env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && stateSecret) {
-      this.searchConsole = new GoogleSearchConsoleAdapter({
+      return new GoogleSearchConsoleAdapter({
         clientId: env.GOOGLE_OAUTH_CLIENT_ID,
         clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
         redirectUri,
         stateSecret
       });
     }
-
-    if (env.GSC_TOKEN_ENCRYPTION_KEY) {
-      this.tokenCipher = new AesGcmTokenCipher(env.GSC_TOKEN_ENCRYPTION_KEY);
+  },
+  {
+    provide: GSC_TOKEN_CIPHER,
+    useFactory: (): OptionalTokenCipher =>
+      env.GSC_TOKEN_ENCRYPTION_KEY ? new AesGcmTokenCipher(env.GSC_TOKEN_ENCRYPTION_KEY) : undefined
+  },
+  {
+    provide: GSC_QUEUE,
+    useFactory: (): OptionalQueue => {
+      const redisConnection = env.REDIS_URL ? createRedisConnection(env.REDIS_URL) : undefined;
+      return redisConnection ? new Queue("gsc-sync", { connection: redisConnection }) : undefined;
     }
+  }
+];
 
-    const redisConnection = env.REDIS_URL ? createRedisConnection(env.REDIS_URL) : undefined;
-    this.gscQueue = redisConnection ? new Queue("gsc-sync", { connection: redisConnection }) : undefined;
+@Injectable()
+class GscService implements OnModuleDestroy {
+  private readonly logger = new Logger(GscService.name);
+
+  constructor(
+    @Inject(GSC_DB_HANDLE) private readonly dbHandle: DbHandle | undefined,
+    @Inject(GSC_SEARCH_CONSOLE) private readonly searchConsole: OptionalSearchConsole,
+    @Inject(GSC_TOKEN_CIPHER) private readonly tokenCipher: OptionalTokenCipher,
+    @Inject(GSC_QUEUE) private readonly gscQueue: OptionalQueue
+  ) {}
+
+  async onModuleDestroy(): Promise<void> {
+    await Promise.all([this.gscQueue?.close(), this.dbHandle?.close()]);
   }
 
   async getConnection(projectId: string): Promise<GscConnection> {
@@ -72,13 +115,19 @@ class GscService {
     }
 
     if (!this.dbHandle) {
-      return connectionRequired(projectId, "DATABASE_URL is required before Google Search Console connections can be stored.");
+      return connectionRequired(
+        projectId,
+        "DATABASE_URL is required before Google Search Console connections can be stored."
+      );
     }
 
     const connection = await findLatestConnection(this.dbHandle.db, projectId);
 
     if (!connection) {
-      return connectionRequired(projectId, "Connect Google Search Console with OAuth before performance sync, opportunity mining, or reports can use GSC data.");
+      return connectionRequired(
+        projectId,
+        "Connect Google Search Console with OAuth before performance sync, opportunity mining, or reports can use GSC data."
+      );
     }
 
     return GscConnectionSchema.parse({
@@ -100,7 +149,10 @@ class GscService {
     }
 
     if (!this.searchConsole || !this.tokenCipher) {
-      return oauthUnavailable(projectId, "Google OAuth credentials, a state secret, and GSC_TOKEN_ENCRYPTION_KEY are required before connecting Search Console.");
+      return oauthUnavailable(
+        projectId,
+        "Google OAuth credentials, a state secret, and GSC_TOKEN_ENCRYPTION_KEY are required before connecting Search Console."
+      );
     }
 
     return this.searchConsole.createAuthorizationUrl({
@@ -148,17 +200,25 @@ class GscService {
         return `${redirectTo}?gsc=error&reason=no_search_console_property`;
       }
 
-      const [insertedConnection] = await this.dbHandle.db.insert(gscConnections).values({
-        projectId: state.projectId,
-        propertyUrl: selectedProperty.siteUrl,
-        status: "connected",
-        encryptedRefreshToken: this.tokenCipher.encrypt(tokens.refreshToken),
-        connectedAt: new Date(),
-        failureJson: null
-      }).returning({ id: gscConnections.id });
+      const [insertedConnection] = await this.dbHandle.db
+        .insert(gscConnections)
+        .values({
+          projectId: state.projectId,
+          propertyUrl: selectedProperty.siteUrl,
+          status: "connected",
+          encryptedRefreshToken: this.tokenCipher.encrypt(tokens.refreshToken),
+          connectedAt: new Date(),
+          failureJson: null
+        })
+        .returning({ id: gscConnections.id });
 
       if (insertedConnection) {
-        await revokeOtherProjectConnections(this.dbHandle.db, state.projectId, insertedConnection.id, "replaced_by_reconnect");
+        await revokeOtherProjectConnections(
+          this.dbHandle.db,
+          state.projectId,
+          insertedConnection.id,
+          "replaced_by_reconnect"
+        );
       }
 
       return `${redirectTo}?gsc=connected`;
@@ -183,19 +243,25 @@ class GscService {
     }
 
     if (!this.gscQueue) {
-      return connectionRequired(projectId, "GSC sync queue is not configured. REDIS_URL is required before sync jobs can be queued.");
+      return connectionRequired(
+        projectId,
+        "GSC sync queue is not configured. REDIS_URL is required before sync jobs can be queued."
+      );
     }
 
     const dateRange = request.dateRange ?? defaultFinalizedDateRange();
-    const [syncRun] = await this.dbHandle.db.insert(gscSyncRuns).values({
-      projectId,
-      connectionId: persistedConnection.id,
-      propertyUrl: request.propertyUrl ?? connection.propertyUrl,
-      dateFrom: dateRange.from,
-      dateTo: dateRange.to,
-      dimensions: ["query", "page"],
-      status: "queued"
-    }).returning();
+    const [syncRun] = await this.dbHandle.db
+      .insert(gscSyncRuns)
+      .values({
+        projectId,
+        connectionId: persistedConnection.id,
+        propertyUrl: request.propertyUrl ?? connection.propertyUrl,
+        dateFrom: dateRange.from,
+        dateTo: dateRange.to,
+        dimensions: ["query", "page"],
+        status: "queued"
+      })
+      .returning();
 
     if (!syncRun) {
       throw new Error("Failed to create GSC sync run");
@@ -211,17 +277,21 @@ class GscService {
       createdAt: new Date().toISOString()
     });
 
-    await this.gscQueue.add("gsc_sync", {
-      projectId,
-      syncRunId: syncRun.id
-    }, {
-      jobId,
-      attempts: 5,
-      backoff: {
-        type: "exponential",
-        delay: 1000
+    await this.gscQueue.add(
+      "gsc_sync",
+      {
+        projectId,
+        syncRunId: syncRun.id
+      },
+      {
+        jobId,
+        attempts: 5,
+        backoff: {
+          type: "exponential",
+          delay: 1000
+        }
       }
-    });
+    );
 
     return job;
   }
@@ -244,11 +314,15 @@ class GscService {
     let signals: (typeof gscOpportunitySignals.$inferSelect)[] = [];
 
     if (latestSync) {
-      rows = await db.select().from(gscSearchAnalyticsRows)
+      rows = await db
+        .select()
+        .from(gscSearchAnalyticsRows)
         .where(eq(gscSearchAnalyticsRows.syncRunId, latestSync.id))
         .orderBy(desc(gscSearchAnalyticsRows.impressions))
         .limit(25);
-      signals = await db.select().from(gscOpportunitySignals)
+      signals = await db
+        .select()
+        .from(gscOpportunitySignals)
         .where(eq(gscOpportunitySignals.syncRunId, latestSync.id))
         .orderBy(desc(gscOpportunitySignals.createdAt))
         .limit(25);
@@ -275,7 +349,7 @@ class GscService {
 
 @Controller("projects/:projectId/gsc")
 class GscController {
-  constructor(@Inject(GscService) private readonly gsc: GscService) {}
+  constructor(private readonly gsc: GscService) {}
 
   @Get("connection")
   getConnection(@Param("projectId") projectId: string) {
@@ -300,7 +374,7 @@ class GscController {
 
 @Controller("gsc")
 class GscOAuthController {
-  constructor(@Inject(GscService) private readonly gsc: GscService) {}
+  constructor(private readonly gsc: GscService) {}
 
   @Get("callback")
   async callback(@Query() query: unknown, @Res() reply: FastifyReply) {
@@ -311,7 +385,7 @@ class GscOAuthController {
 
 @Module({
   controllers: [GscController, GscOAuthController],
-  providers: [GscService]
+  providers: [GscService, ...gscInfrastructureProviders]
 })
 export class GscModule {}
 
@@ -333,7 +407,9 @@ function oauthUnavailable(projectId: string, message: string): GscOAuthIntent {
 }
 
 async function findLatestConnection(db: Db, projectId: string) {
-  const [connection] = await db.select().from(gscConnections)
+  const [connection] = await db
+    .select()
+    .from(gscConnections)
     .where(eq(gscConnections.projectId, projectId))
     .orderBy(desc(gscConnections.createdAt))
     .limit(1);
@@ -342,25 +418,38 @@ async function findLatestConnection(db: Db, projectId: string) {
 }
 
 async function revokeProjectConnections(db: Db, projectId: string, reason: string): Promise<void> {
-  await db.update(gscConnections).set({
-    status: "revoked",
-    encryptedRefreshToken: null,
-    failureJson: { reason },
-    updatedAt: new Date()
-  }).where(eq(gscConnections.projectId, projectId));
+  await db
+    .update(gscConnections)
+    .set({
+      status: "revoked",
+      encryptedRefreshToken: null,
+      failureJson: { reason },
+      updatedAt: new Date()
+    })
+    .where(eq(gscConnections.projectId, projectId));
 }
 
-async function revokeOtherProjectConnections(db: Db, projectId: string, activeConnectionId: string, reason: string): Promise<void> {
-  await db.update(gscConnections).set({
-    status: "revoked",
-    encryptedRefreshToken: null,
-    failureJson: { reason },
-    updatedAt: new Date()
-  }).where(and(eq(gscConnections.projectId, projectId), ne(gscConnections.id, activeConnectionId)));
+async function revokeOtherProjectConnections(
+  db: Db,
+  projectId: string,
+  activeConnectionId: string,
+  reason: string
+): Promise<void> {
+  await db
+    .update(gscConnections)
+    .set({
+      status: "revoked",
+      encryptedRefreshToken: null,
+      failureJson: { reason },
+      updatedAt: new Date()
+    })
+    .where(and(eq(gscConnections.projectId, projectId), ne(gscConnections.id, activeConnectionId)));
 }
 
 async function findLatestSyncRun(db: Db, projectId: string) {
-  const [syncRun] = await db.select().from(gscSyncRuns)
+  const [syncRun] = await db
+    .select()
+    .from(gscSyncRuns)
     .where(and(eq(gscSyncRuns.projectId, projectId), eq(gscSyncRuns.status, "completed")))
     .orderBy(desc(gscSyncRuns.completedAt))
     .limit(1);

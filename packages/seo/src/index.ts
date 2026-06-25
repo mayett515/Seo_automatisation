@@ -41,8 +41,4 @@ export function evaluateLocalPageQa(input: LocalPageQaInput): LocalPageQaResult 
   };
 }
 
-export const customerReportMetricBans = [
-  "impressions",
-  "ctr",
-  "average_position"
-] as const;
+export const customerReportMetricBans = ["impressions", "ctr", "average_position"] as const;

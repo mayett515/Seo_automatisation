@@ -70,7 +70,9 @@ export const leads = pgTable("leads", {
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
-  customerId: uuid("customer_id").notNull().references(() => customers.id),
+  customerId: uuid("customer_id")
+    .notNull()
+    .references(() => customers.id),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
   ...timestamps
@@ -78,7 +80,9 @@ export const projects = pgTable("projects", {
 
 export const mainWebsites = pgTable("main_websites", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   sourceUrl: text("source_url").notNull(),
   hostingSiteId: text("hosting_site_id"),
   ...timestamps
@@ -86,7 +90,9 @@ export const mainWebsites = pgTable("main_websites", {
 
 export const domains = pgTable("domains", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   hostname: text("hostname").notNull(),
   isPrimary: boolean("is_primary").default(false).notNull(),
   ...timestamps
@@ -94,7 +100,9 @@ export const domains = pgTable("domains", {
 
 export const areas = pgTable("areas", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   name: text("name").notNull(),
   kind: text("kind").notNull().default("city"),
   ...timestamps
@@ -102,14 +110,18 @@ export const areas = pgTable("areas", {
 
 export const services = pgTable("services", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   name: text("name").notNull(),
   ...timestamps
 });
 
 export const opportunities = pgTable("opportunities", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   areaId: uuid("area_id").references(() => areas.id),
   serviceId: uuid("service_id").references(() => services.id),
   primaryKeyword: text("primary_keyword").notNull(),
@@ -121,7 +133,9 @@ export const opportunities = pgTable("opportunities", {
 
 export const pageProposals = pgTable("page_proposals", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   opportunityId: uuid("opportunity_id").references(() => opportunities.id),
   route: text("route").notNull(),
   primaryKeyword: text("primary_keyword").notNull(),
@@ -133,7 +147,9 @@ export const pageProposals = pgTable("page_proposals", {
 
 export const pageVersions = pgTable("page_versions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  pageProposalId: uuid("page_proposal_id").notNull().references(() => pageProposals.id),
+  pageProposalId: uuid("page_proposal_id")
+    .notNull()
+    .references(() => pageProposals.id),
   versionNumber: integer("version_number").notNull(),
   status: text("status").notNull().default("preview"),
   pageJson: jsonb("page_json").$type<Record<string, unknown>>().notNull(),
@@ -151,7 +167,9 @@ export const componentTemplates = pgTable("component_templates", {
 
 export const componentInstances = pgTable("component_instances", {
   id: uuid("id").primaryKey().defaultRandom(),
-  pageVersionId: uuid("page_version_id").notNull().references(() => pageVersions.id),
+  pageVersionId: uuid("page_version_id")
+    .notNull()
+    .references(() => pageVersions.id),
   componentTemplateId: uuid("component_template_id").references(() => componentTemplates.id),
   sortOrder: integer("sort_order").notNull(),
   propsJson: jsonb("props_json").$type<Record<string, unknown>>().notNull(),
@@ -160,7 +178,9 @@ export const componentInstances = pgTable("component_instances", {
 
 export const componentNotes = pgTable("component_notes", {
   id: uuid("id").primaryKey().defaultRandom(),
-  componentInstanceId: uuid("component_instance_id").notNull().references(() => componentInstances.id),
+  componentInstanceId: uuid("component_instance_id")
+    .notNull()
+    .references(() => componentInstances.id),
   authorUserId: uuid("author_user_id").references(() => users.id),
   instructionType: text("instruction_type").notNull(),
   note: text("note").notNull(),
@@ -170,7 +190,9 @@ export const componentNotes = pgTable("component_notes", {
 
 export const approvals = pgTable("approvals", {
   id: uuid("id").primaryKey().defaultRandom(),
-  pageVersionId: uuid("page_version_id").notNull().references(() => pageVersions.id),
+  pageVersionId: uuid("page_version_id")
+    .notNull()
+    .references(() => pageVersions.id),
   userId: uuid("user_id").references(() => users.id),
   status: approvalStatusEnum("status").notNull().default("pending"),
   decisionNote: text("decision_note"),
@@ -180,7 +202,9 @@ export const approvals = pgTable("approvals", {
 
 export const releasePlans = pgTable("release_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   createdByAgentId: text("created_by_agent_id"),
   status: releaseStatusEnum("status").notNull().default("draft"),
   summary: text("summary").notNull(),
@@ -194,7 +218,9 @@ export const releasePlans = pgTable("release_plans", {
 
 export const releasePlanItems = pgTable("release_plan_items", {
   id: uuid("id").primaryKey().defaultRandom(),
-  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  releasePlanId: uuid("release_plan_id")
+    .notNull()
+    .references(() => releasePlans.id),
   pageVersionId: uuid("page_version_id").references(() => pageVersions.id),
   targetUrl: text("target_url").notNull(),
   targetSubdomain: text("target_subdomain"),
@@ -205,7 +231,9 @@ export const releasePlanItems = pgTable("release_plan_items", {
 
 export const releaseChecks = pgTable("release_checks", {
   id: uuid("id").primaryKey().defaultRandom(),
-  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  releasePlanId: uuid("release_plan_id")
+    .notNull()
+    .references(() => releasePlans.id),
   scope: text("scope").notNull(),
   checkKey: text("check_key").notNull(),
   severity: releaseSeverityEnum("severity").notNull(),
@@ -217,7 +245,9 @@ export const releaseChecks = pgTable("release_checks", {
 
 export const releaseNotes = pgTable("release_notes", {
   id: uuid("id").primaryKey().defaultRandom(),
-  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  releasePlanId: uuid("release_plan_id")
+    .notNull()
+    .references(() => releasePlans.id),
   createdByUserId: uuid("created_by_user_id").references(() => users.id),
   audience: releaseNoteAudienceEnum("audience").notNull().default("internal"),
   title: text("title").notNull(),
@@ -227,7 +257,9 @@ export const releaseNotes = pgTable("release_notes", {
 
 export const deployments = pgTable("deployments", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   releasePlanId: uuid("release_plan_id").references(() => releasePlans.id),
   provider: text("provider").notNull().default("netlify"),
   providerDeployId: text("provider_deploy_id"),
@@ -240,7 +272,9 @@ export const deployments = pgTable("deployments", {
 
 export const releaseVerifications = pgTable("release_verifications", {
   id: uuid("id").primaryKey().defaultRandom(),
-  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  releasePlanId: uuid("release_plan_id")
+    .notNull()
+    .references(() => releasePlans.id),
   deploymentId: uuid("deployment_id").references(() => deployments.id),
   status: releaseVerificationStatusEnum("status").notNull().default("not_started"),
   summary: text("summary").notNull(),
@@ -251,8 +285,12 @@ export const releaseVerifications = pgTable("release_verifications", {
 
 export const rollbackPoints = pgTable("rollback_points", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
-  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
+  releasePlanId: uuid("release_plan_id")
+    .notNull()
+    .references(() => releasePlans.id),
   deploymentId: uuid("deployment_id").references(() => deployments.id),
   artifactKey: text("artifact_key").notNull(),
   providerDeployId: text("provider_deploy_id"),
@@ -265,7 +303,9 @@ export const gscConnections = pgTable(
   "gsc_connections",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    projectId: uuid("project_id").notNull().references(() => projects.id),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
     propertyUrl: text("property_url"),
     status: gscConnectionStatusEnum("status").notNull().default("connection_required"),
     encryptedRefreshToken: text("encrypted_refresh_token"),
@@ -274,16 +314,16 @@ export const gscConnections = pgTable(
     failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
     ...timestamps
   },
-  (table) => [
-    index("gsc_connections_project_created_idx").on(table.projectId, table.createdAt)
-  ]
+  (table) => [index("gsc_connections_project_created_idx").on(table.projectId, table.createdAt)]
 );
 
 export const gscSyncRuns = pgTable(
   "gsc_sync_runs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    projectId: uuid("project_id").notNull().references(() => projects.id),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
     connectionId: uuid("connection_id").references(() => gscConnections.id),
     propertyUrl: text("property_url").notNull(),
     dateFrom: text("date_from").notNull(),
@@ -296,17 +336,19 @@ export const gscSyncRuns = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     ...timestamps
   },
-  (table) => [
-    index("gsc_sync_runs_project_status_completed_idx").on(table.projectId, table.status, table.completedAt)
-  ]
+  (table) => [index("gsc_sync_runs_project_status_completed_idx").on(table.projectId, table.status, table.completedAt)]
 );
 
 export const gscSearchAnalyticsRows = pgTable(
   "gsc_search_analytics_rows",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    syncRunId: uuid("sync_run_id").notNull().references(() => gscSyncRuns.id),
-    projectId: uuid("project_id").notNull().references(() => projects.id),
+    syncRunId: uuid("sync_run_id")
+      .notNull()
+      .references(() => gscSyncRuns.id),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
     propertyUrl: text("property_url").notNull(),
     query: text("query").notNull(),
     pageUrl: text("page_url").notNull(),
@@ -316,17 +358,19 @@ export const gscSearchAnalyticsRows = pgTable(
     position: doublePrecision("position").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
   },
-  (table) => [
-    index("gsc_rows_sync_impressions_idx").on(table.syncRunId, table.impressions)
-  ]
+  (table) => [index("gsc_rows_sync_impressions_idx").on(table.syncRunId, table.impressions)]
 );
 
 export const gscOpportunitySignals = pgTable(
   "gsc_opportunity_signals",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    projectId: uuid("project_id").notNull().references(() => projects.id),
-    syncRunId: uuid("sync_run_id").notNull().references(() => gscSyncRuns.id),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    syncRunId: uuid("sync_run_id")
+      .notNull()
+      .references(() => gscSyncRuns.id),
     rowId: uuid("row_id").references(() => gscSearchAnalyticsRows.id),
     signalType: gscOpportunitySignalTypeEnum("signal_type").notNull(),
     status: gscOpportunitySignalStatusEnum("status").notNull().default("internal_radar"),
@@ -335,14 +379,14 @@ export const gscOpportunitySignals = pgTable(
     evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
     ...timestamps
   },
-  (table) => [
-    index("gsc_signals_sync_created_idx").on(table.syncRunId, table.createdAt)
-  ]
+  (table) => [index("gsc_signals_sync_created_idx").on(table.syncRunId, table.createdAt)]
 );
 
 export const trackingEvents = pgTable("tracking_events", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   eventName: text("event_name").notNull(),
   route: text("route").notNull(),
   componentId: text("component_id"),
@@ -353,7 +397,9 @@ export const trackingEvents = pgTable("tracking_events", {
 
 export const reports = pgTable("reports", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
   title: text("title").notNull(),
   status: text("status").notNull().default("draft"),
   artifactKey: text("artifact_key"),

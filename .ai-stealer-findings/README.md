@@ -23,4 +23,3 @@ License: [license if code is copied or closely adapted]
 
 ## Decision
 ```
-

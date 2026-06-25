@@ -108,6 +108,7 @@ hausmeisterservice dachau / karlsfeld -> recurring-revenue opportunity if the se
 winterdienst dachau -> recurring contract opportunity only if the customer operationally supports it.
 dachrinnenreinigung dachau / flachdachsanierung dachau -> high-intent roofing niches when impressions, SERP gap, or project proof exists.
 ```
+
 </context>
 
 ## 5. Google Business Profile Support Signals

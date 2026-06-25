@@ -12,4 +12,3 @@ export const queueNames = [
 ] as const;
 
 export type QueueName = (typeof queueNames)[number];
-

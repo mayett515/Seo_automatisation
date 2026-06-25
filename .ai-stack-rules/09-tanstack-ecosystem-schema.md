@@ -87,6 +87,7 @@ Current repo constraint:
 ```text
 No .cta.json found. Treat TanStack CLI add-on workflows as reference only unless the user explicitly approves a new scaffold/add-on strategy.
 ```
+
 </context>
 
 ## 5. TanStack Audit Checklist

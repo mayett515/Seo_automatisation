@@ -8,4 +8,3 @@ export function PlaceholderScreen(props: { title: string }) {
     </section>
   );
 }
-

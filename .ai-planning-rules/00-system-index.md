@@ -47,4 +47,3 @@ THEN check `.ai-schema-factory/schema-files/CONTEXT SHARDING/ADVANCED-CONTEXT-SH
 2. [ ] Did I preserve frozen references as references only?
 3. [ ] Did I avoid compiling files before approval when planner mode applies?
 </pre-flight-checklist>
-

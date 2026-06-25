@@ -16,11 +16,17 @@ Deploy: Netlify frontend/customer sites, AWS Fargate backend/workers
 
 ```powershell
 corepack pnpm install
+corepack pnpm format:check
+corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm build
+corepack pnpm test
 ```
 
 ## Rule Routing
 
 Start from `AGENTS.md`. The TypeScript rules live in `.ai-rules/`; Local SEO product rules live in `.ai-project-rules/`.
 
+## Decision Log
+
+Human-readable architecture decisions live in [docs/architecture/decisions](docs/architecture/decisions).

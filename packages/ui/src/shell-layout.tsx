@@ -17,4 +17,3 @@ export function ShellLayout(props: {
     </div>
   );
 }
-

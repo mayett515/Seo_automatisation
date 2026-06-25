@@ -10,9 +10,12 @@ import {
   type PotentialReport,
   type QueueJob
 } from "@localseo/contracts";
+import { QueueProducerService } from "../queue-producer.js";
 
 @Injectable()
 class LeadsService {
+  constructor(private readonly queues: QueueProducerService) {}
+
   createLead(input: CreateLeadInput): Lead {
     return LeadSchema.parse({
       id: randomUUID(),
@@ -22,13 +25,22 @@ class LeadsService {
     });
   }
 
-  queuePreAudit(leadId: string): QueueJob {
+  async queuePreAudit(leadId: string): Promise<QueueJob> {
+    const jobId = randomUUID();
+    const enqueued = await this.queues.enqueue({
+      queueName: "pre-audit",
+      jobName: "pre_audit",
+      jobId,
+      data: { leadId }
+    });
+
     return QueueJobSchema.parse({
-      jobId: randomUUID(),
+      jobId,
       leadId,
       type: "pre_audit",
-      status: "queued",
+      status: enqueued ? "queued" : "dry_run",
       inputRef: leadId,
+      message: enqueued ? undefined : "Pre-audit queue is not configured. This is an explicit dry-run response.",
       createdAt: new Date().toISOString()
     });
   }

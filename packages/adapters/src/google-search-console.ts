@@ -11,7 +11,7 @@ import {
   type GscSitemapSubmission,
   type GscUrlInspectionResult
 } from "@localseo/contracts";
-import type { SearchConsolePort } from "./index";
+import type { SearchConsolePort } from "./index.js";
 
 const defaultScopes = ["https://www.googleapis.com/auth/webmasters.readonly"] as const;
 
@@ -192,10 +192,14 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
     siteUrl: string;
     inspectionUrl: string;
   }): Promise<GscUrlInspectionResult> {
-    const response = await postJson("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", input.accessToken, {
-      siteUrl: input.siteUrl,
-      inspectionUrl: input.inspectionUrl
-    });
+    const response = await postJson(
+      "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect",
+      input.accessToken,
+      {
+        siteUrl: input.siteUrl,
+        inspectionUrl: input.inspectionUrl
+      }
+    );
     const body = asRecord(response);
     const inspectionResult = asRecord(body.inspectionResult);
     const indexStatusResult = asRecord(inspectionResult.indexStatusResult);
@@ -232,7 +236,9 @@ export function verifyOAuthState(state: string, secret: string, now: Date): Sear
     throw new Error("Invalid OAuth state signature");
   }
 
-  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as SearchConsoleAuthorizationState;
+  const payload = JSON.parse(
+    Buffer.from(encodedPayload, "base64url").toString("utf8")
+  ) as SearchConsoleAuthorizationState;
 
   if (!payload.projectId || !payload.expiresAt || !payload.nonce) {
     throw new Error("Invalid OAuth state payload");
@@ -318,7 +324,7 @@ function parseTokenResponse(response: unknown): SearchConsoleTokenSet {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function toNumber(value: unknown): number {

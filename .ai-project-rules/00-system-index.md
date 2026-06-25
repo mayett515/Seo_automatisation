@@ -127,6 +127,7 @@ Stack implementation guardrails:
 ```text
 .ai-stack-rules/00-system-index.md
 ```
+
 </context>
 
 <pre-flight-checklist>

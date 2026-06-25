@@ -1,3 +1,2 @@
-export * from "./shell-layout";
-export * from "./status-pill";
-
+export * from "./shell-layout.js";
+export * from "./status-pill.js";

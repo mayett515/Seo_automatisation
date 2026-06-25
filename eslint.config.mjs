@@ -1,17 +1,12 @@
 import js from "@eslint/js";
 import tanstackQuery from "@tanstack/eslint-plugin-query";
+import configPrettier from "eslint-config-prettier";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: [
-      "**/dist/**",
-      "**/coverage/**",
-      "**/node_modules/**",
-      "eslint.config.mjs",
-      "packages/db/migrations/**"
-    ]
+    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "eslint.config.mjs", "packages/db/migrations/**"]
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -33,5 +28,6 @@ export default tseslint.config(
     files: ["apps/web/src/**/*.{ts,tsx}", "packages/ui/src/**/*.{ts,tsx}"],
     ...reactHooks.configs.flat.recommended
   },
-  ...tanstackQuery.configs["flat/recommended"]
+  ...tanstackQuery.configs["flat/recommended"],
+  configPrettier
 );

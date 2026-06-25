@@ -5,6 +5,7 @@ export const jobStatuses = [
   "running",
   "waiting_for_external",
   "waiting_for_approval",
+  "dry_run",
   "completed",
   "failed",
   "cancelled",
@@ -92,20 +93,9 @@ export const releaseVerificationStatuses = [
   "failed"
 ] as const;
 
-export const gscConnectionStatuses = [
-  "connection_required",
-  "connected",
-  "error",
-  "revoked"
-] as const;
+export const gscConnectionStatuses = ["connection_required", "connected", "error", "revoked"] as const;
 
-export const gscSyncStatuses = [
-  "queued",
-  "running",
-  "completed",
-  "failed",
-  "cancelled"
-] as const;
+export const gscSyncStatuses = ["queued", "running", "completed", "failed", "cancelled"] as const;
 
 export const gscOpportunitySignalTypes = [
   "impressions_no_clicks",
@@ -114,12 +104,7 @@ export const gscOpportunitySignalTypes = [
   "service_location_query"
 ] as const;
 
-export const gscOpportunitySignalStatuses = [
-  "internal_radar",
-  "near_term_target",
-  "rejected",
-  "promoted"
-] as const;
+export const gscOpportunitySignalStatuses = ["internal_radar", "near_term_target", "rejected", "promoted"] as const;
 
 export const approvalStatuses = ["pending", "approved", "rejected", "held"] as const;
 export const releaseCheckSeverities = ["info", "warning", "blocker"] as const;
@@ -149,10 +134,13 @@ export const DateRangeSchema = z.object({
   to: IsoDateSchema
 });
 
-export const GscPropertyUrlSchema = z.string().min(1).refine(
-  (value) => value.startsWith("sc-domain:") || /^https?:\/\/.+/u.test(value),
-  "Expected a Search Console URL-prefix property or sc-domain property"
-);
+export const GscPropertyUrlSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (value) => value.startsWith("sc-domain:") || /^https?:\/\/.+/u.test(value),
+    "Expected a Search Console URL-prefix property or sc-domain property"
+  );
 
 export const CreateLeadSchema = z.object({
   websiteUrl: z.string().url(),
@@ -192,10 +180,12 @@ export const QueueJobSchema = z.object({
   jobId: z.string().min(1),
   projectId: ProjectIdSchema.optional(),
   leadId: LeadIdSchema.optional(),
+  releasePlanId: z.string().min(1).optional(),
   type: JobTypeSchema,
   status: JobStatusSchema,
   inputRef: z.string().min(1).optional(),
   createdBy: z.string().min(1).optional(),
+  message: z.string().min(1).optional(),
   createdAt: z.string().datetime()
 });
 
@@ -390,6 +380,16 @@ export const HealthResponseSchema = z.object({
   })
 });
 
+export const HealthProbeResponseSchema = HealthResponseSchema.extend({
+  probe: z.enum(["liveness", "readiness"]),
+  dependencies: z
+    .object({
+      database: z.enum(["configured", "down", "not_configured"]),
+      redis: z.enum(["configured", "down", "not_configured"])
+    })
+    .optional()
+});
+
 export const GscSyncQueueResponseSchema = z.union([QueueJobSchema, GscConnectionSchema]);
 
 export type CreateLeadInput = z.output<typeof CreateLeadSchema>;
@@ -421,6 +421,7 @@ export type TrackingIngestResult = z.output<typeof TrackingIngestResultSchema>;
 export type CreateReleasePlanRequest = z.output<typeof CreateReleasePlanRequestSchema>;
 export type VerifyReleaseRequest = z.output<typeof VerifyReleaseRequestSchema>;
 export type HealthResponse = z.output<typeof HealthResponseSchema>;
+export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type JobStatus = z.output<typeof JobStatusSchema>;
 export type JobType = z.output<typeof JobTypeSchema>;

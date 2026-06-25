@@ -21,4 +21,3 @@ CloudWatch: API logs, worker logs, job failures, deploy verification events
 - API services enqueue long-running work; workers perform provider calls.
 - Deployment success requires verification worker checks after Netlify deploy.
 - Preview URLs must stay `noindex`; sitemap only includes publish-ready live URLs.
-

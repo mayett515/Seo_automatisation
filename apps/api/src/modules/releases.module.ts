@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Body, Controller, Get, Injectable, Module, Param, Post } from "@nestjs/common";
 import {
+  QueueJobSchema,
   CreateReleasePlanRequestSchema,
   ReleaseCheckSchema,
   ReleaseNoteSchema,
@@ -14,9 +15,12 @@ import {
   type RollbackPoint
 } from "@localseo/contracts";
 import { decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
+import { QueueProducerService } from "../queue-producer.js";
 
 @Injectable()
 class ReleasesService {
+  constructor(private readonly queues: QueueProducerService) {}
+
   createPlan(projectId: string, body: unknown) {
     const input = CreateReleasePlanRequestSchema.parse(body ?? {});
 
@@ -69,13 +73,24 @@ class ReleasesService {
     };
   }
 
-  deploy(releasePlanId: string) {
-    return {
+  async deploy(releasePlanId: string) {
+    const jobId = randomUUID();
+    const enqueued = await this.queues.enqueue({
+      queueName: "deploy",
+      jobName: "deploy",
+      jobId,
+      data: { releasePlanId }
+    });
+
+    return QueueJobSchema.parse({
       releasePlanId,
-      jobId: randomUUID(),
+      jobId,
       type: "deploy",
-      status: "queued"
-    };
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: releasePlanId,
+      message: enqueued ? undefined : "Deploy queue is not configured. This is an explicit dry-run response.",
+      createdAt: new Date().toISOString()
+    });
   }
 
   verify(releasePlanId: string, body: unknown): ReleaseVerification {
@@ -125,9 +140,10 @@ class ReleasesService {
       releasePlanId,
       deploymentId: input.deploymentId,
       verificationStatus,
-      summary: verificationStatus === "live_healthy"
-        ? "Post-deploy verification passed."
-        : "Post-deploy verification completed with issues.",
+      summary:
+        verificationStatus === "live_healthy"
+          ? "Post-deploy verification passed."
+          : "Post-deploy verification completed with issues.",
       checkedAt: new Date().toISOString(),
       checks
     });

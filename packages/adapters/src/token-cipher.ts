@@ -18,12 +18,7 @@ export class AesGcmTokenCipher implements TokenCipher {
     const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
     const tag = cipher.getAuthTag();
 
-    return [
-      "v1",
-      iv.toString("base64url"),
-      tag.toString("base64url"),
-      encrypted.toString("base64url")
-    ].join(":");
+    return ["v1", iv.toString("base64url"), tag.toString("base64url"), encrypted.toString("base64url")].join(":");
   }
 
   decrypt(value: string): string {
@@ -36,9 +31,6 @@ export class AesGcmTokenCipher implements TokenCipher {
     const decipher = createDecipheriv("aes-256-gcm", this.key, Buffer.from(iv, "base64url"));
     decipher.setAuthTag(Buffer.from(tag, "base64url"));
 
-    return Buffer.concat([
-      decipher.update(Buffer.from(encrypted, "base64url")),
-      decipher.final()
-    ]).toString("utf8");
+    return Buffer.concat([decipher.update(Buffer.from(encrypted, "base64url")), decipher.final()]).toString("utf8");
   }
 }

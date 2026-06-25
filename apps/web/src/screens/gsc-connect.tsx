@@ -50,7 +50,12 @@ export function GscConnectScreen() {
         <button className="button-primary" type="button" onClick={() => connect.mutate()} disabled={connect.isPending}>
           Connect
         </button>
-        <button className="button-secondary" type="button" onClick={() => sync.mutate()} disabled={status !== "connected" || sync.isPending}>
+        <button
+          className="button-secondary"
+          type="button"
+          onClick={() => sync.mutate()}
+          disabled={status !== "connected" || sync.isPending}
+        >
           Sync
         </button>
         <Link className="button-link" to="/projects/$projectId/performance" params={{ projectId }}>
@@ -107,7 +112,7 @@ async function postJson<T>(path: string, body: unknown, schema: JsonSchema<T>): 
 }
 
 function syncResponseMessage(response: GscSyncQueueResponse): string {
-  return "type" in response ? `Sync response: ${response.status}` : response.message ?? response.status;
+  return "type" in response ? `Sync response: ${response.status}` : (response.message ?? response.status);
 }
 
 function getApiUrl(): string {

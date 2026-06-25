@@ -1,7 +1,7 @@
 import { parseAppEnv } from "@localseo/config";
 import { Worker, type ConnectionOptions } from "bullmq";
-import { closeWorkerResources, handleJob } from "./handlers";
-import { queueNames } from "./queue-names";
+import { closeWorkerResources, handleJob } from "./handlers.js";
+import { queueNames } from "./queue-names.js";
 
 const env = parseAppEnv(process.env);
 

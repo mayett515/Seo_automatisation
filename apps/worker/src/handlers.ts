@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { AesGcmTokenCipher, GoogleSearchConsoleAdapter } from "@localseo/adapters";
 import { agentDescriptors, mastraWorkflows } from "@localseo/ai";
 import { parseAppEnv } from "@localseo/config";
-import { createDatabaseClient, gscConnections, gscOpportunitySignals, gscSearchAnalyticsRows, gscSyncRuns } from "@localseo/db";
+import {
+  createDatabaseClient,
+  gscConnections,
+  gscOpportunitySignals,
+  gscSearchAnalyticsRows,
+  gscSyncRuns
+} from "@localseo/db";
 import type { GscOpportunitySignalType, GscSearchAnalyticsRow } from "@localseo/contracts";
 import type { Job } from "bullmq";
 import { eq } from "drizzle-orm";
@@ -50,7 +56,10 @@ async function handleGscSyncJob(job: Job): Promise<Record<string, unknown>> {
   }
 }
 
-async function runGscSync(db: Db, data: { projectId: string; syncRunId: string; jobId: string }): Promise<Record<string, unknown>> {
+async function runGscSync(
+  db: Db,
+  data: { projectId: string; syncRunId: string; jobId: string }
+): Promise<Record<string, unknown>> {
   const searchConsole = createSearchConsoleAdapter();
   const tokenCipher = createTokenCipher();
   const [syncRun] = await db.select().from(gscSyncRuns).where(eq(gscSyncRuns.id, data.syncRunId)).limit(1);
@@ -59,17 +68,24 @@ async function runGscSync(db: Db, data: { projectId: string; syncRunId: string; 
     throw new Error(`GSC sync run not found: ${data.syncRunId}`);
   }
 
-  const [connection] = await db.select().from(gscConnections).where(eq(gscConnections.id, syncRun.connectionId ?? "")).limit(1);
+  const [connection] = await db
+    .select()
+    .from(gscConnections)
+    .where(eq(gscConnections.id, syncRun.connectionId ?? ""))
+    .limit(1);
 
   if (!connection?.encryptedRefreshToken || connection.status !== "connected") {
     throw new Error("GSC connection is not connected or has no encrypted refresh token");
   }
 
-  await db.update(gscSyncRuns).set({
-    status: "running",
-    startedAt: new Date(),
-    failureJson: null
-  }).where(eq(gscSyncRuns.id, syncRun.id));
+  await db
+    .update(gscSyncRuns)
+    .set({
+      status: "running",
+      startedAt: new Date(),
+      failureJson: null
+    })
+    .where(eq(gscSyncRuns.id, syncRun.id));
 
   await resetSyncRunData(db, syncRun.id);
 
@@ -90,16 +106,22 @@ async function runGscSync(db: Db, data: { projectId: string; syncRunId: string; 
   const storedRows = await insertSearchAnalyticsRows(db, syncRun.id, rows);
   await insertOpportunitySignals(db, syncRun.id, storedRows);
 
-  await db.update(gscSyncRuns).set({
-    status: "completed",
-    rowCount: rows.length,
-    completedAt: new Date()
-  }).where(eq(gscSyncRuns.id, syncRun.id));
+  await db
+    .update(gscSyncRuns)
+    .set({
+      status: "completed",
+      rowCount: rows.length,
+      completedAt: new Date()
+    })
+    .where(eq(gscSyncRuns.id, syncRun.id));
 
-  await db.update(gscConnections).set({
-    lastSyncedAt: new Date(),
-    failureJson: null
-  }).where(eq(gscConnections.id, connection.id));
+  await db
+    .update(gscConnections)
+    .set({
+      lastSyncedAt: new Date(),
+      failureJson: null
+    })
+    .where(eq(gscConnections.id, connection.id));
 
   return {
     jobId: data.jobId,
@@ -120,46 +142,54 @@ async function resetSyncRunData(db: Db, syncRunId: string): Promise<void> {
   await db.delete(gscSearchAnalyticsRows).where(eq(gscSearchAnalyticsRows.syncRunId, syncRunId));
 }
 
-async function insertSearchAnalyticsRows(db: Db, syncRunId: string, rows: GscSearchAnalyticsRow[]): Promise<StoredSearchAnalyticsRow[]> {
+async function insertSearchAnalyticsRows(
+  db: Db,
+  syncRunId: string,
+  rows: GscSearchAnalyticsRow[]
+): Promise<StoredSearchAnalyticsRow[]> {
   const storedRows = rows.map((row) => ({
     rowId: randomUUID(),
     row
   }));
 
   for (const chunk of chunkArray(storedRows, 500)) {
-    await db.insert(gscSearchAnalyticsRows).values(chunk.map((row) => ({
-      id: row.rowId,
-      syncRunId,
-      projectId: row.row.projectId,
-      propertyUrl: row.row.propertyUrl,
-      query: row.row.query,
-      pageUrl: row.row.pageUrl,
-      clicks: Math.round(row.row.clicks),
-      impressions: Math.round(row.row.impressions),
-      ctr: row.row.ctr,
-      position: row.row.position
-    })));
+    await db.insert(gscSearchAnalyticsRows).values(
+      chunk.map((row) => ({
+        id: row.rowId,
+        syncRunId,
+        projectId: row.row.projectId,
+        propertyUrl: row.row.propertyUrl,
+        query: row.row.query,
+        pageUrl: row.row.pageUrl,
+        clicks: Math.round(row.row.clicks),
+        impressions: Math.round(row.row.impressions),
+        ctr: row.row.ctr,
+        position: row.row.position
+      }))
+    );
   }
 
   return storedRows;
 }
 
 async function insertOpportunitySignals(db: Db, syncRunId: string, rows: StoredSearchAnalyticsRow[]): Promise<void> {
-  const signals = rows.flatMap((stored) => classifyOpportunitySignals(stored.row).map((signalType) => ({
-    projectId: stored.row.projectId,
-    syncRunId,
-    rowId: stored.rowId,
-    signalType,
-    status: "internal_radar" as const,
-    query: stored.row.query,
-    pageUrl: stored.row.pageUrl,
-    evidenceJson: {
-      clicks: stored.row.clicks,
-      impressions: stored.row.impressions,
-      position: stored.row.position,
-      source: "gsc_search_analytics"
-    }
-  })));
+  const signals = rows.flatMap((stored) =>
+    classifyOpportunitySignals(stored.row).map((signalType) => ({
+      projectId: stored.row.projectId,
+      syncRunId,
+      rowId: stored.rowId,
+      signalType,
+      status: "internal_radar" as const,
+      query: stored.row.query,
+      pageUrl: stored.row.pageUrl,
+      evidenceJson: {
+        clicks: stored.row.clicks,
+        impressions: stored.row.impressions,
+        position: stored.row.position,
+        source: "gsc_search_analytics"
+      }
+    }))
+  );
 
   for (const chunk of chunkArray(signals, 500)) {
     await db.insert(gscOpportunitySignals).values(chunk);
@@ -189,13 +219,17 @@ function classifyOpportunitySignals(row: GscSearchAnalyticsRow): GscOpportunityS
 }
 
 function looksLikeServiceLocationQuery(query: string): boolean {
-  const terms = normalize(query).split(" ").filter((term) => term.length >= 4);
+  const terms = normalize(query)
+    .split(" ")
+    .filter((term) => term.length >= 4);
   return terms.length >= 2;
 }
 
 function looksLikeWrongPageMatch(query: string, pageUrl: string): boolean {
   const pathname = safePathname(pageUrl);
-  const terms = normalize(query).split(" ").filter((term) => term.length >= 4);
+  const terms = normalize(query)
+    .split(" ")
+    .filter((term) => term.length >= 4);
   const missingTerms = terms.filter((term) => !pathname.includes(term));
   return terms.length >= 2 && missingTerms.length >= 1;
 }
@@ -245,13 +279,16 @@ function createTokenCipher(): AesGcmTokenCipher {
 }
 
 async function markSyncRunFailed(db: Db, syncRunId: string, error: unknown): Promise<void> {
-  await db.update(gscSyncRuns).set({
-    status: "failed",
-    completedAt: new Date(),
-    failureJson: {
-      message: normalizeFailureReason(error)
-    }
-  }).where(eq(gscSyncRuns.id, syncRunId));
+  await db
+    .update(gscSyncRuns)
+    .set({
+      status: "failed",
+      completedAt: new Date(),
+      failureJson: {
+        message: normalizeFailureReason(error)
+      }
+    })
+    .where(eq(gscSyncRuns.id, syncRunId));
 }
 
 function normalizeFailureReason(error: unknown): string {

@@ -1,13 +1,14 @@
 import { Module } from "@nestjs/common";
-import { HealthController } from "./health.controller";
-import { GscModule } from "./modules/gsc.module";
-import { LeadsModule } from "./modules/leads.module";
-import { ProjectsModule } from "./modules/projects.module";
-import { ReleasesModule } from "./modules/releases.module";
-import { TrackingModule } from "./modules/tracking.module";
+import { HealthController } from "./health.controller.js";
+import { GscModule } from "./modules/gsc.module.js";
+import { LeadsModule } from "./modules/leads.module.js";
+import { ProjectsModule } from "./modules/projects.module.js";
+import { QueueProducerModule } from "./queue-producer.js";
+import { ReleasesModule } from "./modules/releases.module.js";
+import { TrackingModule } from "./modules/tracking.module.js";
 
 @Module({
-  imports: [GscModule, LeadsModule, ProjectsModule, ReleasesModule, TrackingModule],
+  imports: [QueueProducerModule, GscModule, LeadsModule, ProjectsModule, ReleasesModule, TrackingModule],
   controllers: [HealthController]
 })
 export class AppModule {}

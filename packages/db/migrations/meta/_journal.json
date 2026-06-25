@@ -22,6 +22,13 @@
       "when": 1782394316861,
       "tag": "0002_normal_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782405143456,
+      "tag": "0003_left_strong_guy",
+      "breakpoints": true
     }
   ]
 }

@@ -51,4 +51,3 @@ Good output includes the diagram, where it belongs, and a short explanation of h
 2. [ ] Is the Mermaid syntax stable and likely to render?
 3. [ ] Did I explain how to read it when presenting it?
 </pre-flight-checklist>
-

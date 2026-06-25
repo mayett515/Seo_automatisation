@@ -10,8 +10,8 @@ import type {
   TrackingEvent
 } from "@localseo/contracts";
 
-export * from "./google-search-console";
-export * from "./token-cipher";
+export * from "./google-search-console.js";
+export * from "./token-cipher.js";
 
 export type DeployReleaseInput = {
   releasePlanId: string;
@@ -59,8 +59,12 @@ export interface SiteHostingPort {
 export interface SearchConsolePort {
   createAuthorizationUrl(input: { projectId: string; redirectTo?: string }): GscOAuthIntent;
   verifyState(input: { state: string }): { projectId: string; expiresAt: string; nonce: string; redirectTo?: string };
-  exchangeCode(input: { code: string }): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string }>;
-  refreshAccessToken(input: { refreshToken: string }): Promise<{ accessToken: string; expiresIn?: number; scope?: string }>;
+  exchangeCode(input: {
+    code: string;
+  }): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string }>;
+  refreshAccessToken(input: {
+    refreshToken: string;
+  }): Promise<{ accessToken: string; expiresIn?: number; scope?: string }>;
   listSites(input: { accessToken: string; projectId: string }): Promise<GscPropertyList>;
   querySearchAnalytics(input: {
     accessToken: string;
@@ -105,7 +109,11 @@ export interface EventPublisherPort {
 }
 
 export interface VerificationPort {
-  verifyRelease(input: { releasePlanId: string; deploymentId?: string; liveUrls: string[] }): Promise<ReleaseVerification>;
+  verifyRelease(input: {
+    releasePlanId: string;
+    deploymentId?: string;
+    liveUrls: string[];
+  }): Promise<ReleaseVerification>;
 }
 
 export interface SitemapPort {
@@ -113,7 +121,11 @@ export interface SitemapPort {
 }
 
 export interface RollbackPort {
-  prepareRollbackPoint(input: { projectId: string; releasePlanId: string; deploymentId?: string }): Promise<RollbackPoint>;
+  prepareRollbackPoint(input: {
+    projectId: string;
+    releasePlanId: string;
+    deploymentId?: string;
+  }): Promise<RollbackPoint>;
   executeRollback(input: { projectId: string; rollbackPointId: string }): Promise<{ status: "queued" | "completed" }>;
 }
 
