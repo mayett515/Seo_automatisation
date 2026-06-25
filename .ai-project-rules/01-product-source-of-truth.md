@@ -9,6 +9,9 @@ dependencies:
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/"
   - "deployment-agent-extension-only/local-seo-product-knowledge-pack/"
   - ".ai-project-references/"
+  - "C:\\total typescript\\Architecture_Karteikarten"
+  - "C:\\total typescript\\Hexagonal_Architecture_Karteikarten"
+  - "C:\\total typescript\\System_Design_101_Karteikarten"
 priority_schema: "critical > strong > guideline"
 ---
 
@@ -24,6 +27,9 @@ You have been routed here because the task may create, modify, or interpret Loca
 - Use the main product pack as the default source for product scope, UX, architecture, data, and roadmap.
 - Use the deployment extension as the source for release manager, deployment agent, verification, and rollback behavior.
 - Use `C:\gebäudeservicefirma\Seo` as read-only field evidence for local SEO workflow, proof language, and reporting lessons.
+- Use `C:\gebäudeservicefirma\Seo\future-seo-growth-plan` as read-only field evidence for SEO roadmap, keyword tiers, and rollout sequencing.
+- Use `C:\gebäudeservicefirma\Seo\ungenutzte_potentiale` as read-only field evidence for unused keyword and market-potential hypotheses.
+- Use `C:\total typescript\Architecture_Karteikarten`, `C:\total typescript\Hexagonal_Architecture_Karteikarten`, and `C:\total typescript\System_Design_101_Karteikarten` as read-only locked architectural guidance for implementation quality.
 - Use `.ai-project-references/frontend-inspiration/` only for visual inspiration.
 - Write new project decisions into editable project docs or `.ai-project-rules/`, not into frozen reference bundles.
 </positive-directives>
@@ -46,6 +52,12 @@ THEN the deployment extension wins for deployment-agent behavior only.
 
 IF field evidence conflicts with product docs:
 THEN field evidence informs SEO practice, while product docs continue to own app behavior.
+
+IF opportunity evidence conflicts with customer-facing report rules:
+THEN report rules win; opportunities stay in roadmap, monitoring, or internal planning until proven.
+
+IF architecture guidance conflicts with product-pack or deployment-extension product behavior:
+THEN product truth wins for behavior; architecture guidance still governs implementation structure where it does not conflict.
 
 IF a new rule is generated from external SEO evidence:
 THEN mark it as project-local and keep the external folder read-only.

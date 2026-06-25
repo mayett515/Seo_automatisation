@@ -44,8 +44,14 @@ You have been routed here because the task risks weakening customer-facing SEO p
 ## 3. Anti-Regression Conditional Gates
 
 <conditional-logic>
+IF upstream product docs mention CTR in a customer report layout:
+THEN treat CTR as internal diagnostic context only; the anti-regression bans in this file win.
+
 IF customer-facing text needs ranking proof:
 THEN use Page 1, Top 10, Top 5, Top 3, Platz 2, or Platz 1 language.
+
+IF clicks are shown to a customer:
+THEN use them only as a clearly sourced supporting outcome metric, not as ranking proof and not inside raw GSC diagnostic tables.
 
 IF a keyword is useful but weak:
 THEN place it in internal planning, monitoring, or a future roadmap.

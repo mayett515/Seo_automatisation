@@ -1,5 +1,16 @@
 import { relations } from "drizzle-orm";
 import {
+  approvalStatuses,
+  deploymentStatuses,
+  gscConnectionStatuses,
+  jobStatuses,
+  releaseCheckResults,
+  releaseCheckSeverities,
+  releaseNoteAudiences,
+  releasePlanStatuses,
+  releaseVerificationStatuses
+} from "@localseo/contracts";
+import {
   boolean,
   integer,
   jsonb,
@@ -10,32 +21,15 @@ import {
   uuid
 } from "drizzle-orm/pg-core";
 
-export const jobStatusEnum = pgEnum("job_status", [
-  "queued",
-  "running",
-  "waiting_for_external",
-  "waiting_for_approval",
-  "completed",
-  "failed",
-  "cancelled",
-  "retrying"
-]);
-
-export const releaseStatusEnum = pgEnum("release_status", [
-  "draft",
-  "ready",
-  "ready_with_warnings",
-  "blocked",
-  "approved_for_deploy",
-  "deploying",
-  "live",
-  "failed",
-  "rolled_back"
-]);
-
-export const releaseSeverityEnum = pgEnum("release_check_severity", ["info", "warning", "blocker"]);
-export const releaseCheckResultEnum = pgEnum("release_check_result", ["passed", "failed", "skipped"]);
-export const approvalStatusEnum = pgEnum("approval_status", ["pending", "approved", "rejected", "held"]);
+export const jobStatusEnum = pgEnum("job_status", jobStatuses);
+export const releaseStatusEnum = pgEnum("release_status", releasePlanStatuses);
+export const deploymentStatusEnum = pgEnum("deployment_status", deploymentStatuses);
+export const releaseVerificationStatusEnum = pgEnum("release_verification_status", releaseVerificationStatuses);
+export const gscConnectionStatusEnum = pgEnum("gsc_connection_status", gscConnectionStatuses);
+export const releaseNoteAudienceEnum = pgEnum("release_note_audience", releaseNoteAudiences);
+export const releaseSeverityEnum = pgEnum("release_check_severity", releaseCheckSeverities);
+export const releaseCheckResultEnum = pgEnum("release_check_result", releaseCheckResults);
+export const approvalStatusEnum = pgEnum("approval_status", approvalStatuses);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -78,7 +72,7 @@ export const mainWebsites = pgTable("main_websites", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
   sourceUrl: text("source_url").notNull(),
-  netlifySiteId: text("netlify_site_id"),
+  hostingSiteId: text("hosting_site_id"),
   ...timestamps
 });
 
@@ -213,6 +207,16 @@ export const releaseChecks = pgTable("release_checks", {
   ...timestamps
 });
 
+export const releaseNotes = pgTable("release_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  audience: releaseNoteAudienceEnum("audience").notNull().default("internal"),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  ...timestamps
+});
+
 export const deployments = pgTable("deployments", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
@@ -220,7 +224,32 @@ export const deployments = pgTable("deployments", {
   provider: text("provider").notNull().default("netlify"),
   providerDeployId: text("provider_deploy_id"),
   liveUrl: text("live_url"),
-  status: text("status").notNull().default("pending"),
+  status: deploymentStatusEnum("status").notNull().default("pending"),
+  verificationStatus: releaseVerificationStatusEnum("verification_status").notNull().default("not_started"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  ...timestamps
+});
+
+export const releaseVerifications = pgTable("release_verifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  deploymentId: uuid("deployment_id").references(() => deployments.id),
+  status: releaseVerificationStatusEnum("status").notNull().default("not_started"),
+  summary: text("summary").notNull(),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+  evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+  ...timestamps
+});
+
+export const rollbackPoints = pgTable("rollback_points", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  releasePlanId: uuid("release_plan_id").notNull().references(() => releasePlans.id),
+  deploymentId: uuid("deployment_id").references(() => deployments.id),
+  artifactKey: text("artifact_key").notNull(),
+  providerDeployId: text("provider_deploy_id"),
+  liveUrl: text("live_url"),
+  evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
   ...timestamps
 });
 
@@ -228,7 +257,11 @@ export const gscConnections = pgTable("gsc_connections", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
   propertyUrl: text("property_url").notNull(),
-  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  status: gscConnectionStatusEnum("status").notNull().default("connection_required"),
+  encryptedRefreshToken: text("encrypted_refresh_token"),
+  connectedAt: timestamp("connected_at", { withTimezone: true }),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
   ...timestamps
 });
 
@@ -269,6 +302,7 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   pageProposals: many(pageProposals),
   releasePlans: many(releasePlans),
   deployments: many(deployments),
+  gscConnections: many(gscConnections),
   reports: many(reports)
 }));
 
@@ -280,6 +314,16 @@ export const pageProposalRelations = relations(pageProposals, ({ many, one }) =>
 export const releasePlanRelations = relations(releasePlans, ({ many, one }) => ({
   project: one(projects, { fields: [releasePlans.projectId], references: [projects.id] }),
   items: many(releasePlanItems),
-  checks: many(releaseChecks)
+  checks: many(releaseChecks),
+  notes: many(releaseNotes),
+  deployments: many(deployments),
+  verifications: many(releaseVerifications),
+  rollbackPoints: many(rollbackPoints)
 }));
 
+export const deploymentRelations = relations(deployments, ({ many, one }) => ({
+  project: one(projects, { fields: [deployments.projectId], references: [projects.id] }),
+  releasePlan: one(releasePlans, { fields: [deployments.releasePlanId], references: [releasePlans.id] }),
+  verifications: many(releaseVerifications),
+  rollbackPoints: many(rollbackPoints)
+}));

@@ -1,16 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { Body, Controller, Get, Injectable, Module, Param, Post } from "@nestjs/common";
-import { CreateLeadSchema, QueueJobSchema, type CreateLeadInput, type QueueJob } from "@localseo/contracts";
+import {
+  CreateLeadSchema,
+  LeadSchema,
+  PotentialReportSchema,
+  QueueJobSchema,
+  type CreateLeadInput,
+  type Lead,
+  type PotentialReport,
+  type QueueJob
+} from "@localseo/contracts";
 
 @Injectable()
 class LeadsService {
-  createLead(input: CreateLeadInput) {
-    return {
+  createLead(input: CreateLeadInput): Lead {
+    return LeadSchema.parse({
       id: randomUUID(),
       ...input,
       status: "new",
       createdAt: new Date().toISOString()
-    };
+    });
   }
 
   queuePreAudit(leadId: string): QueueJob {
@@ -24,13 +33,13 @@ class LeadsService {
     });
   }
 
-  getPotentialReport(leadId: string) {
-    return {
+  getPotentialReport(leadId: string): PotentialReport {
+    return PotentialReportSchema.parse({
       leadId,
       status: "draft",
       headline: "Local SEO potential report is queued",
       ranges: ["2-3 months", "6 months"]
-    };
+    });
   }
 }
 

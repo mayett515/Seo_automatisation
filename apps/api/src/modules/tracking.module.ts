@@ -1,14 +1,19 @@
 import { Body, Controller, Injectable, Module, Post } from "@nestjs/common";
-import { TrackingEventSchema, type TrackingEvent } from "@localseo/contracts";
+import {
+  TrackingEventSchema,
+  TrackingIngestResultSchema,
+  type TrackingEvent,
+  type TrackingIngestResult
+} from "@localseo/contracts";
 
 @Injectable()
 class TrackingService {
-  ingest(event: TrackingEvent) {
-    return {
+  ingest(event: TrackingEvent): TrackingIngestResult {
+    return TrackingIngestResultSchema.parse({
       accepted: true,
       eventName: event.eventName,
       occurredAt: event.occurredAt ?? new Date().toISOString()
-    };
+    });
   }
 }
 

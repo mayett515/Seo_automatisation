@@ -69,6 +69,7 @@ const projectChildRoutes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/checks", component: () => <PlaceholderScreen title="Preflight Checks" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/notes", component: () => <PlaceholderScreen title="Release Notes" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/releases/$releasePlanId/rollback", component: () => <PlaceholderScreen title="Rollback Panel" /> }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/gsc/connect", component: () => <PlaceholderScreen title="GSC Connection Required" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/performance", component: () => <PlaceholderScreen title="Performance Dashboard" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/map", component: () => <PlaceholderScreen title="Dynamic SEO Map" /> }),
   createRoute({ getParentRoute: () => rootRoute, path: "/projects/$projectId/bundles", component: () => <PlaceholderScreen title="Bundles" /> }),
@@ -84,4 +85,3 @@ declare module "@tanstack/react-router" {
     router: typeof router;
   }
 }
-

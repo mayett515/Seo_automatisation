@@ -22,11 +22,17 @@ THEN you MUST load and comply with: `.ai-project-rules/01-product-source-of-trut
 IF the task touches stack choice, module ownership, service boundaries, data ownership, or adapters:
 THEN you MUST load and comply with: `.ai-project-rules/02-stack-and-boundaries.md`.
 
+IF the task touches architecture style, layering, Clean Architecture dependency direction, Hexagonal ports/adapters, bounded contexts, composition roots, modular monolith vs microservices, or where logic belongs:
+THEN you MUST load and comply with: `.ai-project-rules/14-architecture-direction.md`.
+
 IF the task touches customer approval, previews, notes, generated suggestions, or productive customer changes:
 THEN you MUST load and comply with: `.ai-project-rules/03-controlled-automation.md`.
 
 IF the task touches releases, Netlify deploys, rollback, sitemap publication, release plans, or deployment checks:
 THEN you MUST load and comply with: `.ai-project-rules/04-deployment-agent.md`.
+
+IF the task touches local SEO page quality gates, clone detection, page uniqueness, local page deployment QA, sitemap readiness, noscript reachability, schema readiness, canonical readiness, or hub/spoke cannibalization:
+THEN you MUST load and comply with: `.ai-project-rules/12-local-seo-page-quality-gate.md`.
 
 IF the task touches React UI, routes, forms, tables, app state, preview UX, dashboards, maps, or diagrams:
 THEN you MUST load and comply with: `.ai-project-rules/05-frontend-tanstack.md`.
@@ -40,14 +46,26 @@ THEN you MUST load and comply with: `.ai-project-rules/07-tracking-privacy-obser
 IF the task touches SEO copy, local pages, metadata, schema, internal links, canonical strategy, or content quality:
 THEN you MUST load and comply with: `.ai-project-rules/08-seo-content-constraints.md`.
 
+IF the task touches SEO copy, local pages, metadata, schema, internal links, canonical strategy, content quality, or generated service-location pages:
+THEN you MUST load and comply with: `.ai-project-rules/12-local-seo-page-quality-gate.md`.
+
 IF the task touches generation of local landing pages, subdomains, route strategy, page JSON, or publish readiness:
 THEN you MUST load and comply with: `.ai-project-rules/09-local-landing-page-generation.md`.
 
-IF the task touches indexing, GSC analysis, keyword monitoring, post-deploy verification, or SEO QA:
+IF the task touches generation of local landing pages, route publication, preview approval, or publish readiness:
+THEN you MUST load and comply with: `.ai-project-rules/12-local-seo-page-quality-gate.md`.
+
+IF the task touches indexing, GSC OAuth/API sync, Search Console API, Search Analytics data, keyword monitoring, post-deploy verification, or SEO QA:
 THEN you MUST load and comply with: `.ai-project-rules/10-seo-verification-gsc.md`.
+
+IF the task touches indexing, GSC handoff, post-deploy verification, or SEO QA for a local page:
+THEN you MUST load and comply with: `.ai-project-rules/12-local-seo-page-quality-gate.md`.
 
 IF the task touches customer-facing reports, ranking claims, KPIs, proof language, or roadmap/opportunity separation:
 THEN you MUST load and comply with: `.ai-project-rules/11-reporting-anti-regression.md`.
+
+IF the task touches future SEO growth, opportunity discovery, GSC opportunity mining, keyword maps, market potential, rollout sequencing, service expansion backlog, Google Business Profile support signals, review-request workflow, or why a page should exist:
+THEN you MUST load and comply with: `.ai-project-rules/13-seo-opportunity-planning.md`.
 </routing-logic>
 
 <positive-directives>
@@ -55,6 +73,9 @@ THEN you MUST load and comply with: `.ai-project-rules/11-reporting-anti-regress
 - Treat `local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/` as the main product source.
 - Treat `deployment-agent-extension-only/local-seo-product-knowledge-pack/` as the deployment-agent extension source.
 - Load external field evidence only when SEO workflow, proof, ranking, or reporting decisions need it.
+- Use `.ai-project-rules/12-local-seo-page-quality-gate.md` as the reusable checklist for generated local SEO pages before preview approval, deploy, and report handoff.
+- Use `.ai-project-rules/13-seo-opportunity-planning.md` when deciding future markets, page opportunities, keyword tiers, or execution sequence.
+- Use `.ai-project-rules/14-architecture-direction.md` when judging implementation quality, dependency direction, module boundaries, and provider isolation.
 </positive-directives>
 
 <absolute-constraints>
@@ -77,6 +98,9 @@ Field evidence and workflow reference:
 
 ```text
 C:\gebäudeservicefirma\Seo as read-only field evidence when local SEO proof/workflow is relevant
+C:\gebäudeservicefirma\Seo\workflow as read-only field evidence for real page workflow and deployment-check examples
+C:\gebäudeservicefirma\Seo\future-seo-growth-plan as read-only field evidence for roadmap, keyword tiers, and growth sequencing
+C:\gebäudeservicefirma\Seo\ungenutzte_potentiale as read-only field evidence for unused keyword and market potential hypotheses
 .ai-project-references/field-evidence/kundenreport_seo_martines_v4.pdf
 ```
 
@@ -84,6 +108,14 @@ Frontend inspiration only:
 
 ```text
 .ai-project-references/frontend-inspiration/local-seo-mission-control-demo-en.html
+```
+
+Architecture guidance:
+
+```text
+C:\total typescript\Architecture_Karteikarten as read-only architecture guidance
+C:\total typescript\Hexagonal_Architecture_Karteikarten as read-only ports/adapters and dependency-direction guidance
+C:\total typescript\System_Design_101_Karteikarten as read-only system design and scaling guidance
 ```
 </context>
 

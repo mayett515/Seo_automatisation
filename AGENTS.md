@@ -42,6 +42,11 @@ Field evidence:
 
 Frontend inspiration:
 5. .ai-project-references/frontend-inspiration/
+
+Architecture guidance (read-only, locked for implementation quality):
+6. C:\total typescript\Architecture_Karteikarten
+7. C:\total typescript\Hexagonal_Architecture_Karteikarten
+8. C:\total typescript\System_Design_101_Karteikarten
 ```
 
 ## Hard Rules

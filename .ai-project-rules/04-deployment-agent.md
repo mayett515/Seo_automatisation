@@ -23,9 +23,12 @@ You have been routed here because the task touches release plans, deployment rea
 <positive-directives>
 - Treat the Deployment Agent as reasoning, explanation, risk assessment, and release planning.
 - Treat Deploy, Sitemap, Tracking Injector, Verification, and Rollback Workers as deterministic execution.
-- Use release readiness states: READY, READY_WITH_WARNINGS, BLOCKED, DEPLOYING, LIVE_HEALTHY, LIVE_WITH_WARNINGS, ROLLBACK_RECOMMENDED, ROLLED_BACK.
+- Use pre-deploy release readiness states: READY, READY_WITH_WARNINGS, BLOCKED, DEPLOYING.
+- Use post-deploy verification outcomes: LIVE_HEALTHY, LIVE_WITH_WARNINGS, ROLLBACK_RECOMMENDED.
+- Use ROLLED_BACK only after the rollback worker executes and persists the resulting release/deployment state.
 - Require post-deploy verification before a release is considered successful.
 - Create rollback evidence before production releases when a previous stable state exists.
+- Persist release notes, verification outcomes, release checks, deployments, and rollback points as separate records.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -48,7 +51,7 @@ IF warnings exist without blockers:
 THEN use READY_WITH_WARNINGS and explain customer-visible risk.
 
 IF post-deploy HTTP, robots, canonical, schema, sitemap, or route checks fail severely:
-THEN recommend rollback and persist evidence.
+THEN persist a ROLLBACK_RECOMMENDED verification outcome and rollback evidence.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples

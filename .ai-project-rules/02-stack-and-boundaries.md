@@ -24,6 +24,7 @@ You have been routed here because the task touches stack choices, service bounda
 - Use PostgreSQL for product data, Redis/BullMQ-compatible queues for jobs, and object storage for artifacts.
 - Keep frontend, API, workers, agents, and external providers behind explicit boundaries.
 - Wrap Netlify, GSC, analytics, crawler, and storage providers behind adapters.
+- Follow `.ai-project-rules/14-architecture-direction.md` for modular-monolith structure, Clean Architecture dependency direction, Hexagonal ports/adapters, and DDD-lite bounded contexts.
 - Use the TypeScript source-of-truth rules from `.ai-rules/02C-type-source-of-truth-checker.md` for non-trivial shared types.
 </positive-directives>
 
@@ -35,6 +36,7 @@ You have been routed here because the task touches stack choices, service bounda
 - DO NOT mix data across tenants or projects.
 - DO NOT put provider API code inside domain entities.
 - DO NOT bypass the approval module for release state changes.
+- DO NOT name ports after vendors or leak provider-specific fields into domain entities.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates

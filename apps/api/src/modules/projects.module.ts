@@ -1,16 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { Controller, Get, Injectable, Module, Param, Post } from "@nestjs/common";
-import { QueueJobSchema } from "@localseo/contracts";
+import {
+  MainPreviewSchema,
+  ProjectSummarySchema,
+  QueueJobSchema,
+  type MainPreview,
+  type ProjectSummary
+} from "@localseo/contracts";
 
 @Injectable()
 class ProjectsService {
-  getProject(projectId: string) {
-    return {
+  getProject(projectId: string): ProjectSummary {
+    return ProjectSummarySchema.parse({
       id: projectId,
       name: "Local SEO Mission Control",
       status: "active",
       nextAction: "Import website or review approvals"
-    };
+    });
   }
 
   queueWebsiteImport(projectId: string) {
@@ -21,6 +27,14 @@ class ProjectsService {
       status: "queued",
       inputRef: projectId,
       createdAt: new Date().toISOString()
+    });
+  }
+
+  getMainPreview(projectId: string): MainPreview {
+    return MainPreviewSchema.parse({
+      projectId,
+      previewUrl: `https://${projectId}--preview.netlify.app`,
+      robots: "noindex"
     });
   }
 }
@@ -41,11 +55,7 @@ class ProjectsController {
 
   @Get(":id/main-preview")
   getMainPreview(@Param("id") projectId: string) {
-    return {
-      projectId,
-      previewUrl: `https://${projectId}--preview.netlify.app`,
-      robots: "noindex"
-    };
+    return this.projects.getMainPreview(projectId);
   }
 }
 

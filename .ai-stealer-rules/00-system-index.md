@@ -18,6 +18,9 @@ Use this router when the task asks to find, compare, or adapt proven architectur
 <routing-logic>
 IF the task asks for repo-catalog research, GitHub examples, web research, or architecture pattern extraction:
 THEN load `.ai-stealer-rules/01-repo-catalog-workflow.md`.
+
+IF the task asks when to use the stealer workflow, or the task is about a new architecture-significant vertical slice, provider adapter, workflow engine, data model, component system, CI/deploy path, or testing strategy:
+THEN load `.ai-stealer-rules/02-stealer-checkpoints.md`.
 </routing-logic>
 
 <positive-directives>
@@ -26,6 +29,7 @@ THEN load `.ai-stealer-rules/01-repo-catalog-workflow.md`.
 - Extract solution shape before implementation details.
 - Map stolen ideas into the Local SEO stack before recommending them.
 - Record references when a planning decision depends on an external source.
+- Use the checkpoint workflow for architecture-significant work; skip it for small obvious edits.
 </positive-directives>
 
 <absolute-constraints>
@@ -41,4 +45,3 @@ THEN load `.ai-stealer-rules/01-repo-catalog-workflow.md`.
 2. [ ] Did I prefer local catalog first, then web/GitHub when useful?
 3. [ ] Did I turn the source into an adapted project decision?
 </pre-flight-checklist>
-

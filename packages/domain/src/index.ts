@@ -1,4 +1,4 @@
-import type { ReleaseCheck, ReleasePlan } from "@localseo/contracts";
+import type { ReleaseCheck, ReleasePlan, ReleaseVerificationStatus } from "@localseo/contracts";
 
 export type DeployDecision =
   | { kind: "blocked"; blockerCount: number; warnings: ReleaseCheck[] }
@@ -23,6 +23,21 @@ export function decideReleaseReadiness(checks: ReleaseCheck[]): DeployDecision {
 export function canDeployRelease(plan: ReleasePlan, checks: ReleaseCheck[]): boolean {
   const readiness = decideReleaseReadiness(checks);
   return plan.status === "approved_for_deploy" && readiness.kind !== "blocked";
+}
+
+export function decideReleaseVerificationStatus(checks: ReleaseCheck[]): ReleaseVerificationStatus {
+  const failedBlockers = checks.filter((check) => check.severity === "blocker" && check.result === "failed");
+  const failedWarnings = checks.filter((check) => check.severity === "warning" && check.result === "failed");
+
+  if (failedBlockers.length > 0) {
+    return "rollback_recommended";
+  }
+
+  if (failedWarnings.length > 0) {
+    return "live_with_warnings";
+  }
+
+  return "live_healthy";
 }
 
 export type LocalRouteStrategy = "local_page" | "subdomain" | "backlog";
@@ -57,4 +72,3 @@ export function classifyRankingProof(input: {
 
   return "internal_radar";
 }
-

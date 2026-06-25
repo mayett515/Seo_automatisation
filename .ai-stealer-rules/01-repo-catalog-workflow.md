@@ -21,6 +21,7 @@ Use this workflow to move quickly from capability need to proven reference patte
 - Inspect only the source modules relevant to the capability.
 - Compare at least two references when the decision is architecture-significant.
 - Translate the pattern into our stack, boundaries, and product constraints.
+- Use `.ai-stealer-rules/02-stealer-checkpoints.md` to decide whether this task deserves research before implementation.
 </positive-directives>
 
 <absolute-constraints>
@@ -60,4 +61,3 @@ High-value aisles for this app:
 2. [ ] Did I cite or record the source when it influenced a decision?
 3. [ ] Did I adapt the pattern to our actual stack instead of cargo-culting it?
 </pre-flight-checklist>
-
