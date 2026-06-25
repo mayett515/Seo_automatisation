@@ -79,6 +79,8 @@ To prevent this becoming a real regression later, the repo now has:
 - GitHub Actions CI running format, lint, typecheck, build, and test
 - Prettier checks in CI
 
+The CI whitespace guard checks the current working-tree diff, not every historical file in `HEAD`, because frozen copied reference bundles intentionally preserve upstream whitespace.
+
 ## Deferred On Purpose
 
 ### Full Provider Refactor

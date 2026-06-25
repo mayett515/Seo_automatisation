@@ -28,8 +28,8 @@ jobs:
       - name: Check formatting
         run: corepack pnpm format:check
 
-      - name: Check committed whitespace
-        run: git diff-tree --check --root -r HEAD
+      - name: Check working tree whitespace
+        run: git diff --check
 
       - name: Lint
         run: corepack pnpm lint
