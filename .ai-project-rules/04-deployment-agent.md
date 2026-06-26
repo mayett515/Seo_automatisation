@@ -29,6 +29,7 @@ You have been routed here because the task touches release plans, deployment rea
 - Require post-deploy verification before a release is considered successful.
 - Create rollback evidence before production releases when a previous stable state exists.
 - Persist release notes, verification outcomes, release checks, deployments, and rollback points as separate records.
+- Keep release API routes project-scoped unless the handler resolves `releasePlanId -> projectId` before authorization.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -39,6 +40,7 @@ You have been routed here because the task touches release plans, deployment rea
 - DO NOT deploy when required customer notes are unresolved.
 - DO NOT allow staging URLs to be indexable.
 - DO NOT leave intended live pages blocked by noindex or broken canonicals.
+- DO NOT expose release-plan-only routes before release-plan ownership is resolved and authorized.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -52,12 +54,28 @@ THEN use READY_WITH_WARNINGS and explain customer-visible risk.
 
 IF post-deploy HTTP, robots, canonical, schema, sitemap, or route checks fail severely:
 THEN persist a ROLLBACK_RECOMMENDED verification outcome and rollback evidence.
+
+IF an API route acts on a release plan:
+THEN use `/projects/:projectId/releases/:releasePlanId/...` or load the release plan first and authorize its project before executing.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
 
 <context>
 Required preflight scope: approval, notes, components, assets, SEO metadata, canonical/robots, schema, route conflicts, DNS, sitemap readiness, tracking readiness, staging noindex.
+
+Project-scoped release API shape:
+
+```text
+POST /projects/:projectId/releases/plan
+GET  /projects/:projectId/releases/:releasePlanId
+POST /projects/:projectId/releases/:releasePlanId/preflight
+POST /projects/:projectId/releases/:releasePlanId/approve-deploy
+POST /projects/:projectId/releases/:releasePlanId/deploy
+POST /projects/:projectId/releases/:releasePlanId/verify
+GET  /projects/:projectId/releases/:releasePlanId/notes
+GET  /projects/:projectId/releases/:releasePlanId/rollback-points
+```
 
 <example>
 ```text

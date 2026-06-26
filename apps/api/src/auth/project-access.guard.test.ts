@@ -35,6 +35,41 @@ void describe("ProjectAccessGuard", () => {
       true
     );
   });
+
+  void it("rejects guarded routes that do not expose a project context", () => {
+    const guard = new ProjectAccessGuard();
+
+    assert.throws(
+      () =>
+        guard.canActivate(
+          contextFor(
+            { releasePlanId: "release-1" },
+            {
+              "x-user-id": "user-1",
+              "x-project-ids": "project-1"
+            }
+          )
+        ),
+      (error) => error instanceof UnauthorizedException
+    );
+  });
+
+  void it("treats id params as project ids for legacy project-scoped routes", () => {
+    const guard = new ProjectAccessGuard();
+
+    assert.equal(
+      guard.canActivate(
+        contextFor(
+          { id: "project-1" },
+          {
+            "x-user-id": "user-1",
+            "x-project-id": "project-1"
+          }
+        )
+      ),
+      true
+    );
+  });
 });
 
 function contextFor(params: Record<string, string>, headers: Record<string, string>): ExecutionContext {

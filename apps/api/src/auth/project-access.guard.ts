@@ -13,7 +13,7 @@ export class ProjectAccessGuard implements CanActivate {
     const projectId = request.params.projectId ?? request.params.id;
 
     if (!projectId) {
-      return true;
+      throw new UnauthorizedException("Project access guard requires a project route context.");
     }
 
     if (projectId === "demo-project") {

@@ -25,6 +25,7 @@ priority_schema: "critical > strong > guideline"
 - Treat auth/tenant isolation as a production blocker, not polish.
 - Keep local demo access explicit; do not let demo bypasses apply to persisted customer projects.
 - Treat Google Search Console OAuth as a project-scoped external connection, not as application login.
+- Make project guards fail closed when a guarded route has no project context.
 </positive-directives>
 
 <absolute-constraints>
@@ -34,11 +35,15 @@ priority_schema: "critical > strong > guideline"
 - DO NOT treat header-based project context as production auth; wire it to Better Auth/session membership before real customers.
 - DO NOT log Better Auth session tokens, OAuth refresh tokens, access tokens, cookies, or authorization headers.
 - DO NOT put product authorization policy primarily in Fastify hooks when Nest guards can own it.
+- DO NOT protect release-plan-only routes with a project guard unless the route or guard resolves the release plan's project id first.
 </absolute-constraints>
 
 <conditional-logic>
 IF a route is under `/projects/:projectId`:
 THEN it eventually needs an auth guard plus project access guard before production use.
+
+IF a route is keyed by `releasePlanId`:
+THEN include `projectId` in the route or load the release plan and authorize against its project before allowing the handler.
 
 IF a background job acts on a project id:
 THEN it must either inherit a validated actor/context or operate as a trusted system actor with explicit audit metadata.

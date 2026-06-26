@@ -35,7 +35,15 @@ class ReleasesService {
     });
   }
 
-  preflight(releasePlanId: string): { releasePlanId: string; readiness: string; checks: ReleaseCheck[] } {
+  preflight(
+    projectId: string,
+    releasePlanId: string
+  ): {
+    projectId: string;
+    releasePlanId: string;
+    readiness: string;
+    checks: ReleaseCheck[];
+  } {
     const checks = [
       ReleaseCheckSchema.parse({
         checkKey: "approval_check",
@@ -68,22 +76,24 @@ class ReleasesService {
     ];
 
     return {
+      projectId,
       releasePlanId,
       readiness: decideReleaseReadiness(checks).kind,
       checks
     };
   }
 
-  async deploy(releasePlanId: string) {
+  async deploy(projectId: string, releasePlanId: string) {
     const jobId = randomUUID();
     const enqueued = await this.queues.enqueue({
       queueName: "deploy",
       jobName: "deploy",
       jobId,
-      data: { releasePlanId }
+      data: { projectId, releasePlanId }
     });
 
     return QueueJobSchema.parse({
+      projectId,
       releasePlanId,
       jobId,
       type: "deploy",
@@ -94,7 +104,7 @@ class ReleasesService {
     });
   }
 
-  verify(releasePlanId: string, body: unknown): ReleaseVerification {
+  verify(projectId: string, releasePlanId: string, body: unknown): ReleaseVerification & { projectId: string } {
     const input = VerifyReleaseRequestSchema.parse(body ?? {});
 
     const checks = [
@@ -137,40 +147,61 @@ class ReleasesService {
 
     const verificationStatus = decideReleaseVerificationStatus(checks);
 
-    return ReleaseVerificationSchema.parse({
+    return {
+      projectId,
+      ...ReleaseVerificationSchema.parse({
+        releasePlanId,
+        deploymentId: input.deploymentId,
+        verificationStatus,
+        summary:
+          verificationStatus === "live_healthy"
+            ? "Post-deploy verification passed."
+            : "Post-deploy verification completed with issues.",
+        checkedAt: new Date().toISOString(),
+        checks
+      })
+    };
+  }
+
+  listNotes(
+    projectId: string,
+    releasePlanId: string
+  ): { projectId: string; releasePlanId: string; notes: ReleaseNote[] } {
+    return {
+      projectId,
       releasePlanId,
-      deploymentId: input.deploymentId,
-      verificationStatus,
-      summary:
-        verificationStatus === "live_healthy"
-          ? "Post-deploy verification passed."
-          : "Post-deploy verification completed with issues.",
-      checkedAt: new Date().toISOString(),
-      checks
-    });
+      notes: [
+        ReleaseNoteSchema.parse({
+          releasePlanId,
+          audience: "internal",
+          title: "Release note placeholder",
+          body: "Release notes are persisted separately from release checks so customer-facing summaries can stay conservative.",
+          createdAt: new Date().toISOString()
+        })
+      ]
+    };
   }
 
-  listNotes(releasePlanId: string): ReleaseNote[] {
-    return [
-      ReleaseNoteSchema.parse({
-        releasePlanId,
-        audience: "internal",
-        title: "Release note placeholder",
-        body: "Release notes are persisted separately from release checks so customer-facing summaries can stay conservative.",
-        createdAt: new Date().toISOString()
-      })
-    ];
-  }
-
-  listRollbackPoints(releasePlanId: string): RollbackPoint[] {
-    return [
-      RollbackPointSchema.parse({
-        releasePlanId,
-        artifactKey: `rollback/${releasePlanId}/previous-stable.json`,
-        evidence: { source: "deployment_agent_preflight" },
-        createdAt: new Date().toISOString()
-      })
-    ];
+  listRollbackPoints(
+    projectId: string,
+    releasePlanId: string
+  ): {
+    projectId: string;
+    releasePlanId: string;
+    rollbackPoints: RollbackPoint[];
+  } {
+    return {
+      projectId,
+      releasePlanId,
+      rollbackPoints: [
+        RollbackPointSchema.parse({
+          releasePlanId,
+          artifactKey: `rollback/${releasePlanId}/previous-stable.json`,
+          evidence: { source: "deployment_agent_preflight" },
+          createdAt: new Date().toISOString()
+        })
+      ]
+    };
   }
 }
 
@@ -184,46 +215,48 @@ class ReleasesController {
     return this.releases.createPlan(projectId, body);
   }
 
-  @Get("releases/:releasePlanId")
-  getRelease(@Param("releasePlanId") releasePlanId: string) {
+  @Get("projects/:projectId/releases/:releasePlanId")
+  getRelease(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
     return {
+      projectId,
       releasePlanId,
       status: "draft"
     };
   }
 
-  @Post("releases/:releasePlanId/preflight")
-  preflight(@Param("releasePlanId") releasePlanId: string) {
-    return this.releases.preflight(releasePlanId);
+  @Post("projects/:projectId/releases/:releasePlanId/preflight")
+  preflight(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
+    return this.releases.preflight(projectId, releasePlanId);
   }
 
-  @Post("releases/:releasePlanId/approve-deploy")
-  approveDeploy(@Param("releasePlanId") releasePlanId: string) {
+  @Post("projects/:projectId/releases/:releasePlanId/approve-deploy")
+  approveDeploy(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
     return {
+      projectId,
       releasePlanId,
       status: "approved_for_deploy",
       approvedAt: new Date().toISOString()
     };
   }
 
-  @Post("releases/:releasePlanId/deploy")
-  deploy(@Param("releasePlanId") releasePlanId: string) {
-    return this.releases.deploy(releasePlanId);
+  @Post("projects/:projectId/releases/:releasePlanId/deploy")
+  deploy(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
+    return this.releases.deploy(projectId, releasePlanId);
   }
 
-  @Post("releases/:releasePlanId/verify")
-  verify(@Param("releasePlanId") releasePlanId: string, @Body() body: unknown) {
-    return this.releases.verify(releasePlanId, body);
+  @Post("projects/:projectId/releases/:releasePlanId/verify")
+  verify(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string, @Body() body: unknown) {
+    return this.releases.verify(projectId, releasePlanId, body);
   }
 
-  @Get("releases/:releasePlanId/notes")
-  listNotes(@Param("releasePlanId") releasePlanId: string) {
-    return this.releases.listNotes(releasePlanId);
+  @Get("projects/:projectId/releases/:releasePlanId/notes")
+  listNotes(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
+    return this.releases.listNotes(projectId, releasePlanId);
   }
 
-  @Get("releases/:releasePlanId/rollback-points")
-  listRollbackPoints(@Param("releasePlanId") releasePlanId: string) {
-    return this.releases.listRollbackPoints(releasePlanId);
+  @Get("projects/:projectId/releases/:releasePlanId/rollback-points")
+  listRollbackPoints(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
+    return this.releases.listRollbackPoints(projectId, releasePlanId);
   }
 }
 
