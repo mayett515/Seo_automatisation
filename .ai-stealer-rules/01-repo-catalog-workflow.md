@@ -1,5 +1,5 @@
 ---
-description: "Good Artist Steals workflow for fast architecture and implementation research"
+description: "Good Artist Inspiration workflow for fast architecture and implementation research"
 globs: "**/*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
@@ -9,10 +9,10 @@ dependencies: ["web-search?"]
 priority_schema: "critical > strong > guideline"
 ---
 
-# Repo Catalog Workflow
+# Good Artist Inspiration Repo Catalog Workflow
 
 <meta-instruction>
-Use this workflow to move quickly from capability need to proven reference pattern without turning research into a rewrite of someone else's project.
+Use this workflow to move quickly from capability need to proven reference pattern without turning research into a rewrite of someone else's project. The goal is to learn the shape of a mature solution, cite the source, and implement the local version in our own architecture.
 </meta-instruction>
 
 <positive-directives>

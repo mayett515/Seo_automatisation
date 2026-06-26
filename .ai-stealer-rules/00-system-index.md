@@ -1,5 +1,5 @@
 ---
-description: "Repo-catalog, GitHub, and web research workflow router"
+description: "Good Artist Inspiration workflow router for repo-catalog, GitHub, and web research"
 globs: "**/*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
@@ -9,17 +9,17 @@ dependencies: ["web-search?"]
 priority_schema: "critical > strong > guideline"
 ---
 
-# Stealer Workflow Router
+# Good Artist Inspiration Workflow Router
 
 <meta-instruction>
-Use this router when the task asks to find, compare, or adapt proven architecture, folder structures, component systems, workflows, algorithms, or implementation patterns from existing repositories or the web.
+Use this router when the task asks to find, compare, or adapt proven architecture, folder structures, component systems, workflows, algorithms, or implementation patterns from existing repositories or the web. Treat "Good Artist Inspiration" as defensive reference-mining: extract solution shape, record sources, and adapt the idea into this repo without copying code.
 </meta-instruction>
 
 <routing-logic>
 IF the task asks for repo-catalog research, GitHub examples, web research, or architecture pattern extraction:
 THEN load `.ai-stealer-rules/01-repo-catalog-workflow.md`.
 
-IF the task asks when to use the stealer workflow, or the task is about a new architecture-significant vertical slice, provider adapter, workflow engine, data model, component system, CI/deploy path, or testing strategy:
+IF the task asks when to use the Good Artist Inspiration workflow, or the task is about a new architecture-significant vertical slice, provider adapter, workflow engine, data model, component system, CI/deploy path, or testing strategy:
 THEN load `.ai-stealer-rules/02-stealer-checkpoints.md`.
 </routing-logic>
 
@@ -27,7 +27,7 @@ THEN load `.ai-stealer-rules/02-stealer-checkpoints.md`.
 - Start from `.ai-stealer-catalog/repo-catalog/index/module-intent-index.md` when the target capability is known.
 - Use `.ai-stealer-catalog/repo-catalog/index/search-terms.md` to guide repository searches.
 - Extract solution shape before implementation details.
-- Map stolen ideas into the Local SEO stack before recommending them.
+- Map inspired patterns into the Local SEO stack before recommending them.
 - Record references when a planning decision depends on an external source.
 - Use the checkpoint workflow for architecture-significant work; skip it for small obvious edits.
 </positive-directives>

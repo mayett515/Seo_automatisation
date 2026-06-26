@@ -1,5 +1,5 @@
 ---
-description: "Checkpoints for when to run the Good Artist Steals research workflow"
+description: "Checkpoints for when to run the Good Artist Inspiration research workflow"
 globs: "**/*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
@@ -12,7 +12,7 @@ dependencies:
 priority_schema: "critical > strong > guideline"
 ---
 
-# Stealer Workflow Checkpoints
+# Good Artist Inspiration Workflow Checkpoints
 
 <meta-instruction>
 Use this file to decide when architecture or implementation work should pause for repo-catalog, GitHub, or web pattern research before coding.
@@ -21,7 +21,7 @@ Use this file to decide when architecture or implementation work should pause fo
 ## 1. Required Checkpoints
 
 <positive-directives>
-- Run the stealer workflow before starting a new architecture-significant vertical slice.
+- Run the Good Artist Inspiration workflow before starting a new architecture-significant vertical slice.
 - Run it before defining a new external-provider adapter, especially Netlify, GSC, crawler/browser automation, analytics, object storage, auth, billing, email, or AI/Mastra tools.
 - Run it before designing a new long-running workflow, queue topology, retry model, or state machine.
 - Run it before creating a reusable component system, TanStack-heavy route/data/form/table pattern, preview UX, or dashboard surface.
