@@ -34,7 +34,7 @@ Quality attributes / non-functional requirements:
   security, reliability, performance, maintainability, operability, privacy, scalability, and cost.
 
 Project alias:
-  a "Tarantino-style inspiration pass" means the same thing as a Good Artist Inspiration pass: learn from proven references, cite sources, adapt the pattern locally, and do not copy code.
+  a "Tarantino-style inspiration pass/search/run" means the same thing as a Good Artist Inspiration pass: learn from proven references, cite sources, adapt the pattern locally, and do not copy code.
 ```
 
 </context>

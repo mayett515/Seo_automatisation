@@ -12,7 +12,7 @@ priority_schema: "critical > strong > guideline"
 # Good Artist Inspiration Workflow Router
 
 <meta-instruction>
-Use this router when the task asks to find, compare, or adapt proven architecture, folder structures, component systems, workflows, algorithms, or implementation patterns from existing repositories or the web. Treat "Good Artist Inspiration" as defensive reference-mining: extract solution shape, record sources, and adapt the idea into this repo without copying code. User aliases include "inspiration pass", "reference-mining pass", and "Tarantino-style inspiration pass".
+Use this router when the task asks to find, compare, or adapt proven architecture, folder structures, component systems, workflows, algorithms, or implementation patterns from existing repositories or the web. Treat "Good Artist Inspiration" as defensive reference-mining: extract solution shape, record sources, and adapt the idea into this repo without copying code. User aliases include "inspiration pass", "inspiration search", "inspiration run", "reference-mining pass", "reference-mining search", "reference-mining run", "Tarantino-style inspiration pass", "Tarantino-style inspiration search", and "Tarantino-style inspiration run".
 </meta-instruction>
 
 <routing-logic>
