@@ -29,7 +29,26 @@ Use this file to decide when architecture or implementation work should pause fo
 - Run it before choosing CI/CD, testing, observability, deployment, or failure-recovery conventions.
 </positive-directives>
 
-## 2. Skip Conditions
+## 2. Assistant Reminder Behavior
+
+<conditional-logic>
+IF a task touches a high-value checkpoint and the user has not explicitly asked for research:
+THEN briefly ask whether to run a Good Artist Inspiration pass before designing or implementing the slice.
+
+IF the task is security-sensitive, customer-data-sensitive, production-mutation-sensitive, or architecture-defining:
+THEN run at least a focused local-catalog pass unless the user explicitly says to skip research.
+
+IF the user asks to move fast on a small implementation:
+THEN skip broad research, but mention if the task would normally trigger an inspiration checkpoint.
+</conditional-logic>
+
+<example>
+```text
+This touches Mastra agent/workflow design, so it hits an inspiration checkpoint. Should I do a focused Good Artist Inspiration pass first, or implement from the current project rules?
+```
+</example>
+
+## 3. Skip Conditions
 
 <absolute-constraints>
 - DO NOT run repo/web research for tiny fixes, obvious TypeScript errors, copy edits, or narrow rule wording changes.
@@ -38,7 +57,7 @@ Use this file to decide when architecture or implementation work should pause fo
 - DO NOT copy source code verbatim without license review and attribution.
 </absolute-constraints>
 
-## 3. Research Sequence
+## 4. Research Sequence
 
 <conditional-logic>
 IF the checkpoint is triggered:
@@ -51,7 +70,7 @@ IF the researched pattern affects product architecture:
 THEN record the source and adapted decision in `.ai-stealer-findings/`, a planning doc, an ADR, or the relevant `.ai-project-rules/` shard.
 </conditional-logic>
 
-## 4. Local SEO Checkpoint Map
+## 5. Local SEO Checkpoint Map
 
 <context>
 High-value checkpoints for this app:
@@ -74,11 +93,20 @@ Reporting vertical slice:
 
 Tenancy/auth vertical slice:
   Better Auth integration, project membership, role checks, audit logs
+
+Mastra/agent vertical slice:
+  agent role boundaries, tool permissions, workflow checkpoints, memory/state, evaluation, human approval, deterministic worker handoff
+
+Observability/incident slice:
+  structured logs, correlation ids, audit trails, tenant-safe redaction, worker/job traceability
+
+Data/analytics slice:
+  event ingestion, dedupe, aggregation, retention, customer-safe output contracts, report serialization
 ```
 
 </context>
 
-## 5. Post-Flight Verification
+## 6. Post-Flight Verification
 
 <pre-flight-checklist>
 1. [ ] Did this task hit a required checkpoint or a skip condition?

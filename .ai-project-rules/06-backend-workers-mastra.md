@@ -9,6 +9,7 @@ dependencies:
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/backend/01-backend-architecture.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/04-worker-architecture.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md"
+  - ".ai-stealer-rules/02-stealer-checkpoints.md"
 priority_schema: "critical > strong > guideline"
 ---
 
@@ -26,6 +27,7 @@ You have been routed here because the task touches NestJS modules, Fastify HTTP,
 - Use Mastra Workflows for deterministic multi-step processes.
 - Use Mastra Agents for open-ended research, strategy, content, layout, analyst, and report tasks.
 - Persist job inputs, outputs, status, retries, failure evidence, and customer-visible results.
+- Before designing a new Mastra agent, workflow, tool permission model, memory/state model, or human-approval handoff, ask whether to run a focused Good Artist Inspiration pass.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -49,6 +51,9 @@ THEN model it as a worker or Mastra workflow step.
 
 IF work is open-ended analysis or content strategy:
 THEN model it as a Mastra agent whose output is validated before use.
+
+IF work introduces a new agent role, agent tool, workflow graph, memory model, evaluator, or production handoff:
+THEN consult `.ai-stealer-rules/02-stealer-checkpoints.md` and either run or explicitly skip a focused Good Artist Inspiration pass.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -77,4 +82,5 @@ return this.agent.runAndDeploy({ projectId });
 1. [ ] Did long-running work move to a queue, workflow, or worker?
 2. [ ] Did agent output cross a validation boundary before use?
 3. [ ] Did status and evidence persist for customer-visible workflows?
+4. [ ] If this introduced new Mastra/agent behavior, did I run or explicitly skip a Good Artist Inspiration pass?
 </pre-flight-checklist>
