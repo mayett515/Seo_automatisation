@@ -26,6 +26,7 @@ You have been routed here because the task touches analytics, tracking events, G
 - Preserve tenant isolation and project-level authorization.
 - Log approvals, deploys, rollbacks, worker failures, sitemap updates, GSC sync status, and report generation status.
 - Require explicit opt-in before advanced tracking such as session replay or heatmaps.
+- Require an ingestion boundary for public tracking endpoints before persisted project events are accepted.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -36,6 +37,7 @@ You have been routed here because the task touches analytics, tracking events, G
 - DO NOT enable session replay by default.
 - DO NOT mix tracking data across projects.
 - DO NOT report silent tracking failures as success.
+- DO NOT accept persisted project tracking events from the public endpoint without an ingestion token or equivalent project-scoped public key.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -49,6 +51,9 @@ THEN encrypt them and enforce project-level access.
 
 IF tracking is missing during deployment:
 THEN report a warning unless tracking is contractually required.
+
+IF a tracking endpoint is public by design:
+THEN keep the payload allowlisted and require a project-scoped ingestion boundary before persisting real customer events.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -77,4 +82,5 @@ track("form_submit", { name, email, phone, message });
 1. [ ] Did tracking payloads exclude sensitive user-provided content?
 2. [ ] Did token handling preserve encryption and project isolation?
 3. [ ] Did operational status reflect real failures and retries?
+4. [ ] Did public tracking ingestion reject persisted project events without a trusted ingestion boundary?
 </pre-flight-checklist>

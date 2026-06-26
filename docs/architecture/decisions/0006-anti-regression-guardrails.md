@@ -47,6 +47,15 @@ build
 test
 ```
 
+Current behavioral tests also guard high-risk review findings:
+
+- release routes without project context must fail closed
+- persisted UUID projects require database-backed membership authorization
+- OAuth state signing rejects tampering and expiry
+- encrypted refresh tokens must not decrypt after tampering
+- GSC sync job payloads and opportunity-signal classification are tested as pure logic
+- persisted project tracking events require an ingestion token unless the project is an explicit demo/local scaffold
+
 `text:check` exists specifically to catch flattened-file and CR-only text regressions for critical files such as:
 
 - `.env.example`
@@ -92,7 +101,7 @@ Rejected. Frozen reference bundles are meant to remain copied source material. P
 - Do not remove `text:check` from CI without replacing it with an equivalent check.
 - Do not let a review finding remain only in chat if it represents a repeated or production-risk issue.
 - Do not edit frozen reference bundles just to satisfy a broad whitespace guard.
-- Do not add a new critical project-owned root/config file without considering whether it belongs in `tools/check-text-health.mjs`.
+- Do not add a new critical project-owned root/config file without considering whether it belongs in `tools/check-text-health.ts`.
 
 ## Related Files
 

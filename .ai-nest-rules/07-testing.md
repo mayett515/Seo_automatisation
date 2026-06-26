@@ -18,6 +18,8 @@ priority_schema: "critical > strong > guideline"
 - Test queue producer behavior so queued responses require actual queue calls.
 - Test worker idempotency for retry paths.
 - Add focused behavioral tests for review findings that would not be caught by typecheck alone.
+- Test authorization failure paths, especially guarded routes with missing project context and UUID project ids.
+- Test public ingestion boundaries for tracking or webhook-style endpoints before persistence is added.
 - Keep typecheck and lint in CI, but do not treat them as substitutes for behavioral tests.
 </positive-directives>
 

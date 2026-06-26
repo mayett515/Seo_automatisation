@@ -111,6 +111,7 @@ export const releaseCheckSeverities = ["info", "warning", "blocker"] as const;
 export const releaseCheckResults = ["passed", "failed", "skipped"] as const;
 export const releaseItemActions = ["create", "update", "redirect", "noindex", "remove"] as const;
 export const releaseNoteAudiences = ["internal", "customer"] as const;
+export const customerMembershipRoles = ["owner", "admin", "editor", "viewer"] as const;
 
 export const ProjectIdSchema = z.string().min(1);
 export const LeadIdSchema = z.string().min(1);
@@ -126,6 +127,7 @@ export const GscSyncStatusSchema = z.enum(gscSyncStatuses);
 export const GscOpportunitySignalTypeSchema = z.enum(gscOpportunitySignalTypes);
 export const GscOpportunitySignalStatusSchema = z.enum(gscOpportunitySignalStatuses);
 export const ApprovalStatusSchema = z.enum(approvalStatuses);
+export const CustomerMembershipRoleSchema = z.enum(customerMembershipRoles);
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
 
@@ -350,9 +352,13 @@ export const GscSitemapSubmissionSchema = z.object({
 export const TrackingEventSchema = z.object({
   eventName: TrackingEventNameSchema,
   projectId: ProjectIdSchema,
-  pageId: z.string().min(1).optional(),
-  route: z.string().min(1),
-  componentId: z.string().min(1).optional(),
+  pageId: z.string().min(1).max(128).optional(),
+  route: z
+    .string()
+    .min(1)
+    .max(2048)
+    .refine((value) => value.startsWith("/"), "Expected a path-only route starting with /"),
+  componentId: z.string().min(1).max(128).optional(),
   occurredAt: z.string().datetime().optional()
 });
 
@@ -434,3 +440,4 @@ export type GscSyncStatus = z.output<typeof GscSyncStatusSchema>;
 export type GscOpportunitySignalType = z.output<typeof GscOpportunitySignalTypeSchema>;
 export type GscOpportunitySignalStatus = z.output<typeof GscOpportunitySignalStatusSchema>;
 export type ApprovalStatus = z.output<typeof ApprovalStatusSchema>;
+export type CustomerMembershipRole = z.output<typeof CustomerMembershipRoleSchema>;

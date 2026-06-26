@@ -41,7 +41,9 @@ request
 
 Google Search Console OAuth is not application login. It is a project-scoped external provider connection and remains protected by project membership.
 
-The current header-based project access guard remains a local/demo scaffold. It must be replaced or backed by Better Auth session and database membership before real customer data flows through the system.
+The current request user extraction remains a local/demo scaffold. Persisted UUID project authorization is backed by database membership; non-UUID header authorization is allowed only for local scaffold IDs and demo flows.
+
+The full Better Auth login/session flow is still a separate slice. When it lands, it must replace the temporary user header extraction with a trusted session-derived user context while keeping the same Nest guard and database membership boundary.
 
 ## Consequences
 
@@ -54,16 +56,16 @@ What becomes easier:
 
 Costs:
 
-- We need a proper membership model.
+- We need to wire Better Auth sessions into the existing membership model.
 - We need a Better Auth integration slice and adapter compatibility tests under Nest Fastify.
 - Existing demo/header auth must be treated as scaffolding, not production security.
 
 Follow-up work:
 
-- Add customer/project membership tables or document a derived customer-membership model.
+- Keep customer membership as the canonical authorization model for projects; add narrower project permissions only when role needs demand them.
 - Configure Better Auth with Drizzle/Postgres.
 - Mount the auth handler under a deliberate route.
-- Replace header-only access with session-backed user context.
+- Replace temporary user-header extraction with session-backed user context.
 - Add permission metadata for deploy, GSC, reports, approvals, and admin routes.
 - Add actor metadata for user-triggered jobs and explicit system actor behavior for scheduled jobs.
 
@@ -88,6 +90,7 @@ Deferred. Keycloak/Ory-style systems may become useful later, but they are too h
 ## Regression Guard
 
 - Do not treat UUID-like route params as authorization.
+- Do not authorize UUID-like persisted project ids through request headers alone.
 - Do not expose GSC data, reports, releases, approvals, leads, tracking events, or deployments without project/customer access checks.
 - Do not let agents or workers bypass tenant boundaries when acting on persisted data.
 - Do not log session tokens, refresh tokens, access tokens, cookies, or authorization headers.

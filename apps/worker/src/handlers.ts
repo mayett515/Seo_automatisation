@@ -196,7 +196,7 @@ async function insertOpportunitySignals(db: Db, syncRunId: string, rows: StoredS
   }
 }
 
-function classifyOpportunitySignals(row: GscSearchAnalyticsRow): GscOpportunitySignalType[] {
+export function classifyOpportunitySignals(row: GscSearchAnalyticsRow): GscOpportunitySignalType[] {
   const signals: GscOpportunitySignalType[] = [];
 
   if (row.impressions > 0 && row.clicks === 0) {
@@ -311,7 +311,7 @@ function normalizeFailureReason(error: unknown): string {
   return "gsc_sync_failed";
 }
 
-function parseGscSyncJobData(data: unknown): { projectId: string; syncRunId: string } {
+export function parseGscSyncJobData(data: unknown): { projectId: string; syncRunId: string } {
   if (!data || typeof data !== "object") {
     throw new Error("GSC sync job data must be an object");
   }

@@ -20,10 +20,12 @@ priority_schema: "critical > strong > guideline"
 - Define liveness/readiness before production traffic.
 - Review Fastify recommendations before changing timeout, proxy, compression, static asset, or scaling behavior.
 - For AWS/Fargate, document which layer owns TLS, redirects, health checks, scaling, and logs.
+- Configure app-level body limits, security headers, and conservative rate limits before exposing API traffic.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT make Fastify directly responsible for multi-domain edge behavior unless deployment architecture explicitly requires it.
 - DO NOT treat local `app.listen` behavior as production deployment design.
 - DO NOT expose production traffic without a readiness strategy for DB, Redis, queues, and required provider config.
+- DO NOT leave public write endpoints without rate limiting, payload limits, and an explicit authentication or ingestion boundary.
 </absolute-constraints>

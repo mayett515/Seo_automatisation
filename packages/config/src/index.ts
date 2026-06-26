@@ -32,7 +32,8 @@ export const AppEnvSchema = z.object({
   GSC_TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
   GSC_OAUTH_STATE_SECRET: z.string().min(32).optional(),
   BETTER_AUTH_SECRET: z.string().min(1).optional(),
-  BETTER_AUTH_URL: z.string().url().optional()
+  BETTER_AUTH_URL: z.string().url().optional(),
+  TRACKING_INGEST_TOKEN: z.string().min(32).optional()
 });
 
 export type AppEnv = z.output<typeof AppEnvSchema>;

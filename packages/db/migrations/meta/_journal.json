@@ -29,6 +29,13 @@
       "when": 1782405143456,
       "tag": "0003_left_strong_guy",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782472720970,
+      "tag": "0004_regular_polaris",
+      "breakpoints": true
     }
   ]
 }

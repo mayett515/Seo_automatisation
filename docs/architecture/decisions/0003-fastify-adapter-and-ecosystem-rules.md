@@ -71,3 +71,13 @@ Before adding a plugin:
 Fastify recommends using a reverse proxy/load balancer for production edge concerns such as TLS termination, redirects, compression, multi-domain behavior, and static assets.
 
 For this project, that likely means AWS/load-balancer infrastructure owns edge behavior, while Nest/Fastify focuses on application HTTP behavior.
+
+## Implementation Update
+
+The API bootstrap now registers adapter-level hardening:
+
+- `@fastify/helmet` for HTTP security headers
+- `@fastify/rate-limit` with a conservative global limit
+- a Fastify body limit for API payload protection
+
+These remain runtime/adapter concerns. Product authorization still belongs in Nest guards, and tenant access still resolves through the membership boundary described in ADR 0005.

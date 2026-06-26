@@ -1,5 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable, Optional, UnauthorizedException } from "@nestjs/common";
+import { parseAppEnv } from "@localseo/config";
 import type { FastifyRequest } from "fastify";
+import { ProjectMembershipService } from "./project-membership.service.js";
+
+const env = parseAppEnv(process.env);
 
 type ProjectScopedParams = {
   projectId?: string;
@@ -8,7 +12,9 @@ type ProjectScopedParams = {
 
 @Injectable()
 export class ProjectAccessGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
+  constructor(@Optional() private readonly memberships?: ProjectMembershipService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<FastifyRequest<{ Params: ProjectScopedParams }>>();
     const projectId = request.params.projectId ?? request.params.id;
 
@@ -24,6 +30,22 @@ export class ProjectAccessGuard implements CanActivate {
 
     if (!userId) {
       throw new UnauthorizedException("Project access requires an authenticated user context.");
+    }
+
+    if (isUuid(projectId)) {
+      if (!this.memberships?.isDatabaseBacked()) {
+        throw new UnauthorizedException("Persisted project access requires database-backed membership checks.");
+      }
+
+      if (!(await this.memberships.canAccessProject({ userId, projectId }))) {
+        throw new UnauthorizedException("Authenticated user is not authorized for this project.");
+      }
+
+      return true;
+    }
+
+    if (env.NODE_ENV === "production") {
+      throw new UnauthorizedException("Non-persisted project ids are not accepted in production.");
     }
 
     const allowedProjectIds = parseProjectIds(readHeader(request, "x-project-ids"));
@@ -62,4 +84,8 @@ function parseProjectIds(value: string | undefined): Set<string> {
       .map((item) => item.trim())
       .filter((item) => item.length > 0)
   );
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
 }

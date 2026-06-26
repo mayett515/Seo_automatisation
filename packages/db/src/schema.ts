@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   approvalStatuses,
+  customerMembershipRoles,
   deploymentStatuses,
   gscConnectionStatuses,
   gscOpportunitySignalStatuses,
@@ -23,6 +24,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid
 } from "drizzle-orm/pg-core";
 
@@ -38,6 +40,7 @@ export const releaseNoteAudienceEnum = pgEnum("release_note_audience", releaseNo
 export const releaseSeverityEnum = pgEnum("release_check_severity", releaseCheckSeverities);
 export const releaseCheckResultEnum = pgEnum("release_check_result", releaseCheckResults);
 export const approvalStatusEnum = pgEnum("approval_status", approvalStatuses);
+export const customerMembershipRoleEnum = pgEnum("customer_membership_role", customerMembershipRoles);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -57,6 +60,25 @@ export const customers = pgTable("customers", {
   name: text("name").notNull(),
   ...timestamps
 });
+
+export const customerMemberships = pgTable(
+  "customer_memberships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    role: customerMembershipRoleEnum("role").notNull().default("viewer"),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("customer_memberships_customer_user_idx").on(table.customerId, table.userId),
+    index("customer_memberships_user_idx").on(table.userId)
+  ]
+);
 
 export const leads = pgTable("leads", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -427,6 +449,17 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   gscSyncRuns: many(gscSyncRuns),
   gscOpportunitySignals: many(gscOpportunitySignals),
   reports: many(reports)
+}));
+
+export const customerRelations = relations(customers, ({ many, one }) => ({
+  owner: one(users, { fields: [customers.ownerUserId], references: [users.id] }),
+  memberships: many(customerMemberships),
+  projects: many(projects)
+}));
+
+export const customerMembershipRelations = relations(customerMemberships, ({ one }) => ({
+  customer: one(customers, { fields: [customerMemberships.customerId], references: [customers.id] }),
+  user: one(users, { fields: [customerMemberships.userId], references: [users.id] })
 }));
 
 export const pageProposalRelations = relations(pageProposals, ({ many, one }) => ({

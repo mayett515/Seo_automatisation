@@ -22,6 +22,7 @@ priority_schema: "critical > strong > guideline"
 - Ask before installing dependencies or registering new runtime plugins.
 - Keep plugin registration centralized near bootstrap or a dedicated infrastructure module.
 - Use Fastify auth/cookie/CORS/security plugins only for adapter-level behavior; product authorization remains in Nest guards.
+- Use maintained Fastify plugins for adapter-level security headers and rate limits when production HTTP traffic is exposed.
 </positive-directives>
 
 <absolute-constraints>
@@ -37,6 +38,9 @@ THEN prefer the Nest abstraction unless Fastify runtime behavior is explicitly r
 
 IF a plugin handles security, cookies, multipart, static files, compression, or CORS:
 THEN document production defaults and test the affected route behavior.
+
+IF adding rate-limit, helmet, body-limit, or proxy behavior:
+THEN configure it at bootstrap or infrastructure level and keep product authorization in Nest guards.
 
 IF Better Auth requires a Fastify handler, cookie behavior, or CORS compatibility:
 THEN keep the handler/runtime plumbing isolated and keep project authorization in Nest guards.
