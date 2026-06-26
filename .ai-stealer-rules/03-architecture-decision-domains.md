@@ -35,6 +35,9 @@ Quality attributes / non-functional requirements:
 
 Project alias:
   a "Tarantino-style inspiration pass/search/run" means the same thing as a Good Artist Inspiration pass: learn from proven references, cite sources, adapt the pattern locally, and do not copy code.
+
+Pattern mining:
+  another alias for the same workflow when the task is to identify reusable implementation or architecture patterns from references.
 ```
 
 </context>
