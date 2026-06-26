@@ -7,6 +7,7 @@ model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
   - ".ai-stealer-rules/01-repo-catalog-workflow.md"
+  - ".ai-stealer-rules/03-architecture-decision-domains.md"
   - ".ai-stealer-catalog/repo-catalog/index/module-intent-index.md"
   - ".ai-stealer-catalog/repo-catalog/index/search-terms.md"
 priority_schema: "critical > strong > guideline"
@@ -36,7 +37,7 @@ IF a task touches a high-value checkpoint and the user has not explicitly asked 
 THEN briefly ask whether to run a Good Artist Inspiration pass before designing or implementing the slice.
 
 IF the task is security-sensitive, customer-data-sensitive, production-mutation-sensitive, or architecture-defining:
-THEN run at least a focused local-catalog pass unless the user explicitly says to skip research.
+THEN scan `.ai-stealer-rules/03-architecture-decision-domains.md` and run at least a focused local-catalog pass unless the user explicitly says to skip research.
 
 IF the user asks to move fast on a small implementation:
 THEN skip broad research, but mention if the task would normally trigger an inspiration checkpoint.
@@ -61,7 +62,7 @@ This touches Mastra agent/workflow design, so it hits an inspiration checkpoint.
 
 <conditional-logic>
 IF the checkpoint is triggered:
-THEN define the capability, search the local seed catalog, inspect relevant architecture references, optionally search GitHub/web, extract 2-3 candidate patterns, and map the chosen pattern into the Local SEO stack.
+THEN define the capability, scan architecture decision domains, search the local seed catalog, inspect relevant architecture references, optionally search GitHub/web, extract 2-3 candidate patterns, and map the chosen pattern into the Local SEO stack.
 
 IF time is limited:
 THEN use the local seed catalog plus one high-confidence external reference instead of broad research.
@@ -110,7 +111,8 @@ Data/analytics slice:
 
 <pre-flight-checklist>
 1. [ ] Did this task hit a required checkpoint or a skip condition?
-2. [ ] Did I start from the local seed catalog before broad search?
-3. [ ] Did I adapt the idea into our NestJS/Fastify, BullMQ, Mastra, React/TanStack, Drizzle/Postgres architecture?
-4. [ ] Did I record any external source that influenced the decision?
+2. [ ] Did I scan architecture decision domains for unknown-unknowns?
+3. [ ] Did I start from the local seed catalog before broad search?
+4. [ ] Did I adapt the idea into our NestJS/Fastify, BullMQ, Mastra, React/TanStack, Drizzle/Postgres architecture?
+5. [ ] Did I record any external source that influenced the decision?
 </pre-flight-checklist>

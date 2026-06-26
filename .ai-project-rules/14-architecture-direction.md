@@ -9,6 +9,7 @@ dependencies:
   - ".ai-project-rules/01-product-source-of-truth.md"
   - ".ai-project-rules/02-stack-and-boundaries.md"
   - ".ai-project-rules/06-backend-workers-mastra.md"
+  - ".ai-stealer-rules/03-architecture-decision-domains.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/02-stack-decisions.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/03-service-boundaries.md"
   - "C:\\total typescript\\Architecture_Karteikarten"
@@ -34,6 +35,7 @@ You have been routed here because the task touches architecture style, dependenc
 - Keep Mastra agents/workflows in reasoning, orchestration, and proposal generation. Deterministic workers perform production mutations.
 - Wire concrete adapters in process composition roots, not inside controllers, domain functions, agents, or random worker handlers.
 - Use System Design guidance for AWS, Postgres, Redis, object storage, observability, security, retries, idempotency, and failure recovery.
+- Before writing an ADR or shaping a new vertical slice, scan `.ai-stealer-rules/03-architecture-decision-domains.md` for cross-cutting concerns and quality attributes the user may not have named.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -66,6 +68,9 @@ THEN route it through a BullMQ job and deterministic worker.
 
 IF work is open-ended reasoning, strategy, SEO analysis, content proposal, or release evaluation:
 THEN model it as a Mastra workflow/agent output that is schema-validated before any worker acts.
+
+IF the task is an ADR, new slice, major refactor, provider integration, production mutation, public endpoint, or tenant-data boundary:
+THEN scan `.ai-stealer-rules/03-architecture-decision-domains.md` before finalizing the design.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -121,4 +126,5 @@ const mainWebsite = { netlifySiteId: "..." };
 4. [ ] Did agents stay in reasoning while deterministic workers own production mutations?
 5. [ ] Did each shared enum, event, and payload shape have a declared source of truth?
 6. [ ] Did the design remain a modular monolith unless a proven boundary requires otherwise?
+7. [ ] Did I scan architecture decision domains for relevant cross-cutting concerns?
 </pre-flight-checklist>
