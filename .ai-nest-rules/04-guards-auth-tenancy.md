@@ -31,6 +31,7 @@ priority_schema: "critical > strong > guideline"
 - Gate `demo-project` and non-UUID scaffold access to non-production environments only.
 - Validate user ids before DB membership lookup and return auth failures instead of leaking DB type errors.
 - Use route metadata or explicit guard variants for permission-sensitive actions such as approve, deploy, GSC connect, report publishing, and admin changes.
+- When cookie/session auth protects mutating routes, define the SameSite, Origin/Referer, and CSRF-token posture before production exposure.
 </positive-directives>
 
 <absolute-constraints>
@@ -41,6 +42,7 @@ priority_schema: "critical > strong > guideline"
 - DO NOT authorize UUID-like project ids through request headers alone.
 - DO NOT treat `x-user-id`, `x-project-id`, or `x-project-ids` as a trustworthy production identity boundary.
 - DO NOT let `demo-project` bypass authentication or ingestion boundaries in production.
+- DO NOT expose credentialed cookie-based POST/PUT/PATCH/DELETE routes without an explicit CSRF protection decision.
 - DO NOT log Better Auth session tokens, OAuth refresh tokens, access tokens, cookies, or authorization headers.
 - DO NOT put product authorization policy primarily in Fastify hooks when Nest guards can own it.
 - DO NOT protect release-plan-only routes with a project guard unless the route or guard resolves the release plan's project id first.
@@ -74,6 +76,9 @@ THEN it must either inherit a validated actor/context or operate as a trusted sy
 
 IF the task wires application login/session handling:
 THEN prefer Better Auth session primitives and verify Nest Fastify adapter compatibility before custom auth code.
+
+IF session cookies are accepted on mutating routes:
+THEN verify SameSite settings and add CSRF-token or Origin/Referer validation where the auth provider does not already cover the risk.
 
 IF the task wires role or permission checks:
 THEN model the check from database-backed membership and route metadata, not from request headers or route params alone.

@@ -3,8 +3,6 @@ import { parseAppEnv } from "@localseo/config";
 import type { FastifyRequest } from "fastify";
 import { ProjectMembershipService } from "./project-membership.service.js";
 
-const env = parseAppEnv(process.env);
-
 type ProjectScopedParams = {
   projectId?: string;
   id?: string;
@@ -22,7 +20,9 @@ export class ProjectAccessGuard implements CanActivate {
       throw new UnauthorizedException("Project access guard requires a project route context.");
     }
 
-    if (projectId === "demo-project") {
+    const env = parseAppEnv(process.env);
+
+    if (projectId === "demo-project" && env.NODE_ENV !== "production") {
       return true;
     }
 
@@ -33,6 +33,10 @@ export class ProjectAccessGuard implements CanActivate {
     }
 
     if (isUuid(projectId)) {
+      if (!isUuid(userId)) {
+        throw new UnauthorizedException("Authenticated user context is malformed.");
+      }
+
       if (!this.memberships?.isDatabaseBacked()) {
         throw new UnauthorizedException("Persisted project access requires database-backed membership checks.");
       }

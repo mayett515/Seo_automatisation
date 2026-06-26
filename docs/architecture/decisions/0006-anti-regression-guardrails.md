@@ -31,7 +31,7 @@ Human guardrail:
   ADRs and progress notes explaining why the guard exists and what trade-off it protects
 ```
 
-When a review finds a repeated or high-risk issue, prefer adding an executable guard first. If an executable guard is not practical yet, record the limitation in an ADR and route it through the relevant hidden rule file.
+When a review finds a repeated or high-risk issue, prefer adding an executable guard first. If the fix is implementable without new product infrastructure, ship the code/test guard in the same cycle that codifies the rule. If an executable guard is not practical yet, record the limitation in an ADR and route it through the relevant hidden rule file.
 
 ## Current Executable Guards
 
@@ -55,6 +55,8 @@ Current behavioral tests also guard high-risk review findings:
 - encrypted refresh tokens must not decrypt after tampering
 - GSC sync job payloads and opportunity-signal classification are tested as pure logic
 - persisted project tracking events require an ingestion token unless the project is an explicit demo/local scaffold
+- `demo-project` and local scaffold bypasses are rejected in production
+- malformed user ids are rejected before UUID-backed membership lookup
 
 `text:check` exists specifically to catch flattened-file and CR-only text regressions for critical files such as:
 

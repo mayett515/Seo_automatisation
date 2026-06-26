@@ -38,6 +38,36 @@ export const AppEnvSchema = z.object({
 
 export type AppEnv = z.output<typeof AppEnvSchema>;
 
+export const productionRequiredEnvKeys = [
+  "WEB_ORIGIN",
+  "API_PUBLIC_URL",
+  "DATABASE_URL",
+  "REDIS_URL",
+  "BETTER_AUTH_SECRET",
+  "BETTER_AUTH_URL",
+  "TRACKING_INGEST_TOKEN",
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "GOOGLE_OAUTH_REDIRECT_URI",
+  "GSC_TOKEN_ENCRYPTION_KEY",
+  "GSC_OAUTH_STATE_SECRET"
+] as const;
+
 export function parseAppEnv(input: NodeJS.ProcessEnv): AppEnv {
   return AppEnvSchema.parse(input);
+}
+
+export function assertProductionRuntimeEnv(input: NodeJS.ProcessEnv, env = parseAppEnv(input)): void {
+  if (env.NODE_ENV !== "production") {
+    return;
+  }
+
+  const missing = productionRequiredEnvKeys.filter((key) => {
+    const value = input[key];
+    return typeof value !== "string" || value.trim().length === 0;
+  });
+
+  if (missing.length > 0) {
+    throw new Error(`Production runtime configuration is missing required variables: ${missing.join(", ")}`);
+  }
 }

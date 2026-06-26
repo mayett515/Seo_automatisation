@@ -13,6 +13,17 @@ void describe("ProjectAccessGuard", () => {
     assert.equal(await guard.canActivate(contextFor({ projectId: "demo-project" }, {})), true);
   });
 
+  void it("rejects demo project access in production", async () => {
+    await withNodeEnv("production", async () => {
+      const guard = new ProjectAccessGuard();
+
+      await assert.rejects(
+        guard.canActivate(contextFor({ projectId: "demo-project" }, {})),
+        (error) => error instanceof UnauthorizedException
+      );
+    });
+  });
+
   void it("rejects project access without user context", async () => {
     const guard = new ProjectAccessGuard();
 
@@ -90,6 +101,31 @@ void describe("ProjectAccessGuard", () => {
     );
   });
 
+  void it("rejects malformed user ids before persisted membership lookup", async () => {
+    let membershipLookupCalled = false;
+    const verifier: ProjectMembershipVerifier = {
+      isDatabaseBacked: () => true,
+      canAccessProject: () => {
+        membershipLookupCalled = true;
+        return Promise.resolve(true);
+      }
+    };
+    const guard = new ProjectAccessGuard(verifier as ProjectMembershipService);
+
+    await assert.rejects(
+      guard.canActivate(
+        contextFor(
+          { projectId: "11111111-1111-4111-8111-111111111111" },
+          {
+            "x-user-id": "not-a-uuid"
+          }
+        )
+      ),
+      (error) => error instanceof UnauthorizedException
+    );
+    assert.equal(membershipLookupCalled, false);
+  });
+
   void it("allows persisted UUID project access only through the membership verifier", async () => {
     const verifier: ProjectMembershipVerifier = {
       isDatabaseBacked: () => true,
@@ -124,4 +160,19 @@ function contextFor(params: Record<string, string>, headers: Record<string, stri
       })
     })
   } as ExecutionContext;
+}
+
+async function withNodeEnv<T>(nodeEnv: string, run: () => Promise<T>): Promise<T> {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = nodeEnv;
+
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previous;
+    }
+  }
 }

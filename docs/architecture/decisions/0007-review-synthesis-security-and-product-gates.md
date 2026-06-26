@@ -31,6 +31,9 @@ Treat the following as accepted production gates before real customer data:
 8. **Customer reports need executable metric bans.** Customer-facing report schemas/serializers must reject impressions, CTR, and average-position fields.
 9. **Shared providers should own shared pools.** The API process should converge on one DB provider instead of feature-local pools.
 10. **Fastify runtime hardening must match deployment topology.** Public endpoints need route-appropriate rate limits; `trustProxy` must reflect the actual proxy layer.
+11. **Malformed identity input must fail as auth, not DB errors.** Any user/session id used against UUID columns must be validated before membership queries.
+12. **Cookie-session auth needs an explicit CSRF posture.** Credentialed mutating routes must rely on Better Auth/session protections, SameSite policy, and any needed CSRF token/Origin checks before production exposure.
+13. **Production must fail fast on required runtime secrets.** Production API boot should reject missing security/runtime variables instead of silently serving partially configured auth, tracking, OAuth, DB, or queue paths.
 
 ## What We Do Not Treat As Immediate Blockers
 
@@ -52,6 +55,7 @@ Costs:
 - Auth/session work becomes the next prerequisite before real customer data.
 - Release/deploy persistence moves ahead of more UI polish.
 - Tracking cannot honestly be called accepted in production until persistence or queueing exists.
+- Cheap live contradictions should be fixed with code and tests in the same cycle that promotes them to rules.
 
 ## Regression Guard
 
@@ -59,6 +63,7 @@ Costs:
 - Do not implement every model suggestion blindly; classify it as blocking, important, polish, or not accepted.
 - Do not call documented architecture "done" until code, tests, or CI enforce the boundary.
 - Do not let scaffold conveniences (`demo-project`, headers, global tokens, mocked success) look like production guarantees.
+- Do not leave one-line production-safety fixes as rules-only work when a focused unit test can guard them immediately.
 
 ## Related Files
 

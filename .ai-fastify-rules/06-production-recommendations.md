@@ -23,12 +23,14 @@ priority_schema: "critical > strong > guideline"
 - Configure app-level body limits, security headers, and conservative rate limits before exposing API traffic.
 - Use route-specific rate limits for public write endpoints when their traffic profile differs from authenticated API routes.
 - Treat `trustProxy` as a deployment assumption that must match the actual reverse-proxy/load-balancer topology.
+- Fail fast at production boot when required security/runtime environment variables for exposed routes are missing.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT make Fastify directly responsible for multi-domain edge behavior unless deployment architecture explicitly requires it.
 - DO NOT treat local `app.listen` behavior as production deployment design.
 - DO NOT expose production traffic without a readiness strategy for DB, Redis, queues, and required provider config.
+- DO NOT let production boot with missing auth/session, tracking-ingestion, OAuth token, database, or queue secrets when those routes are exposed.
 - DO NOT leave public write endpoints without rate limiting, payload limits, and an explicit authentication or ingestion boundary.
 - DO NOT enable broad proxy trust for directly exposed services or undocumented network topologies.
 </absolute-constraints>
@@ -39,4 +41,7 @@ THEN document the expected proxy layer and ensure direct public access to the No
 
 IF a public endpoint is high-volume or unauthenticated:
 THEN define a separate rate-limit policy rather than relying only on the global API limit.
+
+IF `NODE_ENV=production`:
+THEN validate required runtime configuration during process startup, before listening for traffic.
 </conditional-logic>

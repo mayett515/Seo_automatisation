@@ -7,8 +7,6 @@ import {
   type TrackingIngestResult
 } from "@localseo/contracts";
 
-const env = parseAppEnv(process.env);
-
 @Injectable()
 export class TrackingService {
   ingest(event: TrackingEvent, trackingToken?: string): TrackingIngestResult {
@@ -40,7 +38,9 @@ class TrackingController {
 export class TrackingModule {}
 
 export function assertTrackingIngestAllowed(event: TrackingEvent, trackingToken: string | undefined): void {
-  if (event.projectId === "demo-project") {
+  const env = parseAppEnv(process.env);
+
+  if (event.projectId === "demo-project" && env.NODE_ENV !== "production") {
     return;
   }
 
