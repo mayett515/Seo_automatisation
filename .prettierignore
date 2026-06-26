@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .turbo/
+.qwen/
 
 # Frozen/reference rule bundles and copied artifacts
 .ai-rules/

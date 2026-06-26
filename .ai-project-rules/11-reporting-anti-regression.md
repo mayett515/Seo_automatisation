@@ -58,6 +58,12 @@ THEN place it in internal planning, monitoring, or a future roadmap.
 
 IF a future service expansion is mentioned:
 THEN label it as planned, opportunity, next rollout, or monitoring.
+
+IF a customer-facing report schema, serializer, component, export, or API response is introduced:
+THEN add an executable test or schema guard proving impressions, CTR, and average-position fields cannot appear in that customer-facing payload.
+
+IF GSC performance data is exposed through an API:
+THEN separate internal-radar responses from customer-report responses before reuse.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -86,4 +92,5 @@ The report proves Entruempelung is won because impressions increased and average
 1. [ ] Did I avoid banned GSC metrics in customer-facing result tables?
 2. [ ] Did I keep future opportunities separate from proven ranking wins?
 3. [ ] Did every customer-facing claim use conservative proof language?
+4. [ ] Did customer-facing report contracts actively exclude impressions, CTR, and average-position fields?
 </pre-flight-checklist>

@@ -27,6 +27,8 @@ You have been routed here because the task touches analytics, tracking events, G
 - Log approvals, deploys, rollbacks, worker failures, sitemap updates, GSC sync status, and report generation status.
 - Require explicit opt-in before advanced tracking such as session replay or heatmaps.
 - Require an ingestion boundary for public tracking endpoints before persisted project events are accepted.
+- Prefer per-project public ingestion keys over global shared tracking secrets.
+- Return explicit dry-run/not-persisted status when tracking is validated but not stored.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -38,6 +40,9 @@ You have been routed here because the task touches analytics, tracking events, G
 - DO NOT mix tracking data across projects.
 - DO NOT report silent tracking failures as success.
 - DO NOT accept persisted project tracking events from the public endpoint without an ingestion token or equivalent project-scoped public key.
+- DO NOT use one global browser-exposed tracking secret as the final production isolation boundary.
+- DO NOT compare tracking or webhook-style secrets with ordinary string equality when timing-safe comparison is practical.
+- DO NOT return `accepted: true` for production tracking unless the event was persisted or queued.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -54,6 +59,12 @@ THEN report a warning unless tracking is contractually required.
 
 IF a tracking endpoint is public by design:
 THEN keep the payload allowlisted and require a project-scoped ingestion boundary before persisting real customer events.
+
+IF a tracking event is accepted for a persisted project:
+THEN persist it, enqueue it, or return an explicit dry-run/not-persisted response.
+
+IF a tracking key is sent from browser-side code:
+THEN treat it as publishable and scope it to a single project/domain with rotation support.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -83,4 +94,5 @@ track("form_submit", { name, email, phone, message });
 2. [ ] Did token handling preserve encryption and project isolation?
 3. [ ] Did operational status reflect real failures and retries?
 4. [ ] Did public tracking ingestion reject persisted project events without a trusted ingestion boundary?
+5. [ ] Did accepted tracking events either persist/queue successfully or disclose dry-run/not-persisted state?
 </pre-flight-checklist>

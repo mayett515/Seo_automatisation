@@ -20,12 +20,14 @@ priority_schema: "critical > strong > guideline"
 - Keep controllers thin and services focused on use-case orchestration, not repeated SDK/client construction.
 - Own resource cleanup in the provider that created the resource.
 - Use lifecycle hooks for resources that must close on shutdown.
+- Prefer one shared API-process database provider over multiple feature-local Postgres pools.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT let feature services become long-term factories for DB, Redis, BullMQ, OAuth adapters, or provider SDK clients.
 - DO NOT instantiate outbound provider adapters throughout business logic when a purpose-named port/provider should own wiring.
 - DO NOT duplicate provider construction between API and worker without a clear composition-root boundary.
+- DO NOT create a new DB pool per readiness request or feature service when a shared Nest provider can own the API-process pool.
 </absolute-constraints>
 
 <conditional-logic>
@@ -34,4 +36,7 @@ THEN plan a provider/composition-root refactor before adding more behavior to th
 
 IF a provider owns a connection, queue, pool, or SDK client:
 THEN define how it is closed during shutdown.
+
+IF multiple API modules need Postgres:
+THEN introduce a shared database provider/module and inject it instead of creating independent pools.
 </conditional-logic>

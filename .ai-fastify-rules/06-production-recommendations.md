@@ -21,6 +21,8 @@ priority_schema: "critical > strong > guideline"
 - Review Fastify recommendations before changing timeout, proxy, compression, static asset, or scaling behavior.
 - For AWS/Fargate, document which layer owns TLS, redirects, health checks, scaling, and logs.
 - Configure app-level body limits, security headers, and conservative rate limits before exposing API traffic.
+- Use route-specific rate limits for public write endpoints when their traffic profile differs from authenticated API routes.
+- Treat `trustProxy` as a deployment assumption that must match the actual reverse-proxy/load-balancer topology.
 </positive-directives>
 
 <absolute-constraints>
@@ -28,4 +30,13 @@ priority_schema: "critical > strong > guideline"
 - DO NOT treat local `app.listen` behavior as production deployment design.
 - DO NOT expose production traffic without a readiness strategy for DB, Redis, queues, and required provider config.
 - DO NOT leave public write endpoints without rate limiting, payload limits, and an explicit authentication or ingestion boundary.
+- DO NOT enable broad proxy trust for directly exposed services or undocumented network topologies.
 </absolute-constraints>
+
+<conditional-logic>
+IF `trustProxy` is enabled:
+THEN document the expected proxy layer and ensure direct public access to the Node process is not part of production topology.
+
+IF a public endpoint is high-volume or unauthenticated:
+THEN define a separate rate-limit policy rather than relying only on the global API limit.
+</conditional-logic>
