@@ -15,6 +15,10 @@ priority_schema: "critical > strong > guideline"
 Use this file as a lightweight sanity check when creating, changing, duplicating, exporting, deriving, or validating TypeScript types. This is not a bureaucracy gate. It should prevent drift and duplication, not create extra abstractions.
 </meta-instruction>
 
+<context>
+This is a soft authoring-time checker. Mechanically decidable hygiene belongs in ESLint, TypeScript, tests, or scripts; do not turn this rule itself into a hard CI gate.
+</context>
+
 ## Source-of-Truth Directives
 
 <positive-directives>

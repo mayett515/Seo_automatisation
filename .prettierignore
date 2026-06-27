@@ -3,6 +3,7 @@ dist/
 coverage/
 .turbo/
 .qwen/
+.drizzle-check-tmp-*/
 
 # Frozen/reference rule bundles and copied artifacts
 .ai-rules/

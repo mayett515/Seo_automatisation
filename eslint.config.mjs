@@ -20,6 +20,7 @@ export default tseslint.config(
     },
     rules: {
       "no-undef": "off",
+      "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: false }]
     }

@@ -3,6 +3,7 @@ dist/
 .turbo/
 .cache/
 .qwen/
+.drizzle-check-tmp-*/
 .env
 .env.*
 !.env.example

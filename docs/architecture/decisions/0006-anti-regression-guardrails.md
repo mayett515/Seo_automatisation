@@ -58,6 +58,26 @@ Current behavioral tests also guard high-risk review findings:
 - `demo-project` and local scaffold bypasses are rejected in production
 - malformed user ids are rejected before UUID-backed membership lookup
 
+Current schema and migration checks guard database drift:
+
+- `packages/db/scripts/check-migration-drift.ts` copies committed migrations to a temporary folder, runs Drizzle generation against the current schema, and fails if generated output differs from committed migrations.
+- `corepack pnpm db:check` runs Drizzle migration validation plus schema-to-migration drift detection.
+
+## Check Map
+
+| Check                               | Mechanism                            | Location                                        | Layer           |
+| ----------------------------------- | ------------------------------------ | ----------------------------------------------- | --------------- |
+| TypeScript source-of-truth judgment | Authoring rule                       | `.ai-rules/02C-type-source-of-truth-checker.md` | Soft            |
+| TypeScript API hygiene              | ESLint + type-aware rules            | `eslint.config.mjs`                             | Hard            |
+| Formatting                          | Prettier                             | `format:check`                                  | Hard            |
+| Critical text health                | Custom script                        | `tools/check-text-health.ts`                    | Hard            |
+| Working-tree whitespace             | Git                                  | `git diff --check`                              | Hard            |
+| Type safety                         | TypeScript project references        | `typecheck`                                     | Hard            |
+| Migration consistency               | Drizzle check + temp generation diff | `db:check`                                      | Hard            |
+| Runtime production secrets          | Boot-time invariant                  | `assertProductionRuntimeEnv(...)`               | Hard at startup |
+| Behavior regressions                | Unit tests                           | `*.test.ts`                                     | Hard            |
+| Architecture rationale              | ADRs/progress/rules                  | `docs/architecture/decisions`, `.ai-*-rules/`   | Soft            |
+
 `text:check` exists specifically to catch flattened-file and CR-only text regressions for critical files such as:
 
 - `.env.example`
@@ -104,12 +124,15 @@ Rejected. Frozen reference bundles are meant to remain copied source material. P
 - Do not let a review finding remain only in chat if it represents a repeated or production-risk issue.
 - Do not edit frozen reference bundles just to satisfy a broad whitespace guard.
 - Do not add a new critical project-owned root/config file without considering whether it belongs in `tools/check-text-health.ts`.
+- Do not add a DB schema change without either a migration or an explicit decision to keep it uncommitted.
+- Do not confuse `.ai-rules/02C` with a CI gate; promote only mechanically decidable parts into lint, tests, or scripts.
 
 ## Related Files
 
 - `tools/check-text-health.ts`
 - `.github/workflows/ci.yml`
 - `package.json`
+- `packages/db/scripts/check-migration-drift.ts`
 - `.gitattributes`
 - `docs/progress/README.md`
 - `docs/architecture/decisions/0002-nest-backend-production-hardening.md`

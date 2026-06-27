@@ -40,6 +40,9 @@ jobs:
       - name: Typecheck
         run: corepack pnpm typecheck
 
+      - name: Check database migrations
+        run: corepack pnpm db:check
+
       - name: Build
         run: corepack pnpm build
 
