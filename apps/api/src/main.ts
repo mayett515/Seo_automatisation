@@ -7,24 +7,35 @@ import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fa
 import { mountBetterAuthFastify } from "./auth/better-auth/better-auth.fastify-mount.js";
 import { BetterAuthService } from "./auth/better-auth/better-auth.service.js";
 import { AppModule } from "./app.module.js";
+import { createRateLimitRedisClient, resolveTrustProxy } from "./http-runtime.js";
 
 const env = parseAppEnv(process.env);
 assertProductionRuntimeEnv(process.env, env);
 
 const adapter = new FastifyAdapter({
   bodyLimit: 256 * 1024,
-  trustProxy: true
+  trustProxy: resolveTrustProxy(env.TRUST_PROXY)
 });
 
 const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
   bufferLogs: true
 });
+const rateLimitRedis = createRateLimitRedisClient(env.REDIS_URL);
+const fastify = app.getHttpAdapter().getInstance();
+
+if (rateLimitRedis) {
+  fastify.addHook("onClose", async () => {
+    await rateLimitRedis.quit();
+  });
+}
 
 await app.register(helmet);
 await app.register(rateLimit, {
   global: true,
   max: 300,
-  timeWindow: "1 minute"
+  timeWindow: "1 minute",
+  redis: rateLimitRedis,
+  nameSpace: "local-seo-api:rate-limit:"
 });
 
 app.enableShutdownHooks();
@@ -35,7 +46,7 @@ app.enableCors({
 });
 
 const betterAuth = app.get(BetterAuthService);
-mountBetterAuthFastify(app.getHttpAdapter().getInstance(), betterAuth.auth, env);
+mountBetterAuthFastify(fastify, betterAuth.auth, env);
 
 await app.listen(env.PORT, "0.0.0.0");
 

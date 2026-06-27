@@ -2,8 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import { GscPerformanceSummarySchema, type GscPerformanceSummary } from "@localseo/contracts";
-
-const apiUrl = getApiUrl();
+import { getJson } from "../lib/api";
 
 export function PerformanceDashboardScreen() {
   const projectId = useProjectId();
@@ -118,21 +117,4 @@ function safePathname(pageUrl: string): string {
   } catch {
     return pageUrl;
   }
-}
-
-type JsonSchema<T> = {
-  parse(input: unknown): T;
-};
-
-async function getJson<T>(path: string, schema: JsonSchema<T>): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`);
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
-  }
-  return schema.parse(await response.json());
-}
-
-function getApiUrl(): string {
-  const configuredUrl: unknown = import.meta.env.VITE_API_URL;
-  return typeof configuredUrl === "string" ? configuredUrl : "http://localhost:4000";
 }

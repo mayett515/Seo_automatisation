@@ -28,6 +28,7 @@ export const AppEnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
   API_PUBLIC_URL: z.string().url().default("http://localhost:4000"),
+  TRUST_PROXY: z.string().trim().min(1).default("false"),
   DATABASE_URL: DatabaseUrlSchema.optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
   DATABASE_IDLE_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(30),
@@ -51,6 +52,7 @@ export type AppEnv = z.output<typeof AppEnvSchema>;
 export const productionRequiredEnvKeys = [
   "WEB_ORIGIN",
   "API_PUBLIC_URL",
+  "TRUST_PROXY",
   "DATABASE_URL",
   "REDIS_URL",
   "BETTER_AUTH_SECRET",
@@ -81,6 +83,10 @@ export function assertProductionRuntimeEnv(input: NodeJS.ProcessEnv, env = parse
 
   if (env.ALLOW_LOCAL_SCAFFOLD_AUTH) {
     throw new Error("Production runtime configuration must not enable ALLOW_LOCAL_SCAFFOLD_AUTH.");
+  }
+
+  if (env.TRUST_PROXY.toLowerCase() === "true") {
+    throw new Error("Production runtime configuration must scope TRUST_PROXY instead of using broad true.");
   }
 
   const missing = productionRequiredEnvKeys.filter((key) => {

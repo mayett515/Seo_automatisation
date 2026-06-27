@@ -36,6 +36,63 @@ a {
   background: #ffffff;
 }
 
+.auth-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-panel {
+  display: grid;
+  width: min(100%, 420px);
+  gap: 18px;
+  border: 1px solid #d9ddd5;
+  border-radius: 8px;
+  padding: 24px;
+  background: #ffffff;
+}
+
+.auth-header {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-header span,
+.form-field span,
+.shell-user span {
+  color: #4f5f59;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.auth-form,
+.form-field,
+.shell-user {
+  display: grid;
+  gap: 10px;
+}
+
+.form-field input {
+  min-height: 40px;
+  border: 1px solid #c7cec4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: #16201d;
+  background: #ffffff;
+}
+
+.auth-submit,
+.auth-mode-toggle {
+  width: 100%;
+}
+
 .app-shell__nav,
 .app-shell__panel {
   padding: 20px;

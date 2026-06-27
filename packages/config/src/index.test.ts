@@ -64,6 +64,7 @@ void describe("AppEnvSchema", () => {
           ALLOW_LOCAL_SCAFFOLD_AUTH: "true",
           WEB_ORIGIN: "https://app.example.com",
           API_PUBLIC_URL: "https://api.example.com",
+          TRUST_PROXY: "1",
           DATABASE_URL: "postgres://postgres:postgres@example.com:5432/local_seo",
           REDIS_URL: "redis://redis.example.com:6379",
           BETTER_AUTH_SECRET: "12345678901234567890123456789012",
@@ -115,6 +116,17 @@ void describe("AppEnvSchema", () => {
       /BETTER_AUTH_SECRET/u
     );
   });
+
+  void it("rejects production boot when proxy trust is broad", () => {
+    assert.throws(
+      () =>
+        assertProductionRuntimeEnv({
+          ...productionEnv(),
+          TRUST_PROXY: "true"
+        }),
+      /TRUST_PROXY/u
+    );
+  });
 });
 
 function productionEnv(): NodeJS.ProcessEnv {
@@ -122,6 +134,7 @@ function productionEnv(): NodeJS.ProcessEnv {
     NODE_ENV: "production",
     WEB_ORIGIN: "https://app.example.com",
     API_PUBLIC_URL: "https://api.example.com",
+    TRUST_PROXY: "1",
     DATABASE_URL: "postgres://postgres:postgres@example.com:5432/local_seo",
     REDIS_URL: "redis://redis.example.com:6379",
     BETTER_AUTH_SECRET: "12345678901234567890123456789012",

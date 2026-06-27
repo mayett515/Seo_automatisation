@@ -7,8 +7,7 @@ import {
   GscSyncQueueResponseSchema,
   type GscSyncQueueResponse
 } from "@localseo/contracts";
-
-const apiUrl = getApiUrl();
+import { getJson, postJson } from "../lib/api";
 
 export function GscConnectScreen() {
   const projectId = useProjectId();
@@ -83,39 +82,6 @@ function projectApiPath(projectId: string, suffix: string): string {
   return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }
 
-type JsonSchema<T> = {
-  parse(input: unknown): T;
-};
-
-async function getJson<T>(path: string, schema: JsonSchema<T>): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`);
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
-  }
-  return schema.parse(await response.json());
-}
-
-async function postJson<T>(path: string, body: unknown, schema: JsonSchema<T>): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
-  }
-
-  return schema.parse(await response.json());
-}
-
 function syncResponseMessage(response: GscSyncQueueResponse): string {
   return "type" in response ? `Sync response: ${response.status}` : (response.message ?? response.status);
-}
-
-function getApiUrl(): string {
-  const configuredUrl: unknown = import.meta.env.VITE_API_URL;
-  return typeof configuredUrl === "string" ? configuredUrl : "http://localhost:4000";
 }

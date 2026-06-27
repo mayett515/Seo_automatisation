@@ -1,11 +1,41 @@
-import { Link, Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import {
+  Link,
+  Navigate,
+  Outlet,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  useRouterState
+} from "@tanstack/react-router";
 import { ShellLayout, StatusPill } from "@localseo/ui";
+import { authClient } from "./lib/auth-client";
 import { GscConnectScreen } from "./screens/gsc-connect";
+import { LoginScreen } from "./screens/login";
 import { MissionControlPage } from "./screens/mission-control";
 import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
 
 function RootLayout() {
+  const session = authClient.useSession();
+  const location = useRouterState({ select: (state) => state.location });
+  const isLoginRoute = location.pathname === "/login";
+
+  if (isLoginRoute) {
+    return <Outlet />;
+  }
+
+  if (session.isPending) {
+    return (
+      <main className="auth-screen">
+        <div className="auth-panel">Checking session</div>
+      </main>
+    );
+  }
+
+  if (!session.data) {
+    return <Navigate to="/login" search={{ redirect: location.href }} />;
+  }
+
   return (
     <ShellLayout
       title="Local SEO Mission Control"
@@ -27,6 +57,19 @@ function RootLayout() {
       rightPanel={
         <div className="panel-stack">
           <StatusPill tone="warning">Preview required</StatusPill>
+          <div className="shell-user">
+            <span>{session.data.user.email}</span>
+            <button
+              className="button-secondary"
+              type="button"
+              onClick={async () => {
+                await authClient.signOut();
+                window.location.assign("/login");
+              }}
+            >
+              Sign out
+            </button>
+          </div>
           <p>AI suggests. Customer approves. Workers execute.</p>
         </div>
       }
@@ -37,6 +80,15 @@ function RootLayout() {
 }
 
 const rootRoute = createRootRoute({ component: RootLayout });
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  validateSearch: (search: Record<string, unknown>) => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined
+  }),
+  component: LoginScreen
+});
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -147,6 +199,7 @@ const projectChildRoutes = [
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  loginRoute,
   auditRoute,
   auditReportRoute,
   projectRoute,

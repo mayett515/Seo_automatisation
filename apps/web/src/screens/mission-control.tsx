@@ -1,19 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { HealthResponseSchema } from "@localseo/contracts";
 import { StatusPill } from "@localseo/ui";
-
-const apiUrl = getApiUrl();
+import { getJson } from "../lib/api";
 
 export function MissionControlPage() {
   const health = useQuery({
     queryKey: ["api-health"],
-    queryFn: async () => {
-      const response = await fetch(`${apiUrl}/health`);
-      if (!response.ok) {
-        throw new Error("API health check failed");
-      }
-      return HealthResponseSchema.parse(await response.json());
-    },
+    queryFn: () => getJson("/health", HealthResponseSchema),
     retry: false
   });
 
@@ -39,9 +32,4 @@ function Metric(props: { title: string; value: string; tone: "neutral" | "succes
       <StatusPill tone={props.tone}>{props.value}</StatusPill>
     </article>
   );
-}
-
-function getApiUrl(): string {
-  const configuredUrl: unknown = import.meta.env.VITE_API_URL;
-  return typeof configuredUrl === "string" ? configuredUrl : "http://localhost:4000";
 }
