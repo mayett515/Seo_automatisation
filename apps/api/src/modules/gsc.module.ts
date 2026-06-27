@@ -22,7 +22,8 @@ import {
   gscConnections,
   gscOpportunitySignals,
   gscSearchAnalyticsRows,
-  gscSyncRuns
+  gscSyncRuns,
+  jobRuns
 } from "@localseo/db";
 import {
   Body,
@@ -35,18 +36,27 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
   type OnModuleDestroy,
   type Provider
 } from "@nestjs/common";
 import { and, desc, eq, ne } from "drizzle-orm";
-import type { FastifyReply } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { Queue } from "bullmq";
+import { BetterAuthService } from "../auth/better-auth/better-auth.service.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import { ProjectMembershipService } from "../auth/project-membership.service.js";
+import type {
+  AuthenticatedRequestContext,
+  ProjectAccessContext,
+  RequestWithAuth
+} from "../auth/types/authenticated-request.js";
+import { GscOAuthStateStore, type GscOAuthNonceRecord } from "./gsc-oauth-state.store.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 const env = parseAppEnv(process.env);
@@ -108,7 +118,10 @@ class GscService implements OnModuleDestroy {
     @Inject(GSC_DB_HANDLE) private readonly dbHandle: DbHandle | undefined,
     @Inject(GSC_SEARCH_CONSOLE) private readonly searchConsole: OptionalSearchConsole,
     @Inject(GSC_TOKEN_CIPHER) private readonly tokenCipher: OptionalTokenCipher,
-    @Inject(GSC_QUEUE) private readonly gscQueue: OptionalQueue
+    @Inject(GSC_QUEUE) private readonly gscQueue: OptionalQueue,
+    private readonly oauthStateStore: GscOAuthStateStore,
+    private readonly betterAuth: BetterAuthService,
+    private readonly memberships: ProjectMembershipService
   ) {}
 
   async onModuleDestroy(): Promise<void> {
@@ -145,7 +158,13 @@ class GscService implements OnModuleDestroy {
     });
   }
 
-  createOAuthIntent(projectId: string): GscOAuthIntent {
+  async createOAuthIntent(input: {
+    projectId: string;
+    auth: AuthenticatedRequestContext;
+    projectAccess: ProjectAccessContext;
+  }): Promise<GscOAuthIntent> {
+    const { projectId, auth, projectAccess } = input;
+
     if (!isPersistedProjectId(projectId)) {
       return oauthUnavailable(projectId, "Create or select a persisted project before starting Google OAuth.");
     }
@@ -161,32 +180,84 @@ class GscService implements OnModuleDestroy {
       );
     }
 
-    return this.searchConsole.createAuthorizationUrl({
+    if (!this.oauthStateStore.isConfigured()) {
+      return oauthUnavailable(projectId, "REDIS_URL is required before Google OAuth state can be consumed once.");
+    }
+
+    const authorizationRequest = this.searchConsole.createAuthorizationRequest({
       projectId,
-      redirectTo: `${env.WEB_ORIGIN}/projects/${projectId}/gsc/connect`
+      customerId: projectAccess.customerId,
+      userId: auth.user.id,
+      sessionId: auth.session.id,
+      redirectTo: `/projects/${projectId}/gsc/connect`
     });
+    const stored = await this.oauthStateStore.store({
+      provider: "google_search_console",
+      nonce: authorizationRequest.statePayload.nonce,
+      projectId,
+      customerId: projectAccess.customerId,
+      userId: auth.user.id,
+      sessionId: auth.session.id,
+      redirectTo: authorizationRequest.statePayload.redirectTo,
+      codeVerifier: authorizationRequest.codeVerifier,
+      expiresAt: authorizationRequest.statePayload.expiresAt
+    });
+
+    if (!stored) {
+      return oauthUnavailable(projectId, "Google OAuth state storage is not configured.");
+    }
+
+    return authorizationRequest.intent;
   }
 
-  async handleOAuthCallback(queryInput: unknown): Promise<string> {
+  async handleOAuthCallback(queryInput: unknown, headers: FastifyRequest["headers"]): Promise<string> {
     const query = GscOAuthCallbackQuerySchema.parse(queryInput);
 
     if (query.error) {
-      return `${env.WEB_ORIGIN}/?gsc=error&reason=${encodeURIComponent(query.error)}`;
+      return this.safeOAuthRedirect(undefined, undefined, "provider_error");
     }
 
     if (!query.code || !query.state || !this.searchConsole || !this.tokenCipher || !this.dbHandle) {
-      return `${env.WEB_ORIGIN}/?gsc=error&reason=missing_oauth_configuration`;
+      return this.safeOAuthRedirect(undefined, undefined, "missing_oauth_configuration");
     }
 
-    let redirectTo = `${env.WEB_ORIGIN}/`;
+    let redirectPath: string | undefined;
+    let projectId: string | undefined;
 
     try {
       const state = this.searchConsole.verifyState({ state: query.state });
-      redirectTo = state.redirectTo ?? `${env.WEB_ORIGIN}/projects/${state.projectId}/gsc/connect`;
-      const tokens = await this.searchConsole.exchangeCode({ code: query.code });
+      redirectPath = state.redirectTo;
+      projectId = state.projectId;
+      const nonceRecord = await this.oauthStateStore.consume(state.nonce);
+
+      if (!nonceRecord) {
+        return this.safeOAuthRedirect(redirectPath, projectId, "oauth_state_replayed_or_expired");
+      }
+
+      assertNonceRecordMatchesState(nonceRecord, state);
+
+      const auth = await this.betterAuth.getSessionFromHeaders(headers);
+
+      if (!auth || auth.user.id !== state.userId) {
+        return this.safeOAuthRedirect(redirectPath, projectId, "session_mismatch");
+      }
+
+      const projectAccess = await this.memberships.getProjectAccess({
+        userId: auth.user.id,
+        projectId: state.projectId
+      });
+
+      if (!projectAccess || projectAccess.customerId !== state.customerId) {
+        return this.safeOAuthRedirect(redirectPath, projectId, "project_access_lost");
+      }
+
+      const tokens = await this.searchConsole.exchangeCode({
+        code: query.code,
+        codeVerifier: nonceRecord.codeVerifier
+      });
 
       if (!tokens.refreshToken) {
-        return `${redirectTo}?gsc=error&reason=missing_refresh_token`;
+        return this.safeOAuthRedirect(redirectPath, projectId, "missing_refresh_token");
       }
 
       const properties = await this.searchConsole.listSites({
@@ -203,7 +274,7 @@ class GscService implements OnModuleDestroy {
           failureJson: { reason: "no_search_console_property" }
         });
 
-        return `${redirectTo}?gsc=error&reason=no_search_console_property`;
+        return this.safeOAuthRedirect(redirectPath, projectId, "no_search_console_property");
       }
 
       const [insertedConnection] = await this.dbHandle.db
@@ -227,14 +298,33 @@ class GscService implements OnModuleDestroy {
         );
       }
 
-      return `${redirectTo}?gsc=connected`;
+      return this.safeOAuthRedirect(redirectPath, projectId, undefined, "connected");
     } catch (error) {
       this.logger.error("GSC OAuth callback failed", normalizeOAuthCallbackFailure(error));
-      return `${redirectTo}?gsc=error&reason=oauth_callback_failed`;
+      return this.safeOAuthRedirect(redirectPath, projectId, "oauth_callback_failed");
     }
   }
 
-  async queueSync(projectId: string, requestInput: unknown): Promise<QueueJob | GscConnection> {
+  private safeOAuthRedirect(
+    redirectPath: string | undefined,
+    projectId: string | undefined,
+    errorReason?: string,
+    successStatus?: "connected"
+  ): string {
+    const path = safeRedirectPath(redirectPath, projectId);
+    const url = new URL(path, env.WEB_ORIGIN);
+
+    if (successStatus) {
+      url.searchParams.set("gsc", successStatus);
+    } else {
+      url.searchParams.set("gsc", "error");
+      url.searchParams.set("reason", errorReason ?? "oauth_callback_failed");
+    }
+
+    return url.toString();
+  }
+
+  async queueSync(projectId: string, requestInput: unknown, userId?: string): Promise<QueueJob | GscConnection> {
     const request = GscSyncRequestSchema.parse(requestInput ?? {});
     const connection = await this.getConnection(projectId);
 
@@ -280,6 +370,7 @@ class GscService implements OnModuleDestroy {
       type: "gsc_sync",
       status: "queued",
       inputRef: syncRun.id,
+      createdBy: userId,
       createdAt: new Date().toISOString()
     });
 
@@ -287,7 +378,9 @@ class GscService implements OnModuleDestroy {
       "gsc_sync",
       {
         projectId,
-        syncRunId: syncRun.id
+        syncRunId: syncRun.id,
+        triggeredByUserId: userId ?? null,
+        triggerSource: "user_action"
       },
       {
         jobId,
@@ -298,6 +391,17 @@ class GscService implements OnModuleDestroy {
         }
       }
     );
+    await this.dbHandle.db.insert(jobRuns).values({
+      projectId,
+      externalJobId: jobId,
+      queueName: "gsc-sync",
+      type: "gsc_sync",
+      status: "queued",
+      inputRef: syncRun.id,
+      actorType: userId ? "user" : "system",
+      actorUserId: userId,
+      triggerSource: "user_action"
+    });
 
     return job;
   }
@@ -365,14 +469,18 @@ class GscController {
 
   @Post("connect")
   @RequireProjectPermission("gsc:connect")
-  connect(@Param("projectId") projectId: string) {
-    return this.gsc.createOAuthIntent(projectId);
+  connect(@Param("projectId") projectId: string, @Req() request: RequestWithAuth) {
+    return this.gsc.createOAuthIntent({
+      projectId,
+      auth: requireAuthContext(request),
+      projectAccess: requireProjectAccessContext(request)
+    });
   }
 
   @Post("sync")
   @RequireProjectPermission("gsc:sync")
-  sync(@Param("projectId") projectId: string, @Body() body: unknown) {
-    return this.gsc.queueSync(projectId, body);
+  sync(@Param("projectId") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
+    return this.gsc.queueSync(projectId, body, request.auth?.user.id);
   }
 
   @Get("performance")
@@ -386,15 +494,15 @@ class GscOAuthController {
   constructor(private readonly gsc: GscService) {}
 
   @Get("callback")
-  async callback(@Query() query: unknown, @Res() reply: FastifyReply) {
-    const redirectTo = await this.gsc.handleOAuthCallback(query);
+  async callback(@Query() query: unknown, @Req() request: FastifyRequest, @Res() reply: FastifyReply) {
+    const redirectTo = await this.gsc.handleOAuthCallback(query, request.headers);
     return reply.redirect(redirectTo);
   }
 }
 
 @Module({
   controllers: [GscController, GscOAuthController],
-  providers: [GscService, ...gscInfrastructureProviders]
+  providers: [GscOAuthStateStore, GscService, ...gscInfrastructureProviders]
 })
 export class GscModule {}
 
@@ -516,6 +624,55 @@ function formatIsoDate(date: Date): string {
 
 function isPersistedProjectId(projectId: string): boolean {
   return uuidPattern.test(projectId);
+}
+
+function requireAuthContext(request: RequestWithAuth): AuthenticatedRequestContext {
+  if (!request.auth) {
+    throw new Error("GSC connect requires authenticated request context");
+  }
+
+  return request.auth;
+}
+
+function requireProjectAccessContext(request: RequestWithAuth): ProjectAccessContext {
+  if (!request.projectAccess) {
+    throw new Error("GSC connect requires resolved project access context");
+  }
+
+  return request.projectAccess;
+}
+
+function assertNonceRecordMatchesState(
+  record: GscOAuthNonceRecord,
+  state: ReturnType<GoogleSearchConsoleAdapter["verifyState"]>
+): void {
+  if (
+    record.provider !== state.provider ||
+    record.nonce !== state.nonce ||
+    record.projectId !== state.projectId ||
+    record.customerId !== state.customerId ||
+    record.userId !== state.userId ||
+    record.sessionId !== state.sessionId
+  ) {
+    throw new Error("OAuth state nonce record did not match signed state");
+  }
+}
+
+function safeRedirectPath(redirectPath: string | undefined, projectId: string | undefined): string {
+  const fallback = projectId ? `/projects/${projectId}/gsc/connect` : "/";
+
+  if (!redirectPath || !redirectPath.startsWith("/") || redirectPath.startsWith("//") || redirectPath.includes("\\")) {
+    return fallback;
+  }
+
+  try {
+    const url = new URL(redirectPath, env.WEB_ORIGIN);
+    const allowedOrigin = new URL(env.WEB_ORIGIN).origin;
+
+    return url.origin === allowedOrigin ? `${url.pathname}${url.search}` : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeOAuthCallbackFailure(error: unknown): string {

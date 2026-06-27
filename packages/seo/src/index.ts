@@ -41,4 +41,50 @@ export function evaluateLocalPageQa(input: LocalPageQaInput): LocalPageQaResult 
   };
 }
 
-export const customerReportMetricBans = ["impressions", "ctr", "average_position"] as const;
+export const customerReportMetricBans = [
+  "impressions",
+  "ctr",
+  "average_position",
+  "averagePosition",
+  "position"
+] as const;
+
+export function assertCustomerReportPayloadSafe(payload: unknown): void {
+  const bannedPath = findBannedMetricPath(payload);
+
+  if (bannedPath) {
+    throw new Error(`Customer report payload includes banned metric: ${bannedPath}`);
+  }
+}
+
+function findBannedMetricPath(value: unknown, path: string[] = []): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const bannedPath = findBannedMetricPath(value[index], [...path, String(index)]);
+
+      if (bannedPath) {
+        return bannedPath;
+      }
+    }
+
+    return undefined;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (customerReportMetricBans.includes(key as (typeof customerReportMetricBans)[number])) {
+      return [...path, key].join(".");
+    }
+
+    const bannedPath = findBannedMetricPath(nestedValue, [...path, key]);
+
+    if (bannedPath) {
+      return bannedPath;
+    }
+  }
+
+  return undefined;
+}

@@ -154,6 +154,25 @@ export const projects = pgTable("projects", {
   ...timestamps
 });
 
+export const projectTrackingKeys = pgTable(
+  "project_tracking_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    keyHash: text("key_hash").notNull(),
+    status: text("status").notNull().default("active"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("project_tracking_keys_hash_idx").on(table.keyHash),
+    index("project_tracking_keys_project_status_idx").on(table.projectId, table.status)
+  ]
+);
+
 export const mainWebsites = pgTable("main_websites", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")
@@ -266,9 +285,8 @@ export const componentNotes = pgTable("component_notes", {
 
 export const approvals = pgTable("approvals", {
   id: uuid("id").primaryKey().defaultRandom(),
-  pageVersionId: uuid("page_version_id")
-    .notNull()
-    .references(() => pageVersions.id),
+  pageVersionId: uuid("page_version_id").references(() => pageVersions.id),
+  releasePlanId: uuid("release_plan_id").references(() => releasePlans.id),
   userId: uuid("user_id").references(() => users.id),
   status: approvalStatusEnum("status").notNull().default("pending"),
   decisionNote: text("decision_note"),
@@ -486,9 +504,14 @@ export const jobRuns = pgTable("job_runs", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").references(() => projects.id),
   leadId: uuid("lead_id").references(() => leads.id),
+  externalJobId: text("external_job_id"),
+  queueName: text("queue_name"),
   type: text("type").notNull(),
   status: jobStatusEnum("status").notNull().default("queued"),
   inputRef: text("input_ref"),
+  actorType: text("actor_type").notNull().default("system"),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
+  triggerSource: text("trigger_source"),
   failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
   ...timestamps
 });
@@ -502,6 +525,7 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   gscConnections: many(gscConnections),
   gscSyncRuns: many(gscSyncRuns),
   gscOpportunitySignals: many(gscOpportunitySignals),
+  trackingKeys: many(projectTrackingKeys),
   reports: many(reports)
 }));
 

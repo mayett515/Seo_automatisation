@@ -17,6 +17,23 @@ void describe("parseGscSyncJobData", () => {
     );
   });
 
+  void it("preserves optional actor metadata", () => {
+    assert.deepEqual(
+      parseGscSyncJobData({
+        projectId: "project-1",
+        syncRunId: "sync-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }),
+      {
+        projectId: "project-1",
+        syncRunId: "sync-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }
+    );
+  });
+
   void it("rejects missing sync identifiers", () => {
     assert.throws(() => parseGscSyncJobData({ projectId: "project-1" }), /requires projectId and syncRunId/u);
   });

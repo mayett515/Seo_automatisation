@@ -1,5 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { Body, Controller, Get, Injectable, Module, Param, Post, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Injectable,
+  Module,
+  Param,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+  type OnModuleDestroy,
+  type Provider
+} from "@nestjs/common";
 import {
   QueueJobSchema,
   CreateReleasePlanRequestSchema,
@@ -9,45 +24,111 @@ import {
   ReleaseVerificationSchema,
   RollbackPointSchema,
   VerifyReleaseRequestSchema,
+  type ReleasePlan,
   type ReleaseCheck,
   type ReleaseNote,
   type ReleaseVerification,
   type RollbackPoint
 } from "@localseo/contracts";
-import { decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
+import { canDeployRelease, decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
+import { parseAppEnv } from "@localseo/config";
+import { approvals, createDatabaseClient, releaseChecks, releasePlans } from "@localseo/db";
+import { and, eq } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
+const env = parseAppEnv(process.env);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+type DbHandle = ReturnType<typeof createDatabaseClient>;
+type Db = DbHandle["db"];
+
+const RELEASES_DB_HANDLE = Symbol("RELEASES_DB_HANDLE");
+
+const releasesInfrastructureProviders: Provider[] = [
+  {
+    provide: RELEASES_DB_HANDLE,
+    useFactory: (): DbHandle | undefined => (env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined)
+  }
+];
+
 @Injectable()
-class ReleasesService {
-  constructor(private readonly queues: QueueProducerService) {}
+export class ReleasesService implements OnModuleDestroy {
+  constructor(
+    private readonly queues: QueueProducerService,
+    @Inject(RELEASES_DB_HANDLE) private readonly dbHandle: DbHandle | undefined
+  ) {}
 
-  createPlan(projectId: string, body: unknown) {
+  async onModuleDestroy(): Promise<void> {
+    await this.dbHandle?.close();
+  }
+
+  async createPlan(projectId: string, body: unknown): Promise<ReleasePlan> {
     const input = CreateReleasePlanRequestSchema.parse(body ?? {});
-
-    return ReleasePlanSchema.parse({
-      releasePlanId: randomUUID(),
+    const releasePlanId = randomUUID();
+    const plan = ReleasePlanSchema.parse({
+      releasePlanId,
       projectId,
       status: "draft",
       riskLevel: "low",
       blockerCount: input.pageVersionIds.length === 0 ? 1 : 0,
       warningCount: 0
     });
+
+    if (!this.dbHandle || !isPersistedId(projectId)) {
+      return plan;
+    }
+
+    const [insertedPlan] = await this.dbHandle.db
+      .insert(releasePlans)
+      .values({
+        id: releasePlanId,
+        projectId,
+        status: "draft",
+        summary: `Release plan for ${input.pageVersionIds.length} page version(s).`,
+        riskLevel: "low",
+        blockerCount: plan.blockerCount,
+        warningCount: 0
+      })
+      .returning();
+
+    if (!insertedPlan) {
+      throw new Error("Failed to persist release plan");
+    }
+
+    return mapReleasePlan(insertedPlan);
   }
 
-  preflight(
+  async getRelease(projectId: string, releasePlanId: string): Promise<ReleasePlan> {
+    if (!this.dbHandle || !isPersistedId(releasePlanId)) {
+      return ReleasePlanSchema.parse({
+        releasePlanId,
+        projectId,
+        status: "draft",
+        riskLevel: "low",
+        blockerCount: 0,
+        warningCount: 0
+      });
+    }
+
+    return mapReleasePlan(await this.loadReleasePlanForProject(projectId, releasePlanId));
+  }
+
+  async preflight(
     projectId: string,
     releasePlanId: string
-  ): {
+  ): Promise<{
     projectId: string;
     releasePlanId: string;
     readiness: string;
     checks: ReleaseCheck[];
-  } {
+  }> {
+    await this.assertReleasePlanForProject(projectId, releasePlanId);
     const checks = [
       ReleaseCheckSchema.parse({
         checkKey: "approval_check",
@@ -78,23 +159,110 @@ class ReleasesService {
         message: "Rollback evidence can be created before deploy execution."
       })
     ];
+    const readiness = decideReleaseReadiness(checks);
+
+    if (this.dbHandle && isPersistedId(releasePlanId)) {
+      await persistReleaseChecks(this.dbHandle.db, releasePlanId, checks);
+      await this.dbHandle.db
+        .update(releasePlans)
+        .set({
+          status: readiness.kind,
+          blockerCount: checks.filter((check) => check.severity === "blocker" && check.result === "failed").length,
+          warningCount: checks.filter((check) => check.severity === "warning" && check.result === "failed").length,
+          updatedAt: new Date()
+        })
+        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+    }
 
     return {
       projectId,
       releasePlanId,
-      readiness: decideReleaseReadiness(checks).kind,
+      readiness: readiness.kind,
       checks
     };
   }
 
-  async deploy(projectId: string, releasePlanId: string) {
+  async approveDeploy(projectId: string, releasePlanId: string, userId: string) {
+    await this.assertReleasePlanForProject(projectId, releasePlanId);
+
+    if (this.dbHandle && isPersistedId(releasePlanId)) {
+      const checks = await loadReleaseChecks(this.dbHandle.db, releasePlanId);
+
+      if (checks.length === 0 || decideReleaseReadiness(checks).kind === "blocked") {
+        throw new BadRequestException("Release preflight must pass before approval.");
+      }
+
+      await this.dbHandle.db
+        .update(releasePlans)
+        .set({
+          status: "approved_for_deploy",
+          approvedAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+      await this.dbHandle.db.insert(approvals).values({
+        releasePlanId,
+        userId,
+        status: "approved",
+        decidedAt: new Date()
+      });
+    }
+
+    return {
+      projectId,
+      releasePlanId,
+      status: "approved_for_deploy",
+      approvedAt: new Date().toISOString()
+    };
+  }
+
+  async deploy(projectId: string, releasePlanId: string, userId?: string) {
+    if (!this.dbHandle || !isPersistedId(releasePlanId)) {
+      return QueueJobSchema.parse({
+        projectId,
+        releasePlanId,
+        jobId: randomUUID(),
+        type: "deploy",
+        status: "dry_run",
+        inputRef: releasePlanId,
+        createdBy: userId,
+        message: "Release persistence is not configured. This is an explicit dry-run response.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const plan = mapReleasePlan(await this.loadReleasePlanForProject(projectId, releasePlanId));
+    const checks = await loadReleaseChecks(this.dbHandle.db, releasePlanId);
+
+    if (checks.length === 0 || !canDeployRelease(plan, checks)) {
+      throw new BadRequestException("Release must pass preflight and be approved before deploy.");
+    }
+
     const jobId = randomUUID();
     const enqueued = await this.queues.enqueue({
       queueName: "deploy",
       jobName: "deploy",
       jobId,
-      data: { projectId, releasePlanId }
+      data: { projectId, releasePlanId, triggeredByUserId: userId ?? null, triggerSource: "user_action" },
+      audit: {
+        projectId,
+        type: "deploy",
+        inputRef: releasePlanId,
+        actorType: userId ? "user" : "system",
+        actorUserId: userId,
+        triggerSource: "user_action"
+      }
     });
+
+    if (enqueued && this.dbHandle) {
+      await this.dbHandle.db
+        .update(releasePlans)
+        .set({
+          status: "deploying",
+          updatedAt: new Date()
+        })
+        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+    }
 
     return QueueJobSchema.parse({
       projectId,
@@ -103,12 +271,18 @@ class ReleasesService {
       type: "deploy",
       status: enqueued ? "queued" : "dry_run",
       inputRef: releasePlanId,
+      createdBy: userId,
       message: enqueued ? undefined : "Deploy queue is not configured. This is an explicit dry-run response.",
       createdAt: new Date().toISOString()
     });
   }
 
-  verify(projectId: string, releasePlanId: string, body: unknown): ReleaseVerification & { projectId: string } {
+  async verify(
+    projectId: string,
+    releasePlanId: string,
+    body: unknown
+  ): Promise<ReleaseVerification & { projectId: string }> {
+    await this.assertReleasePlanForProject(projectId, releasePlanId);
     const input = VerifyReleaseRequestSchema.parse(body ?? {});
 
     const checks = [
@@ -167,10 +341,12 @@ class ReleasesService {
     };
   }
 
-  listNotes(
+  async listNotes(
     projectId: string,
     releasePlanId: string
-  ): { projectId: string; releasePlanId: string; notes: ReleaseNote[] } {
+  ): Promise<{ projectId: string; releasePlanId: string; notes: ReleaseNote[] }> {
+    await this.assertReleasePlanForProject(projectId, releasePlanId);
+
     return {
       projectId,
       releasePlanId,
@@ -186,14 +362,16 @@ class ReleasesService {
     };
   }
 
-  listRollbackPoints(
+  async listRollbackPoints(
     projectId: string,
     releasePlanId: string
-  ): {
+  ): Promise<{
     projectId: string;
     releasePlanId: string;
     rollbackPoints: RollbackPoint[];
-  } {
+  }> {
+    await this.assertReleasePlanForProject(projectId, releasePlanId);
+
     return {
       projectId,
       releasePlanId,
@@ -206,6 +384,35 @@ class ReleasesService {
         })
       ]
     };
+  }
+
+  private async assertReleasePlanForProject(projectId: string, releasePlanId: string): Promise<void> {
+    if (!this.dbHandle || !isPersistedId(releasePlanId)) {
+      return;
+    }
+
+    await this.loadReleasePlanForProject(projectId, releasePlanId);
+  }
+
+  private async loadReleasePlanForProject(
+    projectId: string,
+    releasePlanId: string
+  ): Promise<typeof releasePlans.$inferSelect> {
+    if (!this.dbHandle) {
+      throw new UnauthorizedException("Release persistence is required for persisted release plans.");
+    }
+
+    const [plan] = await this.dbHandle.db
+      .select()
+      .from(releasePlans)
+      .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)))
+      .limit(1);
+
+    if (!plan) {
+      throw new UnauthorizedException("Release plan is not authorized for this project.");
+    }
+
+    return plan;
   }
 }
 
@@ -222,11 +429,7 @@ class ReleasesController {
 
   @Get("projects/:projectId/releases/:releasePlanId")
   getRelease(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
-    return {
-      projectId,
-      releasePlanId,
-      status: "draft"
-    };
+    return this.releases.getRelease(projectId, releasePlanId);
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/preflight")
@@ -237,19 +440,22 @@ class ReleasesController {
 
   @Post("projects/:projectId/releases/:releasePlanId/approve-deploy")
   @RequireProjectPermission("release:approve")
-  approveDeploy(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
-    return {
-      projectId,
-      releasePlanId,
-      status: "approved_for_deploy",
-      approvedAt: new Date().toISOString()
-    };
+  approveDeploy(
+    @Param("projectId") projectId: string,
+    @Param("releasePlanId") releasePlanId: string,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.releases.approveDeploy(projectId, releasePlanId, request.auth?.user.id ?? "local-scaffold-user");
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/deploy")
   @RequireProjectPermission("deploy:execute")
-  deploy(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
-    return this.releases.deploy(projectId, releasePlanId);
+  deploy(
+    @Param("projectId") projectId: string,
+    @Param("releasePlanId") releasePlanId: string,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.releases.deploy(projectId, releasePlanId, request.auth?.user.id);
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/verify")
@@ -271,6 +477,56 @@ class ReleasesController {
 
 @Module({
   controllers: [ReleasesController],
-  providers: [ReleasesService]
+  providers: [ReleasesService, ...releasesInfrastructureProviders]
 })
 export class ReleasesModule {}
+
+async function persistReleaseChecks(db: Db, releasePlanId: string, checks: ReleaseCheck[]): Promise<void> {
+  await db.delete(releaseChecks).where(eq(releaseChecks.releasePlanId, releasePlanId));
+
+  if (checks.length === 0) {
+    return;
+  }
+
+  await db.insert(releaseChecks).values(
+    checks.map((check) => ({
+      releasePlanId,
+      scope: check.scope,
+      checkKey: check.checkKey,
+      severity: check.severity,
+      result: check.result,
+      message: check.message,
+      evidenceJson: check.evidence
+    }))
+  );
+}
+
+async function loadReleaseChecks(db: Db, releasePlanId: string): Promise<ReleaseCheck[]> {
+  const rows = await db.select().from(releaseChecks).where(eq(releaseChecks.releasePlanId, releasePlanId));
+
+  return rows.map((row) =>
+    ReleaseCheckSchema.parse({
+      checkKey: row.checkKey,
+      scope: row.scope,
+      severity: row.severity,
+      result: row.result,
+      message: row.message,
+      evidence: row.evidenceJson ?? undefined
+    })
+  );
+}
+
+function mapReleasePlan(plan: typeof releasePlans.$inferSelect): ReleasePlan {
+  return ReleasePlanSchema.parse({
+    releasePlanId: plan.id,
+    projectId: plan.projectId,
+    status: plan.status,
+    riskLevel: plan.riskLevel,
+    blockerCount: plan.blockerCount,
+    warningCount: plan.warningCount
+  });
+}
+
+function isPersistedId(value: string): boolean {
+  return uuidPattern.test(value);
+}

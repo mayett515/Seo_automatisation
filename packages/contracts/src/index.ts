@@ -365,7 +365,9 @@ export const TrackingEventSchema = z.object({
 export const TrackingIngestResultSchema = z.object({
   accepted: z.boolean(),
   eventName: TrackingEventNameSchema,
-  occurredAt: z.string().datetime()
+  occurredAt: z.string().datetime(),
+  persisted: z.boolean().default(false),
+  mode: z.enum(["persisted", "dry_run"]).default("dry_run")
 });
 
 export const CreateReleasePlanRequestSchema = z.object({

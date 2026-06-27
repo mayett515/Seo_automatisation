@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Controller, Get, Injectable, Module, Param, Post, UseGuards } from "@nestjs/common";
+import { Controller, Get, Injectable, Module, Param, Post, Req, UseGuards } from "@nestjs/common";
 import {
   MainPreviewSchema,
   ProjectSummarySchema,
@@ -13,6 +13,7 @@ import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 @Injectable()
@@ -28,13 +29,21 @@ class ProjectsService {
     });
   }
 
-  async queueWebsiteImport(projectId: string): Promise<QueueJob> {
+  async queueWebsiteImport(projectId: string, userId?: string): Promise<QueueJob> {
     const jobId = randomUUID();
     const enqueued = await this.queues.enqueue({
       queueName: "website-import",
       jobName: "website_import",
       jobId,
-      data: { projectId }
+      data: { projectId, triggeredByUserId: userId ?? null, triggerSource: "user_action" },
+      audit: {
+        projectId,
+        type: "website_import",
+        inputRef: projectId,
+        actorType: userId ? "user" : "system",
+        actorUserId: userId,
+        triggerSource: "user_action"
+      }
     });
 
     return QueueJobSchema.parse({
@@ -43,6 +52,7 @@ class ProjectsService {
       type: "website_import",
       status: enqueued ? "queued" : "dry_run",
       inputRef: projectId,
+      createdBy: userId,
       message: enqueued ? undefined : "Website import queue is not configured. This is an explicit dry-run response.",
       createdAt: new Date().toISOString()
     });
@@ -69,8 +79,8 @@ class ProjectsController {
 
   @Post(":id/import-website")
   @RequireProjectPermission("website:import")
-  importWebsite(@Param("id") projectId: string) {
-    return this.projects.queueWebsiteImport(projectId);
+  importWebsite(@Param("id") projectId: string, @Req() request: RequestWithAuth) {
+    return this.projects.queueWebsiteImport(projectId, request.auth?.user.id);
   }
 
   @Get(":id/main-preview")

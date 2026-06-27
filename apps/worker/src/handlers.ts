@@ -311,7 +311,12 @@ function normalizeFailureReason(error: unknown): string {
   return "gsc_sync_failed";
 }
 
-export function parseGscSyncJobData(data: unknown): { projectId: string; syncRunId: string } {
+export function parseGscSyncJobData(data: unknown): {
+  projectId: string;
+  syncRunId: string;
+  triggeredByUserId?: string;
+  triggerSource?: string;
+} {
   if (!data || typeof data !== "object") {
     throw new Error("GSC sync job data must be an object");
   }
@@ -322,9 +327,15 @@ export function parseGscSyncJobData(data: unknown): { projectId: string; syncRun
     throw new Error("GSC sync job data requires projectId and syncRunId");
   }
 
-  return {
+  const parsed = {
     projectId: record.projectId,
     syncRunId: record.syncRunId
+  };
+
+  return {
+    ...parsed,
+    ...(typeof record.triggeredByUserId === "string" ? { triggeredByUserId: record.triggeredByUserId } : {}),
+    ...(typeof record.triggerSource === "string" ? { triggerSource: record.triggerSource } : {})
   };
 }
 

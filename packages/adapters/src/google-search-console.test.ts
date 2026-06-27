@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { signOAuthState, verifyOAuthState, type SearchConsoleAuthorizationState } from "./google-search-console.js";
+import {
+  GoogleSearchConsoleAdapter,
+  createPkcePair,
+  signOAuthState,
+  verifyOAuthState,
+  type SearchConsoleAuthorizationState
+} from "./google-search-console.js";
 
 const secret = "test-state-secret-with-at-least-32-characters";
 const now = new Date("2026-06-26T10:00:00.000Z");
@@ -29,13 +35,51 @@ void describe("Google Search Console OAuth state", () => {
 
     assert.throws(() => verifyOAuthState(state, secret, now), /Expired/u);
   });
+
+  void it("creates authorization URLs with signed state and PKCE", () => {
+    const adapter = new GoogleSearchConsoleAdapter({
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://api.example.test/gsc/callback",
+      stateSecret: secret
+    });
+    const request = adapter.createAuthorizationRequest({
+      projectId: "11111111-1111-4111-8111-111111111111",
+      customerId: "33333333-3333-4333-8333-333333333333",
+      userId: "22222222-2222-4222-8222-222222222222",
+      sessionId: "session-1",
+      redirectTo: "/projects/11111111-1111-4111-8111-111111111111/gsc/connect",
+      now
+    });
+    const authUrl = new URL(request.intent.authUrl ?? "");
+
+    assert.equal(authUrl.searchParams.get("code_challenge_method"), "S256");
+    assert.ok(authUrl.searchParams.get("code_challenge"));
+    assert.ok(request.codeVerifier.length >= 43);
+    assert.deepEqual(verifyOAuthState(request.state, secret, now), request.statePayload);
+  });
+
+  void it("creates high-entropy PKCE verifier/challenge pairs", () => {
+    const first = createPkcePair();
+    const second = createPkcePair();
+
+    assert.notEqual(first.codeVerifier, second.codeVerifier);
+    assert.notEqual(first.codeChallenge, second.codeChallenge);
+    assert.ok(first.codeVerifier.length >= 43);
+    assert.ok(first.codeChallenge.length >= 43);
+  });
 });
 
 function statePayload(input: Pick<SearchConsoleAuthorizationState, "expiresAt">): SearchConsoleAuthorizationState {
   return {
+    provider: "google_search_console",
     projectId: "project-1",
+    customerId: "customer-1",
+    userId: "user-1",
+    sessionId: "session-1",
+    issuedAt: "2026-06-26T10:00:00.000Z",
     expiresAt: input.expiresAt,
     nonce: "nonce-1",
-    redirectTo: "http://localhost:5173/projects/project-1/gsc/connect"
+    redirectTo: "/projects/project-1/gsc/connect"
   };
 }

@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   GscOAuthIntentSchema,
   GscPropertyListSchema,
@@ -23,10 +23,22 @@ export type SearchConsoleTokenSet = {
 };
 
 export type SearchConsoleAuthorizationState = {
+  provider: "google_search_console";
   projectId: string;
+  customerId: string;
+  userId: string;
+  sessionId?: string;
+  issuedAt: string;
   expiresAt: string;
   nonce: string;
   redirectTo?: string;
+};
+
+export type SearchConsoleAuthorizationRequest = {
+  intent: GscOAuthIntent;
+  state: string;
+  statePayload: SearchConsoleAuthorizationState;
+  codeVerifier: string;
 };
 
 export type GoogleSearchConsoleAdapterConfig = {
@@ -44,18 +56,40 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
     this.scopes = config.scopes?.length ? config.scopes : [...defaultScopes];
   }
 
-  createAuthorizationUrl(input: { projectId: string; redirectTo?: string; now?: Date }): GscOAuthIntent {
+  createAuthorizationUrl(input: {
+    projectId: string;
+    customerId: string;
+    userId: string;
+    sessionId?: string;
+    redirectTo?: string;
+    now?: Date;
+  }): GscOAuthIntent {
+    return this.createAuthorizationRequest(input).intent;
+  }
+
+  createAuthorizationRequest(input: {
+    projectId: string;
+    customerId: string;
+    userId: string;
+    sessionId?: string;
+    redirectTo?: string;
+    now?: Date;
+  }): SearchConsoleAuthorizationRequest {
     const now = input.now ?? new Date();
     const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
-    const state = signOAuthState(
-      {
-        projectId: input.projectId,
-        redirectTo: input.redirectTo,
-        expiresAt,
-        nonce: randomBytes(16).toString("base64url")
-      },
-      this.config.stateSecret
-    );
+    const statePayload = {
+      provider: "google_search_console",
+      projectId: input.projectId,
+      customerId: input.customerId,
+      userId: input.userId,
+      sessionId: input.sessionId,
+      redirectTo: input.redirectTo,
+      issuedAt: now.toISOString(),
+      expiresAt,
+      nonce: randomBytes(16).toString("base64url")
+    } satisfies SearchConsoleAuthorizationState;
+    const state = signOAuthState(statePayload, this.config.stateSecret);
+    const pkce = createPkcePair();
 
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", this.config.clientId);
@@ -66,23 +100,30 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
     url.searchParams.set("include_granted_scopes", "true");
     url.searchParams.set("scope", this.scopes.join(" "));
     url.searchParams.set("state", state);
+    url.searchParams.set("code_challenge", pkce.codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
 
-    return GscOAuthIntentSchema.parse({
-      projectId: input.projectId,
-      status: "connection_required",
-      provider: "google_search_console",
-      authUrl: url.toString(),
-      expiresAt,
-      scopes: this.scopes,
-      message: "Connect Google Search Console with Google OAuth. Search Analytics sync uses readonly access first."
-    });
+    return {
+      intent: GscOAuthIntentSchema.parse({
+        projectId: input.projectId,
+        status: "connection_required",
+        provider: "google_search_console",
+        authUrl: url.toString(),
+        expiresAt,
+        scopes: this.scopes,
+        message: "Connect Google Search Console with Google OAuth. Search Analytics sync uses readonly access first."
+      }),
+      state,
+      statePayload,
+      codeVerifier: pkce.codeVerifier
+    };
   }
 
   verifyState(input: { state: string; now?: Date }): SearchConsoleAuthorizationState {
     return verifyOAuthState(input.state, this.config.stateSecret, input.now ?? new Date());
   }
 
-  async exchangeCode(input: { code: string }): Promise<SearchConsoleTokenSet> {
+  async exchangeCode(input: { code: string; codeVerifier?: string }): Promise<SearchConsoleTokenSet> {
     const body = new URLSearchParams({
       client_id: this.config.clientId,
       client_secret: this.config.clientSecret,
@@ -90,6 +131,10 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
       grant_type: "authorization_code",
       redirect_uri: this.config.redirectUri
     });
+
+    if (input.codeVerifier) {
+      body.set("code_verifier", input.codeVerifier);
+    }
 
     return parseTokenResponse(await postForm("https://oauth2.googleapis.com/token", body));
   }
@@ -240,7 +285,15 @@ export function verifyOAuthState(state: string, secret: string, now: Date): Sear
     Buffer.from(encodedPayload, "base64url").toString("utf8")
   ) as SearchConsoleAuthorizationState;
 
-  if (!payload.projectId || !payload.expiresAt || !payload.nonce) {
+  if (
+    payload.provider !== "google_search_console" ||
+    !payload.projectId ||
+    !payload.customerId ||
+    !payload.userId ||
+    !payload.issuedAt ||
+    !payload.expiresAt ||
+    !payload.nonce
+  ) {
     throw new Error("Invalid OAuth state payload");
   }
 
@@ -249,6 +302,16 @@ export function verifyOAuthState(state: string, secret: string, now: Date): Sear
   }
 
   return payload;
+}
+
+export function createPkcePair(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = randomBytes(32).toString("base64url");
+  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+
+  return {
+    codeVerifier,
+    codeChallenge
+  };
 }
 
 async function postForm(url: string, body: URLSearchParams): Promise<unknown> {

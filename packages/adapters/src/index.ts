@@ -58,8 +58,24 @@ export interface SiteHostingPort {
 }
 
 export interface SearchConsolePort {
-  createAuthorizationUrl(input: { projectId: string; redirectTo?: string }): GscOAuthIntent;
-  verifyState(input: { state: string }): { projectId: string; expiresAt: string; nonce: string; redirectTo?: string };
+  createAuthorizationUrl(input: {
+    projectId: string;
+    customerId: string;
+    userId: string;
+    sessionId?: string;
+    redirectTo?: string;
+  }): GscOAuthIntent;
+  verifyState(input: { state: string }): {
+    provider: "google_search_console";
+    projectId: string;
+    customerId: string;
+    userId: string;
+    sessionId?: string;
+    issuedAt: string;
+    expiresAt: string;
+    nonce: string;
+    redirectTo?: string;
+  };
   exchangeCode(input: {
     code: string;
   }): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string }>;
