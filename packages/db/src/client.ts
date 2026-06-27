@@ -4,9 +4,17 @@ import * as schema from "./schema.js";
 
 export type DatabaseClient = ReturnType<typeof createDatabaseClient>["db"];
 
-export function createDatabaseClient(databaseUrl: string) {
+export type DatabaseClientOptions = {
+  max?: number;
+  idleTimeoutSeconds?: number;
+  connectTimeoutSeconds?: number;
+};
+
+export function createDatabaseClient(databaseUrl: string, options: DatabaseClientOptions = {}) {
   const sql = postgres(databaseUrl, {
-    max: 5
+    max: options.max ?? 5,
+    idle_timeout: options.idleTimeoutSeconds,
+    connect_timeout: options.connectTimeoutSeconds
   });
 
   const db = drizzle(sql, { schema });

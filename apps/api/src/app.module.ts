@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { BetterAuthModule } from "./auth/better-auth/better-auth.module.js";
 import { AuthzModule } from "./auth/authz.module.js";
+import { DatabaseModule } from "./database/database.module.js";
 import { HealthController } from "./health.controller.js";
 import { GscModule } from "./modules/gsc.module.js";
 import { LeadsModule } from "./modules/leads.module.js";
@@ -12,6 +13,7 @@ import { TrackingModule } from "./modules/tracking.module.js";
 
 @Module({
   imports: [
+    DatabaseModule,
     BetterAuthModule,
     AuthzModule,
     SecurityModule,

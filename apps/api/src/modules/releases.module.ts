@@ -4,16 +4,13 @@ import {
   Body,
   Controller,
   Get,
-  Inject,
   Injectable,
   Module,
   Param,
   Post,
   Req,
   UnauthorizedException,
-  UseGuards,
-  type OnModuleDestroy,
-  type Provider
+  UseGuards
 } from "@nestjs/common";
 import {
   QueueJobSchema,
@@ -31,8 +28,7 @@ import {
   type RollbackPoint
 } from "@localseo/contracts";
 import { canDeployRelease, decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
-import { parseAppEnv } from "@localseo/config";
-import { approvals, createDatabaseClient, releaseChecks, releasePlans } from "@localseo/db";
+import { approvals, releaseChecks, releasePlans, type DatabaseClient } from "@localseo/db";
 import { and, eq } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
@@ -40,33 +36,19 @@ import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
+import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
-const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
-type DbHandle = ReturnType<typeof createDatabaseClient>;
-type Db = DbHandle["db"];
-
-const RELEASES_DB_HANDLE = Symbol("RELEASES_DB_HANDLE");
-
-const releasesInfrastructureProviders: Provider[] = [
-  {
-    provide: RELEASES_DB_HANDLE,
-    useFactory: (): DbHandle | undefined => (env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined)
-  }
-];
+type Db = DatabaseClient;
 
 @Injectable()
-export class ReleasesService implements OnModuleDestroy {
+export class ReleasesService {
   constructor(
     private readonly queues: QueueProducerService,
-    @Inject(RELEASES_DB_HANDLE) private readonly dbHandle: DbHandle | undefined
+    private readonly database: DatabaseService
   ) {}
-
-  async onModuleDestroy(): Promise<void> {
-    await this.dbHandle?.close();
-  }
 
   async createPlan(projectId: string, body: unknown): Promise<ReleasePlan> {
     const input = CreateReleasePlanRequestSchema.parse(body ?? {});
@@ -80,11 +62,13 @@ export class ReleasesService implements OnModuleDestroy {
       warningCount: 0
     });
 
-    if (!this.dbHandle || !isPersistedId(projectId)) {
+    const db = this.database.db;
+
+    if (!db || !isPersistedId(projectId)) {
       return plan;
     }
 
-    const [insertedPlan] = await this.dbHandle.db
+    const [insertedPlan] = await db
       .insert(releasePlans)
       .values({
         id: releasePlanId,
@@ -105,7 +89,7 @@ export class ReleasesService implements OnModuleDestroy {
   }
 
   async getRelease(projectId: string, releasePlanId: string): Promise<ReleasePlan> {
-    if (!this.dbHandle || !isPersistedId(releasePlanId)) {
+    if (!this.database.db || !isPersistedId(releasePlanId)) {
       return ReleasePlanSchema.parse({
         releasePlanId,
         projectId,
@@ -161,9 +145,11 @@ export class ReleasesService implements OnModuleDestroy {
     ];
     const readiness = decideReleaseReadiness(checks);
 
-    if (this.dbHandle && isPersistedId(releasePlanId)) {
-      await persistReleaseChecks(this.dbHandle.db, releasePlanId, checks);
-      await this.dbHandle.db
+    const db = this.database.db;
+
+    if (db && isPersistedId(releasePlanId)) {
+      await persistReleaseChecks(db, releasePlanId, checks);
+      await db
         .update(releasePlans)
         .set({
           status: readiness.kind,
@@ -185,14 +171,16 @@ export class ReleasesService implements OnModuleDestroy {
   async approveDeploy(projectId: string, releasePlanId: string, userId: string) {
     await this.assertReleasePlanForProject(projectId, releasePlanId);
 
-    if (this.dbHandle && isPersistedId(releasePlanId)) {
-      const checks = await loadReleaseChecks(this.dbHandle.db, releasePlanId);
+    const db = this.database.db;
+
+    if (db && isPersistedId(releasePlanId)) {
+      const checks = await loadReleaseChecks(db, releasePlanId);
 
       if (checks.length === 0 || decideReleaseReadiness(checks).kind === "blocked") {
         throw new BadRequestException("Release preflight must pass before approval.");
       }
 
-      await this.dbHandle.db
+      await db
         .update(releasePlans)
         .set({
           status: "approved_for_deploy",
@@ -200,7 +188,7 @@ export class ReleasesService implements OnModuleDestroy {
           updatedAt: new Date()
         })
         .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
-      await this.dbHandle.db.insert(approvals).values({
+      await db.insert(approvals).values({
         releasePlanId,
         userId,
         status: "approved",
@@ -217,7 +205,9 @@ export class ReleasesService implements OnModuleDestroy {
   }
 
   async deploy(projectId: string, releasePlanId: string, userId?: string) {
-    if (!this.dbHandle || !isPersistedId(releasePlanId)) {
+    const db = this.database.db;
+
+    if (!db || !isPersistedId(releasePlanId)) {
       return QueueJobSchema.parse({
         projectId,
         releasePlanId,
@@ -232,7 +222,7 @@ export class ReleasesService implements OnModuleDestroy {
     }
 
     const plan = mapReleasePlan(await this.loadReleasePlanForProject(projectId, releasePlanId));
-    const checks = await loadReleaseChecks(this.dbHandle.db, releasePlanId);
+    const checks = await loadReleaseChecks(db, releasePlanId);
 
     if (checks.length === 0 || !canDeployRelease(plan, checks)) {
       throw new BadRequestException("Release must pass preflight and be approved before deploy.");
@@ -254,8 +244,8 @@ export class ReleasesService implements OnModuleDestroy {
       }
     });
 
-    if (enqueued && this.dbHandle) {
-      await this.dbHandle.db
+    if (enqueued) {
+      await db
         .update(releasePlans)
         .set({
           status: "deploying",
@@ -387,7 +377,7 @@ export class ReleasesService implements OnModuleDestroy {
   }
 
   private async assertReleasePlanForProject(projectId: string, releasePlanId: string): Promise<void> {
-    if (!this.dbHandle || !isPersistedId(releasePlanId)) {
+    if (!this.database.db || !isPersistedId(releasePlanId)) {
       return;
     }
 
@@ -398,11 +388,13 @@ export class ReleasesService implements OnModuleDestroy {
     projectId: string,
     releasePlanId: string
   ): Promise<typeof releasePlans.$inferSelect> {
-    if (!this.dbHandle) {
+    const db = this.database.db;
+
+    if (!db) {
       throw new UnauthorizedException("Release persistence is required for persisted release plans.");
     }
 
-    const [plan] = await this.dbHandle.db
+    const [plan] = await db
       .select()
       .from(releasePlans)
       .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)))
@@ -477,7 +469,7 @@ class ReleasesController {
 
 @Module({
   controllers: [ReleasesController],
-  providers: [ReleasesService, ...releasesInfrastructureProviders]
+  providers: [ReleasesService]
 })
 export class ReleasesModule {}
 

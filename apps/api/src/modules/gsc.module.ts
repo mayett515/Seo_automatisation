@@ -18,12 +18,12 @@ import {
   type QueueJob
 } from "@localseo/contracts";
 import {
-  createDatabaseClient,
   gscConnections,
   gscOpportunitySignals,
   gscSearchAnalyticsRows,
   gscSyncRuns,
-  jobRuns
+  jobRuns,
+  type DatabaseClient
 } from "@localseo/db";
 import {
   Body,
@@ -56,28 +56,23 @@ import type {
   ProjectAccessContext,
   RequestWithAuth
 } from "../auth/types/authenticated-request.js";
+import { DatabaseService } from "../database/database.service.js";
 import { GscOAuthStateStore, type GscOAuthNonceRecord } from "./gsc-oauth-state.store.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
-type DbHandle = ReturnType<typeof createDatabaseClient>;
-type Db = DbHandle["db"];
+type Db = DatabaseClient;
 type OptionalSearchConsole = GoogleSearchConsoleAdapter | undefined;
 type OptionalTokenCipher = AesGcmTokenCipher | undefined;
 type OptionalQueue = Queue | undefined;
 
-const GSC_DB_HANDLE = Symbol("GSC_DB_HANDLE");
 const GSC_SEARCH_CONSOLE = Symbol("GSC_SEARCH_CONSOLE");
 const GSC_TOKEN_CIPHER = Symbol("GSC_TOKEN_CIPHER");
 const GSC_QUEUE = Symbol("GSC_QUEUE");
 
 const gscInfrastructureProviders: Provider[] = [
-  {
-    provide: GSC_DB_HANDLE,
-    useFactory: (): DbHandle | undefined => (env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined)
-  },
   {
     provide: GSC_SEARCH_CONSOLE,
     useFactory: (): OptionalSearchConsole => {
@@ -115,17 +110,17 @@ class GscService implements OnModuleDestroy {
   private readonly logger = new Logger(GscService.name);
 
   constructor(
-    @Inject(GSC_DB_HANDLE) private readonly dbHandle: DbHandle | undefined,
     @Inject(GSC_SEARCH_CONSOLE) private readonly searchConsole: OptionalSearchConsole,
     @Inject(GSC_TOKEN_CIPHER) private readonly tokenCipher: OptionalTokenCipher,
     @Inject(GSC_QUEUE) private readonly gscQueue: OptionalQueue,
+    private readonly database: DatabaseService,
     private readonly oauthStateStore: GscOAuthStateStore,
     private readonly betterAuth: BetterAuthService,
     private readonly memberships: ProjectMembershipService
   ) {}
 
   async onModuleDestroy(): Promise<void> {
-    await Promise.all([this.gscQueue?.close(), this.dbHandle?.close()]);
+    await this.gscQueue?.close();
   }
 
   async getConnection(projectId: string): Promise<GscConnection> {
@@ -133,14 +128,16 @@ class GscService implements OnModuleDestroy {
       return connectionRequired(projectId, "Select a persisted project before connecting Google Search Console.");
     }
 
-    if (!this.dbHandle) {
+    const db = this.database.db;
+
+    if (!db) {
       return connectionRequired(
         projectId,
         "DATABASE_URL is required before Google Search Console connections can be stored."
       );
     }
 
-    const connection = await findLatestConnection(this.dbHandle.db, projectId);
+    const connection = await findLatestConnection(db, projectId);
 
     if (!connection) {
       return connectionRequired(
@@ -169,7 +166,7 @@ class GscService implements OnModuleDestroy {
       return oauthUnavailable(projectId, "Create or select a persisted project before starting Google OAuth.");
     }
 
-    if (!this.dbHandle) {
+    if (!this.database.db) {
       return oauthUnavailable(projectId, "DATABASE_URL is required before Google OAuth can store a connection.");
     }
 
@@ -217,7 +214,9 @@ class GscService implements OnModuleDestroy {
       return this.safeOAuthRedirect(undefined, undefined, "provider_error");
     }
 
-    if (!query.code || !query.state || !this.searchConsole || !this.tokenCipher || !this.dbHandle) {
+    const db = this.database.db;
+
+    if (!query.code || !query.state || !this.searchConsole || !this.tokenCipher || !db) {
       return this.safeOAuthRedirect(undefined, undefined, "missing_oauth_configuration");
     }
 
@@ -267,8 +266,8 @@ class GscService implements OnModuleDestroy {
       const selectedProperty = properties.properties[0];
 
       if (!selectedProperty) {
-        await revokeProjectConnections(this.dbHandle.db, state.projectId, "no_search_console_property");
-        await this.dbHandle.db.insert(gscConnections).values({
+        await revokeProjectConnections(db, state.projectId, "no_search_console_property");
+        await db.insert(gscConnections).values({
           projectId: state.projectId,
           status: "error",
           failureJson: { reason: "no_search_console_property" }
@@ -277,7 +276,7 @@ class GscService implements OnModuleDestroy {
         return this.safeOAuthRedirect(redirectPath, projectId, "no_search_console_property");
       }
 
-      const [insertedConnection] = await this.dbHandle.db
+      const [insertedConnection] = await db
         .insert(gscConnections)
         .values({
           projectId: state.projectId,
@@ -290,12 +289,7 @@ class GscService implements OnModuleDestroy {
         .returning({ id: gscConnections.id });
 
       if (insertedConnection) {
-        await revokeOtherProjectConnections(
-          this.dbHandle.db,
-          state.projectId,
-          insertedConnection.id,
-          "replaced_by_reconnect"
-        );
+        await revokeOtherProjectConnections(db, state.projectId, insertedConnection.id, "replaced_by_reconnect");
       }
 
       return this.safeOAuthRedirect(redirectPath, projectId, undefined, "connected");
@@ -328,11 +322,13 @@ class GscService implements OnModuleDestroy {
     const request = GscSyncRequestSchema.parse(requestInput ?? {});
     const connection = await this.getConnection(projectId);
 
-    if (connection.status !== "connected" || !connection.propertyUrl || !this.dbHandle) {
+    const db = this.database.db;
+
+    if (connection.status !== "connected" || !connection.propertyUrl || !db) {
       return connection;
     }
 
-    const persistedConnection = await findLatestConnection(this.dbHandle.db, projectId);
+    const persistedConnection = await findLatestConnection(db, projectId);
 
     if (!persistedConnection?.encryptedRefreshToken) {
       return connectionRequired(projectId, "Reconnect Google Search Console before syncing performance data.");
@@ -346,7 +342,7 @@ class GscService implements OnModuleDestroy {
     }
 
     const dateRange = request.dateRange ?? defaultFinalizedDateRange();
-    const [syncRun] = await this.dbHandle.db
+    const [syncRun] = await db
       .insert(gscSyncRuns)
       .values({
         projectId,
@@ -391,7 +387,7 @@ class GscService implements OnModuleDestroy {
         }
       }
     );
-    await this.dbHandle.db.insert(jobRuns).values({
+    await db.insert(jobRuns).values({
       projectId,
       externalJobId: jobId,
       queueName: "gsc-sync",
@@ -409,7 +405,9 @@ class GscService implements OnModuleDestroy {
   async getPerformance(projectId: string): Promise<GscPerformanceSummary> {
     const connection = await this.getConnection(projectId);
 
-    if (!this.dbHandle || connection.status !== "connected") {
+    const db = this.database.db;
+
+    if (!db || connection.status !== "connected") {
       return GscPerformanceSummarySchema.parse({
         projectId,
         connection,
@@ -418,7 +416,6 @@ class GscService implements OnModuleDestroy {
       });
     }
 
-    const db = this.dbHandle.db;
     const latestSync = await findLatestSyncRun(db, projectId);
     let rows: (typeof gscSearchAnalyticsRows.$inferSelect)[] = [];
     let signals: (typeof gscOpportunitySignals.$inferSelect)[] = [];

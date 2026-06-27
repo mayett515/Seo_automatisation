@@ -1,21 +1,15 @@
-import { Injectable, type OnModuleDestroy } from "@nestjs/common";
-import { parseAppEnv } from "@localseo/config";
-import { createDatabaseClient, customerMemberships, customers, projects } from "@localseo/db";
+import { Injectable } from "@nestjs/common";
+import { customerMemberships, customers, projects } from "@localseo/db";
 import { and, eq, ne, or } from "drizzle-orm";
+import { DatabaseService } from "../database/database.service.js";
 import type { ProjectAccessContext } from "./types/authenticated-request.js";
 
-const env = parseAppEnv(process.env);
-
-type DbHandle = ReturnType<typeof createDatabaseClient>;
-
 @Injectable()
-export class ProjectMembershipService implements OnModuleDestroy {
-  private readonly dbHandle: DbHandle | undefined = env.DATABASE_URL
-    ? createDatabaseClient(env.DATABASE_URL)
-    : undefined;
+export class ProjectMembershipService {
+  constructor(private readonly database: DatabaseService) {}
 
   isDatabaseBacked(): boolean {
-    return Boolean(this.dbHandle);
+    return this.database.isConfigured();
   }
 
   async canAccessProject(input: { userId: string; projectId: string }): Promise<boolean> {
@@ -23,11 +17,13 @@ export class ProjectMembershipService implements OnModuleDestroy {
   }
 
   async getProjectAccess(input: { userId: string; projectId: string }): Promise<ProjectAccessContext | undefined> {
-    if (!this.dbHandle) {
+    const db = this.database.db;
+
+    if (!db) {
       return undefined;
     }
 
-    const [row] = await this.dbHandle.db
+    const [row] = await db
       .select({
         projectId: projects.id,
         projectStatus: projects.status,
@@ -67,9 +63,5 @@ export class ProjectMembershipService implements OnModuleDestroy {
       role,
       projectStatus: row.projectStatus
     };
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.dbHandle?.close();
   }
 }

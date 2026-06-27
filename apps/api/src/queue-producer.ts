@@ -1,8 +1,9 @@
 import { Global, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import { createDatabaseClient, jobRuns } from "@localseo/db";
+import { jobRuns } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
+import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
 
@@ -32,9 +33,8 @@ type EnqueueInput = {
 @Injectable()
 export class QueueProducerService implements OnModuleDestroy {
   private readonly queues: QueueRegistry;
-  private readonly dbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
 
-  constructor() {
+  constructor(private readonly database: DatabaseService) {
     const redisConnection = env.REDIS_URL ? createRedisConnection(env.REDIS_URL) : undefined;
     this.queues = redisConnection
       ? {
@@ -68,15 +68,17 @@ export class QueueProducerService implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await Promise.all([...Object.values(this.queues).map((queue) => queue.close()), this.dbHandle?.close()]);
+    await Promise.all(Object.values(this.queues).map((queue) => queue.close()));
   }
 
   private async recordJobRun(input: EnqueueInput, status: "queued" | "dry_run"): Promise<void> {
-    if (!this.dbHandle || !input.audit) {
+    const db = this.database.db;
+
+    if (!db || !input.audit) {
       return;
     }
 
-    await this.dbHandle.db.insert(jobRuns).values({
+    await db.insert(jobRuns).values({
       projectId: input.audit.projectId,
       leadId: input.audit.leadId,
       externalJobId: input.jobId,

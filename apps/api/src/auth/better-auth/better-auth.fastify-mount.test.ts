@@ -30,6 +30,10 @@ function testEnv(): AppEnv {
     PORT: 4000,
     WEB_ORIGIN: "http://localhost:5173",
     API_PUBLIC_URL: "http://localhost:4000",
+    DATABASE_POOL_MAX: 10,
+    DATABASE_IDLE_TIMEOUT_SECONDS: 30,
+    DATABASE_CONNECT_TIMEOUT_SECONDS: 5,
+    DATABASE_PING_TIMEOUT_MS: 2000,
     AWS_REGION: "eu-central-1"
   };
 }

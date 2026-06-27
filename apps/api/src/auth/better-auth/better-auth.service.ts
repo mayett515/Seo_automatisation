@@ -1,10 +1,11 @@
-import { Injectable, type OnModuleDestroy } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
-import { accounts, createDatabaseClient, sessions, users, verifications, type DatabaseClient } from "@localseo/db";
+import { accounts, sessions, users, verifications, type DatabaseClient } from "@localseo/db";
 import { betterAuth } from "better-auth/minimal";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { fromNodeHeaders } from "better-auth/node";
 import type { IncomingHttpHeaders } from "node:http";
+import { DatabaseService } from "../../database/database.service.js";
 import type { AuthenticatedRequestContext } from "../types/authenticated-request.js";
 
 const env = parseAppEnv(process.env);
@@ -21,16 +22,15 @@ const betterAuthSchema = {
   verification: verifications
 };
 
-type DbHandle = ReturnType<typeof createDatabaseClient>;
 type LocalSeoAuth = ReturnType<typeof createLocalSeoAuth>;
 
 @Injectable()
-export class BetterAuthService implements OnModuleDestroy {
-  private readonly dbHandle: DbHandle | undefined = env.DATABASE_URL
-    ? createDatabaseClient(env.DATABASE_URL)
-    : undefined;
+export class BetterAuthService {
+  readonly auth: LocalSeoAuth | undefined;
 
-  readonly auth: LocalSeoAuth | undefined = this.dbHandle ? createLocalSeoAuth(this.dbHandle.db, env) : undefined;
+  constructor(database: DatabaseService) {
+    this.auth = database.db ? createLocalSeoAuth(database.db, env) : undefined;
+  }
 
   isConfigured(): boolean {
     return Boolean(this.auth);
@@ -62,10 +62,6 @@ export class BetterAuthService implements OnModuleDestroy {
       },
       source: "better_auth"
     };
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.dbHandle?.close();
   }
 }
 

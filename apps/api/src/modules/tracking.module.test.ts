@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { BadRequestException } from "@nestjs/common";
+import type { DatabaseService } from "../database/database.service.js";
 import { hashTrackingKey, isLocalScaffoldEvent, TrackingService } from "./tracking.module.js";
 
 void describe("tracking ingestion authorization", () => {
@@ -58,7 +59,7 @@ void describe("tracking ingestion authorization", () => {
 
   void it("rejects non-UUID persisted project ids before persistence lookup", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: undefined }, async () => {
-      const service = new TrackingService(undefined);
+      const service = new TrackingService({ db: undefined } as DatabaseService);
 
       await assert.rejects(
         service.ingest({

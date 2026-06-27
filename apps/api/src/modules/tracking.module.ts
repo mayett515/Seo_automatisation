@@ -3,14 +3,11 @@ import {
   Body,
   Controller,
   Headers,
-  Inject,
   Injectable,
   Module,
   Post,
   BadRequestException,
-  UnauthorizedException,
-  type OnModuleDestroy,
-  type Provider
+  UnauthorizedException
 } from "@nestjs/common";
 import { allowsLocalScaffoldAuth, parseAppEnv } from "@localseo/config";
 import {
@@ -19,28 +16,13 @@ import {
   type TrackingEvent,
   type TrackingIngestResult
 } from "@localseo/contracts";
-import { createDatabaseClient, projectTrackingKeys, trackingEvents } from "@localseo/db";
+import { projectTrackingKeys, trackingEvents } from "@localseo/db";
 import { and, eq, isNull } from "drizzle-orm";
-
-const env = parseAppEnv(process.env);
-const TRACKING_DB_HANDLE = Symbol("TRACKING_DB_HANDLE");
-
-type DbHandle = ReturnType<typeof createDatabaseClient>;
-
-const trackingInfrastructureProviders: Provider[] = [
-  {
-    provide: TRACKING_DB_HANDLE,
-    useFactory: (): DbHandle | undefined => (env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined)
-  }
-];
+import { DatabaseService } from "../database/database.service.js";
 
 @Injectable()
-export class TrackingService implements OnModuleDestroy {
-  constructor(@Inject(TRACKING_DB_HANDLE) private readonly dbHandle: DbHandle | undefined) {}
-
-  async onModuleDestroy(): Promise<void> {
-    await this.dbHandle?.close();
-  }
+export class TrackingService {
+  constructor(private readonly database: DatabaseService) {}
 
   async ingest(event: TrackingEvent, trackingKey?: string): Promise<TrackingIngestResult> {
     if (isLocalScaffoldEvent(event)) {
@@ -57,14 +39,16 @@ export class TrackingService implements OnModuleDestroy {
       throw new BadRequestException("Persisted tracking project id must be a UUID.");
     }
 
-    if (!this.dbHandle) {
+    const db = this.database.db;
+
+    if (!db) {
       throw new UnauthorizedException("Tracking persistence is required for persisted project events.");
     }
 
     await this.assertProjectTrackingKey(event, trackingKey);
 
     const occurredAt = event.occurredAt ? new Date(event.occurredAt) : new Date();
-    await this.dbHandle.db.insert(trackingEvents).values({
+    await db.insert(trackingEvents).values({
       projectId: event.projectId,
       eventName: event.eventName,
       route: event.route,
@@ -89,12 +73,14 @@ export class TrackingService implements OnModuleDestroy {
       throw new UnauthorizedException("Project tracking key is required for persisted project events.");
     }
 
-    if (!this.dbHandle) {
+    const db = this.database.db;
+
+    if (!db) {
       throw new UnauthorizedException("Tracking persistence is required for persisted project events.");
     }
 
     const keyHash = hashTrackingKey(trackingKey);
-    const [row] = await this.dbHandle.db
+    const [row] = await db
       .select({ id: projectTrackingKeys.id, keyHash: projectTrackingKeys.keyHash })
       .from(projectTrackingKeys)
       .where(
@@ -111,7 +97,7 @@ export class TrackingService implements OnModuleDestroy {
       throw new UnauthorizedException("Project tracking key is invalid.");
     }
 
-    await this.dbHandle.db
+    await db
       .update(projectTrackingKeys)
       .set({
         lastUsedAt: new Date(),
@@ -134,7 +120,7 @@ class TrackingController {
 
 @Module({
   controllers: [TrackingController],
-  providers: [TrackingService, ...trackingInfrastructureProviders]
+  providers: [TrackingService]
 })
 export class TrackingModule {}
 

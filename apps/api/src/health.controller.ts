@@ -4,12 +4,14 @@ import { Controller, Get } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import { HealthProbeResponseSchema, HealthResponseSchema, type HealthProbeResponse } from "@localseo/contracts";
-import { createDatabaseClient } from "@localseo/db";
+import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
 
 @Controller("health")
 export class HealthController {
+  constructor(private readonly database: DatabaseService) {}
+
   @Get()
   getHealth() {
     return HealthResponseSchema.parse({
@@ -33,7 +35,7 @@ export class HealthController {
 
   @Get("ready")
   async getReady(): Promise<HealthProbeResponse> {
-    const [database, redis] = await Promise.all([checkDatabase(), checkRedis()]);
+    const [database, redis] = await Promise.all([this.database.ping(), checkRedis()]);
     const status = database === "up" && redis === "up" ? "ok" : "degraded";
 
     return HealthProbeResponseSchema.parse({
@@ -45,23 +47,6 @@ export class HealthController {
         redis
       }
     });
-  }
-}
-
-async function checkDatabase(): Promise<"up" | "down" | "not_configured"> {
-  if (!env.DATABASE_URL) {
-    return "not_configured";
-  }
-
-  const handle = createDatabaseClient(env.DATABASE_URL);
-
-  try {
-    await handle.sql`select 1`;
-    return "up";
-  } catch {
-    return "down";
-  } finally {
-    await handle.close();
   }
 }
 
