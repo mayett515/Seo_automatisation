@@ -32,6 +32,7 @@ You have been routed here because the task touches release plans, deployment rea
 - Keep release API routes project-scoped unless the handler resolves `releasePlanId -> projectId` before authorization.
 - Persist approval decisions before deploy execution can be queued.
 - Verify the persisted release state with deterministic domain logic before enqueueing a deploy worker.
+- Apply side-effect honesty: returned release/deploy states must describe persisted approval, real enqueue, executed deploy, or verified evidence rather than desired future state.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -45,6 +46,7 @@ You have been routed here because the task touches release plans, deployment rea
 - DO NOT leave intended live pages blocked by noindex or broken canonicals.
 - DO NOT expose release-plan-only routes before release-plan ownership is resolved and authorized.
 - DO NOT treat an `approve-deploy` response as approval unless the approval and actor are persisted.
+- DO NOT return `approved`, `queued`, `deployed`, `verified`, or `successful` unless that exact side effect happened and has persisted evidence.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -67,6 +69,9 @@ THEN load the release plan and release checks from persistence, verify `canDeplo
 
 IF approval is granted:
 THEN persist the approving actor, decision timestamp, release status, and approval record before returning success.
+
+IF release/deploy infrastructure is not wired yet:
+THEN return an explicit `dry_run`, `not_configured`, `pending`, or `blocked` state instead of a production-success-looking response.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -109,4 +114,5 @@ Netlify returned success, so the release is live and healthy.
 2. [ ] Did post-deploy verification run before success was reported?
 3. [ ] Did blockers prevent execution and warnings remain visible?
 4. [ ] Did deploy enqueue verify the persisted release state instead of trusting request order?
+5. [ ] Did every returned status match a real persisted or executed side effect?
 </pre-flight-checklist>

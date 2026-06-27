@@ -29,6 +29,7 @@ You have been routed here because the task touches analytics, tracking events, G
 - Require an ingestion boundary for public tracking endpoints before persisted project events are accepted.
 - Prefer per-project public ingestion keys over global shared tracking secrets.
 - Return explicit dry-run/not-persisted status when tracking is validated but not stored.
+- Apply side-effect honesty: `accepted`, `queued`, or `stored` means the tracking event was actually persisted, queued, or otherwise durably handled.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -43,6 +44,7 @@ You have been routed here because the task touches analytics, tracking events, G
 - DO NOT use one global browser-exposed tracking secret as the final production isolation boundary.
 - DO NOT compare tracking or webhook-style secrets with ordinary string equality when timing-safe comparison is practical.
 - DO NOT return `accepted: true` for production tracking unless the event was persisted or queued.
+- DO NOT make validation-only tracking look like successful ingestion.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -62,6 +64,9 @@ THEN keep the payload allowlisted and require a project-scoped ingestion boundar
 
 IF a tracking event is accepted for a persisted project:
 THEN persist it, enqueue it, or return an explicit dry-run/not-persisted response.
+
+IF tracking storage or queueing is not active:
+THEN return `dry_run`, `not_persisted`, or an equivalent explicit state instead of `accepted: true`.
 
 IF a tracking key is sent from browser-side code:
 THEN treat it as publishable and scope it to a single project/domain with rotation support.
@@ -95,4 +100,5 @@ track("form_submit", { name, email, phone, message });
 3. [ ] Did operational status reflect real failures and retries?
 4. [ ] Did public tracking ingestion reject persisted project events without a trusted ingestion boundary?
 5. [ ] Did accepted tracking events either persist/queue successfully or disclose dry-run/not-persisted state?
+6. [ ] Did every tracking response tell the truth about whether storage or queueing happened?
 </pre-flight-checklist>

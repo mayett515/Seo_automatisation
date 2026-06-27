@@ -25,6 +25,7 @@ priority_schema: "critical > strong > guideline"
 - Use the shared Redis connection helper for API and worker BullMQ connections, including `rediss://` TLS handling.
 - Include actor metadata for user-triggered jobs and explicit system-actor metadata for scheduled jobs.
 - Wrap destructive retry paths in transactions or use replace/upsert patterns that cannot leave half-written data as success.
+- Apply side-effect honesty: `queued`, `completed`, `failed`, `dry_run`, `not_configured`, and `pending` must describe the side effect that really happened.
 </positive-directives>
 
 <absolute-constraints>
@@ -35,6 +36,7 @@ priority_schema: "critical > strong > guideline"
 - DO NOT accept `rediss://` without configuring TLS on the Redis/BullMQ connection.
 - DO NOT enqueue project jobs without validated project context and audit actor metadata once persisted data is involved.
 - DO NOT delete existing sync/deploy data and insert replacements outside a transaction if readers can observe partial state.
+- DO NOT return success-looking job states when queue infrastructure, persistence, or worker execution did not actually happen.
 </absolute-constraints>
 
 <conditional-logic>
@@ -49,4 +51,7 @@ THEN use a transaction or a staging/swap pattern so retries cannot expose partia
 
 IF a queue job was triggered by a user request:
 THEN include `actorType`, `actorId`, project id, and request intent in the job/audit record.
+
+IF queue infrastructure is absent or intentionally bypassed:
+THEN return `dry_run`, `not_configured`, or `connection_required` rather than `queued`.
 </conditional-logic>
