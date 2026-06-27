@@ -36,6 +36,13 @@
       "when": 1782472720970,
       "tag": "0004_regular_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782563293964,
+      "tag": "0005_sturdy_imperial_guard",
+      "breakpoints": true
     }
   ]
 }

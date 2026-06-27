@@ -23,6 +23,7 @@ priority_schema: "critical > strong > guideline"
 - Keep plugin registration centralized near bootstrap or a dedicated infrastructure module.
 - Use Fastify auth/cookie/CORS/security plugins only for adapter-level behavior; product authorization remains in Nest guards.
 - Use maintained Fastify plugins for adapter-level security headers and rate limits when production HTTP traffic is exposed.
+- Mount Better Auth HTTP routes at the Fastify adapter boundary while exposing the same Better Auth instance to Nest guards through DI.
 </positive-directives>
 
 <absolute-constraints>
@@ -30,6 +31,7 @@ priority_schema: "critical > strong > guideline"
 - DO NOT register plugins ad hoc inside feature services.
 - DO NOT let plugin behavior bypass Nest guards, validation, CORS policy, logging policy, or tenant isolation.
 - DO NOT install a Fastify auth/security plugin without documenting whether Nest or Better Auth already owns that concern.
+- DO NOT wrap Better Auth auth endpoints in feature controllers when the raw Fastify handler is the cleaner cookie/session boundary.
 </absolute-constraints>
 
 <conditional-logic>
@@ -44,4 +46,7 @@ THEN configure it at bootstrap or infrastructure level and keep product authoriz
 
 IF Better Auth requires a Fastify handler, cookie behavior, or CORS compatibility:
 THEN keep the handler/runtime plumbing isolated and keep project authorization in Nest guards.
+
+IF Better Auth auth routes are mounted:
+THEN use route-appropriate auth rate limits and do not let auth route plumbing create a second auth configuration.
 </conditional-logic>

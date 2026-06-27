@@ -18,6 +18,7 @@ priority_schema: "critical > strong > guideline"
 - Use signed, expiring OAuth state and validate it before exchanging provider codes.
 - Bind OAuth state to the initiating app user/session and project authorization context.
 - Store or otherwise consume provider-state nonces so callback state is one-time use.
+- Use PKCE for provider authorization-code flows when the provider supports it.
 - Prefer least-privilege scopes first; request stronger scopes only for the exact feature that needs them.
 - Normalize provider errors before exposing them to users or storing them in long-lived operational records.
 - Replace or revoke old refresh tokens when reconnecting the same project/provider.
@@ -30,6 +31,7 @@ priority_schema: "critical > strong > guideline"
 - DO NOT let OAuth connect routes bypass tenant/project authorization before production use.
 - DO NOT let an OAuth callback create or replace a provider connection without validating the initiating user/session or one-time state.
 - DO NOT generate state nonces that are never checked, consumed, or replay-protected once real customer provider data is involved.
+- DO NOT accept a callback from a different app user than the user bound into state/nonce storage.
 </absolute-constraints>
 
 <conditional-logic>
@@ -38,6 +40,12 @@ THEN include enough signed state to bind the callback to project, expiry, nonce,
 
 IF the provider callback mutates a project connection:
 THEN validate project membership and consume the nonce before storing tokens.
+
+IF an OAuth nonce is stored in Redis:
+THEN consume it atomically with `GETDEL` or an equivalent Lua fallback before downstream checks that could leave it replayable.
+
+IF state contains both user id and session id:
+THEN make user id match the hard authorization condition and treat session id mismatch as a re-verification trigger unless product policy requires strict same-session completion.
 
 IF nonce storage is not implemented yet:
 THEN document the replay window and keep the flow out of real customer data paths.

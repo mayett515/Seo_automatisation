@@ -22,6 +22,7 @@ priority_schema: "critical > strong > guideline"
 - For AWS/Fargate, document which layer owns TLS, redirects, health checks, scaling, and logs.
 - Configure app-level body limits, security headers, and conservative rate limits before exposing API traffic.
 - Use route-specific rate limits for public write endpoints when their traffic profile differs from authenticated API routes.
+- Use route-specific rate limits for auth endpoints because login/session routes have different abuse profiles than ordinary API reads.
 - Treat `trustProxy` as a deployment assumption that must match the actual reverse-proxy/load-balancer topology.
 - Fail fast at production boot when required security/runtime environment variables for exposed routes are missing.
 </positive-directives>
@@ -41,6 +42,9 @@ THEN document the expected proxy layer and ensure direct public access to the No
 
 IF a public endpoint is high-volume or unauthenticated:
 THEN define a separate rate-limit policy rather than relying only on the global API limit.
+
+IF cookie-backed app auth is enabled:
+THEN document and enforce the expected proxy/cookie/origin topology before exposing production traffic.
 
 IF `NODE_ENV=production`:
 THEN validate required runtime configuration during process startup, before listening for traffic.

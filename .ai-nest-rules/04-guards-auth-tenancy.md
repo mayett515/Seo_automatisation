@@ -28,6 +28,7 @@ priority_schema: "critical > strong > guideline"
 - Treat Google Search Console OAuth as a project-scoped external connection, not as application login.
 - Make project guards fail closed when a guarded route has no project context.
 - Derive current user identity from a verified Better Auth/session context before any persisted customer data is reachable.
+- Use one shared Better Auth instance for both the Fastify auth handler and Nest session guards.
 - Gate `demo-project` and non-UUID scaffold access to non-production environments only.
 - Validate user ids before DB membership lookup and return auth failures instead of leaking DB type errors.
 - Use route metadata or explicit guard variants for permission-sensitive actions such as approve, deploy, GSC connect, report publishing, and admin changes.
@@ -44,6 +45,7 @@ priority_schema: "critical > strong > guideline"
 - DO NOT let `demo-project` bypass authentication or ingestion boundaries in production.
 - DO NOT expose credentialed cookie-based POST/PUT/PATCH/DELETE routes without an explicit CSRF protection decision.
 - DO NOT log Better Auth session tokens, OAuth refresh tokens, access tokens, cookies, or authorization headers.
+- DO NOT create separate Better Auth instances for HTTP routes and Nest guards.
 - DO NOT put product authorization policy primarily in Fastify hooks when Nest guards can own it.
 - DO NOT protect release-plan-only routes with a project guard unless the route or guard resolves the release plan's project id first.
 - DO NOT let a membership row grant every operation when the route requires owner/admin/editor-level permission.
@@ -76,6 +78,9 @@ THEN it must either inherit a validated actor/context or operate as a trusted sy
 
 IF the task wires application login/session handling:
 THEN prefer Better Auth session primitives and verify Nest Fastify adapter compatibility before custom auth code.
+
+IF the task wires Better Auth persistence:
+THEN keep Drizzle schema/migrations as the source of truth and map Better Auth to the existing UUID-backed `users` table plus `sessions`, `accounts`, and `verifications`.
 
 IF session cookies are accepted on mutating routes:
 THEN verify SameSite settings and add CSRF-token or Origin/Referer validation where the auth provider does not already cover the risk.
