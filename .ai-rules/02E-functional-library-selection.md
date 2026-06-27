@@ -19,7 +19,7 @@ Use this file when considering ts-pattern, neverthrow, Effect, Remeda, fp-ts-lik
 
 <positive-directives>
 - Prefer plain TypeScript when `if`, `switch`, `for...of`, and named functions are clear.
-- Prefer `ts-pattern` for complex ADTs, nested union matching, multi-axis state/event reducers, and exhaustiveness across evolving variants.
+- Prefer exhaustive pattern matching when complex ADTs, nested unions, multi-axis state/event reducers, or evolving variant sets make missed cases risky. When that shape is earned, `ts-pattern` is currently the recommended TypeScript implementation.
 - Prefer `neverthrow` when typed expected failures repeat across several functions and combinators reduce boilerplate without hiding step names.
 - Prefer Effect when the module genuinely needs typed errors, retries, interruption, concurrency, queues, tracing, metrics, resources, configuration, and dependency management together.
 - Prefer small data utility libraries only when they remove repeated collection helpers already common in the repo.
@@ -31,7 +31,11 @@ Use this file when considering ts-pattern, neverthrow, Effect, Remeda, fp-ts-lik
 <absolute-constraints>
 - DO NOT import Effect for a tiny pure decision function.
 - DO NOT replace every `Result` branch with chained combinators if locals are clearer.
+- DO NOT introduce `ts-pattern` merely because a union exists.
+- DO NOT use `ts-pattern` for simple 2-3 case decisions where `if`, `switch`, or a `Record` is clearer.
 - DO NOT use ts-pattern when a single `switch` or flat exhaustive `if` chain is clearer.
+- DO NOT use `.otherwise()` on closed domain unions when `.exhaustive()` can prove all cases are handled.
+- Use `.otherwise()` only for intentionally open inputs, defensive external data handling, or explicitly ignored state/event combinations.
 - DO NOT introduce fp-ts, Effect, neverthrow, or ts-pattern into a repo that already has an equivalent convention unless the user asks.
 - DO NOT let library syntax become more important than domain names.
 - DO NOT create custom combinator libraries without repeated local evidence.

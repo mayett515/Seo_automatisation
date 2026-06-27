@@ -23,7 +23,7 @@ Use this file when logic has meaningful branching. The goal is not to replace `i
 - Use discriminated unions for closed sets of meaningful variants, states, events, decisions, and results.
 - Use exhaustive `switch` or exhaustive flat `if` chains when adding a variant must force code updates.
 - Use decision tables or strategy maps when a stable key maps to behavior, config, text, permissions, or handlers.
-- Use `ts-pattern` only when nested structures, multiple axes, or evolving ADTs are clearer with pattern matching.
+- Use exhaustive pattern matching when nested structures, multiple axes, or evolving ADTs are clearer than `switch` / `if`. Use `ts-pattern` as the current TypeScript implementation only after the decision shape earns pattern matching.
 - Use constraint arrays when the domain is explicitly “all rules must pass” or “explain failed rules.”
 - Use Result combinators only when they remove repeated plumbing without hiding business step names.
 </positive-directives>
@@ -50,10 +50,28 @@ one discriminant          -> switch or exhaustive if-chain
 stable key mapping        -> Record / Map / decision table
 same operation variants   -> strategy map, then strategy objects if earned
 many independent rules    -> constraint array
-nested ADT matching       -> ts-pattern
+nested ADT / multi-axis matching -> exhaustive pattern matching; usually ts-pattern in TypeScript
 many Result steps         -> neverthrow / local Result helpers
 resource workflow         -> procedural shell or Effect when complexity earns it
 ```
+</context>
+
+## Pattern Matching Trigger Check
+
+<context>
+Pattern matching is earned when:
+- a discriminated union has enough meaningful variants that missed cases are likely, especially 4+
+- matching is nested across result/status/provider/action shapes
+- state and event must be considered together
+- missing a case should become a compile-time error
+- repeated `switch` / `if` logic is becoming a decision matrix
+
+Pattern matching is not earned when:
+- the branch is a simple guard clause
+- the decision is a boolean
+- a `Record<Union, Value>` is clearer
+- the code is provider wiring, DB lifecycle, or request glue
+- a normal exhaustive `switch` is already readable
 </context>
 
 ## Examples
