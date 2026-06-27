@@ -16,6 +16,7 @@ import { LoginScreen } from "./screens/login";
 import { MissionControlPage } from "./screens/mission-control";
 import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
+import { TrackingKeysScreen } from "./screens/tracking-keys";
 
 function RootLayout() {
   const location = useRouterState({ select: (state) => state.location });
@@ -88,6 +89,9 @@ function AuthenticatedShell(props: { userEmail: string; onSignOut?: () => Promis
           </Link>
           <Link to="/projects/$projectId/gsc/connect" params={{ projectId: "demo-project" }}>
             GSC
+          </Link>
+          <Link to="/projects/$projectId/tracking-keys" params={{ projectId: "demo-project" }}>
+            Tracking
           </Link>
         </nav>
       }
@@ -215,6 +219,11 @@ const projectChildRoutes = [
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/performance",
     component: PerformanceDashboardScreen
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/tracking-keys",
+    component: TrackingKeysScreen
   }),
   createRoute({
     getParentRoute: () => rootRoute,

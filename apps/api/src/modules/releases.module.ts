@@ -28,8 +28,19 @@ import {
   type RollbackPoint
 } from "@localseo/contracts";
 import { canDeployRelease, decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
-import { approvals, releaseChecks, releasePlans, type DatabaseClient } from "@localseo/db";
-import { and, eq } from "drizzle-orm";
+import { evaluateLocalPageQa, type LocalPageQaInput } from "@localseo/seo";
+import {
+  approvals,
+  pageProposals,
+  pageVersions,
+  projectTrackingKeys,
+  releaseChecks,
+  releasePlanItems,
+  releasePlans,
+  rollbackPoints,
+  type DatabaseClient
+} from "@localseo/db";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -42,6 +53,21 @@ import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type Db = DatabaseClient;
+
+export type ReleasePreflightPageEvidence = {
+  pageVersionId: string | null;
+  targetUrl: string;
+  approvedAt: Date | null;
+  pageJson: Record<string, unknown> | null;
+  sitemapReady: boolean;
+  uniquenessRationale: string | null;
+};
+
+export type ReleasePreflightEvidence = {
+  pages: ReleasePreflightPageEvidence[];
+  rollbackPointCount: number;
+  activeTrackingKeyCount: number;
+};
 
 @Injectable()
 export class ReleasesService {
@@ -85,6 +111,29 @@ export class ReleasesService {
       throw new Error("Failed to persist release plan");
     }
 
+    if (input.pageVersionIds.length > 0) {
+      const rows = await db
+        .select({
+          pageVersionId: pageVersions.id,
+          targetUrl: pageProposals.route
+        })
+        .from(pageVersions)
+        .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+        .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, input.pageVersionIds)));
+
+      if (rows.length > 0) {
+        await db.insert(releasePlanItems).values(
+          rows.map((row) => ({
+            releasePlanId,
+            pageVersionId: row.pageVersionId,
+            targetUrl: row.targetUrl,
+            action: "create",
+            status: "pending"
+          }))
+        );
+      }
+    }
+
     return mapReleasePlan(insertedPlan);
   }
 
@@ -113,39 +162,17 @@ export class ReleasesService {
     checks: ReleaseCheck[];
   }> {
     await this.assertReleasePlanForProject(projectId, releasePlanId);
-    const checks = [
-      ReleaseCheckSchema.parse({
-        checkKey: "approval_check",
-        scope: "page",
-        severity: "blocker",
-        result: "passed",
-        message: "Approved page version exists."
-      }),
-      ReleaseCheckSchema.parse({
-        checkKey: "staging_noindex_check",
-        scope: "domain",
-        severity: "blocker",
-        result: "passed",
-        message: "Preview URLs are noindex."
-      }),
-      ReleaseCheckSchema.parse({
-        checkKey: "local_seo_page_quality_gate",
-        scope: "page",
-        severity: "blocker",
-        result: "passed",
-        message: "Local SEO page quality gate has no blockers."
-      }),
-      ReleaseCheckSchema.parse({
-        checkKey: "rollback_point_ready",
-        scope: "project",
-        severity: "blocker",
-        result: "passed",
-        message: "Rollback evidence can be created before deploy execution."
-      })
-    ];
-    const readiness = decideReleaseReadiness(checks);
-
     const db = this.database.db;
+    const evidence =
+      db && isPersistedId(releasePlanId)
+        ? await loadReleasePreflightEvidence(db, projectId, releasePlanId)
+        : {
+            pages: [],
+            rollbackPointCount: 0,
+            activeTrackingKeyCount: 0
+          };
+    const checks = buildReleasePreflightChecks(evidence);
+    const readiness = decideReleaseReadiness(checks);
 
     if (db && isPersistedId(releasePlanId)) {
       await persistReleaseChecks(db, releasePlanId, checks);
@@ -361,6 +388,30 @@ export class ReleasesService {
     rollbackPoints: RollbackPoint[];
   }> {
     await this.assertReleasePlanForProject(projectId, releasePlanId);
+    const db = this.database.db;
+
+    if (db && isPersistedId(releasePlanId)) {
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(and(eq(rollbackPoints.projectId, projectId), eq(rollbackPoints.releasePlanId, releasePlanId)));
+
+      return {
+        projectId,
+        releasePlanId,
+        rollbackPoints: rows.map((row) =>
+          RollbackPointSchema.parse({
+            releasePlanId: row.releasePlanId,
+            deploymentId: row.deploymentId ?? undefined,
+            artifactKey: row.artifactKey,
+            providerDeployId: row.providerDeployId ?? undefined,
+            liveUrl: row.liveUrl ?? undefined,
+            evidence: row.evidenceJson ?? undefined,
+            createdAt: row.createdAt.toISOString()
+          })
+        )
+      };
+    }
 
     return {
       projectId,
@@ -474,23 +525,237 @@ class ReleasesController {
 export class ReleasesModule {}
 
 async function persistReleaseChecks(db: Db, releasePlanId: string, checks: ReleaseCheck[]): Promise<void> {
-  await db.delete(releaseChecks).where(eq(releaseChecks.releasePlanId, releasePlanId));
+  await db.transaction(async (tx) => {
+    await tx.delete(releaseChecks).where(eq(releaseChecks.releasePlanId, releasePlanId));
 
-  if (checks.length === 0) {
-    return;
-  }
+    if (checks.length === 0) {
+      return;
+    }
 
-  await db.insert(releaseChecks).values(
-    checks.map((check) => ({
-      releasePlanId,
-      scope: check.scope,
-      checkKey: check.checkKey,
-      severity: check.severity,
-      result: check.result,
-      message: check.message,
-      evidenceJson: check.evidence
+    await tx.insert(releaseChecks).values(
+      checks.map((check) => ({
+        releasePlanId,
+        scope: check.scope,
+        checkKey: check.checkKey,
+        severity: check.severity,
+        result: check.result,
+        message: check.message,
+        evidenceJson: check.evidence
+      }))
+    );
+  });
+}
+
+async function loadReleasePreflightEvidence(
+  db: Db,
+  projectId: string,
+  releasePlanId: string
+): Promise<ReleasePreflightEvidence> {
+  const pageRows = await db
+    .select({
+      pageVersionId: releasePlanItems.pageVersionId,
+      targetUrl: releasePlanItems.targetUrl,
+      approvedAt: pageVersions.approvedAt,
+      pageJson: pageVersions.pageJson,
+      sitemapReady: pageProposals.sitemapReady,
+      uniquenessRationale: pageProposals.uniquenessRationale
+    })
+    .from(releasePlanItems)
+    .leftJoin(pageVersions, eq(releasePlanItems.pageVersionId, pageVersions.id))
+    .leftJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+    .where(eq(releasePlanItems.releasePlanId, releasePlanId));
+  const rollbackRows = await db
+    .select({ id: rollbackPoints.id })
+    .from(rollbackPoints)
+    .where(and(eq(rollbackPoints.projectId, projectId), eq(rollbackPoints.releasePlanId, releasePlanId)));
+  const activeTrackingKeyRows = await db
+    .select({ id: projectTrackingKeys.id })
+    .from(projectTrackingKeys)
+    .where(
+      and(
+        eq(projectTrackingKeys.projectId, projectId),
+        eq(projectTrackingKeys.status, "active"),
+        isNull(projectTrackingKeys.revokedAt)
+      )
+    );
+
+  return {
+    pages: pageRows.map((row) => ({
+      pageVersionId: row.pageVersionId,
+      targetUrl: row.targetUrl,
+      approvedAt: row.approvedAt,
+      pageJson: row.pageJson,
+      sitemapReady: row.sitemapReady ?? false,
+      uniquenessRationale: row.uniquenessRationale ?? null
+    })),
+    rollbackPointCount: rollbackRows.length,
+    activeTrackingKeyCount: activeTrackingKeyRows.length
+  };
+}
+
+export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence): ReleaseCheck[] {
+  const missingApproval = evidence.pages.filter((page) => !page.pageVersionId || !page.approvedAt);
+  const missingNoindex = evidence.pages.filter((page) => !hasNoindexEvidence(page.pageJson));
+  const pageQaResults = evidence.pages.map((page) => ({
+    pageVersionId: page.pageVersionId,
+    targetUrl: page.targetUrl,
+    result: evaluateLocalPageQa(toLocalPageQaInput(page))
+  }));
+  const qaBlockers = pageQaResults.flatMap((page) =>
+    page.result.blockers.map((blocker) => ({
+      pageVersionId: page.pageVersionId,
+      targetUrl: page.targetUrl,
+      blocker
     }))
   );
+  const pageCount = evidence.pages.length;
+
+  return [
+    ReleaseCheckSchema.parse({
+      checkKey: "approval_check",
+      scope: "page",
+      severity: "blocker",
+      result: pageCount > 0 && missingApproval.length === 0 ? "passed" : "failed",
+      message:
+        pageCount > 0 && missingApproval.length === 0
+          ? "Every release item references an approved page version."
+          : "Every release item must reference an approved page version before deploy approval.",
+      evidence: {
+        pageCount,
+        missingApprovalCount: missingApproval.length,
+        missingApprovalPageVersionIds: missingApproval.map((page) => page.pageVersionId ?? "missing_page_version")
+      }
+    }),
+    ReleaseCheckSchema.parse({
+      checkKey: "staging_noindex_check",
+      scope: "domain",
+      severity: "blocker",
+      result: pageCount > 0 && missingNoindex.length === 0 ? "passed" : "failed",
+      message:
+        pageCount > 0 && missingNoindex.length === 0
+          ? "Every preview page carries noindex evidence."
+          : "Every preview page must carry noindex evidence before deploy approval.",
+      evidence: {
+        pageCount,
+        missingNoindexCount: missingNoindex.length,
+        missingNoindexTargets: missingNoindex.map((page) => page.targetUrl)
+      }
+    }),
+    ReleaseCheckSchema.parse({
+      checkKey: "local_seo_page_quality_gate",
+      scope: "page",
+      severity: "blocker",
+      result: pageCount > 0 && qaBlockers.length === 0 ? "passed" : "failed",
+      message:
+        pageCount > 0 && qaBlockers.length === 0
+          ? "Local SEO page quality gate has no blockers."
+          : "Local SEO page quality gate has blockers that must be resolved before deploy approval.",
+      evidence: {
+        pageCount,
+        blockerCount: qaBlockers.length,
+        blockers: qaBlockers
+      }
+    }),
+    ReleaseCheckSchema.parse({
+      checkKey: "rollback_point_ready",
+      scope: "project",
+      severity: "blocker",
+      result: evidence.rollbackPointCount > 0 ? "passed" : "failed",
+      message:
+        evidence.rollbackPointCount > 0
+          ? "Rollback point artifact is available."
+          : "A rollback point artifact must exist before deploy approval.",
+      evidence: {
+        rollbackPointCount: evidence.rollbackPointCount
+      }
+    }),
+    ReleaseCheckSchema.parse({
+      checkKey: "tracking_key_ready",
+      scope: "tracking",
+      severity: "warning",
+      result: evidence.activeTrackingKeyCount > 0 ? "passed" : "failed",
+      message:
+        evidence.activeTrackingKeyCount > 0
+          ? "At least one active project tracking key exists."
+          : "No active project tracking key exists; post-deploy tracking verification may be incomplete.",
+      evidence: {
+        activeTrackingKeyCount: evidence.activeTrackingKeyCount
+      }
+    })
+  ];
+}
+
+function toLocalPageQaInput(page: ReleasePreflightPageEvidence): LocalPageQaInput {
+  const pageJson = asRecord(page.pageJson);
+  const seo = asRecord(pageJson.seo);
+  const meta = asRecord(pageJson.meta);
+
+  return {
+    title: firstString([pageJson, seo, meta], ["title", "metaTitle"]),
+    metaDescription: firstString([pageJson, seo, meta], ["metaDescription", "description"]),
+    h1: firstString([pageJson], ["h1", "headline"]),
+    canonical: firstString([pageJson, seo], ["canonical", "canonicalUrl"]),
+    hasJsonLd: booleanFlag(pageJson, ["hasJsonLd", "jsonLdReady"]) || hasAnyValue(pageJson, ["jsonLd", "schemaJson"]),
+    hasAreaServed: booleanFlag(pageJson, ["hasAreaServed", "areaServedReady"]) || hasAnyValue(pageJson, ["areaServed"]),
+    hasInternalLinks:
+      booleanFlag(pageJson, ["hasInternalLinks"]) ||
+      (Array.isArray(pageJson.internalLinks) && pageJson.internalLinks.length > 0),
+    hasLocalFaq: booleanFlag(pageJson, ["hasLocalFaq"]) || hasAnyValue(pageJson, ["localFaq", "faq"]),
+    hasVisibleCta: booleanFlag(pageJson, ["hasVisibleCta", "visibleCta"]) || hasAnyValue(pageJson, ["cta"]),
+    sitemapReady: page.sitemapReady || booleanFlag(pageJson, ["sitemapReady"]),
+    uniquenessRationale: page.uniquenessRationale ?? firstString([pageJson], ["uniquenessRationale"])
+  };
+}
+
+function hasNoindexEvidence(pageJson: Record<string, unknown> | null): boolean {
+  const value = asRecord(pageJson);
+  const seo = asRecord(value.seo);
+  const meta = asRecord(value.meta);
+  const robots = [
+    firstString([value], ["robots", "previewRobots"]),
+    firstString([seo], ["robots", "previewRobots"]),
+    firstString([meta], ["robots", "content"])
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join(",");
+
+  return (
+    booleanFlag(value, ["noindex", "previewNoindex", "stagingNoindex"]) || robots.toLowerCase().includes("noindex")
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function firstString(records: Record<string, unknown>[], keys: string[]): string | undefined {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = record[key];
+
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function booleanFlag(record: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => record[key] === true);
+}
+
+function hasAnyValue(record: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => {
+    const value = record[key];
+
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+
+    return Boolean(value);
+  });
 }
 
 async function loadReleaseChecks(db: Db, releasePlanId: string): Promise<ReleaseCheck[]> {

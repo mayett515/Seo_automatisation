@@ -5,6 +5,7 @@ export const projectPermissions = [
   "website:import",
   "gsc:connect",
   "gsc:sync",
+  "tracking:manage",
   "release:plan",
   "release:preflight",
   "release:approve",

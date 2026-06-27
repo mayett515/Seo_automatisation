@@ -370,6 +370,29 @@ export const TrackingIngestResultSchema = z.object({
   mode: z.enum(["persisted", "dry_run"]).default("dry_run")
 });
 
+export const TrackingAllowedOriginSchema = z
+  .string()
+  .url()
+  .transform((value) => new URL(value).origin);
+
+export const CreateTrackingKeyRequestSchema = z.object({
+  allowedOrigins: z.array(TrackingAllowedOriginSchema).min(1)
+});
+
+export const TrackingKeySummarySchema = z.object({
+  keyId: z.string().min(1),
+  projectId: ProjectIdSchema,
+  status: z.enum(["active", "revoked"]),
+  allowedOrigins: z.array(z.string().url()),
+  createdAt: z.string().datetime(),
+  lastUsedAt: z.string().datetime().optional(),
+  revokedAt: z.string().datetime().optional()
+});
+
+export const CreateTrackingKeyResponseSchema = TrackingKeySummarySchema.extend({
+  trackingKey: z.string().min(32)
+});
+
 export const CreateReleasePlanRequestSchema = z.object({
   pageVersionIds: z.array(z.string().min(1)).default([])
 });
@@ -426,6 +449,9 @@ export type GscUrlInspectionResult = z.output<typeof GscUrlInspectionResultSchem
 export type GscSitemapSubmission = z.output<typeof GscSitemapSubmissionSchema>;
 export type TrackingEvent = z.output<typeof TrackingEventSchema>;
 export type TrackingIngestResult = z.output<typeof TrackingIngestResultSchema>;
+export type CreateTrackingKeyRequest = z.output<typeof CreateTrackingKeyRequestSchema>;
+export type TrackingKeySummary = z.output<typeof TrackingKeySummarySchema>;
+export type CreateTrackingKeyResponse = z.output<typeof CreateTrackingKeyResponseSchema>;
 export type CreateReleasePlanRequest = z.output<typeof CreateReleasePlanRequestSchema>;
 export type VerifyReleaseRequest = z.output<typeof VerifyReleaseRequestSchema>;
 export type HealthResponse = z.output<typeof HealthResponseSchema>;

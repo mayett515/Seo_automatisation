@@ -1,31 +1,67 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   Body,
+  CanActivate,
   Controller,
+  ExecutionContext,
+  Get,
   Headers,
+  HttpException,
+  HttpStatus,
   Injectable,
   Module,
+  NotFoundException,
+  Param,
   Post,
   BadRequestException,
-  UnauthorizedException
+  UnauthorizedException,
+  UseGuards
 } from "@nestjs/common";
 import { allowsLocalScaffoldAuth, parseAppEnv } from "@localseo/config";
 import {
+  CreateTrackingKeyRequestSchema,
+  CreateTrackingKeyResponseSchema,
   TrackingEventSchema,
   TrackingIngestResultSchema,
+  TrackingKeySummarySchema,
   type TrackingEvent,
-  type TrackingIngestResult
+  type TrackingIngestResult,
+  type TrackingKeySummary,
+  type CreateTrackingKeyResponse
 } from "@localseo/contracts";
 import { projectTrackingKeys, trackingEvents } from "@localseo/db";
 import { and, eq, isNull } from "drizzle-orm";
+import type { FastifyRequest } from "fastify";
+import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
+import { PermissionGuard } from "../auth/permissions/permission.guard.js";
+import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
+import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import { DatabaseService } from "../database/database.service.js";
+import { RedisService } from "../redis/redis.service.js";
+import { CsrfGuard } from "../security/csrf/csrf.guard.js";
+
+const trackingRateLimitWindowSeconds = 60;
+const trackingRateLimitMax = 120;
+const env = parseAppEnv(process.env);
+const localScaffoldTrackingEnabled = allowsLocalScaffoldAuth(env);
+
+type TrackingIngestContext = {
+  trackingKey?: string;
+  origin?: string;
+  referer?: string;
+};
+
+type MemoryRateLimitBucket = {
+  count: number;
+  resetAt: number;
+};
 
 @Injectable()
 export class TrackingService {
   constructor(private readonly database: DatabaseService) {}
 
-  async ingest(event: TrackingEvent, trackingKey?: string): Promise<TrackingIngestResult> {
-    if (isLocalScaffoldEvent(event)) {
+  async ingest(event: TrackingEvent, context: TrackingIngestContext = {}): Promise<TrackingIngestResult> {
+    if (isLocalScaffoldEvent(event, localScaffoldTrackingEnabled)) {
       return TrackingIngestResultSchema.parse({
         accepted: true,
         eventName: event.eventName,
@@ -45,7 +81,7 @@ export class TrackingService {
       throw new UnauthorizedException("Tracking persistence is required for persisted project events.");
     }
 
-    await this.assertProjectTrackingKey(event, trackingKey);
+    await this.assertProjectTrackingKey(event, context);
 
     const occurredAt = event.occurredAt ? new Date(event.occurredAt) : new Date();
     await db.insert(trackingEvents).values({
@@ -68,8 +104,61 @@ export class TrackingService {
     });
   }
 
-  private async assertProjectTrackingKey(event: TrackingEvent, trackingKey: string | undefined): Promise<void> {
-    if (!trackingKey) {
+  async listKeys(projectId: string): Promise<{ projectId: string; keys: TrackingKeySummary[] }> {
+    const db = this.database.requireDb();
+    const rows = await db.select().from(projectTrackingKeys).where(eq(projectTrackingKeys.projectId, projectId));
+
+    return {
+      projectId,
+      keys: rows.map((row) => mapTrackingKeySummary(row))
+    };
+  }
+
+  async createKey(projectId: string, body: unknown): Promise<CreateTrackingKeyResponse> {
+    const input = CreateTrackingKeyRequestSchema.parse(body ?? {});
+    const db = this.database.requireDb();
+    const trackingKey = createPublishableTrackingKey();
+    const [row] = await db
+      .insert(projectTrackingKeys)
+      .values({
+        projectId,
+        keyHash: hashTrackingKey(trackingKey),
+        allowedOrigins: uniqueOrigins(input.allowedOrigins),
+        status: "active"
+      })
+      .returning();
+
+    if (!row) {
+      throw new Error("Failed to create tracking key");
+    }
+
+    return CreateTrackingKeyResponseSchema.parse({
+      ...mapTrackingKeySummary(row),
+      trackingKey
+    });
+  }
+
+  async revokeKey(projectId: string, keyId: string): Promise<TrackingKeySummary> {
+    const db = this.database.requireDb();
+    const [row] = await db
+      .update(projectTrackingKeys)
+      .set({
+        status: "revoked",
+        revokedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(and(eq(projectTrackingKeys.projectId, projectId), eq(projectTrackingKeys.id, keyId)))
+      .returning();
+
+    if (!row) {
+      throw new NotFoundException("Tracking key was not found for this project.");
+    }
+
+    return mapTrackingKeySummary(row);
+  }
+
+  private async assertProjectTrackingKey(event: TrackingEvent, context: TrackingIngestContext): Promise<void> {
+    if (!context.trackingKey) {
       throw new UnauthorizedException("Project tracking key is required for persisted project events.");
     }
 
@@ -79,9 +168,13 @@ export class TrackingService {
       throw new UnauthorizedException("Tracking persistence is required for persisted project events.");
     }
 
-    const keyHash = hashTrackingKey(trackingKey);
+    const keyHash = hashTrackingKey(context.trackingKey);
     const [row] = await db
-      .select({ id: projectTrackingKeys.id, keyHash: projectTrackingKeys.keyHash })
+      .select({
+        id: projectTrackingKeys.id,
+        keyHash: projectTrackingKeys.keyHash,
+        allowedOrigins: projectTrackingKeys.allowedOrigins
+      })
       .from(projectTrackingKeys)
       .where(
         and(
@@ -97,6 +190,12 @@ export class TrackingService {
       throw new UnauthorizedException("Project tracking key is invalid.");
     }
 
+    const requestOrigin = originFromTrackingHeaders(context);
+
+    if (!requestOrigin || !isTrackingOriginAllowed(requestOrigin, row.allowedOrigins)) {
+      throw new UnauthorizedException("Project tracking key is not authorized for this origin.");
+    }
+
     await db
       .update(projectTrackingKeys)
       .set({
@@ -107,27 +206,115 @@ export class TrackingService {
   }
 }
 
+@Injectable()
+class TrackingRateLimitGuard implements CanActivate {
+  private readonly memoryBuckets = new Map<string, MemoryRateLimitBucket>();
+
+  constructor(private readonly redis: RedisService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<FastifyRequest<{ Body: Partial<TrackingEvent> }>>();
+    const projectId = typeof request.body?.projectId === "string" ? request.body.projectId : "unknown";
+    const key = `track:${request.ip}:${projectId}`;
+    const count = await this.increment(key);
+
+    if (count > trackingRateLimitMax) {
+      throw new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    return true;
+  }
+
+  private async increment(key: string): Promise<number> {
+    if (this.redis.client) {
+      try {
+        const redisKey = `tracking:rate-limit:${key}`;
+        const count = await this.redis.client.incr(redisKey);
+
+        if (count === 1) {
+          await this.redis.client.expire(redisKey, trackingRateLimitWindowSeconds);
+        }
+
+        return count;
+      } catch {
+        return this.incrementInMemory(key);
+      }
+    }
+
+    return this.incrementInMemory(key);
+  }
+
+  private incrementInMemory(key: string): number {
+    const now = Date.now();
+    const current = this.memoryBuckets.get(key);
+
+    if (!current || current.resetAt <= now) {
+      this.memoryBuckets.set(key, {
+        count: 1,
+        resetAt: now + trackingRateLimitWindowSeconds * 1000
+      });
+      return 1;
+    }
+
+    current.count += 1;
+    return current.count;
+  }
+}
+
 @Controller("track")
+@UseGuards(TrackingRateLimitGuard)
 class TrackingController {
   constructor(private readonly tracking: TrackingService) {}
 
   @Post()
-  track(@Body() body: unknown, @Headers("x-tracking-key") trackingKey: string | string[] | undefined) {
+  track(
+    @Body() body: unknown,
+    @Headers("x-tracking-key") trackingKey: string | string[] | undefined,
+    @Headers("origin") origin: string | string[] | undefined,
+    @Headers("referer") referer: string | string[] | undefined
+  ) {
     const event = TrackingEventSchema.parse(body);
-    return this.tracking.ingest(event, readFirstHeader(trackingKey));
+    return this.tracking.ingest(event, {
+      trackingKey: readFirstHeader(trackingKey),
+      origin: readFirstHeader(origin),
+      referer: readFirstHeader(referer)
+    });
+  }
+}
+
+@Controller("projects/:projectId/tracking-keys")
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
+@RequireProjectPermission("tracking:manage")
+class TrackingKeysController {
+  constructor(private readonly tracking: TrackingService) {}
+
+  @Get()
+  list(@Param("projectId") projectId: string) {
+    return this.tracking.listKeys(projectId);
+  }
+
+  @Post()
+  create(@Param("projectId") projectId: string, @Body() body: unknown) {
+    return this.tracking.createKey(projectId, body);
+  }
+
+  @Post(":keyId/revoke")
+  revoke(@Param("projectId") projectId: string, @Param("keyId") keyId: string) {
+    return this.tracking.revokeKey(projectId, keyId);
   }
 }
 
 @Module({
-  controllers: [TrackingController],
-  providers: [TrackingService]
+  controllers: [TrackingController, TrackingKeysController],
+  providers: [TrackingService, TrackingRateLimitGuard]
 })
 export class TrackingModule {}
 
-export function isLocalScaffoldEvent(event: TrackingEvent): boolean {
-  const currentEnv = parseAppEnv(process.env);
-
-  if (!allowsLocalScaffoldAuth(currentEnv)) {
+export function isLocalScaffoldEvent(
+  event: TrackingEvent,
+  localScaffoldEnabled = allowsLocalScaffoldAuth(parseAppEnv(process.env))
+): boolean {
+  if (!localScaffoldEnabled) {
     return false;
   }
 
@@ -158,9 +345,63 @@ export function hashTrackingKey(trackingKey: string): string {
   return createHash("sha256").update(trackingKey).digest("base64url");
 }
 
+export function originFromTrackingHeaders(
+  context: Pick<TrackingIngestContext, "origin" | "referer">
+): string | undefined {
+  if (context.origin) {
+    return normalizeOrigin(context.origin);
+  }
+
+  if (context.referer) {
+    return normalizeOrigin(context.referer);
+  }
+
+  return undefined;
+}
+
+export function isTrackingOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  if (!normalizedOrigin || allowedOrigins.length === 0) {
+    return false;
+  }
+
+  return allowedOrigins.some((allowedOrigin) => normalizeOrigin(allowedOrigin) === normalizedOrigin);
+}
+
 function timingSafeStringEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
 
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function createPublishableTrackingKey(): string {
+  return `pk_live_${randomBytes(32).toString("base64url")}`;
+}
+
+function uniqueOrigins(origins: string[]): string[] {
+  return [
+    ...new Set(origins.map((origin) => normalizeOrigin(origin)).filter((origin): origin is string => Boolean(origin)))
+  ];
+}
+
+function normalizeOrigin(value: string): string | undefined {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function mapTrackingKeySummary(row: typeof projectTrackingKeys.$inferSelect): TrackingKeySummary {
+  return TrackingKeySummarySchema.parse({
+    keyId: row.id,
+    projectId: row.projectId,
+    status: row.revokedAt || row.status !== "active" ? "revoked" : "active",
+    allowedOrigins: row.allowedOrigins,
+    createdAt: row.createdAt.toISOString(),
+    lastUsedAt: row.lastUsedAt?.toISOString(),
+    revokedAt: row.revokedAt?.toISOString()
+  });
 }

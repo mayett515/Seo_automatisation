@@ -140,6 +140,13 @@ a {
   gap: 10px;
 }
 
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 420px) max-content;
+  gap: 12px;
+  align-items: end;
+}
+
 .button-primary,
 .button-secondary,
 .button-link {
@@ -254,6 +261,10 @@ a {
   background: #eef1ec;
 }
 
+.data-table__row--tracking {
+  grid-template-columns: 120px minmax(220px, 1fr) minmax(180px, 0.8fr) 110px;
+}
+
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -278,6 +289,11 @@ a {
   }
 
   .data-table__row {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-form,
+  .data-table__row--tracking {
     grid-template-columns: 1fr;
   }
 }

@@ -7,11 +7,12 @@ import {
   gscConnections,
   gscOpportunitySignals,
   gscSearchAnalyticsRows,
-  gscSyncRuns
+  gscSyncRuns,
+  jobRuns
 } from "@localseo/db";
 import type { GscOpportunitySignalType, GscSearchAnalyticsRow } from "@localseo/contracts";
 import type { Job } from "bullmq";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 const env = parseAppEnv(process.env);
 
@@ -21,21 +22,36 @@ type StoredSearchAnalyticsRow = {
   rowId: string;
   row: GscSearchAnalyticsRow;
 };
+type JobRunStatusPatch = {
+  status: "running" | "completed" | "failed";
+  startedAt?: Date;
+  completedAt?: Date;
+  failureJson?: Record<string, unknown> | null;
+};
 
 const sharedDbHandle: DbHandle | undefined = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
 
 export async function handleJob(job: Job): Promise<Record<string, unknown>> {
-  if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
-    return handleGscSyncJob(job);
-  }
+  await markJobRunRunning(job);
 
-  return {
-    jobId: job.id,
-    queueName: job.queueName,
-    processedAt: new Date().toISOString(),
-    mastraWorkflows,
-    availableAgents: agentDescriptors.map((agent) => agent.name)
-  };
+  try {
+    const result =
+      job.queueName === "gsc-sync" || job.name === "gsc_sync"
+        ? await handleGscSyncJob(job)
+        : {
+            jobId: job.id,
+            queueName: job.queueName,
+            processedAt: new Date().toISOString(),
+            mastraWorkflows,
+            availableAgents: agentDescriptors.map((agent) => agent.name)
+          };
+
+    await markJobRunCompleted(job);
+    return result;
+  } catch (error) {
+    await markJobRunFailed(job, error);
+    throw error;
+  }
 }
 
 async function handleGscSyncJob(job: Job): Promise<Record<string, unknown>> {
@@ -135,6 +151,45 @@ async function runGscSync(
 
 export async function closeWorkerResources(): Promise<void> {
   await sharedDbHandle?.close();
+}
+
+async function markJobRunRunning(job: Job): Promise<void> {
+  await updateJobRun(job, {
+    status: "running",
+    startedAt: new Date(),
+    failureJson: null
+  });
+}
+
+async function markJobRunCompleted(job: Job): Promise<void> {
+  await updateJobRun(job, {
+    status: "completed",
+    completedAt: new Date()
+  });
+}
+
+async function markJobRunFailed(job: Job, error: unknown): Promise<void> {
+  await updateJobRun(job, {
+    status: "failed",
+    completedAt: new Date(),
+    failureJson: {
+      message: normalizeJobFailureMessage(error)
+    }
+  });
+}
+
+async function updateJobRun(job: Job, patch: JobRunStatusPatch): Promise<void> {
+  if (!sharedDbHandle || !job.id) {
+    return;
+  }
+
+  await sharedDbHandle.db
+    .update(jobRuns)
+    .set({
+      ...patch,
+      updatedAt: new Date()
+    })
+    .where(and(eq(jobRuns.externalJobId, job.id), eq(jobRuns.queueName, job.queueName)));
 }
 
 async function resetSyncRunData(db: Db, syncRunId: string): Promise<void> {
@@ -309,6 +364,10 @@ function normalizeFailureReason(error: unknown): string {
   }
 
   return "gsc_sync_failed";
+}
+
+function normalizeJobFailureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown_worker_failure";
 }
 
 export function parseGscSyncJobData(data: unknown): {

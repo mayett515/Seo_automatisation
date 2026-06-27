@@ -2,7 +2,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { BadRequestException } from "@nestjs/common";
 import type { DatabaseService } from "../database/database.service.js";
-import { hashTrackingKey, isLocalScaffoldEvent, TrackingService } from "./tracking.module.js";
+import {
+  hashTrackingKey,
+  isLocalScaffoldEvent,
+  isTrackingOriginAllowed,
+  originFromTrackingHeaders,
+  TrackingService
+} from "./tracking.module.js";
 
 void describe("tracking ingestion authorization", () => {
   void it("does not treat demo project events as local dry-run by default", async () => {
@@ -75,6 +81,31 @@ void describe("tracking ingestion authorization", () => {
   void it("hashes publishable tracking keys deterministically", () => {
     assert.equal(hashTrackingKey("pk_project_123"), hashTrackingKey("pk_project_123"));
     assert.notEqual(hashTrackingKey("pk_project_123"), hashTrackingKey("pk_project_456"));
+  });
+
+  void it("normalizes tracking origins from Origin before Referer", () => {
+    assert.equal(
+      originFromTrackingHeaders({
+        origin: "https://example.test/some/path",
+        referer: "https://referer.test/page"
+      }),
+      "https://example.test"
+    );
+  });
+
+  void it("falls back to Referer when Origin is missing", () => {
+    assert.equal(
+      originFromTrackingHeaders({
+        referer: "https://example.test/page?utm=test"
+      }),
+      "https://example.test"
+    );
+  });
+
+  void it("rejects tracking requests outside the key origin allowlist", () => {
+    assert.equal(isTrackingOriginAllowed("https://example.test/path", ["https://example.test"]), true);
+    assert.equal(isTrackingOriginAllowed("https://evil.test", ["https://example.test"]), false);
+    assert.equal(isTrackingOriginAllowed("https://example.test", []), false);
   });
 });
 

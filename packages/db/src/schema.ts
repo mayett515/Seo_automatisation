@@ -162,6 +162,7 @@ export const projectTrackingKeys = pgTable(
       .notNull()
       .references(() => projects.id),
     keyHash: text("key_hash").notNull(),
+    allowedOrigins: jsonb("allowed_origins").$type<string[]>().default([]).notNull(),
     status: text("status").notNull().default("active"),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -513,6 +514,8 @@ export const jobRuns = pgTable("job_runs", {
   actorUserId: uuid("actor_user_id").references(() => users.id),
   triggerSource: text("trigger_source"),
   failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
   ...timestamps
 });
 
