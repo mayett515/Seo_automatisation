@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, Optional, UnauthorizedExcept
 import { parseAppEnv } from "@localseo/config";
 import type { FastifyRequest } from "fastify";
 import { ProjectMembershipService } from "./project-membership.service.js";
+import type { RequestWithAuth } from "./types/authenticated-request.js";
 
 type ProjectScopedParams = {
   projectId?: string;
@@ -13,7 +14,9 @@ export class ProjectAccessGuard implements CanActivate {
   constructor(@Optional() private readonly memberships?: ProjectMembershipService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<FastifyRequest<{ Params: ProjectScopedParams }>>();
+    const request = context
+      .switchToHttp()
+      .getRequest<RequestWithAuth<FastifyRequest<{ Params: ProjectScopedParams }>>>();
     const projectId = request.params.projectId ?? request.params.id;
 
     if (!projectId) {
@@ -26,7 +29,8 @@ export class ProjectAccessGuard implements CanActivate {
       return true;
     }
 
-    const userId = readHeader(request, "x-user-id");
+    const userId =
+      request.auth?.user.id ?? (env.NODE_ENV !== "production" ? readHeader(request, "x-user-id") : undefined);
 
     if (!userId) {
       throw new UnauthorizedException("Project access requires an authenticated user context.");

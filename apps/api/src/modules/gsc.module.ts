@@ -43,7 +43,9 @@ import {
 import { and, desc, eq, ne } from "drizzle-orm";
 import type { FastifyReply } from "fastify";
 import { Queue } from "bullmq";
+import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -350,7 +352,7 @@ class GscService implements OnModuleDestroy {
 }
 
 @Controller("projects/:projectId/gsc")
-@UseGuards(ProjectAccessGuard)
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard)
 class GscController {
   constructor(private readonly gsc: GscService) {}
 

@@ -4,6 +4,8 @@ import rateLimit from "@fastify/rate-limit";
 import { assertProductionRuntimeEnv, parseAppEnv } from "@localseo/config";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
+import { mountBetterAuthFastify } from "./auth/better-auth/better-auth.fastify-mount.js";
+import { BetterAuthService } from "./auth/better-auth/better-auth.service.js";
 import { AppModule } from "./app.module.js";
 
 const env = parseAppEnv(process.env);
@@ -31,6 +33,9 @@ app.enableCors({
   origin: env.WEB_ORIGIN,
   credentials: true
 });
+
+const betterAuth = app.get(BetterAuthService);
+mountBetterAuthFastify(app.getHttpAdapter().getInstance(), betterAuth.auth, env);
 
 await app.listen(env.PORT, "0.0.0.0");
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import { ProjectAccessGuard } from "./project-access.guard.js";
 import type { ProjectMembershipService } from "./project-membership.service.js";
+import type { AuthenticatedRequestContext } from "./types/authenticated-request.js";
 
 type ProjectMembershipVerifier = Pick<ProjectMembershipService, "isDatabaseBacked" | "canAccessProject">;
 
@@ -126,6 +127,33 @@ void describe("ProjectAccessGuard", () => {
     assert.equal(membershipLookupCalled, false);
   });
 
+  void it("rejects production persisted project access when identity only comes from x-user-id", async () => {
+    await withNodeEnv("production", async () => {
+      let membershipLookupCalled = false;
+      const verifier: ProjectMembershipVerifier = {
+        isDatabaseBacked: () => true,
+        canAccessProject: () => {
+          membershipLookupCalled = true;
+          return Promise.resolve(true);
+        }
+      };
+      const guard = new ProjectAccessGuard(verifier as ProjectMembershipService);
+
+      await assert.rejects(
+        guard.canActivate(
+          contextFor(
+            { projectId: "11111111-1111-4111-8111-111111111111" },
+            {
+              "x-user-id": "22222222-2222-4222-8222-222222222222"
+            }
+          )
+        ),
+        (error) => error instanceof UnauthorizedException
+      );
+      assert.equal(membershipLookupCalled, false);
+    });
+  });
+
   void it("allows persisted UUID project access only through the membership verifier", async () => {
     const verifier: ProjectMembershipVerifier = {
       isDatabaseBacked: () => true,
@@ -149,17 +177,60 @@ void describe("ProjectAccessGuard", () => {
       true
     );
   });
+
+  void it("uses Better Auth session context for persisted UUID project access", async () => {
+    const verifier: ProjectMembershipVerifier = {
+      isDatabaseBacked: () => true,
+      canAccessProject: ({ projectId, userId }) =>
+        Promise.resolve(
+          projectId === "11111111-1111-4111-8111-111111111111" && userId === "22222222-2222-4222-8222-222222222222"
+        )
+    };
+    const guard = new ProjectAccessGuard(verifier as ProjectMembershipService);
+
+    assert.equal(
+      await guard.canActivate(
+        contextFor(
+          { projectId: "11111111-1111-4111-8111-111111111111" },
+          {},
+          authContext("22222222-2222-4222-8222-222222222222")
+        )
+      ),
+      true
+    );
+  });
 });
 
-function contextFor(params: Record<string, string>, headers: Record<string, string>): ExecutionContext {
+function contextFor(
+  params: Record<string, string>,
+  headers: Record<string, string>,
+  auth?: AuthenticatedRequestContext
+): ExecutionContext {
   return {
     switchToHttp: () => ({
       getRequest: () => ({
         params,
-        headers
+        headers,
+        auth
       })
     })
   } as ExecutionContext;
+}
+
+function authContext(userId: string): AuthenticatedRequestContext {
+  return {
+    user: {
+      id: userId,
+      email: "user@example.com",
+      name: "Session User"
+    },
+    session: {
+      id: "session-1",
+      userId,
+      expiresAt: new Date(Date.now() + 60_000)
+    },
+    source: "better_auth"
+  };
 }
 
 async function withNodeEnv<T>(nodeEnv: string, run: () => Promise<T>): Promise<T> {

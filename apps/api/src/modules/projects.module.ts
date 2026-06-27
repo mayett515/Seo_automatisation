@@ -9,7 +9,9 @@ import {
   type ProjectSummary
 } from "@localseo/contracts";
 import { QueueProducerService } from "../queue-producer.js";
+import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 @Injectable()
 class ProjectsService {
@@ -54,7 +56,7 @@ class ProjectsService {
 }
 
 @Controller("projects")
-@UseGuards(ProjectAccessGuard)
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard)
 class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 

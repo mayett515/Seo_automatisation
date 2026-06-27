@@ -16,7 +16,9 @@ import {
 } from "@localseo/contracts";
 import { decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
 import { QueueProducerService } from "../queue-producer.js";
+import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 @Injectable()
 class ReleasesService {
@@ -206,7 +208,7 @@ class ReleasesService {
 }
 
 @Controller()
-@UseGuards(ProjectAccessGuard)
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard)
 class ReleasesController {
   constructor(private readonly releases: ReleasesService) {}
 
