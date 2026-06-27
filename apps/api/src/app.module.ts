@@ -7,6 +7,7 @@ import { GscModule } from "./modules/gsc.module.js";
 import { LeadsModule } from "./modules/leads.module.js";
 import { ProjectsModule } from "./modules/projects.module.js";
 import { QueueProducerModule } from "./queue-producer.js";
+import { RedisModule } from "./redis/redis.module.js";
 import { ReleasesModule } from "./modules/releases.module.js";
 import { SecurityModule } from "./security/security.module.js";
 import { TrackingModule } from "./modules/tracking.module.js";
@@ -14,6 +15,7 @@ import { TrackingModule } from "./modules/tracking.module.js";
 @Module({
   imports: [
     DatabaseModule,
+    RedisModule,
     BetterAuthModule,
     AuthzModule,
     SecurityModule,

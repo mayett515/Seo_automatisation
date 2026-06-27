@@ -1,6 +1,3 @@
-import { createRedisConnection } from "@localseo/adapters";
-import Redis from "ioredis";
-
 export type TrustProxySetting = boolean | number | string | string[];
 
 export function resolveTrustProxy(value: string): TrustProxySetting {
@@ -27,8 +24,4 @@ export function resolveTrustProxy(value: string): TrustProxySetting {
   }
 
   return normalized;
-}
-
-export function createRateLimitRedisClient(redisUrl: string | undefined): Redis | undefined {
-  return redisUrl ? new Redis(createRedisConnection(redisUrl)) : undefined;
 }

@@ -1,3 +1,5 @@
+import { applyLocalScaffoldHeaders } from "./local-scaffold";
+
 export const apiUrl = getApiUrl();
 
 type JsonSchema<T> = {
@@ -5,9 +7,13 @@ type JsonSchema<T> = {
 };
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  applyLocalScaffoldHeaders(headers);
+
   return fetch(`${apiUrl}${path}`, {
     ...init,
-    credentials: "include"
+    credentials: "include",
+    headers
   });
 }
 

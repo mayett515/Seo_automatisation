@@ -1,9 +1,6 @@
-import { Injectable, type OnModuleDestroy } from "@nestjs/common";
-import { createRedisConnection } from "@localseo/adapters";
-import { parseAppEnv } from "@localseo/config";
-import Redis from "ioredis";
+import { Injectable } from "@nestjs/common";
+import { RedisService } from "../redis/redis.service.js";
 
-const env = parseAppEnv(process.env);
 const keyPrefix = "oauth:gsc:state:";
 
 export type GscOAuthNonceRecord = {
@@ -21,15 +18,14 @@ export type GscOAuthNonceRecord = {
 type RedisLike = {
   set(key: string, value: string, mode: "EX", ttlSeconds: number): Promise<unknown>;
   getdel(key: string): Promise<string | null>;
-  quit?(): Promise<unknown>;
 };
 
 @Injectable()
-export class GscOAuthStateStore implements OnModuleDestroy {
+export class GscOAuthStateStore {
   private readonly redis: RedisLike | undefined;
 
-  constructor(redisClient?: RedisLike) {
-    this.redis = redisClient ?? createRedisClient();
+  constructor(redisService?: RedisService) {
+    this.redis = redisService?.client;
   }
 
   isConfigured(): boolean {
@@ -59,18 +55,6 @@ export class GscOAuthStateStore implements OnModuleDestroy {
 
     return parseRecord(value);
   }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.redis?.quit?.();
-  }
-}
-
-function createRedisClient(): RedisLike | undefined {
-  if (!env.REDIS_URL) {
-    return undefined;
-  }
-
-  return new Redis(createRedisConnection(env.REDIS_URL));
 }
 
 function keyFor(nonce: string): string {

@@ -5,10 +5,12 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  useNavigate,
   useRouterState
 } from "@tanstack/react-router";
 import { ShellLayout, StatusPill } from "@localseo/ui";
 import { authClient } from "./lib/auth-client";
+import { allowsLocalScaffoldUi } from "./lib/local-scaffold";
 import { GscConnectScreen } from "./screens/gsc-connect";
 import { LoginScreen } from "./screens/login";
 import { MissionControlPage } from "./screens/mission-control";
@@ -16,13 +18,23 @@ import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
 
 function RootLayout() {
-  const session = authClient.useSession();
   const location = useRouterState({ select: (state) => state.location });
   const isLoginRoute = location.pathname === "/login";
 
   if (isLoginRoute) {
     return <Outlet />;
   }
+
+  if (allowsLocalScaffoldUi()) {
+    return <AuthenticatedShell userEmail="local scaffold" />;
+  }
+
+  return <SessionProtectedShell redirectTo={redirectPathFor(location)} />;
+}
+
+function SessionProtectedShell(props: { redirectTo: string }) {
+  const session = authClient.useSession();
+  const navigate = useNavigate();
 
   if (session.isPending) {
     return (
@@ -32,10 +44,35 @@ function RootLayout() {
     );
   }
 
-  if (!session.data) {
-    return <Navigate to="/login" search={{ redirect: location.href }} />;
+  if (session.error) {
+    return (
+      <main className="auth-screen">
+        <div className="auth-panel">
+          <p>Could not reach the authentication service.</p>
+          <button className="button-secondary" type="button" onClick={() => window.location.reload()}>
+            Retry
+          </button>
+        </div>
+      </main>
+    );
   }
 
+  if (!session.data) {
+    return <Navigate to="/login" search={{ redirect: props.redirectTo }} />;
+  }
+
+  return (
+    <AuthenticatedShell
+      userEmail={session.data.user.email}
+      onSignOut={async () => {
+        await authClient.signOut();
+        await navigate({ to: "/login", search: { redirect: undefined } });
+      }}
+    />
+  );
+}
+
+function AuthenticatedShell(props: { userEmail: string; onSignOut?: () => Promise<void> }) {
   return (
     <ShellLayout
       title="Local SEO Mission Control"
@@ -58,17 +95,12 @@ function RootLayout() {
         <div className="panel-stack">
           <StatusPill tone="warning">Preview required</StatusPill>
           <div className="shell-user">
-            <span>{session.data.user.email}</span>
-            <button
-              className="button-secondary"
-              type="button"
-              onClick={async () => {
-                await authClient.signOut();
-                window.location.assign("/login");
-              }}
-            >
-              Sign out
-            </button>
+            <span>{props.userEmail}</span>
+            {props.onSignOut ? (
+              <button className="button-secondary" type="button" onClick={props.onSignOut}>
+                Sign out
+              </button>
+            ) : null}
           </div>
           <p>AI suggests. Customer approves. Workers execute.</p>
         </div>
@@ -77,6 +109,10 @@ function RootLayout() {
       <Outlet />
     </ShellLayout>
   );
+}
+
+function redirectPathFor(location: { pathname: string; searchStr?: string }): string {
+  return `${location.pathname}${location.searchStr ?? ""}`;
 }
 
 const rootRoute = createRootRoute({ component: RootLayout });

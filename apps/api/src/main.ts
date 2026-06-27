@@ -7,7 +7,8 @@ import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fa
 import { mountBetterAuthFastify } from "./auth/better-auth/better-auth.fastify-mount.js";
 import { BetterAuthService } from "./auth/better-auth/better-auth.service.js";
 import { AppModule } from "./app.module.js";
-import { createRateLimitRedisClient, resolveTrustProxy } from "./http-runtime.js";
+import { resolveTrustProxy } from "./http-runtime.js";
+import { RedisService } from "./redis/redis.service.js";
 
 const env = parseAppEnv(process.env);
 assertProductionRuntimeEnv(process.env, env);
@@ -20,21 +21,15 @@ const adapter = new FastifyAdapter({
 const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
   bufferLogs: true
 });
-const rateLimitRedis = createRateLimitRedisClient(env.REDIS_URL);
 const fastify = app.getHttpAdapter().getInstance();
-
-if (rateLimitRedis) {
-  fastify.addHook("onClose", async () => {
-    await rateLimitRedis.quit();
-  });
-}
+const redis = app.get(RedisService);
 
 await app.register(helmet);
 await app.register(rateLimit, {
   global: true,
   max: 300,
   timeWindow: "1 minute",
-  redis: rateLimitRedis,
+  redis: redis.client,
   nameSpace: "local-seo-api:rate-limit:"
 });
 

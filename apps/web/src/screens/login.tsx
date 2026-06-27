@@ -109,7 +109,7 @@ function getSafeRedirect(value: unknown): string {
     return "/";
   }
 
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\") || value.includes("..")) {
     return "/";
   }
 

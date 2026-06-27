@@ -5,7 +5,7 @@ import { GscOAuthStateStore, type GscOAuthNonceRecord } from "./gsc-oauth-state.
 void describe("GscOAuthStateStore", () => {
   void it("stores nonce records with a TTL and consumes them once", async () => {
     const redis = new FakeRedis();
-    const store = new GscOAuthStateStore(redis);
+    const store = new GscOAuthStateStore(redisServiceFor(redis));
     const record = nonceRecord();
 
     assert.equal(await store.store(record, new Date("2026-06-26T10:00:00.000Z")), true);
@@ -15,7 +15,7 @@ void describe("GscOAuthStateStore", () => {
   });
 
   void it("returns undefined when Redis is not configured", async () => {
-    const store = new GscOAuthStateStore();
+    const store = new GscOAuthStateStore(redisServiceFor(undefined));
 
     assert.equal(store.isConfigured(), false);
     assert.equal(await store.store(nonceRecord()), false);
@@ -39,6 +39,12 @@ class FakeRedis {
     this.values.delete(key);
     return Promise.resolve(value);
   }
+}
+
+function redisServiceFor(redis: FakeRedis | undefined) {
+  return {
+    client: redis
+  } as unknown as ConstructorParameters<typeof GscOAuthStateStore>[0];
 }
 
 function nonceRecord(): GscOAuthNonceRecord {

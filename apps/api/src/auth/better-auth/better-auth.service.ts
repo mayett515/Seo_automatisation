@@ -1,5 +1,4 @@
-import { Injectable, type OnModuleDestroy } from "@nestjs/common";
-import { createRedisConnection } from "@localseo/adapters";
+import { Injectable } from "@nestjs/common";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { accounts, sessions, users, verifications, type DatabaseClient } from "@localseo/db";
 import { betterAuth } from "better-auth/minimal";
@@ -8,6 +7,7 @@ import { fromNodeHeaders } from "better-auth/node";
 import Redis from "ioredis";
 import type { IncomingHttpHeaders } from "node:http";
 import { DatabaseService } from "../../database/database.service.js";
+import { RedisService } from "../../redis/redis.service.js";
 import type { AuthenticatedRequestContext } from "../types/authenticated-request.js";
 
 const env = parseAppEnv(process.env);
@@ -34,14 +34,12 @@ type BetterAuthSecondaryStorage = {
 };
 
 @Injectable()
-export class BetterAuthService implements OnModuleDestroy {
+export class BetterAuthService {
   readonly auth: LocalSeoAuth | undefined;
-  private readonly redis: Redis | undefined;
 
-  constructor(database: DatabaseService) {
-    this.redis = database.db && env.REDIS_URL ? new Redis(createRedisConnection(env.REDIS_URL)) : undefined;
+  constructor(database: DatabaseService, redis: RedisService) {
     this.auth = database.db
-      ? createLocalSeoAuth(database.db, env, createBetterAuthRedisStorage(this.redis))
+      ? createLocalSeoAuth(database.db, env, createBetterAuthRedisStorage(redis.client))
       : undefined;
   }
 
@@ -76,10 +74,6 @@ export class BetterAuthService implements OnModuleDestroy {
       source: "better_auth"
     };
   }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.redis?.quit();
-  }
 }
 
 function createLocalSeoAuth(
@@ -104,7 +98,9 @@ function createLocalSeoAuth(
       modelName: "users"
     },
     session: {
-      modelName: "sessions"
+      modelName: "sessions",
+      storeSessionInDatabase: true,
+      preserveSessionInDatabase: true
     },
     account: {
       modelName: "accounts"
