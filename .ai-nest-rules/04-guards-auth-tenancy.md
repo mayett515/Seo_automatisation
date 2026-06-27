@@ -29,7 +29,8 @@ priority_schema: "critical > strong > guideline"
 - Make project guards fail closed when a guarded route has no project context.
 - Derive current user identity from a verified Better Auth/session context before any persisted customer data is reachable.
 - Use one shared Better Auth instance for both the Fastify auth handler and Nest session guards.
-- Gate `demo-project` and non-UUID scaffold access to non-production environments only.
+- Gate `demo-project` and non-UUID scaffold access behind an explicit local-scaffold flag and non-production environments only.
+- Fail production boot if local scaffold auth is explicitly enabled.
 - Validate user ids before DB membership lookup and return auth failures instead of leaking DB type errors.
 - Use route metadata or explicit guard variants for permission-sensitive actions such as approve, deploy, GSC connect, report publishing, and admin changes.
 - When cookie/session auth protects mutating routes, define the SameSite, Origin/Referer, and CSRF-token posture before production exposure.
@@ -43,6 +44,8 @@ priority_schema: "critical > strong > guideline"
 - DO NOT authorize UUID-like project ids through request headers alone.
 - DO NOT treat `x-user-id`, `x-project-id`, or `x-project-ids` as a trustworthy production identity boundary.
 - DO NOT let `demo-project` bypass authentication or ingestion boundaries in production.
+- DO NOT enable local scaffold auth implicitly just because `NODE_ENV` is not production.
+- DO NOT silently ignore production configuration that enables local scaffold auth; reject it during startup.
 - DO NOT expose credentialed cookie-based POST/PUT/PATCH/DELETE routes without an explicit CSRF protection decision.
 - DO NOT log Better Auth session tokens, OAuth refresh tokens, access tokens, cookies, or authorization headers.
 - DO NOT create separate Better Auth instances for HTTP routes and Nest guards.
@@ -62,7 +65,7 @@ IF a project id is UUID-like:
 THEN treat it as persisted customer data and authorize via database membership, not `x-project-id` or `x-project-ids`.
 
 IF the route uses `demo-project` or a non-UUID scaffold id:
-THEN allow it only in local/non-production modes and keep the bypass visibly isolated from persisted projects.
+THEN allow it only when explicit local-scaffold auth is enabled and keep the bypass visibly isolated from persisted projects.
 
 IF a request supplies a user id:
 THEN accept it only after a trusted auth/session layer produced it; reject malformed ids before querying UUID columns.

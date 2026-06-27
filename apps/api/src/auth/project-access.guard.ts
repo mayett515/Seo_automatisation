@@ -1,5 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, Optional, UnauthorizedException } from "@nestjs/common";
-import { parseAppEnv } from "@localseo/config";
+import { allowsLocalScaffoldAuth, parseAppEnv } from "@localseo/config";
 import type { FastifyRequest } from "fastify";
 import { ProjectMembershipService } from "./project-membership.service.js";
 import type { RequestWithAuth } from "./types/authenticated-request.js";
@@ -25,10 +25,10 @@ export class ProjectAccessGuard implements CanActivate {
 
     const env = parseAppEnv(process.env);
 
-    const userId =
-      request.auth?.user.id ?? (env.NODE_ENV !== "production" ? readHeader(request, "x-user-id") : undefined);
+    const localScaffoldEnabled = allowsLocalScaffoldAuth(env);
+    const userId = request.auth?.user.id ?? (localScaffoldEnabled ? readHeader(request, "x-user-id") : undefined);
 
-    if (projectId === "demo-project" && env.NODE_ENV !== "production") {
+    if (projectId === "demo-project" && localScaffoldEnabled) {
       request.projectAccess = localProjectAccess({
         projectId,
         userId: userId ?? "00000000-0000-4000-8000-000000000000"
@@ -59,8 +59,8 @@ export class ProjectAccessGuard implements CanActivate {
       return true;
     }
 
-    if (env.NODE_ENV === "production") {
-      throw new UnauthorizedException("Non-persisted project ids are not accepted in production.");
+    if (!localScaffoldEnabled) {
+      throw new UnauthorizedException("Non-persisted project ids require local scaffold auth.");
     }
 
     const allowedProjectIds = parseProjectIds(readHeader(request, "x-project-ids"));

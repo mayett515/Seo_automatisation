@@ -64,6 +64,9 @@ THEN add an executable test or schema guard proving impressions, CTR, and averag
 
 IF GSC performance data is exposed through an API:
 THEN separate internal-radar responses from customer-report responses before reuse.
+
+IF a report payload guard uses banned field names:
+THEN ban specific GSC diagnostic names such as impressions, CTR, and average-position; do not flat-ban generic words such as `position` across all nested customer payloads.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples

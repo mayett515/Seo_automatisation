@@ -41,13 +41,7 @@ export function evaluateLocalPageQa(input: LocalPageQaInput): LocalPageQaResult 
   };
 }
 
-export const customerReportMetricBans = [
-  "impressions",
-  "ctr",
-  "average_position",
-  "averagePosition",
-  "position"
-] as const;
+export const customerReportMetricBans = ["impressions", "ctr", "average_position", "averagePosition"] as const;
 
 export function assertCustomerReportPayloadSafe(payload: unknown): void {
   const bannedPath = findBannedMetricPath(payload);

@@ -28,6 +28,8 @@ You have been routed here because the task touches analytics, tracking events, G
 - Require explicit opt-in before advanced tracking such as session replay or heatmaps.
 - Require an ingestion boundary for public tracking endpoints before persisted project events are accepted.
 - Prefer per-project public ingestion keys over global shared tracking secrets.
+- Remove or explicitly scope obsolete global ingestion-token config once per-project public keys are the production boundary.
+- Reject malformed persisted project ids before tracking persistence or key lookup touches UUID-backed columns.
 - Return explicit dry-run/not-persisted status when tracking is validated but not stored.
 - Apply side-effect honesty: `accepted`, `queued`, or `stored` means the tracking event was actually persisted, queued, or otherwise durably handled.
 </positive-directives>
@@ -42,6 +44,8 @@ You have been routed here because the task touches analytics, tracking events, G
 - DO NOT report silent tracking failures as success.
 - DO NOT accept persisted project tracking events from the public endpoint without an ingestion token or equivalent project-scoped public key.
 - DO NOT use one global browser-exposed tracking secret as the final production isolation boundary.
+- DO NOT keep dead global tracking secret config around as if it still protects the public ingestion boundary.
+- DO NOT let non-UUID project ids reach persisted tracking key queries when local scaffold tracking is disabled.
 - DO NOT compare tracking or webhook-style secrets with ordinary string equality when timing-safe comparison is practical.
 - DO NOT return `accepted: true` for production tracking unless the event was persisted or queued.
 - DO NOT make validation-only tracking look like successful ingestion.

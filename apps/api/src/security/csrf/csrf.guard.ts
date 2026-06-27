@@ -26,7 +26,7 @@ export class CsrfGuard implements CanActivate {
       return assertTrustedOrigin(originFromUrl(referer), trustedOrigins);
     }
 
-    if (env.NODE_ENV !== "production") {
+    if (env.NODE_ENV === "development" || env.NODE_ENV === "test") {
       return true;
     }
 

@@ -7,11 +7,12 @@ import {
   Injectable,
   Module,
   Post,
+  BadRequestException,
   UnauthorizedException,
   type OnModuleDestroy,
   type Provider
 } from "@nestjs/common";
-import { parseAppEnv } from "@localseo/config";
+import { allowsLocalScaffoldAuth, parseAppEnv } from "@localseo/config";
 import {
   TrackingEventSchema,
   TrackingIngestResultSchema,
@@ -50,6 +51,10 @@ export class TrackingService implements OnModuleDestroy {
         persisted: false,
         mode: "dry_run"
       });
+    }
+
+    if (!isUuid(event.projectId)) {
+      throw new BadRequestException("Persisted tracking project id must be a UUID.");
     }
 
     if (!this.dbHandle) {
@@ -136,11 +141,15 @@ export class TrackingModule {}
 export function isLocalScaffoldEvent(event: TrackingEvent): boolean {
   const currentEnv = parseAppEnv(process.env);
 
-  if (event.projectId === "demo-project" && currentEnv.NODE_ENV !== "production") {
+  if (!allowsLocalScaffoldAuth(currentEnv)) {
+    return false;
+  }
+
+  if (event.projectId === "demo-project") {
     return true;
   }
 
-  if (!isUuid(event.projectId) && currentEnv.NODE_ENV !== "production") {
+  if (!isUuid(event.projectId)) {
     return true;
   }
 

@@ -25,6 +25,22 @@ void describe("CsrfGuard", () => {
     );
   });
 
+  void it("allows unsafe development requests without origin or referer", () => {
+    withNodeEnv("development", () => {
+      const guard = new CsrfGuard();
+
+      assert.equal(guard.canActivate(contextFor("POST", {})), true);
+    });
+  });
+
+  void it("allows unsafe test requests without origin or referer", () => {
+    withNodeEnv("test", () => {
+      const guard = new CsrfGuard();
+
+      assert.equal(guard.canActivate(contextFor("POST", {})), true);
+    });
+  });
+
   void it("rejects unsafe production requests without origin or referer", () => {
     withNodeEnv("production", () => {
       const guard = new CsrfGuard();

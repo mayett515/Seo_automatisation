@@ -1,5 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
-import { parseAppEnv } from "@localseo/config";
+import { allowsLocalScaffoldAuth, parseAppEnv } from "@localseo/config";
 import type { FastifyRequest } from "fastify";
 import { BetterAuthService } from "../better-auth/better-auth.service.js";
 import type { RequestWithAuth } from "../types/authenticated-request.js";
@@ -26,7 +26,7 @@ export class BetterAuthGuard implements CanActivate {
 
     const env = parseAppEnv(process.env);
 
-    if (env.NODE_ENV !== "production") {
+    if (allowsLocalScaffoldAuth(env)) {
       const scaffoldContext = createLocalScaffoldContext(request);
 
       if (scaffoldContext) {

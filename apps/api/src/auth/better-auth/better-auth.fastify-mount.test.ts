@@ -26,6 +26,7 @@ void describe("mountBetterAuthFastify", () => {
 function testEnv(): AppEnv {
   return {
     NODE_ENV: "test",
+    ALLOW_LOCAL_SCAFFOLD_AUTH: false,
     PORT: 4000,
     WEB_ORIGIN: "http://localhost:5173",
     API_PUBLIC_URL: "http://localhost:4000",

@@ -17,29 +17,44 @@ void describe("BetterAuthGuard", () => {
     assert.equal(request.auth?.user.id, "22222222-2222-4222-8222-222222222222");
   });
 
-  void it("allows demo project scaffold access outside production", async () => {
-    const guard = new BetterAuthGuard(reader(null) as BetterAuthService);
-    const request = requestFor({ projectId: "demo-project" }, {});
+  void it("rejects demo project scaffold access when local scaffold auth is not enabled", async () => {
+    await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: undefined }, async () => {
+      const guard = new BetterAuthGuard(reader(null) as BetterAuthService);
 
-    assert.equal(await guard.canActivate(contextFor(request)), true);
-    assert.equal(request.auth?.source, "local_scaffold");
+      await assert.rejects(
+        guard.canActivate(contextFor(requestFor({ projectId: "demo-project" }, {}))),
+        (error) => error instanceof UnauthorizedException
+      );
+    });
   });
 
-  void it("allows local scaffold header identity outside production", async () => {
-    const guard = new BetterAuthGuard(reader(null) as BetterAuthService);
-    const request = requestFor(
-      { projectId: "project-1" },
-      {
-        "x-user-id": "local-user"
-      }
-    );
+  void it("allows demo project scaffold access when local scaffold auth is explicitly enabled", async () => {
+    await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
+      const guard = new BetterAuthGuard(reader(null) as BetterAuthService);
+      const request = requestFor({ projectId: "demo-project" }, {});
 
-    assert.equal(await guard.canActivate(contextFor(request)), true);
-    assert.equal(request.auth?.user.id, "local-user");
+      assert.equal(await guard.canActivate(contextFor(request)), true);
+      assert.equal(request.auth?.source, "local_scaffold");
+    });
+  });
+
+  void it("allows local scaffold header identity when local scaffold auth is explicitly enabled", async () => {
+    await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
+      const guard = new BetterAuthGuard(reader(null) as BetterAuthService);
+      const request = requestFor(
+        { projectId: "project-1" },
+        {
+          "x-user-id": "local-user"
+        }
+      );
+
+      assert.equal(await guard.canActivate(contextFor(request)), true);
+      assert.equal(request.auth?.user.id, "local-user");
+    });
   });
 
   void it("rejects missing sessions in production", async () => {
-    await withNodeEnv("production", async () => {
+    await withEnv({ NODE_ENV: "production", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
       const guard = new BetterAuthGuard(reader(null) as BetterAuthService);
 
       await assert.rejects(
@@ -102,17 +117,26 @@ function authContext(userId: string): AuthenticatedRequestContext {
   };
 }
 
-async function withNodeEnv<T>(nodeEnv: string, run: () => Promise<T>): Promise<T> {
-  const previous = process.env.NODE_ENV;
-  process.env.NODE_ENV = nodeEnv;
+async function withEnv<T>(updates: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
+  const previous = new Map(Object.keys(updates).map((key) => [key, process.env[key]]));
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 
   try {
     return await run();
   } finally {
-    if (previous === undefined) {
-      delete process.env.NODE_ENV;
-    } else {
-      process.env.NODE_ENV = previous;
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   }
 }

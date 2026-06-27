@@ -28,4 +28,21 @@ void describe("assertCustomerReportPayloadSafe", () => {
       /sections\.0\.metrics\.impressions/u
     );
   });
+
+  void it("allows non-GSC uses of a generic position key", () => {
+    assert.doesNotThrow(() =>
+      assertCustomerReportPayloadSafe({
+        contact: {
+          name: "Customer Champion",
+          position: "CEO"
+        },
+        mapPin: {
+          position: {
+            lat: 48.137,
+            lng: 11.575
+          }
+        }
+      })
+    );
+  });
 });
