@@ -44,6 +44,8 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import type { FastifyReply } from "fastify";
 import { Queue } from "bullmq";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
+import { PermissionGuard } from "../auth/permissions/permission.guard.js";
+import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
@@ -352,7 +354,7 @@ class GscService implements OnModuleDestroy {
 }
 
 @Controller("projects/:projectId/gsc")
-@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard)
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 class GscController {
   constructor(private readonly gsc: GscService) {}
 
@@ -362,11 +364,13 @@ class GscController {
   }
 
   @Post("connect")
+  @RequireProjectPermission("gsc:connect")
   connect(@Param("projectId") projectId: string) {
     return this.gsc.createOAuthIntent(projectId);
   }
 
   @Post("sync")
+  @RequireProjectPermission("gsc:sync")
   sync(@Param("projectId") projectId: string, @Body() body: unknown) {
     return this.gsc.queueSync(projectId, body);
   }

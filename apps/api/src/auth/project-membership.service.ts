@@ -1,7 +1,8 @@
 import { Injectable, type OnModuleDestroy } from "@nestjs/common";
 import { parseAppEnv } from "@localseo/config";
 import { createDatabaseClient, customerMemberships, customers, projects } from "@localseo/db";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
+import type { ProjectAccessContext } from "./types/authenticated-request.js";
 
 const env = parseAppEnv(process.env);
 
@@ -18,12 +19,22 @@ export class ProjectMembershipService implements OnModuleDestroy {
   }
 
   async canAccessProject(input: { userId: string; projectId: string }): Promise<boolean> {
+    return Boolean(await this.getProjectAccess(input));
+  }
+
+  async getProjectAccess(input: { userId: string; projectId: string }): Promise<ProjectAccessContext | undefined> {
     if (!this.dbHandle) {
-      return false;
+      return undefined;
     }
 
     const [row] = await this.dbHandle.db
-      .select({ projectId: projects.id })
+      .select({
+        projectId: projects.id,
+        projectStatus: projects.status,
+        customerId: projects.customerId,
+        ownerUserId: customers.ownerUserId,
+        membershipRole: customerMemberships.role
+      })
       .from(projects)
       .innerJoin(customers, eq(projects.customerId, customers.id))
       .leftJoin(
@@ -33,12 +44,29 @@ export class ProjectMembershipService implements OnModuleDestroy {
       .where(
         and(
           eq(projects.id, input.projectId),
+          ne(projects.status, "deleted"),
           or(eq(customers.ownerUserId, input.userId), eq(customerMemberships.userId, input.userId))
         )
       )
       .limit(1);
 
-    return Boolean(row);
+    if (!row) {
+      return undefined;
+    }
+
+    const role = row.ownerUserId === input.userId ? "owner" : row.membershipRole;
+
+    if (!role) {
+      return undefined;
+    }
+
+    return {
+      userId: input.userId,
+      customerId: row.customerId,
+      projectId: row.projectId,
+      role,
+      projectStatus: row.projectStatus
+    };
   }
 
   async onModuleDestroy(): Promise<void> {

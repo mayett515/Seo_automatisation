@@ -1,4 +1,5 @@
 import type { FastifyRequest } from "fastify";
+import type { CustomerMembershipRole } from "@localseo/contracts";
 
 export type AuthenticatedUser = {
   id: string;
@@ -18,6 +19,15 @@ export type AuthenticatedRequestContext = {
   source: "better_auth" | "local_scaffold";
 };
 
+export type ProjectAccessContext = {
+  userId: string;
+  customerId: string;
+  projectId: string;
+  role: CustomerMembershipRole;
+  projectStatus: string;
+};
+
 export type RequestWithAuth<TRequest extends FastifyRequest = FastifyRequest> = TRequest & {
   auth?: AuthenticatedRequestContext;
+  projectAccess?: ProjectAccessContext;
 };

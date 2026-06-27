@@ -10,6 +10,8 @@ import {
 } from "@localseo/contracts";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
+import { PermissionGuard } from "../auth/permissions/permission.guard.js";
+import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
@@ -56,7 +58,7 @@ class ProjectsService {
 }
 
 @Controller("projects")
-@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard)
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
@@ -66,6 +68,7 @@ class ProjectsController {
   }
 
   @Post(":id/import-website")
+  @RequireProjectPermission("website:import")
   importWebsite(@Param("id") projectId: string) {
     return this.projects.queueWebsiteImport(projectId);
   }

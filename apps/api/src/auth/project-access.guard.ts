@@ -25,12 +25,16 @@ export class ProjectAccessGuard implements CanActivate {
 
     const env = parseAppEnv(process.env);
 
-    if (projectId === "demo-project" && env.NODE_ENV !== "production") {
-      return true;
-    }
-
     const userId =
       request.auth?.user.id ?? (env.NODE_ENV !== "production" ? readHeader(request, "x-user-id") : undefined);
+
+    if (projectId === "demo-project" && env.NODE_ENV !== "production") {
+      request.projectAccess = localProjectAccess({
+        projectId,
+        userId: userId ?? "00000000-0000-4000-8000-000000000000"
+      });
+      return true;
+    }
 
     if (!userId) {
       throw new UnauthorizedException("Project access requires an authenticated user context.");
@@ -45,10 +49,13 @@ export class ProjectAccessGuard implements CanActivate {
         throw new UnauthorizedException("Persisted project access requires database-backed membership checks.");
       }
 
-      if (!(await this.memberships.canAccessProject({ userId, projectId }))) {
+      const projectAccess = await this.memberships.getProjectAccess({ userId, projectId });
+
+      if (!projectAccess) {
         throw new UnauthorizedException("Authenticated user is not authorized for this project.");
       }
 
+      request.projectAccess = projectAccess;
       return true;
     }
 
@@ -67,6 +74,7 @@ export class ProjectAccessGuard implements CanActivate {
       throw new UnauthorizedException("Authenticated user is not authorized for this project.");
     }
 
+    request.projectAccess = localProjectAccess({ projectId, userId });
     return true;
   }
 }
@@ -96,4 +104,17 @@ function parseProjectIds(value: string | undefined): Set<string> {
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function localProjectAccess(input: {
+  userId: string;
+  projectId: string;
+}): NonNullable<RequestWithAuth["projectAccess"]> {
+  return {
+    userId: input.userId,
+    customerId: "local-scaffold-customer",
+    projectId: input.projectId,
+    role: "owner",
+    projectStatus: "local_scaffold"
+  };
 }

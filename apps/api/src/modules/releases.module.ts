@@ -17,6 +17,8 @@ import {
 import { decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
+import { PermissionGuard } from "../auth/permissions/permission.guard.js";
+import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
@@ -208,11 +210,12 @@ class ReleasesService {
 }
 
 @Controller()
-@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard)
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 class ReleasesController {
   constructor(private readonly releases: ReleasesService) {}
 
   @Post("projects/:projectId/releases/plan")
+  @RequireProjectPermission("release:plan")
   createPlan(@Param("projectId") projectId: string, @Body() body: unknown) {
     return this.releases.createPlan(projectId, body);
   }
@@ -227,11 +230,13 @@ class ReleasesController {
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/preflight")
+  @RequireProjectPermission("release:preflight")
   preflight(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
     return this.releases.preflight(projectId, releasePlanId);
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/approve-deploy")
+  @RequireProjectPermission("release:approve")
   approveDeploy(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
     return {
       projectId,
@@ -242,11 +247,13 @@ class ReleasesController {
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/deploy")
+  @RequireProjectPermission("deploy:execute")
   deploy(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string) {
     return this.releases.deploy(projectId, releasePlanId);
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/verify")
+  @RequireProjectPermission("release:verify")
   verify(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string, @Body() body: unknown) {
     return this.releases.verify(projectId, releasePlanId, body);
   }
