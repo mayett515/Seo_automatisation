@@ -205,6 +205,15 @@ export const QueueJobSchema = z.object({
   createdAt: z.string().datetime()
 });
 
+export const DeployJobDataSchema = z.object({
+  projectId: ProjectIdSchema,
+  releasePlanId: z.string().min(1),
+  deploymentKey: z.string().min(1),
+  jobRunId: z.string().min(1).optional(),
+  triggeredByUserId: z.string().min(1).nullable().optional(),
+  triggerSource: z.string().min(1).optional()
+});
+
 export const PageProposalSchema = z.object({
   projectId: ProjectIdSchema,
   service: z.string().min(1),
@@ -455,6 +464,7 @@ export type PotentialReport = z.output<typeof PotentialReportSchema>;
 export type ProjectSummary = z.output<typeof ProjectSummarySchema>;
 export type MainPreview = z.output<typeof MainPreviewSchema>;
 export type QueueJob = z.output<typeof QueueJobSchema>;
+export type DeployJobData = z.output<typeof DeployJobDataSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
 export type PageProposal = z.output<typeof PageProposalSchema>;
 export type ReleaseCheck = z.output<typeof ReleaseCheckSchema>;

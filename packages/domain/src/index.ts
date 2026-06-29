@@ -25,6 +25,10 @@ export function canDeployRelease(plan: ReleasePlan, checks: ReleaseCheck[]): boo
   return plan.status === "approved_for_deploy" && readiness.kind !== "blocked";
 }
 
+export function buildReleaseDeploymentKey(releasePlanId: string): string {
+  return `release_plan:${releasePlanId}`;
+}
+
 export function decideReleaseVerificationStatus(checks: ReleaseCheck[]): ReleaseVerificationStatus {
   const failedBlockers = checks.filter((check) => check.severity === "blocker" && check.result === "failed");
   const failedWarnings = checks.filter((check) => check.severity === "warning" && check.result === "failed");

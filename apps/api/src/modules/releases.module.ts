@@ -15,6 +15,7 @@ import {
 import {
   QueueJobSchema,
   CreateReleasePlanRequestSchema,
+  DeployJobDataSchema,
   ReleaseCheckSchema,
   ReleaseNoteSchema,
   ReleasePlanSchema,
@@ -27,7 +28,12 @@ import {
   type ReleaseVerification,
   type RollbackPoint
 } from "@localseo/contracts";
-import { canDeployRelease, decideReleaseReadiness, decideReleaseVerificationStatus } from "@localseo/domain";
+import {
+  buildReleaseDeploymentKey,
+  canDeployRelease,
+  decideReleaseReadiness,
+  decideReleaseVerificationStatus
+} from "@localseo/domain";
 import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "@localseo/seo";
 import {
   approvals,
@@ -55,7 +61,6 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 type Db = DatabaseClient;
 
 const approvableReleaseStatuses = new Set<ReleasePlan["status"]>(["ready", "ready_with_warnings"]);
-const deployWorkerImplemented = false;
 
 @Injectable()
 export class ReleasesService {
@@ -264,27 +269,20 @@ export class ReleasesService {
       throw new BadRequestException("Release must pass preflight and be approved before deploy.");
     }
 
-    const jobId = randomUUID();
-
-    if (!deployWorkerImplemented) {
-      return QueueJobSchema.parse({
-        projectId,
-        releasePlanId,
-        jobId,
-        type: "deploy",
-        status: "dry_run",
-        inputRef: releasePlanId,
-        createdBy: userId,
-        message: "Deploy worker is not implemented yet. No job was enqueued and release status was not changed.",
-        createdAt: new Date().toISOString()
-      });
-    }
+    const deploymentKey = buildReleaseDeploymentKey(releasePlanId);
+    const jobId = deploymentKey;
 
     const enqueued = await this.queues.enqueue({
       queueName: "deploy",
       jobName: "deploy",
       jobId,
-      data: { projectId, releasePlanId, triggeredByUserId: userId ?? null, triggerSource: "user_action" },
+      data: DeployJobDataSchema.parse({
+        projectId,
+        releasePlanId,
+        deploymentKey,
+        triggeredByUserId: userId ?? null,
+        triggerSource: "user_action"
+      }),
       audit: {
         projectId,
         type: "deploy",

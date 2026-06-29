@@ -74,15 +74,31 @@ void describe("classifyOpportunitySignals", () => {
 });
 
 void describe("routeJob", () => {
-  void it("fails unsupported jobs honestly instead of returning success metadata", async () => {
+  void it("routes deploy jobs to the deploy handler instead of returning success metadata", async () => {
     await assert.rejects(
       routeJob({
         id: "deploy-job-1",
         queueName: "deploy",
         name: "deploy",
+        data: {
+          projectId: "project-1",
+          releasePlanId: "release-1",
+          deploymentKey: "release_plan:release-1"
+        }
+      } as Job),
+      /DATABASE_URL is required for deploy jobs/u
+    );
+  });
+
+  void it("fails unknown jobs honestly instead of returning success metadata", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "unknown-job-1",
+        queueName: "seo-qa",
+        name: "score",
         data: {}
       } as Job),
-      /Worker job is not implemented: deploy:deploy/u
+      /Worker job is not implemented: seo-qa:score/u
     );
   });
 });

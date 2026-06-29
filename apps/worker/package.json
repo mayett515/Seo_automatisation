@@ -16,6 +16,7 @@
     "@localseo/config": "workspace:*",
     "@localseo/contracts": "workspace:*",
     "@localseo/db": "workspace:*",
+    "@localseo/domain": "workspace:*",
     "bullmq": "5.79.1",
     "drizzle-orm": "0.45.2"
   },

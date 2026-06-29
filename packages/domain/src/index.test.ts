@@ -1,7 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ReleaseCheck, ReleasePlan } from "@localseo/contracts";
-import { canDeployRelease, decideReleaseReadiness, decideReleaseVerificationStatus } from "./index.js";
+import {
+  buildReleaseDeploymentKey,
+  canDeployRelease,
+  decideReleaseReadiness,
+  decideReleaseVerificationStatus
+} from "./index.js";
 
 void describe("release readiness decisions", () => {
   void it("blocks deploy when any blocker check fails", () => {
@@ -60,6 +65,12 @@ void describe("release verification status", () => {
       decideReleaseVerificationStatus([releaseCheck({ severity: "blocker", result: "passed" })]),
       "live_healthy"
     );
+  });
+});
+
+void describe("buildReleaseDeploymentKey", () => {
+  void it("derives a stable local idempotency key from a release plan id", () => {
+    assert.equal(buildReleaseDeploymentKey("release-plan-1"), "release_plan:release-plan-1");
   });
 });
 

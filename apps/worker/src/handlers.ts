@@ -1,6 +1,7 @@
 import { createDatabaseClient } from "@localseo/db";
 import { parseAppEnv } from "@localseo/config";
 import type { Job } from "bullmq";
+import { handleDeployJob } from "./handlers/deploy.js";
 import { handleGscSyncJob } from "./handlers/gsc-sync.js";
 import { markJobRunCompleted, markJobRunFailed, markJobRunRunning } from "./job-run.js";
 
@@ -25,6 +26,10 @@ export async function closeWorkerResources(): Promise<void> {
 }
 
 export async function routeJob(job: Job): Promise<Record<string, unknown>> {
+  if (job.queueName === "deploy" || job.name === "deploy") {
+    return handleDeployJob(job, sharedDbHandle);
+  }
+
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
