@@ -20,10 +20,18 @@ export type DeployReleaseInput = {
   buildArtifactKey: string;
 };
 
-export type DeployReleaseResult = {
-  deploymentId: string;
-  liveUrls: string[];
-};
+export type DeployReleaseResult =
+  | {
+      status: "created";
+      providerDeployId: string;
+      liveUrls: string[];
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      status: "not_configured";
+      message: string;
+      liveUrls: [];
+    };
 
 export type CreateDeployInput = DeployReleaseInput & {
   deploymentKey: string;
@@ -194,7 +202,8 @@ export interface RollbackPort {
 export class NotConfiguredSiteHostingAdapter implements SiteHostingPort {
   createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult> {
     return Promise.resolve({
-      deploymentId: `dry_run_${input.releasePlanId}`,
+      status: "not_configured",
+      message: `Site hosting is not configured for release plan ${input.releasePlanId}.`,
       liveUrls: []
     });
   }

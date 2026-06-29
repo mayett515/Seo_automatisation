@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { GscSearchAnalyticsRow } from "@localseo/contracts";
-import { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers.js";
+import type { Job } from "bullmq";
+import { classifyOpportunitySignals, parseGscSyncJobData, routeJob } from "./handlers.js";
 
 void describe("parseGscSyncJobData", () => {
   void it("accepts valid GSC sync job data", () => {
@@ -68,6 +69,20 @@ void describe("classifyOpportunitySignals", () => {
         })
       ),
       ["service_location_query", "wrong_page_service_location"]
+    );
+  });
+});
+
+void describe("routeJob", () => {
+  void it("fails unsupported jobs honestly instead of returning success metadata", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "deploy-job-1",
+        queueName: "deploy",
+        name: "deploy",
+        data: {}
+      } as Job),
+      /Worker job is not implemented: deploy:deploy/u
     );
   });
 });

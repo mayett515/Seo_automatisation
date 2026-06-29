@@ -1,6 +1,6 @@
 # Backend Foundation Status
 
-Current baseline: after `80bc86c` (`Prepare deploy verification foundation`) and `2bd77d6` (`Harden public tracking limits`).
+Current baseline: after the deploy-prep cleanup following `6998089` (`Refresh backend foundation status`).
 
 This page records what the backend foundation now enforces, what is still intentionally incomplete, and where the next serious foundation items sit on the roadmap.
 
@@ -32,7 +32,6 @@ flowchart LR
 
   Api --> Queues[BullMQ queues]
   Queues --> Worker[Deterministic worker process]
-  Worker -. registered, not product-wired yet .-> Mastra[Mastra workflows and agents]
   Worker --> Postgres
   Worker --> External[Google Search Console now; deploy adapter later]
 ```
@@ -41,21 +40,22 @@ How to read this: the API owns request authorization and persistence. The public
 
 ## Finished
 
-| Area                      | Status                      | What is enforced                                                                                                                                                                                                                     |
-| ------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Auth/session              | Finished foundation         | Better Auth owns sessions, sessions are DB-durable, Fastify mounts `/api/auth/*`, Nest guards consume session context.                                                                                                               |
-| Tenant authorization      | Finished foundation         | Project access resolves before permissions; owner/admin/editor/viewer roles gate privileged actions.                                                                                                                                 |
-| CSRF                      | Finished foundation         | Unsafe authenticated routes are Origin/Referer guarded outside local/test fallback.                                                                                                                                                  |
-| GSC OAuth                 | Finished foundation         | Signed state, PKCE, Redis `GETDEL` nonce, session re-check, project access re-check, encrypted token storage, safe redirect.                                                                                                         |
-| DB ownership              | Finished foundation         | API process uses a shared `DatabaseService` and an executable no-rogue-pool guard.                                                                                                                                                   |
-| Redis ownership           | Finished foundation         | API process uses shared error-handled Redis for rate limits/OAuth state/Better Auth secondary storage.                                                                                                                               |
-| Proxy/rate-limit topology | Finished foundation         | Broad `TRUST_PROXY=true` is rejected in production; Redis-backed rate limits are wired.                                                                                                                                              |
-| Tracking ingestion        | Finished pre-MVP foundation | Per-project publishable keys, hashed storage, create/list/revoke API, owner/admin management, allowed-origin binding, `/track` IP, IP/project, true project, key, and key/project rate limits, explicit dry-run vs persisted result. |
-| Release preflight         | Finished pre-MVP foundation | Preflight reads persisted evidence and fails closed for missing approval, noindex, local SEO blockers, or rollback point. QA warnings and tracking readiness are warning-level.                                                      |
-| Worker audit lifecycle    | Finished baseline           | Producers create `job_runs` before enqueue, workers prefer `jobRunId` payloads, and jobs mark running, completed, or failed for real BullMQ jobs.                                                                                    |
-| Deploy/verify prep        | Finished prep               | `deployments.deployment_key`, deployment evidence JSON, expanded provider-neutral `SiteHostingPort`, and `release_verification_checks` exist for the deterministic deploy/verifier slices.                                           |
-| Frontend auth UX          | Finished baseline           | Login/sign-up/sign-out, session gate, credentialed API fetches, explicit local scaffold bypass.                                                                                                                                      |
-| Mastra slot               | Reserved baseline           | `@localseo/ai` is registered with workflow/agent descriptors, but the product workflows for site planning and creative assembly are not integrated yet.                                                                              |
+| Area                      | Status                      | What is enforced                                                                                                                                                                                                                                                          |
+| ------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth/session              | Finished foundation         | Better Auth owns sessions, sessions are DB-durable, Fastify mounts `/api/auth/*`, Nest guards consume session context.                                                                                                                                                    |
+| Tenant authorization      | Finished foundation         | Project access resolves before permissions; owner/admin/editor/viewer roles gate privileged actions.                                                                                                                                                                      |
+| CSRF                      | Finished foundation         | Unsafe authenticated routes are Origin/Referer guarded outside local/test fallback.                                                                                                                                                                                       |
+| GSC OAuth                 | Finished foundation         | Signed state, PKCE, Redis `GETDEL` nonce, session re-check, project access re-check, encrypted token storage, safe redirect.                                                                                                                                              |
+| DB ownership              | Finished foundation         | API process uses a shared `DatabaseService` and an executable no-rogue-pool guard.                                                                                                                                                                                        |
+| Redis ownership           | Finished foundation         | API process uses shared error-handled Redis for rate limits/OAuth state/Better Auth secondary storage.                                                                                                                                                                    |
+| Proxy/rate-limit topology | Finished foundation         | Broad `TRUST_PROXY=true` is rejected in production; Redis-backed rate limits are wired.                                                                                                                                                                                   |
+| Tracking ingestion        | Finished pre-MVP foundation | Per-project publishable keys, hashed storage, create/list/revoke API, owner/admin management, allowed-origin binding, `/track` IP, IP/project, true project, key, and key/project rate limits, explicit dry-run vs persisted result.                                      |
+| Release preflight         | Finished pre-MVP foundation | Preflight reads persisted evidence and fails closed for missing approval, noindex, local SEO blockers, or rollback point. QA warnings and tracking readiness are warning-level.                                                                                           |
+| Worker audit lifecycle    | Finished baseline           | Producers create `job_runs` before enqueue, workers prefer `jobRunId` payloads, and jobs mark running, completed, or failed for real BullMQ jobs.                                                                                                                         |
+| Deploy/verify prep        | Finished prep               | `deployments.deployment_key`, deployment evidence JSON, expanded provider-neutral `SiteHostingPort`, and `release_verification_checks` exist for the deterministic deploy/verifier slices. Migration 0009 backfills existing deployment rows before enforcing `NOT NULL`. |
+| Deploy enqueue honesty    | Finished prep               | Until the deploy worker exists, `deploy()` returns an explicit `dry_run`, does not enqueue a deploy job, and does not move the release plan to `deploying`.                                                                                                               |
+| Frontend auth UX          | Finished baseline           | Login/sign-up/sign-out, session gate, credentialed API fetches, explicit local scaffold bypass.                                                                                                                                                                           |
+| Mastra slot               | Reserved baseline           | `@localseo/ai` contains workflow/agent descriptors, but the product workflows for site planning and creative assembly are not integrated yet and are not loaded by the worker.                                                                                            |
 
 ## Release Flow State
 
@@ -67,7 +67,7 @@ stateDiagram-v2
   Draft --> ReadyWithWarnings: warnings only
   Ready --> ApprovedForDeploy: customer approval persisted
   ReadyWithWarnings --> ApprovedForDeploy: customer approval persisted
-  ApprovedForDeploy --> Deploying: deploy job enqueued
+  ApprovedForDeploy --> Deploying: deploy worker exists and job is enqueued
   Deploying --> Live: deploy worker succeeds
   Deploying --> Failed: deploy worker fails
   Live --> LiveHealthy: real verification passes
@@ -78,6 +78,11 @@ stateDiagram-v2
   note right of Deploying
     Real deploy worker is the next
     serious foundation item.
+  end note
+
+  note right of ApprovedForDeploy
+    Current deploy() returns dry_run
+    until the deploy worker exists.
   end note
 
   note right of Live
@@ -106,6 +111,7 @@ Required behavior:
 - Persist deployment records and update release/deployment status truthfully.
 - Be idempotent by release plan/deployment key so retries do not duplicate deploys.
 - Update `job_runs` with a direct audit link, ideally via `jobRunId` in the BullMQ payload.
+- Remove the temporary deploy dry-run gate only after the worker can update release/deployment state on success and failure.
 
 Definition of done:
 

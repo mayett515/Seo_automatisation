@@ -43,19 +43,19 @@ async function updateJobRun(db: WorkerDb | undefined, job: Job, patch: JobRunSta
     return;
   }
 
-  const jobRunId = jobRunIdFromJobData(job.data);
-  const externalJobId = job.id;
+  const lookup = jobRunLookupFromJob(job);
 
-  if (!jobRunId && !externalJobId) {
+  if (!lookup) {
     return;
   }
 
-  const updatedRows = jobRunId
-    ? await updateJobRunById(db, jobRunId, patch)
-    : await updateJobRunByExternalId(db, externalJobId, job.queueName, patch);
+  const updatedRows =
+    lookup.kind === "id"
+      ? await updateJobRunById(db, lookup.jobRunId, patch)
+      : await updateJobRunByExternalId(db, lookup.externalJobId, lookup.queueName, patch);
 
   if (updatedRows.length === 0) {
-    console.warn(`No job_run row matched worker job ${job.queueName}:${externalJobId ?? "unknown"}`);
+    console.warn(`No job_run row matched worker job ${job.queueName}:${job.id ?? "unknown"}`);
   }
 }
 
@@ -88,6 +88,25 @@ async function updateJobRunByExternalId(
     })
     .where(and(eq(jobRuns.externalJobId, externalJobId), eq(jobRuns.queueName, queueName)))
     .returning({ id: jobRuns.id });
+}
+
+export function jobRunLookupFromJob(
+  job: Pick<Job, "data" | "id" | "queueName">
+):
+  | { kind: "id"; jobRunId: string }
+  | { kind: "external"; externalJobId: string | undefined; queueName: string }
+  | undefined {
+  const jobRunId = jobRunIdFromJobData(job.data);
+
+  if (jobRunId) {
+    return { kind: "id", jobRunId };
+  }
+
+  if (job.id) {
+    return { kind: "external", externalJobId: job.id, queueName: job.queueName };
+  }
+
+  return undefined;
 }
 
 function jobRunIdFromJobData(data: unknown): string | undefined {

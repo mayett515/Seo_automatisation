@@ -15,7 +15,9 @@ CREATE TABLE "release_verification_checks" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "deployments" ADD COLUMN "deployment_key" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "deployments" ADD COLUMN "deployment_key" text;--> statement-breakpoint
+UPDATE "deployments" SET "deployment_key" = 'legacy_' || "id"::text WHERE "deployment_key" IS NULL;--> statement-breakpoint
+ALTER TABLE "deployments" ALTER COLUMN "deployment_key" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "deployments" ADD COLUMN "evidence_json" jsonb;--> statement-breakpoint
 ALTER TABLE "release_verification_checks" ADD CONSTRAINT "release_verification_checks_verification_id_release_verifications_id_fk" FOREIGN KEY ("verification_id") REFERENCES "public"."release_verifications"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "release_verification_checks_verification_idx" ON "release_verification_checks" USING btree ("verification_id");--> statement-breakpoint

@@ -24,7 +24,7 @@ export async function closeWorkerResources(): Promise<void> {
   await sharedDbHandle?.close();
 }
 
-async function routeJob(job: Job): Promise<Record<string, unknown>> {
+export async function routeJob(job: Job): Promise<Record<string, unknown>> {
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
