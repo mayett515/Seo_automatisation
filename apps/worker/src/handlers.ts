@@ -26,7 +26,7 @@ type StoredSearchAnalyticsRow = {
 type JobRunStatusPatch = {
   status: "running" | "completed" | "failed";
   startedAt?: Date;
-  completedAt?: Date;
+  completedAt?: Date | null;
   failureJson?: Record<string, unknown> | null;
 };
 
@@ -100,6 +100,7 @@ async function runGscSync(
     .set({
       status: "running",
       startedAt: new Date(),
+      completedAt: null,
       failureJson: null
     })
     .where(eq(gscSyncRuns.id, syncRun.id));
@@ -160,6 +161,7 @@ async function markJobRunRunning(job: Job): Promise<void> {
   await updateJobRun(job, {
     status: "running",
     startedAt: new Date(),
+    completedAt: null,
     failureJson: null
   });
 }

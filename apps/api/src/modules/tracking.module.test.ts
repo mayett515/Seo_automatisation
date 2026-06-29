@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { BadRequestException } from "@nestjs/common";
+import { CreateTrackingKeyRequestSchema } from "@localseo/contracts";
 import type { DatabaseService } from "../database/database.service.js";
 import {
   hashTrackingKey,
@@ -106,6 +107,13 @@ void describe("tracking ingestion authorization", () => {
     assert.equal(isTrackingOriginAllowed("https://example.test/path", ["https://example.test"]), true);
     assert.equal(isTrackingOriginAllowed("https://evil.test", ["https://example.test"]), false);
     assert.equal(isTrackingOriginAllowed("https://example.test", []), false);
+  });
+
+  void it("accepts only http and https tracking key origins", () => {
+    assert.deepEqual(CreateTrackingKeyRequestSchema.parse({ allowedOrigins: ["https://example.test/path"] }), {
+      allowedOrigins: ["https://example.test"]
+    });
+    assert.throws(() => CreateTrackingKeyRequestSchema.parse({ allowedOrigins: ["ftp://example.test"] }));
   });
 });
 

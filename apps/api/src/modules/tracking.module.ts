@@ -41,8 +41,10 @@ import { RedisService } from "../redis/redis.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 const trackingRateLimitWindowSeconds = 60;
+const trackingRateLimitWindowMs = trackingRateLimitWindowSeconds * 1000;
 const trackingProjectRateLimitMax = 120;
 const trackingIpRateLimitMax = 600;
+const trackingMemoryBucketMax = 10_000;
 const env = parseAppEnv(process.env);
 const localScaffoldTrackingEnabled = allowsLocalScaffoldAuth(env);
 
@@ -214,6 +216,7 @@ export class TrackingService {
 @Injectable()
 class TrackingRateLimitGuard implements CanActivate {
   private readonly memoryBuckets = new Map<string, MemoryRateLimitBucket>();
+  private lastMemoryEvictionAt = 0;
 
   constructor(private readonly redis: RedisService) {}
 
@@ -221,9 +224,14 @@ class TrackingRateLimitGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<FastifyRequest<{ Body: Partial<TrackingEvent> }>>();
     const projectId = typeof request.body?.projectId === "string" ? request.body.projectId : "unknown";
     const ipCount = await this.increment(`track:ip:${request.ip}`);
+
+    if (ipCount > trackingIpRateLimitMax) {
+      throw new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     const projectCount = await this.increment(`track:project:${request.ip}:${projectId}`);
 
-    if (ipCount > trackingIpRateLimitMax || projectCount > trackingProjectRateLimitMax) {
+    if (projectCount > trackingProjectRateLimitMax) {
       throw new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
     }
 
@@ -255,9 +263,13 @@ class TrackingRateLimitGuard implements CanActivate {
     const current = this.memoryBuckets.get(key);
 
     if (!current || current.resetAt <= now) {
+      if (!current && this.memoryBuckets.size >= trackingMemoryBucketMax) {
+        return Number.POSITIVE_INFINITY;
+      }
+
       this.memoryBuckets.set(key, {
         count: 1,
-        resetAt: now + trackingRateLimitWindowSeconds * 1000
+        resetAt: now + trackingRateLimitWindowMs
       });
       return 1;
     }
@@ -267,6 +279,12 @@ class TrackingRateLimitGuard implements CanActivate {
   }
 
   private evictExpiredMemoryBuckets(now: number): void {
+    if (now - this.lastMemoryEvictionAt < trackingRateLimitWindowMs) {
+      return;
+    }
+
+    this.lastMemoryEvictionAt = now;
+
     for (const [key, bucket] of this.memoryBuckets) {
       if (bucket.resetAt <= now) {
         this.memoryBuckets.delete(key);

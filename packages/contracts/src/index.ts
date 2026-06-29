@@ -373,6 +373,10 @@ export const TrackingIngestResultSchema = z.object({
 export const TrackingAllowedOriginSchema = z
   .string()
   .url()
+  .refine((value) => {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  }, "Tracking allowed origins must use http or https.")
   .transform((value) => new URL(value).origin);
 
 export const CreateTrackingKeyRequestSchema = z.object({
@@ -383,7 +387,7 @@ export const TrackingKeySummarySchema = z.object({
   keyId: z.string().min(1),
   projectId: ProjectIdSchema,
   status: z.enum(["active", "revoked"]),
-  allowedOrigins: z.array(z.string().url()),
+  allowedOrigins: z.array(TrackingAllowedOriginSchema),
   createdAt: z.string().datetime(),
   lastUsedAt: z.string().datetime().optional(),
   revokedAt: z.string().datetime().optional()

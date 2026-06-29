@@ -228,19 +228,21 @@ export class ReleasesService {
         throw new BadRequestException("Release preflight must pass before approval.");
       }
 
-      await db
-        .update(releasePlans)
-        .set({
-          status: "approved_for_deploy",
-          approvedAt: new Date(),
-          updatedAt: new Date()
-        })
-        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
-      await db.insert(approvals).values({
-        releasePlanId,
-        userId,
-        status: "approved",
-        decidedAt: new Date()
+      await db.transaction(async (tx) => {
+        await tx
+          .update(releasePlans)
+          .set({
+            status: "approved_for_deploy",
+            approvedAt: new Date(),
+            updatedAt: new Date()
+          })
+          .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+        await tx.insert(approvals).values({
+          releasePlanId,
+          userId,
+          status: "approved",
+          decidedAt: new Date()
+        });
       });
     }
 
@@ -272,7 +274,7 @@ export class ReleasesService {
     const plan = mapReleasePlan(await this.loadReleasePlanForProject(projectId, releasePlanId));
     const checks = await loadReleaseChecks(db, releasePlanId);
 
-    if (checks.length === 0 || !canDeployRelease(plan, checks)) {
+    if (checks.length === 0 || !canDeployRelease(plan, checks) || !(await hasApprovedRelease(db, releasePlanId))) {
       throw new BadRequestException("Release must pass preflight and be approved before deploy.");
     }
 
@@ -828,6 +830,16 @@ async function loadReleaseChecks(db: Db, releasePlanId: string): Promise<Release
       evidence: row.evidenceJson ?? undefined
     })
   );
+}
+
+async function hasApprovedRelease(db: Db, releasePlanId: string): Promise<boolean> {
+  const [approval] = await db
+    .select({ id: approvals.id })
+    .from(approvals)
+    .where(and(eq(approvals.releasePlanId, releasePlanId), eq(approvals.status, "approved")))
+    .limit(1);
+
+  return Boolean(approval);
 }
 
 function mapReleasePlan(plan: typeof releasePlans.$inferSelect): ReleasePlan {
