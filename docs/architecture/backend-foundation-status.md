@@ -1,6 +1,6 @@
 # Backend Foundation Status
 
-Current baseline: after the backend hardening cleanup that followed `e66e1a9` (`Productionize tracking release and worker foundations`).
+Current baseline: after `80bc86c` (`Prepare deploy verification foundation`) and `2bd77d6` (`Harden public tracking limits`).
 
 This page records what the backend foundation now enforces, what is still intentionally incomplete, and where the next serious foundation items sit on the roadmap.
 
@@ -11,7 +11,7 @@ flowchart LR
   Web[React control panel] --> Api[NestJS + Fastify API]
   PublicSite[Customer site tracking script] --> Track[POST /track]
 
-  Track --> TrackingGuard[Rate limit + project key + origin binding]
+  Track --> TrackingGuard[IP/project/key rate limits + project key + origin binding]
   TrackingGuard --> Api
 
   Api --> Auth[Better Auth session]
@@ -41,20 +41,21 @@ How to read this: the API owns request authorization and persistence. The public
 
 ## Finished
 
-| Area                      | Status                      | What is enforced                                                                                                                                                                                 |
-| ------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Auth/session              | Finished foundation         | Better Auth owns sessions, sessions are DB-durable, Fastify mounts `/api/auth/*`, Nest guards consume session context.                                                                           |
-| Tenant authorization      | Finished foundation         | Project access resolves before permissions; owner/admin/editor/viewer roles gate privileged actions.                                                                                             |
-| CSRF                      | Finished foundation         | Unsafe authenticated routes are Origin/Referer guarded outside local/test fallback.                                                                                                              |
-| GSC OAuth                 | Finished foundation         | Signed state, PKCE, Redis `GETDEL` nonce, session re-check, project access re-check, encrypted token storage, safe redirect.                                                                     |
-| DB ownership              | Finished foundation         | API process uses a shared `DatabaseService` and an executable no-rogue-pool guard.                                                                                                               |
-| Redis ownership           | Finished foundation         | API process uses shared error-handled Redis for rate limits/OAuth state/Better Auth secondary storage.                                                                                           |
-| Proxy/rate-limit topology | Finished foundation         | Broad `TRUST_PROXY=true` is rejected in production; Redis-backed rate limits are wired.                                                                                                          |
-| Tracking ingestion        | Finished pre-MVP foundation | Per-project publishable keys, hashed storage, create/list/revoke API, owner/admin management, allowed-origin binding, `/track` IP and project rate limits, explicit dry-run vs persisted result. |
-| Release preflight         | Finished pre-MVP foundation | Preflight reads persisted evidence and fails closed for missing approval, noindex, local SEO blockers, or rollback point. QA warnings and tracking readiness are warning-level.                  |
-| Worker audit lifecycle    | Finished baseline           | Producers create `job_runs` before enqueue, workers prefer `jobRunId` payloads, and jobs mark running, completed, or failed for real BullMQ jobs.                                                |
-| Frontend auth UX          | Finished baseline           | Login/sign-up/sign-out, session gate, credentialed API fetches, explicit local scaffold bypass.                                                                                                  |
-| Mastra slot               | Reserved baseline           | `@localseo/ai` is registered with workflow/agent descriptors, but the product workflows for site planning and creative assembly are not integrated yet.                                          |
+| Area                      | Status                      | What is enforced                                                                                                                                                                                                                     |
+| ------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Auth/session              | Finished foundation         | Better Auth owns sessions, sessions are DB-durable, Fastify mounts `/api/auth/*`, Nest guards consume session context.                                                                                                               |
+| Tenant authorization      | Finished foundation         | Project access resolves before permissions; owner/admin/editor/viewer roles gate privileged actions.                                                                                                                                 |
+| CSRF                      | Finished foundation         | Unsafe authenticated routes are Origin/Referer guarded outside local/test fallback.                                                                                                                                                  |
+| GSC OAuth                 | Finished foundation         | Signed state, PKCE, Redis `GETDEL` nonce, session re-check, project access re-check, encrypted token storage, safe redirect.                                                                                                         |
+| DB ownership              | Finished foundation         | API process uses a shared `DatabaseService` and an executable no-rogue-pool guard.                                                                                                                                                   |
+| Redis ownership           | Finished foundation         | API process uses shared error-handled Redis for rate limits/OAuth state/Better Auth secondary storage.                                                                                                                               |
+| Proxy/rate-limit topology | Finished foundation         | Broad `TRUST_PROXY=true` is rejected in production; Redis-backed rate limits are wired.                                                                                                                                              |
+| Tracking ingestion        | Finished pre-MVP foundation | Per-project publishable keys, hashed storage, create/list/revoke API, owner/admin management, allowed-origin binding, `/track` IP, IP/project, true project, key, and key/project rate limits, explicit dry-run vs persisted result. |
+| Release preflight         | Finished pre-MVP foundation | Preflight reads persisted evidence and fails closed for missing approval, noindex, local SEO blockers, or rollback point. QA warnings and tracking readiness are warning-level.                                                      |
+| Worker audit lifecycle    | Finished baseline           | Producers create `job_runs` before enqueue, workers prefer `jobRunId` payloads, and jobs mark running, completed, or failed for real BullMQ jobs.                                                                                    |
+| Deploy/verify prep        | Finished prep               | `deployments.deployment_key`, deployment evidence JSON, expanded provider-neutral `SiteHostingPort`, and `release_verification_checks` exist for the deterministic deploy/verifier slices.                                           |
+| Frontend auth UX          | Finished baseline           | Login/sign-up/sign-out, session gate, credentialed API fetches, explicit local scaffold bypass.                                                                                                                                      |
+| Mastra slot               | Reserved baseline           | `@localseo/ai` is registered with workflow/agent descriptors, but the product workflows for site planning and creative assembly are not integrated yet.                                                                              |
 
 ## Release Flow State
 
@@ -129,7 +130,7 @@ Required behavior:
 - Parse structured data enough to catch invalid JSON-LD/schema output.
 - Confirm sitemap readiness/publication state when relevant.
 - Confirm tracking script loads where tracking is configured.
-- Persist `release_verifications` and update deployment verification status.
+- Persist `release_verifications`, child `release_verification_checks`, and update deployment verification status.
 - Return `live_healthy`, `live_with_warnings`, or `rollback_recommended` only from real evidence.
 
 Definition of done:
@@ -241,7 +242,7 @@ It is not yet set for production deploys. The two load-bearing missing pieces ar
 
 ## Pattern Mining Checkpoint
 
-A targeted pattern-mining run makes sense now, after the foundation has a concrete shape. The useful research question should be narrow:
+A targeted pattern-mining run was recorded in `.ai-stealer-findings/2026-06-29-backend-deploy-verification-patterns.md`. The useful research question was narrow:
 
 ```text
 How do production TypeScript web apps wire:
@@ -264,4 +265,4 @@ Best sources are likely official docs and close production repos, not broad big-
 - public ingestion keys or webhook-style trust boundaries.
 - AI/agent proposal workflows separated from deterministic execution.
 
-The goal is not to reopen product decisions. The goal is to validate the remaining foundation items before implementing deploy, verification, and the Mastra proposal pipeline.
+The goal was not to reopen product decisions. The goal was to validate the remaining foundation items before implementing deploy, verification, and the Mastra proposal pipeline.
