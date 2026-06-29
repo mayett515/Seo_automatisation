@@ -1,9 +1,15 @@
 import { createDatabaseClient } from "@localseo/db";
 import { parseAppEnv } from "@localseo/config";
 import type { Job } from "bullmq";
-import { handleDeployJob } from "./handlers/deploy.js";
+import { DeployConfigurationError, DeployEvidenceError, handleDeployJob } from "./handlers/deploy.js";
 import { handleGscSyncJob } from "./handlers/gsc-sync.js";
-import { markJobRunCompleted, markJobRunFailed, markJobRunRunning } from "./job-run.js";
+import {
+  isFinalJobAttempt,
+  markJobRunCompleted,
+  markJobRunFailed,
+  markJobRunRetrying,
+  markJobRunRunning
+} from "./job-run.js";
 
 const env = parseAppEnv(process.env);
 const sharedDbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
@@ -16,7 +22,12 @@ export async function handleJob(job: Job): Promise<Record<string, unknown>> {
     await markJobRunCompleted(sharedDbHandle?.db, job);
     return result;
   } catch (error) {
-    await markJobRunFailed(sharedDbHandle?.db, job, error);
+    if (isFinalJobAttempt(job) || isTerminalWorkerError(error)) {
+      await markJobRunFailed(sharedDbHandle?.db, job, error);
+    } else {
+      await markJobRunRetrying(sharedDbHandle?.db, job, error);
+    }
+
     throw error;
   }
 }
@@ -38,3 +49,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 }
 
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
+
+export function isTerminalWorkerError(error: unknown): boolean {
+  return error instanceof DeployConfigurationError || error instanceof DeployEvidenceError;
+}

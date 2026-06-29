@@ -6,7 +6,7 @@ export type WorkerDbHandle = ReturnType<typeof createDatabaseClient>;
 export type WorkerDb = WorkerDbHandle["db"];
 
 type JobRunStatusPatch = {
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "retrying";
   startedAt?: Date;
   completedAt?: Date | null;
   failureJson?: Record<string, unknown> | null;
@@ -32,6 +32,16 @@ export async function markJobRunFailed(db: WorkerDb | undefined, job: Job, error
   await updateJobRun(db, job, {
     status: "failed",
     completedAt: new Date(),
+    failureJson: {
+      message: normalizeJobFailureMessage(error)
+    }
+  });
+}
+
+export async function markJobRunRetrying(db: WorkerDb | undefined, job: Job, error: unknown): Promise<void> {
+  await updateJobRun(db, job, {
+    status: "retrying",
+    completedAt: null,
     failureJson: {
       message: normalizeJobFailureMessage(error)
     }
@@ -120,4 +130,9 @@ function jobRunIdFromJobData(data: unknown): string | undefined {
 
 function normalizeJobFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unknown_worker_failure";
+}
+
+export function isFinalJobAttempt(job: Pick<Job, "attemptsMade" | "opts">): boolean {
+  const attempts = typeof job.opts.attempts === "number" ? job.opts.attempts : 1;
+  return job.attemptsMade + 1 >= attempts;
 }

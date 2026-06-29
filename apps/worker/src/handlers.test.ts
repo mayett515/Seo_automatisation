@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { GscSearchAnalyticsRow } from "@localseo/contracts";
 import type { Job } from "bullmq";
-import { classifyOpportunitySignals, parseGscSyncJobData, routeJob } from "./handlers.js";
+import { DeployConfigurationError, DeployEvidenceError } from "./handlers/deploy.js";
+import { classifyOpportunitySignals, isTerminalWorkerError, parseGscSyncJobData, routeJob } from "./handlers.js";
 
 void describe("parseGscSyncJobData", () => {
   void it("accepts valid GSC sync job data", () => {
@@ -100,6 +101,14 @@ void describe("routeJob", () => {
       } as Job),
       /Worker job is not implemented: seo-qa:score/u
     );
+  });
+});
+
+void describe("isTerminalWorkerError", () => {
+  void it("treats deploy configuration and evidence errors as terminal worker failures", () => {
+    assert.equal(isTerminalWorkerError(new DeployConfigurationError("missing adapter")), true);
+    assert.equal(isTerminalWorkerError(new DeployEvidenceError("not deployable")), true);
+    assert.equal(isTerminalWorkerError(new Error("provider timeout")), false);
   });
 });
 

@@ -22,7 +22,7 @@ export type DeployReleaseInput = {
 
 export type DeployReleaseResult =
   | {
-      status: "created";
+      status: "ready";
       providerDeployId: string;
       liveUrls: string[];
       evidence?: Record<string, unknown>;

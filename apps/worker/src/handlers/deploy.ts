@@ -11,8 +11,8 @@ import {
 import { buildReleaseDeploymentKey, canDeployRelease } from "@localseo/domain";
 import { approvals, deployments, releaseChecks, releasePlanItems, releasePlans, rollbackPoints } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq } from "drizzle-orm";
-import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
+import { and, eq, inArray } from "drizzle-orm";
+import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 export type DeploymentRow = typeof deployments.$inferSelect;
 export type ReleasePlanRow = typeof releasePlans.$inferSelect;
@@ -35,7 +35,7 @@ export type DeployRepository = {
   }): Promise<DeploymentRow>;
   markProviderSucceeded(input: {
     data: DeployJobData;
-    result: Extract<DeployReleaseResult, { status: "created" }>;
+    result: Extract<DeployReleaseResult, { status: "ready" }>;
     evidence: Record<string, unknown>;
   }): Promise<DeploymentRow>;
   markReleaseLive(data: DeployJobData): Promise<void>;
@@ -52,7 +52,11 @@ const successfulDeploymentStatuses = new Set<DeploymentStatus>([
 
 const defaultSiteHosting = new NotConfiguredSiteHostingAdapter();
 
-class ProviderDeployPendingError extends Error {}
+export class DeployConfigurationError extends Error {}
+
+export class DeployEvidenceError extends Error {}
+
+export class ProviderDeployPendingError extends Error {}
 
 export async function handleDeployJob(
   job: Job,
@@ -67,6 +71,7 @@ export async function handleDeployJob(
 
   return executeDeploy({
     data,
+    isFinalAttempt: isFinalJobAttempt(job),
     jobId: job.id ?? data.deploymentKey,
     repository: createDrizzleDeployRepository(dbHandle.db),
     siteHosting
@@ -75,10 +80,13 @@ export async function handleDeployJob(
 
 export async function executeDeploy(input: {
   data: DeployJobData;
+  isFinalAttempt?: boolean;
   jobId: string;
   repository: DeployRepository;
   siteHosting: SiteHostingPort;
 }): Promise<Record<string, unknown>> {
+  const isFinalAttempt = input.isFinalAttempt ?? true;
+
   try {
     const context = await input.repository.loadContext(input.data);
 
@@ -102,7 +110,7 @@ export async function executeDeploy(input: {
     }
 
     if (existingDeployment?.providerDeployId) {
-      return reconcileExistingProviderDeploy({
+      return await reconcileExistingProviderDeploy({
         data: input.data,
         deployment: existingDeployment,
         jobId: input.jobId,
@@ -121,7 +129,7 @@ export async function executeDeploy(input: {
       context.rollbackPointCount === 0 ||
       !canDeployRelease(deployablePlan, context.checks)
     ) {
-      throw new Error("Release is not deployable from persisted worker evidence");
+      throw new DeployEvidenceError("Release is not deployable from persisted worker evidence");
     }
 
     const evidence = buildDeployEvidence(context);
@@ -130,6 +138,29 @@ export async function executeDeploy(input: {
       context,
       evidence
     });
+
+    if (isSuccessfulDeployment(deployment)) {
+      await input.repository.markReleaseLive(input.data);
+      return {
+        jobId: input.jobId,
+        projectId: input.data.projectId,
+        releasePlanId: input.data.releasePlanId,
+        deploymentId: deployment.id,
+        deploymentKey: deployment.deploymentKey,
+        providerDeployId: deployment.providerDeployId ?? undefined,
+        status: "already_deployed"
+      };
+    }
+
+    if (deployment.providerDeployId) {
+      return await reconcileExistingProviderDeploy({
+        data: input.data,
+        deployment,
+        jobId: input.jobId,
+        repository: input.repository,
+        siteHosting: input.siteHosting
+      });
+    }
 
     const result = await input.siteHosting.createDeploy({
       projectId: input.data.projectId,
@@ -141,7 +172,7 @@ export async function executeDeploy(input: {
     });
 
     if (result.status === "not_configured") {
-      throw new Error(result.message);
+      throw new DeployConfigurationError(result.message);
     }
 
     const updatedDeployment = await input.repository.markProviderSucceeded({
@@ -162,7 +193,7 @@ export async function executeDeploy(input: {
       startedDeploymentId: deployment.id
     };
   } catch (error) {
-    if (!(error instanceof ProviderDeployPendingError)) {
+    if (shouldMarkDeployFailed(error, isFinalAttempt)) {
       await input.repository.markFailed(input.data, error);
     }
 
@@ -251,22 +282,35 @@ function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
             evidenceJson: input.evidence,
             updatedAt: new Date()
           })
-          .where(eq(deployments.deploymentKey, input.data.deploymentKey))
+          .where(
+            and(
+              eq(deployments.deploymentKey, input.data.deploymentKey),
+              inArray(deployments.status, ["pending", "deploying"])
+            )
+          )
           .returning();
 
-        if (!deployment) {
+        const [currentDeployment] = deployment
+          ? [deployment]
+          : await tx.select().from(deployments).where(eq(deployments.deploymentKey, input.data.deploymentKey)).limit(1);
+
+        if (!currentDeployment) {
           throw new Error("Failed to create deployment ledger row");
         }
 
-        await tx
-          .update(releasePlans)
-          .set({
-            status: "deploying",
-            updatedAt: new Date()
-          })
-          .where(and(eq(releasePlans.id, input.data.releasePlanId), eq(releasePlans.projectId, input.data.projectId)));
+        if (!isSuccessfulDeployment(currentDeployment)) {
+          await tx
+            .update(releasePlans)
+            .set({
+              status: "deploying",
+              updatedAt: new Date()
+            })
+            .where(
+              and(eq(releasePlans.id, input.data.releasePlanId), eq(releasePlans.projectId, input.data.projectId))
+            );
+        }
 
-        return deployment;
+        return currentDeployment;
       });
     },
 
@@ -313,6 +357,7 @@ function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         .update(releasePlans)
         .set({
           status: "live",
+          deployedAt: new Date(),
           updatedAt: new Date()
         })
         .where(and(eq(releasePlans.id, data.releasePlanId), eq(releasePlans.projectId, data.projectId)));
@@ -366,7 +411,7 @@ async function reconcileExistingProviderDeploy(input: {
     const deployment = await input.repository.markProviderSucceeded({
       data: input.data,
       result: {
-        status: "created",
+        status: "ready",
         providerDeployId: snapshot.providerDeployId,
         liveUrls: snapshot.liveUrls,
         evidence: snapshot.evidence
@@ -444,4 +489,12 @@ function isSuccessfulDeployment(deployment: DeploymentRow): boolean {
 
 function normalizeFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "deploy_worker_failed";
+}
+
+function shouldMarkDeployFailed(error: unknown, isFinalAttempt: boolean): boolean {
+  if (error instanceof DeployConfigurationError || error instanceof DeployEvidenceError) {
+    return true;
+  }
+
+  return isFinalAttempt;
 }

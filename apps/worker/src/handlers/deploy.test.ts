@@ -57,7 +57,7 @@ void describe("executeDeploy", () => {
       jobId: data.deploymentKey,
       repository,
       siteHosting: createSiteHosting({
-        status: "created",
+        status: "ready",
         providerDeployId: "provider-deploy-1",
         liveUrls: ["https://example.test/"]
       })
@@ -86,6 +86,46 @@ void describe("executeDeploy", () => {
         })
       }),
       /Site hosting is not configured/u
+    );
+
+    assert.equal(repository.started.length, 1);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.failed.length, 1);
+  });
+
+  void it("keeps transient provider failures retriable before the final attempt", async () => {
+    const data = deployJobData();
+    const repository = createRepository();
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        isFinalAttempt: false,
+        jobId: data.deploymentKey,
+        repository,
+        siteHosting: createSiteHosting(new Error("provider timeout"))
+      }),
+      /provider timeout/u
+    );
+
+    assert.equal(repository.started.length, 1);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.failed.length, 0);
+  });
+
+  void it("marks transient provider failures failed on the final attempt", async () => {
+    const data = deployJobData();
+    const repository = createRepository();
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        isFinalAttempt: true,
+        jobId: data.deploymentKey,
+        repository,
+        siteHosting: createSiteHosting(new Error("provider timeout"))
+      }),
+      /provider timeout/u
     );
 
     assert.equal(repository.started.length, 1);
@@ -156,6 +196,7 @@ void describe("executeDeploy", () => {
     await assert.rejects(
       executeDeploy({
         data,
+        isFinalAttempt: false,
         jobId: data.deploymentKey,
         repository,
         siteHosting: createSiteHosting(new Error("provider should not create another deploy"), {
@@ -170,6 +211,37 @@ void describe("executeDeploy", () => {
     assert.equal(repository.started.length, 0);
     assert.equal(repository.providerSucceeded.length, 0);
     assert.equal(repository.failed.length, 0);
+  });
+
+  void it("marks pending provider deploys failed after the final attempt", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        existingDeployment: deploymentRow({
+          status: "deploying",
+          providerDeployId: "provider-deploy-1"
+        })
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        isFinalAttempt: true,
+        jobId: data.deploymentKey,
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not create another deploy"), {
+          providerDeployId: "provider-deploy-1",
+          status: "deploying",
+          liveUrls: []
+        })
+      }),
+      /Provider deploy is still deploying/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.failed.length, 1);
   });
 
   void it("fails when persisted worker evidence is no longer deployable", async () => {
@@ -192,6 +264,28 @@ void describe("executeDeploy", () => {
 
     assert.equal(repository.started.length, 0);
     assert.equal(repository.failed.length, 1);
+  });
+
+  void it("replays a deployment row that became successful during start without creating another provider deploy", async () => {
+    const data = deployJobData();
+    const repository = createRepository(deployContext(), {
+      startDeploymentResult: deploymentRow({
+        status: "provider_succeeded",
+        providerDeployId: "provider-deploy-1"
+      })
+    });
+
+    const result = await executeDeploy({
+      data,
+      jobId: data.deploymentKey,
+      repository,
+      siteHosting: createSiteHosting(new Error("provider should not be called"))
+    });
+
+    assert.equal(result.status, "already_deployed");
+    assert.equal(repository.started.length, 1);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.releaseLiveCount, 1);
   });
 });
 
@@ -274,7 +368,10 @@ function releaseCheck(input: Pick<ReleaseCheck, "severity" | "result">): Release
   };
 }
 
-function createRepository(context: DeployContext = deployContext()): DeployRepository & {
+function createRepository(
+  context: DeployContext = deployContext(),
+  options: { startDeploymentResult?: DeploymentRow } = {}
+): DeployRepository & {
   started: unknown[];
   providerSucceeded: unknown[];
   failed: unknown[];
@@ -297,7 +394,7 @@ function createRepository(context: DeployContext = deployContext()): DeployRepos
     loadContext: () => Promise.resolve(context),
     startDeployment: (input) => {
       calls.started.push(input);
-      return Promise.resolve(deploymentRow());
+      return Promise.resolve(options.startDeploymentResult ?? deploymentRow());
     },
     markProviderSucceeded: (input) => {
       calls.providerSucceeded.push(input);
