@@ -18,6 +18,7 @@ const env = parseAppEnv(process.env);
 
 type DbHandle = ReturnType<typeof createDatabaseClient>;
 type Db = DbHandle["db"];
+type GscSyncWriteDb = Pick<Db, "delete" | "insert">;
 type StoredSearchAnalyticsRow = {
   rowId: string;
   row: GscSearchAnalyticsRow;
@@ -103,8 +104,6 @@ async function runGscSync(
     })
     .where(eq(gscSyncRuns.id, syncRun.id));
 
-  await resetSyncRunData(db, syncRun.id);
-
   const refreshToken = tokenCipher.decrypt(connection.encryptedRefreshToken);
   const tokenSet = await searchConsole.refreshAccessToken({ refreshToken });
   const rows = await searchConsole.querySearchAnalytics({
@@ -119,8 +118,12 @@ async function runGscSync(
     rowLimit: 25000
   });
 
-  const storedRows = await insertSearchAnalyticsRows(db, syncRun.id, rows);
-  await insertOpportunitySignals(db, syncRun.id, storedRows);
+  const storedRows = await db.transaction(async (tx) => {
+    await resetSyncRunData(tx, syncRun.id);
+    const insertedRows = await insertSearchAnalyticsRows(tx, syncRun.id, rows);
+    await insertOpportunitySignals(tx, syncRun.id, insertedRows);
+    return insertedRows;
+  });
 
   await db
     .update(gscSyncRuns)
@@ -179,26 +182,67 @@ async function markJobRunFailed(job: Job, error: unknown): Promise<void> {
 }
 
 async function updateJobRun(job: Job, patch: JobRunStatusPatch): Promise<void> {
-  if (!sharedDbHandle || !job.id) {
+  if (!sharedDbHandle) {
     return;
   }
 
-  await sharedDbHandle.db
+  const jobRunId = jobRunIdFromJobData(job.data);
+  const externalJobId = job.id;
+
+  if (!jobRunId && !externalJobId) {
+    return;
+  }
+
+  const updatedRows = jobRunId
+    ? await updateJobRunById(jobRunId, patch)
+    : await updateJobRunByExternalId(externalJobId, job.queueName, patch);
+
+  if (updatedRows.length === 0) {
+    console.warn(`No job_run row matched worker job ${job.queueName}:${externalJobId ?? "unknown"}`);
+  }
+}
+
+async function updateJobRunById(jobRunId: string, patch: JobRunStatusPatch): Promise<{ id: string }[]> {
+  if (!sharedDbHandle) {
+    return [];
+  }
+
+  return sharedDbHandle.db
     .update(jobRuns)
     .set({
       ...patch,
       updatedAt: new Date()
     })
-    .where(and(eq(jobRuns.externalJobId, job.id), eq(jobRuns.queueName, job.queueName)));
+    .where(eq(jobRuns.id, jobRunId))
+    .returning({ id: jobRuns.id });
 }
 
-async function resetSyncRunData(db: Db, syncRunId: string): Promise<void> {
+async function updateJobRunByExternalId(
+  externalJobId: string | undefined,
+  queueName: string,
+  patch: JobRunStatusPatch
+): Promise<{ id: string }[]> {
+  if (!sharedDbHandle || !externalJobId) {
+    return [];
+  }
+
+  return sharedDbHandle.db
+    .update(jobRuns)
+    .set({
+      ...patch,
+      updatedAt: new Date()
+    })
+    .where(and(eq(jobRuns.externalJobId, externalJobId), eq(jobRuns.queueName, queueName)))
+    .returning({ id: jobRuns.id });
+}
+
+async function resetSyncRunData(db: GscSyncWriteDb, syncRunId: string): Promise<void> {
   await db.delete(gscOpportunitySignals).where(eq(gscOpportunitySignals.syncRunId, syncRunId));
   await db.delete(gscSearchAnalyticsRows).where(eq(gscSearchAnalyticsRows.syncRunId, syncRunId));
 }
 
 async function insertSearchAnalyticsRows(
-  db: Db,
+  db: GscSyncWriteDb,
   syncRunId: string,
   rows: GscSearchAnalyticsRow[]
 ): Promise<StoredSearchAnalyticsRow[]> {
@@ -227,7 +271,11 @@ async function insertSearchAnalyticsRows(
   return storedRows;
 }
 
-async function insertOpportunitySignals(db: Db, syncRunId: string, rows: StoredSearchAnalyticsRow[]): Promise<void> {
+async function insertOpportunitySignals(
+  db: GscSyncWriteDb,
+  syncRunId: string,
+  rows: StoredSearchAnalyticsRow[]
+): Promise<void> {
   const signals = rows.flatMap((stored) =>
     classifyOpportunitySignals(stored.row).map((signalType) => ({
       projectId: stored.row.projectId,
@@ -373,6 +421,7 @@ function normalizeJobFailureMessage(error: unknown): string {
 export function parseGscSyncJobData(data: unknown): {
   projectId: string;
   syncRunId: string;
+  jobRunId?: string;
   triggeredByUserId?: string;
   triggerSource?: string;
 } {
@@ -393,9 +442,19 @@ export function parseGscSyncJobData(data: unknown): {
 
   return {
     ...parsed,
+    ...(typeof record.jobRunId === "string" ? { jobRunId: record.jobRunId } : {}),
     ...(typeof record.triggeredByUserId === "string" ? { triggeredByUserId: record.triggeredByUserId } : {}),
     ...(typeof record.triggerSource === "string" ? { triggerSource: record.triggerSource } : {})
   };
+}
+
+function jobRunIdFromJobData(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+
+  const value = (data as Record<string, unknown>).jobRunId;
+  return typeof value === "string" ? value : undefined;
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {

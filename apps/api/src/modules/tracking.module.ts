@@ -41,7 +41,8 @@ import { RedisService } from "../redis/redis.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 const trackingRateLimitWindowSeconds = 60;
-const trackingRateLimitMax = 120;
+const trackingProjectRateLimitMax = 120;
+const trackingIpRateLimitMax = 600;
 const env = parseAppEnv(process.env);
 const localScaffoldTrackingEnabled = allowsLocalScaffoldAuth(env);
 
@@ -139,6 +140,10 @@ export class TrackingService {
   }
 
   async revokeKey(projectId: string, keyId: string): Promise<TrackingKeySummary> {
+    if (!isUuid(keyId)) {
+      throw new BadRequestException("Tracking key id must be a UUID.");
+    }
+
     const db = this.database.requireDb();
     const [row] = await db
       .update(projectTrackingKeys)
@@ -215,10 +220,10 @@ class TrackingRateLimitGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<FastifyRequest<{ Body: Partial<TrackingEvent> }>>();
     const projectId = typeof request.body?.projectId === "string" ? request.body.projectId : "unknown";
-    const key = `track:${request.ip}:${projectId}`;
-    const count = await this.increment(key);
+    const ipCount = await this.increment(`track:ip:${request.ip}`);
+    const projectCount = await this.increment(`track:project:${request.ip}:${projectId}`);
 
-    if (count > trackingRateLimitMax) {
+    if (ipCount > trackingIpRateLimitMax || projectCount > trackingProjectRateLimitMax) {
       throw new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
     }
 
@@ -246,6 +251,7 @@ class TrackingRateLimitGuard implements CanActivate {
 
   private incrementInMemory(key: string): number {
     const now = Date.now();
+    this.evictExpiredMemoryBuckets(now);
     const current = this.memoryBuckets.get(key);
 
     if (!current || current.resetAt <= now) {
@@ -258,6 +264,14 @@ class TrackingRateLimitGuard implements CanActivate {
 
     current.count += 1;
     return current.count;
+  }
+
+  private evictExpiredMemoryBuckets(now: number): void {
+    for (const [key, bucket] of this.memoryBuckets) {
+      if (bucket.resetAt <= now) {
+        this.memoryBuckets.delete(key);
+      }
+    }
   }
 }
 

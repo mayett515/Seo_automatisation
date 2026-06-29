@@ -66,8 +66,10 @@ export type ReleasePreflightPageEvidence = {
 export type ReleasePreflightEvidence = {
   pages: ReleasePreflightPageEvidence[];
   rollbackPointCount: number;
-  activeTrackingKeyCount: number;
+  usableTrackingKeyCount: number;
 };
+
+const approvableReleaseStatuses = new Set<ReleasePlan["status"]>(["ready", "ready_with_warnings"]);
 
 @Injectable()
 export class ReleasesService {
@@ -78,13 +80,14 @@ export class ReleasesService {
 
   async createPlan(projectId: string, body: unknown): Promise<ReleasePlan> {
     const input = CreateReleasePlanRequestSchema.parse(body ?? {});
+    const requestedPageVersionIds = [...new Set(input.pageVersionIds)];
     const releasePlanId = randomUUID();
     const plan = ReleasePlanSchema.parse({
       releasePlanId,
       projectId,
       status: "draft",
       riskLevel: "low",
-      blockerCount: input.pageVersionIds.length === 0 ? 1 : 0,
+      blockerCount: requestedPageVersionIds.length === 0 ? 1 : 0,
       warningCount: 0
     });
 
@@ -94,45 +97,57 @@ export class ReleasesService {
       return plan;
     }
 
-    const [insertedPlan] = await db
-      .insert(releasePlans)
-      .values({
-        id: releasePlanId,
-        projectId,
-        status: "draft",
-        summary: `Release plan for ${input.pageVersionIds.length} page version(s).`,
-        riskLevel: "low",
-        blockerCount: plan.blockerCount,
-        warningCount: 0
-      })
-      .returning();
-
-    if (!insertedPlan) {
-      throw new Error("Failed to persist release plan");
+    if (requestedPageVersionIds.some((pageVersionId) => !isPersistedId(pageVersionId))) {
+      throw new BadRequestException("Release page version ids must be UUIDs.");
     }
 
-    if (input.pageVersionIds.length > 0) {
-      const rows = await db
+    const insertedPlan = await db.transaction(async (tx) => {
+      const [createdPlan] = await tx
+        .insert(releasePlans)
+        .values({
+          id: releasePlanId,
+          projectId,
+          status: "draft",
+          summary: `Release plan for ${requestedPageVersionIds.length} page version(s).`,
+          riskLevel: "low",
+          blockerCount: plan.blockerCount,
+          warningCount: 0
+        })
+        .returning();
+
+      if (!createdPlan) {
+        throw new Error("Failed to persist release plan");
+      }
+
+      if (requestedPageVersionIds.length === 0) {
+        return createdPlan;
+      }
+
+      const rows = await tx
         .select({
           pageVersionId: pageVersions.id,
           targetUrl: pageProposals.route
         })
         .from(pageVersions)
         .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-        .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, input.pageVersionIds)));
+        .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, requestedPageVersionIds)));
 
-      if (rows.length > 0) {
-        await db.insert(releasePlanItems).values(
-          rows.map((row) => ({
-            releasePlanId,
-            pageVersionId: row.pageVersionId,
-            targetUrl: row.targetUrl,
-            action: "create",
-            status: "pending"
-          }))
-        );
+      if (rows.length !== requestedPageVersionIds.length) {
+        throw new BadRequestException("Every release page version must belong to this project.");
       }
-    }
+
+      await tx.insert(releasePlanItems).values(
+        rows.map((row) => ({
+          releasePlanId,
+          pageVersionId: row.pageVersionId,
+          targetUrl: row.targetUrl,
+          action: "create",
+          status: "pending"
+        }))
+      );
+
+      return createdPlan;
+    });
 
     return mapReleasePlan(insertedPlan);
   }
@@ -169,7 +184,7 @@ export class ReleasesService {
         : {
             pages: [],
             rollbackPointCount: 0,
-            activeTrackingKeyCount: 0
+            usableTrackingKeyCount: 0
           };
     const checks = buildReleasePreflightChecks(evidence);
     const readiness = decideReleaseReadiness(checks);
@@ -201,6 +216,12 @@ export class ReleasesService {
     const db = this.database.db;
 
     if (db && isPersistedId(releasePlanId)) {
+      const plan = await this.loadReleasePlanForProject(projectId, releasePlanId);
+
+      if (!approvableReleaseStatuses.has(plan.status)) {
+        throw new BadRequestException("Release plan is not in an approvable state.");
+      }
+
       const checks = await loadReleaseChecks(db, releasePlanId);
 
       if (checks.length === 0 || decideReleaseReadiness(checks).kind === "blocked") {
@@ -569,7 +590,10 @@ async function loadReleasePreflightEvidence(
     .from(rollbackPoints)
     .where(and(eq(rollbackPoints.projectId, projectId), eq(rollbackPoints.releasePlanId, releasePlanId)));
   const activeTrackingKeyRows = await db
-    .select({ id: projectTrackingKeys.id })
+    .select({
+      id: projectTrackingKeys.id,
+      allowedOrigins: projectTrackingKeys.allowedOrigins
+    })
     .from(projectTrackingKeys)
     .where(
       and(
@@ -589,7 +613,7 @@ async function loadReleasePreflightEvidence(
       uniquenessRationale: row.uniquenessRationale ?? null
     })),
     rollbackPointCount: rollbackRows.length,
-    activeTrackingKeyCount: activeTrackingKeyRows.length
+    usableTrackingKeyCount: activeTrackingKeyRows.filter((row) => hasUsableTrackingOrigins(row.allowedOrigins)).length
   };
 }
 
@@ -606,6 +630,13 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
       pageVersionId: page.pageVersionId,
       targetUrl: page.targetUrl,
       blocker
+    }))
+  );
+  const qaWarnings = pageQaResults.flatMap((page) =>
+    page.result.warnings.map((warning) => ({
+      pageVersionId: page.pageVersionId,
+      targetUrl: page.targetUrl,
+      warning
     }))
   );
   const pageCount = evidence.pages.length;
@@ -670,16 +701,31 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
       }
     }),
     ReleaseCheckSchema.parse({
+      checkKey: "local_seo_page_quality_warning",
+      scope: "page",
+      severity: "warning",
+      result: qaWarnings.length === 0 ? "passed" : "failed",
+      message:
+        qaWarnings.length === 0
+          ? "Local SEO page quality gate has no warnings."
+          : "Local SEO page quality gate has warnings to review before deploy.",
+      evidence: {
+        pageCount,
+        warningCount: qaWarnings.length,
+        warnings: qaWarnings
+      }
+    }),
+    ReleaseCheckSchema.parse({
       checkKey: "tracking_key_ready",
       scope: "tracking",
       severity: "warning",
-      result: evidence.activeTrackingKeyCount > 0 ? "passed" : "failed",
+      result: evidence.usableTrackingKeyCount > 0 ? "passed" : "failed",
       message:
-        evidence.activeTrackingKeyCount > 0
-          ? "At least one active project tracking key exists."
-          : "No active project tracking key exists; post-deploy tracking verification may be incomplete.",
+        evidence.usableTrackingKeyCount > 0
+          ? "At least one active project tracking key has allowed origins."
+          : "No active project tracking key with allowed origins exists; post-deploy tracking verification may be incomplete.",
       evidence: {
-        activeTrackingKeyCount: evidence.activeTrackingKeyCount
+        usableTrackingKeyCount: evidence.usableTrackingKeyCount
       }
     })
   ];
@@ -722,6 +768,17 @@ function hasNoindexEvidence(pageJson: Record<string, unknown> | null): boolean {
   return (
     booleanFlag(value, ["noindex", "previewNoindex", "stagingNoindex"]) || robots.toLowerCase().includes("noindex")
   );
+}
+
+function hasUsableTrackingOrigins(allowedOrigins: string[]): boolean {
+  return allowedOrigins.some((origin) => {
+    try {
+      const parsed = new URL(origin);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

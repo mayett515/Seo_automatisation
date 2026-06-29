@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { Global, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import { jobRuns } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
+import { eq } from "drizzle-orm";
 import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
@@ -53,17 +55,30 @@ export class QueueProducerService implements OnModuleDestroy {
       return false;
     }
 
-    await queue.add(input.jobName, input.data, {
-      jobId: input.jobId,
-      attempts: 3,
-      backoff: {
-        type: "exponential",
-        delay: 1000
-      },
-      ...input.options
-    });
+    const jobRunId = await this.recordJobRun(input, "queued");
 
-    await this.recordJobRun(input, "queued");
+    try {
+      await queue.add(
+        input.jobName,
+        {
+          ...input.data,
+          ...(jobRunId ? { jobRunId } : {})
+        },
+        {
+          jobId: input.jobId,
+          attempts: 3,
+          backoff: {
+            type: "exponential",
+            delay: 1000
+          },
+          ...input.options
+        }
+      );
+    } catch (error) {
+      await this.markJobRunFailed(jobRunId, error);
+      throw error;
+    }
+
     return true;
   }
 
@@ -71,14 +86,16 @@ export class QueueProducerService implements OnModuleDestroy {
     await Promise.all(Object.values(this.queues).map((queue) => queue.close()));
   }
 
-  private async recordJobRun(input: EnqueueInput, status: "queued" | "dry_run"): Promise<void> {
+  private async recordJobRun(input: EnqueueInput, status: "queued" | "dry_run"): Promise<string | undefined> {
     const db = this.database.db;
 
     if (!db || !input.audit) {
-      return;
+      return undefined;
     }
 
+    const jobRunId = randomUUID();
     await db.insert(jobRuns).values({
+      id: jobRunId,
       projectId: input.audit.projectId,
       leadId: input.audit.leadId,
       externalJobId: input.jobId,
@@ -90,7 +107,33 @@ export class QueueProducerService implements OnModuleDestroy {
       actorUserId: input.audit.actorUserId,
       triggerSource: input.audit.triggerSource
     });
+
+    return jobRunId;
   }
+
+  private async markJobRunFailed(jobRunId: string | undefined, error: unknown): Promise<void> {
+    const db = this.database.db;
+
+    if (!db || !jobRunId) {
+      return;
+    }
+
+    await db
+      .update(jobRuns)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+        failureJson: {
+          message: normalizeQueueFailureMessage(error)
+        }
+      })
+      .where(eq(jobRuns.id, jobRunId));
+  }
+}
+
+function normalizeQueueFailureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "queue_add_failed";
 }
 
 @Global()

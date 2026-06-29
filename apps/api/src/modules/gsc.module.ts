@@ -360,6 +360,7 @@ class GscService implements OnModuleDestroy {
     }
 
     const jobId = randomUUID();
+    const jobRunId = randomUUID();
     const job = QueueJobSchema.parse({
       jobId,
       projectId,
@@ -370,24 +371,8 @@ class GscService implements OnModuleDestroy {
       createdAt: new Date().toISOString()
     });
 
-    await this.gscQueue.add(
-      "gsc_sync",
-      {
-        projectId,
-        syncRunId: syncRun.id,
-        triggeredByUserId: userId ?? null,
-        triggerSource: "user_action"
-      },
-      {
-        jobId,
-        attempts: 5,
-        backoff: {
-          type: "exponential",
-          delay: 1000
-        }
-      }
-    );
     await db.insert(jobRuns).values({
+      id: jobRunId,
       projectId,
       externalJobId: jobId,
       queueName: "gsc-sync",
@@ -398,6 +383,51 @@ class GscService implements OnModuleDestroy {
       actorUserId: userId,
       triggerSource: "user_action"
     });
+
+    try {
+      await this.gscQueue.add(
+        "gsc_sync",
+        {
+          projectId,
+          syncRunId: syncRun.id,
+          jobRunId,
+          triggeredByUserId: userId ?? null,
+          triggerSource: "user_action"
+        },
+        {
+          jobId,
+          attempts: 5,
+          backoff: {
+            type: "exponential",
+            delay: 1000
+          }
+        }
+      );
+    } catch (error) {
+      await db
+        .update(jobRuns)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          updatedAt: new Date(),
+          failureJson: {
+            message: error instanceof Error ? error.message : "gsc_queue_add_failed"
+          }
+        })
+        .where(eq(jobRuns.id, jobRunId));
+      await db
+        .update(gscSyncRuns)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          updatedAt: new Date(),
+          failureJson: {
+            message: "gsc_queue_add_failed"
+          }
+        })
+        .where(eq(gscSyncRuns.id, syncRun.id));
+      throw error;
+    }
 
     return job;
   }

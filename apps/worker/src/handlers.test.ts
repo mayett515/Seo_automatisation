@@ -22,12 +22,14 @@ void describe("parseGscSyncJobData", () => {
       parseGscSyncJobData({
         projectId: "project-1",
         syncRunId: "sync-1",
+        jobRunId: "job-run-1",
         triggeredByUserId: "user-1",
         triggerSource: "user_action"
       }),
       {
         projectId: "project-1",
         syncRunId: "sync-1",
+        jobRunId: "job-run-1",
         triggeredByUserId: "user-1",
         triggerSource: "user_action"
       }
