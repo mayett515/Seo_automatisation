@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { decideReleaseReadiness } from "@localseo/domain";
-import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "./releases.module.js";
+import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "@localseo/seo";
 
 void describe("buildReleasePreflightChecks", () => {
   void it("blocks release approval when persisted evidence is missing", () => {

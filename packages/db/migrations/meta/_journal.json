@@ -64,6 +64,13 @@
       "when": 1782587954017,
       "tag": "0008_unknown_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782738108162,
+      "tag": "0009_lying_namor",
+      "breakpoints": true
     }
   ]
 }

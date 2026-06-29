@@ -25,6 +25,48 @@ export type DeployReleaseResult = {
   liveUrls: string[];
 };
 
+export type CreateDeployInput = DeployReleaseInput & {
+  deploymentKey: string;
+  jobRunId?: string;
+  evidence?: Record<string, unknown>;
+};
+
+export type ProviderDeployStatus = "pending" | "deploying" | "ready" | "failed" | "rolled_back" | "unknown";
+
+export type ProviderDeploySnapshot = {
+  providerDeployId: string;
+  status: ProviderDeployStatus;
+  liveUrls: string[];
+  evidence?: Record<string, unknown>;
+};
+
+export type RestoreDeployInput = {
+  projectId: string;
+  releasePlanId: string;
+  deploymentKey: string;
+};
+
+export type RestoreDeployResult = {
+  artifactKey: string;
+  providerDeployId?: string;
+  liveUrl?: string;
+  evidence?: Record<string, unknown>;
+};
+
+export type RollbackDeployInput = {
+  projectId: string;
+  releasePlanId: string;
+  rollbackPointId: string;
+  providerDeployId?: string;
+};
+
+export type RollbackDeployResult = {
+  status: "queued" | "completed" | "failed";
+  providerDeployId?: string;
+  liveUrl?: string;
+  evidence?: Record<string, unknown>;
+};
+
 export type CrawledWebsiteSnapshot = {
   projectId: string;
   sourceUrl: string;
@@ -54,7 +96,10 @@ export type DomainEvent = {
 };
 
 export interface SiteHostingPort {
-  deployRelease(input: DeployReleaseInput): Promise<DeployReleaseResult>;
+  createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult>;
+  getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot>;
+  restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult>;
+  rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult>;
 }
 
 export interface SearchConsolePort {
@@ -147,10 +192,33 @@ export interface RollbackPort {
 }
 
 export class NotConfiguredSiteHostingAdapter implements SiteHostingPort {
-  deployRelease(input: DeployReleaseInput): Promise<DeployReleaseResult> {
+  createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult> {
     return Promise.resolve({
       deploymentId: `dry_run_${input.releasePlanId}`,
       liveUrls: []
+    });
+  }
+
+  getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot> {
+    return Promise.resolve({
+      providerDeployId: input.providerDeployId,
+      status: "unknown",
+      liveUrls: []
+    });
+  }
+
+  restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult> {
+    return Promise.resolve({
+      artifactKey: `dry_run/${input.releasePlanId}/rollback.json`,
+      evidence: { adapter: "not_configured" }
+    });
+  }
+
+  rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult> {
+    return Promise.resolve({
+      status: "failed",
+      providerDeployId: input.providerDeployId,
+      evidence: { adapter: "not_configured" }
     });
   }
 }

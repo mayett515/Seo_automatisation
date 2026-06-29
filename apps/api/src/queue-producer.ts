@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Global, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
+import type { QueueName } from "@localseo/contracts";
 import { jobRuns } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
 import { eq } from "drizzle-orm";
@@ -9,7 +10,7 @@ import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
 
-export type ApiQueueName = "pre-audit" | "website-import" | "deploy";
+export type ApiQueueName = Extract<QueueName, "pre-audit" | "website-import" | "deploy">;
 
 type QueueRegistry = Partial<Record<ApiQueueName, Queue>>;
 

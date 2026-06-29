@@ -27,6 +27,19 @@ export const jobTypes = [
   "rollback"
 ] as const;
 
+export const queueNames = [
+  "pre-audit",
+  "website-import",
+  "local-analysis",
+  "page-generation",
+  "seo-qa",
+  "deploy",
+  "gsc-sync",
+  "analytics",
+  "report",
+  "notifications"
+] as const;
+
 export const trackingEventNames = [
   "page_view",
   "scroll_25",
@@ -117,6 +130,7 @@ export const ProjectIdSchema = z.string().min(1);
 export const LeadIdSchema = z.string().min(1);
 export const JobStatusSchema = z.enum(jobStatuses);
 export const JobTypeSchema = z.enum(jobTypes);
+export const QueueNameSchema = z.enum(queueNames);
 export const TrackingEventNameSchema = z.enum(trackingEventNames);
 export const DomainEventNameSchema = z.enum(domainEventNames);
 export const ReleasePlanStatusSchema = z.enum(releasePlanStatuses);
@@ -229,6 +243,14 @@ export const ReleaseVerificationSchema = z.object({
   summary: z.string().min(1),
   checkedAt: z.string().datetime(),
   checks: z.array(ReleaseCheckSchema)
+});
+
+export const ReleaseVerificationCheckSchema = ReleaseCheckSchema.extend({
+  verificationId: z.string().min(1).optional(),
+  targetUrl: z.string().min(1).optional(),
+  expected: z.record(z.string(), z.unknown()).optional(),
+  observed: z.record(z.string(), z.unknown()).optional(),
+  checkedAt: z.string().datetime()
 });
 
 export const ReleaseNoteSchema = z.object({
@@ -433,10 +455,12 @@ export type PotentialReport = z.output<typeof PotentialReportSchema>;
 export type ProjectSummary = z.output<typeof ProjectSummarySchema>;
 export type MainPreview = z.output<typeof MainPreviewSchema>;
 export type QueueJob = z.output<typeof QueueJobSchema>;
+export type QueueName = z.output<typeof QueueNameSchema>;
 export type PageProposal = z.output<typeof PageProposalSchema>;
 export type ReleaseCheck = z.output<typeof ReleaseCheckSchema>;
 export type ReleasePlan = z.output<typeof ReleasePlanSchema>;
 export type ReleaseVerification = z.output<typeof ReleaseVerificationSchema>;
+export type ReleaseVerificationCheck = z.output<typeof ReleaseVerificationCheckSchema>;
 export type ReleaseNote = z.output<typeof ReleaseNoteSchema>;
 export type RollbackPoint = z.output<typeof RollbackPointSchema>;
 export type GscConnection = z.output<typeof GscConnectionSchema>;

@@ -350,20 +350,29 @@ export const releaseNotes = pgTable("release_notes", {
   ...timestamps
 });
 
-export const deployments = pgTable("deployments", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id),
-  releasePlanId: uuid("release_plan_id").references(() => releasePlans.id),
-  provider: text("provider").notNull().default("netlify"),
-  providerDeployId: text("provider_deploy_id"),
-  liveUrl: text("live_url"),
-  status: deploymentStatusEnum("status").notNull().default("pending"),
-  verificationStatus: releaseVerificationStatusEnum("verification_status").notNull().default("not_started"),
-  verifiedAt: timestamp("verified_at", { withTimezone: true }),
-  ...timestamps
-});
+export const deployments = pgTable(
+  "deployments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    releasePlanId: uuid("release_plan_id").references(() => releasePlans.id),
+    deploymentKey: text("deployment_key").notNull(),
+    provider: text("provider").notNull().default("netlify"),
+    providerDeployId: text("provider_deploy_id"),
+    liveUrl: text("live_url"),
+    status: deploymentStatusEnum("status").notNull().default("pending"),
+    verificationStatus: releaseVerificationStatusEnum("verification_status").notNull().default("not_started"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("deployments_deployment_key_idx").on(table.deploymentKey),
+    index("deployments_release_status_idx").on(table.releasePlanId, table.status)
+  ]
+);
 
 export const releaseVerifications = pgTable("release_verifications", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -377,6 +386,28 @@ export const releaseVerifications = pgTable("release_verifications", {
   evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
   ...timestamps
 });
+
+export const releaseVerificationChecks = pgTable(
+  "release_verification_checks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    verificationId: uuid("verification_id")
+      .notNull()
+      .references(() => releaseVerifications.id, { onDelete: "cascade" }),
+    checkKey: text("check_key").notNull(),
+    scope: text("scope").notNull(),
+    targetUrl: text("target_url"),
+    severity: releaseSeverityEnum("severity").notNull(),
+    result: releaseCheckResultEnum("result").notNull(),
+    message: text("message").notNull(),
+    expectedJson: jsonb("expected_json").$type<Record<string, unknown>>(),
+    observedJson: jsonb("observed_json").$type<Record<string, unknown>>(),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+    ...timestamps
+  },
+  (table) => [index("release_verification_checks_verification_idx").on(table.verificationId)]
+);
 
 export const rollbackPoints = pgTable("rollback_points", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -578,6 +609,19 @@ export const deploymentRelations = relations(deployments, ({ many, one }) => ({
   releasePlan: one(releasePlans, { fields: [deployments.releasePlanId], references: [releasePlans.id] }),
   verifications: many(releaseVerifications),
   rollbackPoints: many(rollbackPoints)
+}));
+
+export const releaseVerificationRelations = relations(releaseVerifications, ({ many, one }) => ({
+  releasePlan: one(releasePlans, { fields: [releaseVerifications.releasePlanId], references: [releasePlans.id] }),
+  deployment: one(deployments, { fields: [releaseVerifications.deploymentId], references: [deployments.id] }),
+  checks: many(releaseVerificationChecks)
+}));
+
+export const releaseVerificationCheckRelations = relations(releaseVerificationChecks, ({ one }) => ({
+  verification: one(releaseVerifications, {
+    fields: [releaseVerificationChecks.verificationId],
+    references: [releaseVerifications.id]
+  })
 }));
 
 export const gscConnectionRelations = relations(gscConnections, ({ many, one }) => ({
