@@ -44,7 +44,12 @@ const trackingRateLimitWindowSeconds = 60;
 const trackingRateLimitWindowMs = trackingRateLimitWindowSeconds * 1000;
 const trackingProjectRateLimitMax = 120;
 const trackingIpRateLimitMax = 600;
+const trackingGlobalProjectRateLimitMax = 5000;
+const trackingKeyRateLimitMax = 1000;
+const trackingKeyProjectRateLimitMax = 1000;
 const trackingMemoryBucketMax = 10_000;
+const trackingLastUsedAtCoalesceSeconds = 60;
+const trackingLastUsedAtCoalesceMs = trackingLastUsedAtCoalesceSeconds * 1000;
 const env = parseAppEnv(process.env);
 const localScaffoldTrackingEnabled = allowsLocalScaffoldAuth(env);
 
@@ -60,8 +65,147 @@ type MemoryRateLimitBucket = {
 };
 
 @Injectable()
+export class TrackingRateLimiter {
+  private readonly memoryBuckets = new Map<string, MemoryRateLimitBucket>();
+  private readonly memoryLastUsedAtFlushes = new Map<string, number>();
+  private lastMemoryEvictionAt = 0;
+
+  constructor(private readonly redis: RedisService) {}
+
+  async enforcePreValidationRequest(input: { ip: string; projectId: string }): Promise<void> {
+    const keys = trackingRateLimitKeys(input);
+    const ipCount = await this.increment(keys.ip);
+
+    if (ipCount > trackingIpRateLimitMax) {
+      throw trackingRateLimitExceeded();
+    }
+
+    const ipProjectCount = await this.increment(keys.ipProject);
+
+    if (ipProjectCount > trackingProjectRateLimitMax) {
+      throw trackingRateLimitExceeded();
+    }
+  }
+
+  async enforceAcceptedEvent(input: { projectId: string; trackingKeyId: string }): Promise<void> {
+    const keys = trackingRateLimitKeys(input);
+    const projectCount = await this.increment(keys.project);
+
+    if (projectCount > trackingGlobalProjectRateLimitMax) {
+      throw trackingRateLimitExceeded();
+    }
+
+    const keyCount = await this.increment(keys.trackingKey);
+
+    if (keyCount > trackingKeyRateLimitMax) {
+      throw trackingRateLimitExceeded();
+    }
+
+    const keyProjectCount = await this.increment(keys.trackingKeyProject);
+
+    if (keyProjectCount > trackingKeyProjectRateLimitMax) {
+      throw trackingRateLimitExceeded();
+    }
+  }
+
+  async shouldFlushTrackingKeyLastUsedAt(trackingKeyId: string): Promise<boolean> {
+    if (this.redis.client) {
+      try {
+        const result = await this.redis.client.set(
+          `tracking:last-used:${trackingKeyId}`,
+          "1",
+          "EX",
+          trackingLastUsedAtCoalesceSeconds,
+          "NX"
+        );
+        return result === "OK";
+      } catch {
+        return this.shouldFlushTrackingKeyLastUsedAtInMemory(trackingKeyId);
+      }
+    }
+
+    return this.shouldFlushTrackingKeyLastUsedAtInMemory(trackingKeyId);
+  }
+
+  private async increment(key: string): Promise<number> {
+    if (this.redis.client) {
+      try {
+        const redisKey = `tracking:rate-limit:${key}`;
+        const count = await this.redis.client.incr(redisKey);
+
+        if (count === 1) {
+          await this.redis.client.expire(redisKey, trackingRateLimitWindowSeconds);
+        }
+
+        return count;
+      } catch {
+        return this.incrementInMemory(key);
+      }
+    }
+
+    return this.incrementInMemory(key);
+  }
+
+  private incrementInMemory(key: string): number {
+    const now = Date.now();
+    this.evictExpiredMemoryBuckets(now);
+    const current = this.memoryBuckets.get(key);
+
+    if (!current || current.resetAt <= now) {
+      if (!current && this.memoryBuckets.size >= trackingMemoryBucketMax) {
+        return Number.POSITIVE_INFINITY;
+      }
+
+      this.memoryBuckets.set(key, {
+        count: 1,
+        resetAt: now + trackingRateLimitWindowMs
+      });
+      return 1;
+    }
+
+    current.count += 1;
+    return current.count;
+  }
+
+  private evictExpiredMemoryBuckets(now: number): void {
+    if (now - this.lastMemoryEvictionAt < trackingRateLimitWindowMs) {
+      return;
+    }
+
+    this.lastMemoryEvictionAt = now;
+
+    for (const [key, bucket] of this.memoryBuckets) {
+      if (bucket.resetAt <= now) {
+        this.memoryBuckets.delete(key);
+      }
+    }
+
+    for (const [key, lastFlushAt] of this.memoryLastUsedAtFlushes) {
+      if (now - lastFlushAt >= trackingLastUsedAtCoalesceMs) {
+        this.memoryLastUsedAtFlushes.delete(key);
+      }
+    }
+  }
+
+  private shouldFlushTrackingKeyLastUsedAtInMemory(trackingKeyId: string): boolean {
+    const now = Date.now();
+    const lastFlushAt = this.memoryLastUsedAtFlushes.get(trackingKeyId);
+
+    if (lastFlushAt && now - lastFlushAt < trackingLastUsedAtCoalesceMs) {
+      return false;
+    }
+
+    this.memoryLastUsedAtFlushes.set(trackingKeyId, now);
+    return true;
+  }
+}
+
+@Injectable()
 export class TrackingService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly rateLimiter: TrackingRateLimiter
+  ) {}
 
   async ingest(event: TrackingEvent, context: TrackingIngestContext = {}): Promise<TrackingIngestResult> {
     if (isLocalScaffoldEvent(event, localScaffoldTrackingEnabled)) {
@@ -203,93 +347,32 @@ export class TrackingService {
       throw new UnauthorizedException("Project tracking key is not authorized for this origin.");
     }
 
-    await db
-      .update(projectTrackingKeys)
-      .set({
-        lastUsedAt: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(projectTrackingKeys.id, row.id));
+    await this.rateLimiter.enforceAcceptedEvent({
+      projectId: event.projectId,
+      trackingKeyId: row.id
+    });
+
+    if (await this.rateLimiter.shouldFlushTrackingKeyLastUsedAt(row.id)) {
+      await db
+        .update(projectTrackingKeys)
+        .set({
+          lastUsedAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(eq(projectTrackingKeys.id, row.id));
+    }
   }
 }
 
 @Injectable()
 class TrackingRateLimitGuard implements CanActivate {
-  private readonly memoryBuckets = new Map<string, MemoryRateLimitBucket>();
-  private lastMemoryEvictionAt = 0;
-
-  constructor(private readonly redis: RedisService) {}
+  constructor(private readonly rateLimiter: TrackingRateLimiter) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<FastifyRequest<{ Body: Partial<TrackingEvent> }>>();
     const projectId = typeof request.body?.projectId === "string" ? request.body.projectId : "unknown";
-    const ipCount = await this.increment(`track:ip:${request.ip}`);
-
-    if (ipCount > trackingIpRateLimitMax) {
-      throw new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
-    }
-
-    const projectCount = await this.increment(`track:project:${request.ip}:${projectId}`);
-
-    if (projectCount > trackingProjectRateLimitMax) {
-      throw new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
-    }
-
+    await this.rateLimiter.enforcePreValidationRequest({ ip: request.ip, projectId });
     return true;
-  }
-
-  private async increment(key: string): Promise<number> {
-    if (this.redis.client) {
-      try {
-        const redisKey = `tracking:rate-limit:${key}`;
-        const count = await this.redis.client.incr(redisKey);
-
-        if (count === 1) {
-          await this.redis.client.expire(redisKey, trackingRateLimitWindowSeconds);
-        }
-
-        return count;
-      } catch {
-        return this.incrementInMemory(key);
-      }
-    }
-
-    return this.incrementInMemory(key);
-  }
-
-  private incrementInMemory(key: string): number {
-    const now = Date.now();
-    this.evictExpiredMemoryBuckets(now);
-    const current = this.memoryBuckets.get(key);
-
-    if (!current || current.resetAt <= now) {
-      if (!current && this.memoryBuckets.size >= trackingMemoryBucketMax) {
-        return Number.POSITIVE_INFINITY;
-      }
-
-      this.memoryBuckets.set(key, {
-        count: 1,
-        resetAt: now + trackingRateLimitWindowMs
-      });
-      return 1;
-    }
-
-    current.count += 1;
-    return current.count;
-  }
-
-  private evictExpiredMemoryBuckets(now: number): void {
-    if (now - this.lastMemoryEvictionAt < trackingRateLimitWindowMs) {
-      return;
-    }
-
-    this.lastMemoryEvictionAt = now;
-
-    for (const [key, bucket] of this.memoryBuckets) {
-      if (bucket.resetAt <= now) {
-        this.memoryBuckets.delete(key);
-      }
-    }
   }
 }
 
@@ -338,7 +421,7 @@ class TrackingKeysController {
 
 @Module({
   controllers: [TrackingController, TrackingKeysController],
-  providers: [TrackingService, TrackingRateLimitGuard]
+  providers: [TrackingService, TrackingRateLimiter, TrackingRateLimitGuard]
 })
 export class TrackingModule {}
 
@@ -371,6 +454,30 @@ function readFirstHeader(value: string | string[] | undefined): string | undefin
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+export function trackingRateLimitKeys(input: { ip?: string; projectId?: string; trackingKeyId?: string }): {
+  ip: string;
+  ipProject: string;
+  project: string;
+  trackingKey: string;
+  trackingKeyProject: string;
+} {
+  const ip = input.ip ?? "unknown";
+  const projectId = input.projectId ?? "unknown";
+  const trackingKeyId = input.trackingKeyId ?? "unknown";
+
+  return {
+    ip: `track:ip:${ip}`,
+    ipProject: `track:ip-project:${ip}:${projectId}`,
+    project: `track:project:${projectId}`,
+    trackingKey: `track:key:${trackingKeyId}`,
+    trackingKeyProject: `track:key-project:${projectId}:${trackingKeyId}`
+  };
+}
+
+function trackingRateLimitExceeded(): HttpException {
+  return new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
 }
 
 export function hashTrackingKey(trackingKey: string): string {

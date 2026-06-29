@@ -59,11 +59,7 @@ async function updateJobRun(db: WorkerDb | undefined, job: Job, patch: JobRunSta
   }
 }
 
-async function updateJobRunById(
-  db: WorkerDb,
-  jobRunId: string,
-  patch: JobRunStatusPatch
-): Promise<{ id: string }[]> {
+async function updateJobRunById(db: WorkerDb, jobRunId: string, patch: JobRunStatusPatch): Promise<{ id: string }[]> {
   return db
     .update(jobRuns)
     .set({

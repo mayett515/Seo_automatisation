@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import { BadRequestException } from "@nestjs/common";
 import { CreateTrackingKeyRequestSchema } from "@localseo/contracts";
 import type { DatabaseService } from "../database/database.service.js";
+import type { RedisService } from "../redis/redis.service.js";
 import {
   hashTrackingKey,
   isLocalScaffoldEvent,
   isTrackingOriginAllowed,
   originFromTrackingHeaders,
+  trackingRateLimitKeys,
+  TrackingRateLimiter,
   TrackingService
 } from "./tracking.module.js";
 
@@ -66,7 +69,10 @@ void describe("tracking ingestion authorization", () => {
 
   void it("rejects non-UUID persisted project ids before persistence lookup", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: undefined }, async () => {
-      const service = new TrackingService({ db: undefined } as DatabaseService);
+      const service = new TrackingService(
+        { db: undefined } as DatabaseService,
+        new TrackingRateLimiter({ client: undefined } as RedisService)
+      );
 
       await assert.rejects(
         service.ingest({
@@ -114,6 +120,32 @@ void describe("tracking ingestion authorization", () => {
       allowedOrigins: ["https://example.test"]
     });
     assert.throws(() => CreateTrackingKeyRequestSchema.parse({ allowedOrigins: ["ftp://example.test"] }));
+  });
+
+  void it("uses global project and key tracking rate-limit buckets after validation", () => {
+    assert.deepEqual(
+      trackingRateLimitKeys({
+        ip: "203.0.113.10",
+        projectId: "11111111-1111-4111-8111-111111111111",
+        trackingKeyId: "22222222-2222-4222-8222-222222222222"
+      }),
+      {
+        ip: "track:ip:203.0.113.10",
+        ipProject: "track:ip-project:203.0.113.10:11111111-1111-4111-8111-111111111111",
+        project: "track:project:11111111-1111-4111-8111-111111111111",
+        trackingKey: "track:key:22222222-2222-4222-8222-222222222222",
+        trackingKeyProject:
+          "track:key-project:11111111-1111-4111-8111-111111111111:22222222-2222-4222-8222-222222222222"
+      }
+    );
+  });
+
+  void it("coalesces tracking key last-used flushes in memory", async () => {
+    const limiter = new TrackingRateLimiter({ client: undefined } as RedisService);
+
+    assert.equal(await limiter.shouldFlushTrackingKeyLastUsedAt("key-1"), true);
+    assert.equal(await limiter.shouldFlushTrackingKeyLastUsedAt("key-1"), false);
+    assert.equal(await limiter.shouldFlushTrackingKeyLastUsedAt("key-2"), true);
   });
 });
 
