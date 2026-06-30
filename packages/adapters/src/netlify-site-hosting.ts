@@ -194,12 +194,40 @@ export class NetlifySiteHostingAdapter implements SiteHostingPort {
     });
   }
 
-  rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult> {
-    return Promise.resolve({
-      status: "failed",
-      providerDeployId: input.providerDeployId,
-      evidence: { adapter: "netlify", status: "rollback_not_implemented" }
-    });
+  async rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult> {
+    if (!input.hostingSiteId || !input.providerDeployId) {
+      return {
+        status: "failed",
+        providerDeployId: input.providerDeployId,
+        evidence: {
+          adapter: "netlify",
+          status: "rollback_missing_provider_evidence",
+          hasHostingSiteId: Boolean(input.hostingSiteId),
+          hasProviderDeployId: Boolean(input.providerDeployId)
+        }
+      };
+    }
+
+    const restored = await this.netlifyRequest<NetlifyDeployResponse>(
+      `/sites/${input.hostingSiteId}/deploys/${input.providerDeployId}/restore`,
+      {
+        method: "POST"
+      }
+    );
+    const restoredProviderDeployId = stringField(restored.id, "Netlify restored deploy id");
+    const status = mapNetlifyDeployState(restored.state);
+
+    return {
+      status: rollbackStatusFromProviderStatus(status),
+      providerDeployId: restoredProviderDeployId,
+      liveUrl: liveUrlsFromDeploy(restored)[0],
+      evidence: {
+        adapter: "netlify",
+        restoredFromDeployId: input.providerDeployId,
+        restoredDeployId: restoredProviderDeployId,
+        state: typeof restored.state === "string" ? restored.state : "unknown"
+      }
+    };
   }
 
   private async netlifyRequest<T>(pathname: string, init: RequestInit): Promise<T> {
@@ -310,7 +338,7 @@ function requiredFiles(required: string[], fileByDigest: Map<string, StaticFile>
 }
 
 function mapNetlifyDeployState(state: unknown): ProviderDeployStatus {
-  if (state === "ready") {
+  if (state === "ready" || state === "current") {
     return "ready";
   }
 
@@ -341,6 +369,18 @@ function liveUrlsFromDeploy(deploy: NetlifyDeployResponse): string[] {
   );
 
   return [...new Set(urls)];
+}
+
+function rollbackStatusFromProviderStatus(status: ProviderDeployStatus): RollbackDeployResult["status"] {
+  if (status === "ready") {
+    return "completed";
+  }
+
+  if (status === "failed" || status === "rolled_back") {
+    return "failed";
+  }
+
+  return "queued";
 }
 
 function encodeDeployFilePath(filePath: string): string {

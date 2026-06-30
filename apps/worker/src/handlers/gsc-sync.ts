@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AesGcmTokenCipher, GoogleSearchConsoleAdapter } from "@localseo/adapters";
+import type { SearchConsolePort, TokenCipher } from "@localseo/adapters";
 import type { GscOpportunitySignalType, GscSearchAnalyticsRow } from "@localseo/contracts";
 import type { parseAppEnv } from "@localseo/config";
 import { gscConnections, gscOpportunitySignals, gscSearchAnalyticsRows, gscSyncRuns } from "@localseo/db";
@@ -13,11 +14,16 @@ type StoredSearchAnalyticsRow = {
   rowId: string;
   row: GscSearchAnalyticsRow;
 };
+export type GscSyncDependencies = {
+  searchConsole: Pick<SearchConsolePort, "refreshAccessToken" | "querySearchAnalytics">;
+  tokenCipher: Pick<TokenCipher, "decrypt">;
+};
 
 export async function handleGscSyncJob(
   job: Job,
   dbHandle: WorkerDbHandle | undefined,
-  env: WorkerEnv
+  env: WorkerEnv,
+  dependencies?: GscSyncDependencies
 ): Promise<Record<string, unknown>> {
   const data = parseGscSyncJobData(job.data);
 
@@ -26,23 +32,29 @@ export async function handleGscSyncJob(
   }
 
   try {
-    return await runGscSync(dbHandle.db, env, {
-      ...data,
-      jobId: job.id ?? data.syncRunId
-    });
+    return await runGscSync(
+      dbHandle.db,
+      env,
+      {
+        ...data,
+        jobId: job.id ?? data.syncRunId
+      },
+      dependencies
+    );
   } catch (error) {
     await markSyncRunFailed(dbHandle.db, data.syncRunId, error);
     throw error;
   }
 }
 
-async function runGscSync(
+export async function runGscSync(
   db: WorkerDb,
   env: WorkerEnv,
-  data: { projectId: string; syncRunId: string; jobId: string }
+  data: { projectId: string; syncRunId: string; jobId: string },
+  dependencies?: GscSyncDependencies
 ): Promise<Record<string, unknown>> {
-  const searchConsole = createSearchConsoleAdapter(env);
-  const tokenCipher = createTokenCipher(env);
+  const searchConsole = dependencies?.searchConsole ?? createSearchConsoleAdapter(env);
+  const tokenCipher = dependencies?.tokenCipher ?? createTokenCipher(env);
   const [syncRun] = await db.select().from(gscSyncRuns).where(eq(gscSyncRuns.id, data.syncRunId)).limit(1);
 
   if (!syncRun) {

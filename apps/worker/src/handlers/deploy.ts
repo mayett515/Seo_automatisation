@@ -482,12 +482,22 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
       const rollbackRows = await db
         .select({ id: rollbackPoints.id })
         .from(rollbackPoints)
-        .where(and(eq(rollbackPoints.projectId, data.projectId), eq(rollbackPoints.releasePlanId, data.releasePlanId)));
+        .where(
+          and(
+            eq(rollbackPoints.projectId, data.projectId),
+            eq(rollbackPoints.releasePlanId, data.releasePlanId),
+            isNotNull(rollbackPoints.providerDeployId)
+          )
+        );
       const priorDeploymentRows = await db
         .select({ id: deployments.id })
         .from(deployments)
         .where(
-          and(eq(deployments.projectId, data.projectId), inArray(deployments.status, successfulDeploymentStatusValues))
+          and(
+            eq(deployments.projectId, data.projectId),
+            not(eq(deployments.releasePlanId, data.releasePlanId)),
+            inArray(deployments.status, successfulDeploymentStatusValues)
+          )
         );
       const [website] = await db
         .select({ hostingSiteId: mainWebsites.hostingSiteId })

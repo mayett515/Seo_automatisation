@@ -47,6 +47,19 @@ Local environment recommendation:
 
 ## Current Coverage
 
+### Release Preflight Rollback Preparation
+
+File:
+
+- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+
+Implemented tests:
+
+1. Preflight prepares a provider-backed rollback point for the new release from the latest restorable prior deployment, then persists a passing `rollback_point_ready` check.
+2. Rollback point rows without provider deploy evidence do not satisfy preflight; if no provider-backed prior deployment can be snapshotted, preflight stays blocked instead of queueing an unrecoverable deploy.
+
+The deploy worker also counts only provider-backed rollback points as usable rollback evidence, so bypassing API preflight cannot treat placeholder rollback rows as deploy-safe.
+
 ### Release Verification
 
 File:
@@ -61,12 +74,30 @@ Implemented tests:
 
 1. Healthy verification persists a `release_verifications` row, persists child `release_verification_checks`, updates `deployments.status` and `deployments.verificationStatus` to `live_healthy`, and projects `releasePlans.status` to `live`.
 2. Rollback-level verification persists blocker details, updates the deployment to `rollback_recommended`, and projects the release plan to the current coarse `failed` state.
-3. Verifier execution failure is converted into persisted failed verification evidence; it must not leave the deployment in `verifying` or `running`.
+3. Verifier execution failure is persisted as `execution_failed` evidence without marking the deployment or release plan as observed failed health; it must not leave the deployment in `verifying` or `running`.
 4. Cross-project verification is rejected and writes no verification rows for the other project.
 5. Adapter-returned release-plan identity is ignored during persistence; the project-scoped route `releasePlanId` owns the verification row.
 6. A deployment id from another release plan or project is rejected and writes no verification rows.
+7. Absolute verification target routes are rejected before the verifier adapter can fetch them.
+8. Absolute page proposal routes are rejected when release plan items are created.
 
-This file contributes 6 release verification tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+This file contributes 2 rollback-preflight tests, 8 release verification tests, and 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+
+### Rollback Queueing
+
+File:
+
+- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+
+Implemented tests:
+
+1. `executeRollback()` scopes the rollback point to the authorized project and release plan, pins the current rollback-target deployment id into the job payload, queues a `rollback` job, and writes a `job_runs` audit row without marking the release rolled back in the API.
+2. A rollback point from another project or release plan is rejected and writes no rollback job audit row.
+3. A release plan that is not in the rollback-ready `failed` projection is rejected before enqueue.
+4. A target deployment without provider deploy evidence is rejected before enqueue.
+5. A rollback point without provider deploy evidence is rejected before enqueue.
+
+These tests prove the API boundary. The provider mutation belongs to the worker tests below.
 
 Verified local run:
 
@@ -74,7 +105,7 @@ Verified local run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/api test:integration
 
-tests 15 | pass 15 | fail 0
+tests 24 | pass 24 | fail 0
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
@@ -95,13 +126,48 @@ Implemented tests:
 6. `markFailed` cannot overwrite `manual_reconciliation_required`.
 7. Pending provider deploys remain reconcilable instead of being mislabeled failed.
 
-Verified local run:
+This file contributes 7 deploy-worker tests to the worker integration command.
+
+### Rollback Worker
+
+File:
+
+- [rollback.integration.ts](/C:/localseoproject/apps/worker/src/handlers/rollback.integration.ts)
+
+Implemented tests:
+
+1. Completed provider rollback marks the deployment and release plan `rolled_back`, writes rollback execution evidence, and records the provider deploy id that was rolled back from.
+2. Provider rollback failure records normalized failed rollback execution evidence and is treated as a terminal provider failure, without marking the deployment or release plan rolled back.
+3. Provider-pending rollback records normalized pending evidence and does not retry the restore mutation in the same worker.
+4. A release plan that is no longer rollback-eligible stops before provider restore.
+5. Stale target deployment state after provider restore does not persist `rolled_back`.
+6. A rollback job updates only the pinned target deployment, even when a newer deployment row exists.
+7. `not_configured` rollback results become terminal configuration errors.
+8. Missing rollback-point provider deploy evidence fails before calling the provider.
+
+This file contributes 8 rollback-worker tests to the worker integration command.
+
+### GSC Sync Worker
+
+File:
+
+- [gsc-sync.integration.ts](/C:/localseoproject/apps/worker/src/handlers/gsc-sync.integration.ts)
+
+Implemented tests:
+
+1. Successful sync refreshes access, queries Search Console through a fake port, replaces stale Search Analytics rows, inserts fresh rows, creates opportunity signals, marks the sync run completed, and clears connection failure state.
+2. Empty syncs complete honestly, clear stale analytics/signals for the sync run, and do not create opportunity signals.
+3. Search Console query failure marks the sync run `failed` with normalized failure evidence and does not mark the connection as synced.
+
+These tests use a fake `SearchConsolePort` and fake token decryptor. The database writes, deletes, foreign keys, and transaction ordering are real; no live Google Search Console network calls are made.
+
+Verified local worker integration run:
 
 ```text
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 7 | pass 7 | fail 0
+tests 18 | pass 18 | fail 0
 ```
 
 ### Queue And Job Audit
@@ -148,6 +214,8 @@ This keeps integration tests close to production schema behavior without using p
 
 `releasePlans.status = "live"` and `releasePlans.status = "failed"` are currently coarse projections. `live` can mean the provider deploy succeeded before post-deploy verification has run. `failed` can mean the deploy itself failed, or it can mean the provider deploy succeeded but post-deploy verification found a rollback-level blocker.
 
+Verifier infrastructure errors are now separate from observed live-page failures: `deployments.verificationStatus = "execution_failed"` and the matching `release_verifications` row mean the verifier did not complete, not that the page was proven broken.
+
 Precise lifecycle truth lives in:
 
 - `deployments.status`,
@@ -168,6 +236,14 @@ Further tests can prove:
 - final-attempt pending stays reconcilable,
 - failed pre-provider rows with the same deployment key follow the intended strict/manual behavior.
 
+### Still Useful In Rollback Execution
+
+Further tests can prove:
+
+- provider rollback pending is reconciled by a dedicated rollback reconciler instead of repeating provider restore calls,
+- rollback queue deduplication across repeated operator clicks remains one active rollback job,
+- rollback point selection prefers the strongest verified-stable source when richer lifecycle states split provider success from live health.
+
 ### Still Useful In Queue And Job Audit
 
 Further tests can prove:
@@ -184,14 +260,21 @@ Further tests can prove:
 - malformed project ids reject before UUID-backed database lookup,
 - HTTP/controller header wiring matches service-level behavior.
 
+### Still Useful In GSC Sync
+
+Further tests can prove:
+
+- worker retry behavior keeps sync-run and `job_runs` lifecycle truth aligned,
+- API/controller sync queueing preserves actor metadata and rejects unavailable GSC connections before enqueue,
+- larger Search Analytics result sets continue to chunk inserts without dropping opportunity signals.
+
 ## Out Of Scope For This Milestone
 
 Do not include these in Lifecycle Integration Coverage:
 
 - real Netlify calls,
 - browser/Playwright verification,
-- Google Search Console calls,
-- rollback execution,
+- live Google Search Console calls,
 - Mastra or AI reasoning behavior,
 - full public-internet end-to-end deploys.
 

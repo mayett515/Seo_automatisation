@@ -107,6 +107,7 @@ export type RollbackDeployInput = {
   projectId: string;
   releasePlanId: string;
   rollbackPointId: string;
+  hostingSiteId?: string;
   providerDeployId?: string;
 };
 

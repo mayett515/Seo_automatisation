@@ -10,7 +10,7 @@ import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
 
-export type ApiQueueName = Extract<QueueName, "pre-audit" | "website-import" | "deploy">;
+export type ApiQueueName = Extract<QueueName, "pre-audit" | "website-import" | "deploy" | "rollback">;
 
 type QueueRegistry = Partial<Record<ApiQueueName, Queue>>;
 
@@ -43,7 +43,8 @@ export class QueueProducerService implements OnModuleDestroy {
       ? {
           "pre-audit": new Queue("pre-audit", { connection: redisConnection }),
           "website-import": new Queue("website-import", { connection: redisConnection }),
-          deploy: new Queue("deploy", { connection: redisConnection })
+          deploy: new Queue("deploy", { connection: redisConnection }),
+          rollback: new Queue("rollback", { connection: redisConnection })
         }
       : {};
   }

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."release_verification_status" ADD VALUE 'execution_failed' BEFORE 'failed';

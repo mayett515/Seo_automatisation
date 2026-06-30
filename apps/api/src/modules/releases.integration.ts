@@ -4,17 +4,25 @@ import type { VerificationPort } from "@localseo/adapters";
 import {
   ReleaseCheckSchema,
   ReleaseVerificationSchema,
+  type DeploymentStatus,
   type ReleaseCheck,
-  type ReleaseVerification
+  type ReleasePlanStatus,
+  type ReleaseVerification,
+  type ReleaseVerificationStatus
 } from "@localseo/contracts";
 import {
   customers,
   deployments,
+  jobRuns,
+  pageProposals,
+  pageVersions,
   projects,
+  projectTrackingKeys,
   releasePlanItems,
   releasePlans,
   releaseVerificationChecks,
   releaseVerifications,
+  rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
 import { and, eq } from "drizzle-orm";
@@ -32,6 +40,23 @@ type ReleaseFixture = {
   projectId: string;
   releasePlanId: string;
   deploymentId: string;
+};
+
+type PreflightRollbackFixture = {
+  projectId: string;
+  releasePlanId: string;
+  previousDeploymentId: string;
+};
+
+type PageVersionFixture = {
+  projectId: string;
+  pageVersionId: string;
+};
+
+type QueueAddCall = {
+  name: string;
+  data: Record<string, unknown>;
+  options: Record<string, unknown>;
 };
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -124,17 +149,20 @@ void describe(
       assert.equal(checks[0]?.targetUrl, "https://customer.example/dachreinigung/");
     });
 
-    void it("persists failed verification evidence when the verifier throws", async () => {
+    void it("persists execution-failed verification evidence when the verifier throws", async () => {
       const fixture = await createReleaseFixture(db);
       verifier.mode = "throw";
 
       const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
 
-      assert.equal(result.verificationStatus, "failed");
+      assert.equal(result.verificationStatus, "execution_failed");
 
       const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
-      assert.equal(deployment?.status, "failed");
-      assert.equal(deployment?.verificationStatus, "failed");
+      assert.equal(deployment?.status, "provider_succeeded");
+      assert.equal(deployment?.verificationStatus, "execution_failed");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "live");
 
       const [verification] = await db
         .select()
@@ -145,9 +173,11 @@ void describe(
         .from(releaseVerificationChecks)
         .where(eq(releaseVerificationChecks.verificationId, verification?.id ?? ""));
 
-      assert.equal(verification?.status, "failed");
-      assert.equal(checks[0]?.checkKey, "verification_execution_check");
-      assert.equal(checks[0]?.result, "failed");
+      assert.equal(verification?.status, "execution_failed");
+      assert.equal(checks[0]?.checkKey, "verification_execution_error");
+      assert.equal(checks[0]?.severity, "warning");
+      assert.equal(checks[0]?.result, "skipped");
+      assert.deepEqual(checks[0]?.evidenceJson?.executionFailure, { message: "verifier network failure" });
       assert.notEqual(deployment?.status, "verifying");
       assert.notEqual(deployment?.verificationStatus, "running");
     });
@@ -207,6 +237,315 @@ void describe(
         .where(eq(releaseVerifications.deploymentId, projectB.deploymentId));
 
       assert.equal(rows.length, 0);
+    });
+
+    void it("rejects absolute verification target routes before calling the verifier", async () => {
+      const fixture = await createReleaseFixture(db, { targetUrl: "https://attacker.example/dachreinigung/" });
+
+      await assert.rejects(
+        () => service.verify(fixture.projectId, fixture.releasePlanId, {}),
+        /Release verification target routes must be relative paths/u
+      );
+
+      assert.equal(verifier.requests.length, 0);
+
+      const rows = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.deploymentId, fixture.deploymentId));
+
+      assert.equal(rows.length, 0);
+    });
+
+    void it("rejects absolute page proposal routes when creating release plans", async () => {
+      const fixture = await createPageVersionFixture(db, { route: "https://attacker.example/dachreinigung/" });
+
+      await assert.rejects(
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        /Release verification target routes must be relative paths/u
+      );
+
+      const rows = await db.select().from(releasePlanItems);
+      assert.equal(rows.length, 0);
+    });
+
+    void it("queues rollback execution for a scoped rollback point", async () => {
+      const fixture = await createReleaseFixture(db, {
+        projectName: "Rollback Project",
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended"
+      });
+      const rollbackPointId = await createRollbackPoint(db, fixture);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setRollbackQueue(queueService, queue);
+      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+
+      const result = await service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, {
+        rollbackPointId
+      });
+
+      assert.equal(result.status, "queued");
+      assert.equal(result.type, "rollback");
+      assert.equal(result.inputRef, rollbackPointId);
+      assert.equal(queue.addCalls.length, 1);
+      assert.equal(queue.addCalls[0]?.name, "rollback");
+      assert.equal(queue.addCalls[0]?.data.projectId, fixture.projectId);
+      assert.equal(queue.addCalls[0]?.data.releasePlanId, fixture.releasePlanId);
+      assert.equal(queue.addCalls[0]?.data.deploymentId, fixture.deploymentId);
+      assert.equal(queue.addCalls[0]?.data.rollbackPointId, rollbackPointId);
+
+      const rows = await db.select().from(jobRuns).where(eq(jobRuns.queueName, "rollback"));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.status, "queued");
+      assert.equal(rows[0]?.type, "rollback");
+      assert.equal(rows[0]?.inputRef, rollbackPointId);
+    });
+
+    void it("rejects rollback points outside the scoped release plan", async () => {
+      const projectA = await createReleaseFixture(db, {
+        projectName: "Project A",
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended"
+      });
+      const projectB = await createReleaseFixture(db, {
+        projectName: "Project B",
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended"
+      });
+      const projectBRollbackPointId = await createRollbackPoint(db, projectB);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setRollbackQueue(queueService, queue);
+      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+
+      await assert.rejects(
+        () =>
+          service.executeRollback(projectA.projectId, projectA.releasePlanId, undefined, {
+            rollbackPointId: projectBRollbackPointId
+          }),
+        /Rollback point is not available for this release plan/u
+      );
+
+      assert.equal(queue.addCalls.length, 0);
+      const rows = await db.select().from(jobRuns).where(eq(jobRuns.queueName, "rollback"));
+      assert.equal(rows.length, 0);
+    });
+
+    void it("rejects rollback execution when the release plan is not failed", async () => {
+      const fixture = await createReleaseFixture(db, { projectName: "Live Project" });
+      const rollbackPointId = await createRollbackPoint(db, fixture);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setRollbackQueue(queueService, queue);
+      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+
+      await assert.rejects(
+        () => service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, { rollbackPointId }),
+        /Release plan is not eligible for rollback execution/u
+      );
+
+      assert.equal(queue.addCalls.length, 0);
+    });
+
+    void it("rejects rollback execution when the target deployment has no provider evidence", async () => {
+      const fixture = await createReleaseFixture(db, {
+        projectName: "Missing Provider Project",
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended",
+        providerDeployId: null
+      });
+      const rollbackPointId = await createRollbackPoint(db, fixture);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setRollbackQueue(queueService, queue);
+      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+
+      await assert.rejects(
+        () => service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, { rollbackPointId }),
+        /No rollback-eligible deployment is available for this release plan/u
+      );
+
+      assert.equal(queue.addCalls.length, 0);
+    });
+
+    void it("rejects rollback execution when the rollback point has no provider evidence", async () => {
+      const fixture = await createReleaseFixture(db, {
+        projectName: "Missing Rollback Provider Project",
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended"
+      });
+      const rollbackPointId = await createRollbackPoint(db, fixture, { providerDeployId: null });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setRollbackQueue(queueService, queue);
+      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+
+      await assert.rejects(
+        () => service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, { rollbackPointId }),
+        /Rollback point is missing provider deploy evidence/u
+      );
+
+      assert.equal(queue.addCalls.length, 0);
+    });
+
+    void it("preflight prepares a provider-backed rollback point from the latest restorable deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+
+      const result = await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      assert.equal(result.readiness, "ready");
+      assert.equal(result.checks.find((check) => check.checkKey === "rollback_point_ready")?.result, "passed");
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.deploymentId, fixture.previousDeploymentId);
+      assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
+      assert.equal(rows[0]?.liveUrl, "https://customer.example/");
+      assert.equal(rows[0]?.artifactKey, `rollback/${fixture.releasePlanId}/${fixture.previousDeploymentId}.json`);
+      assert.deepEqual(rows[0]?.evidenceJson?.source, "release_preflight_rollback_point_preparation");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceDeploymentStatus, "live_healthy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "live_healthy");
+    });
+
+    void it("preflight does not prepare a rollback point from a rollback-recommended deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentStatus: "rollback_recommended",
+        previousVerificationStatus: "rollback_recommended"
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 0);
+    });
+
+    void it("preflight skips rollback point preparation when all prior deployments are unsafe sources", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentStatus: "rollback_recommended",
+        previousVerificationStatus: "rollback_recommended"
+      });
+      await createPriorRollbackSourceCandidate(db, {
+        projectId: fixture.projectId,
+        status: "failed",
+        verificationStatus: "failed",
+        providerDeployId: "failed-provider-deploy",
+        updatedAt: new Date("2026-06-30T10:00:00.000Z")
+      });
+      await createPriorRollbackSourceCandidate(db, {
+        projectId: fixture.projectId,
+        status: "verifying",
+        verificationStatus: "running",
+        providerDeployId: "verifying-provider-deploy",
+        updatedAt: new Date("2026-06-30T11:00:00.000Z")
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 0);
+    });
+
+    void it("preflight prefers an older verified-good rollback source over a newer bad deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentUpdatedAt: new Date("2026-06-30T09:00:00.000Z")
+      });
+      const badDeploymentId = await createPriorRollbackSourceCandidate(db, {
+        projectId: fixture.projectId,
+        status: "rollback_recommended",
+        verificationStatus: "rollback_recommended",
+        providerDeployId: "newer-bad-provider-deploy",
+        updatedAt: new Date("2026-06-30T11:00:00.000Z")
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.deploymentId, fixture.previousDeploymentId);
+      assert.notEqual(rows[0]?.deploymentId, badDeploymentId);
+      assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceDeploymentStatus, "live_healthy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "live_healthy");
+    });
+
+    void it("preflight falls back to provider-succeeded rollback sources when no verified-good source exists", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentStatus: "provider_succeeded",
+        previousVerificationStatus: "not_started"
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.deploymentId, fixture.previousDeploymentId);
+      assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceDeploymentStatus, "provider_succeeded");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "not_started");
+    });
+
+    void it("preflight does not count rollback points without provider evidence as deploy-ready", async () => {
+      const fixture = await createPreflightRollbackFixture(db, { previousProviderDeployId: null });
+      await createRollbackPoint(
+        db,
+        {
+          projectId: fixture.projectId,
+          releasePlanId: fixture.releasePlanId,
+          deploymentId: fixture.previousDeploymentId
+        },
+        { providerDeployId: null }
+      );
+
+      const result = await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      assert.equal(result.readiness, "blocked");
+      assert.equal(result.checks.find((check) => check.checkKey === "rollback_point_ready")?.result, "failed");
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.providerDeployId, null);
     });
   }
 );
@@ -273,7 +612,17 @@ class FakeVerificationPort implements VerificationPort {
   }
 }
 
-async function createReleaseFixture(db: DatabaseClient, input: { projectName?: string } = {}): Promise<ReleaseFixture> {
+async function createReleaseFixture(
+  db: DatabaseClient,
+  input: {
+    projectName?: string;
+    releasePlanStatus?: ReleasePlanStatus;
+    deploymentStatus?: DeploymentStatus;
+    verificationStatus?: ReleaseVerificationStatus;
+    providerDeployId?: string | null;
+    targetUrl?: string;
+  } = {}
+): Promise<ReleaseFixture> {
   const [customer] = await db
     .insert(customers)
     .values({ name: `${input.projectName ?? "Project"} Customer` })
@@ -293,7 +642,7 @@ async function createReleaseFixture(db: DatabaseClient, input: { projectName?: s
     .insert(releasePlans)
     .values({
       projectId: project.id,
-      status: "live",
+      status: input.releasePlanStatus ?? "live",
       summary: "Release ready for verification.",
       riskLevel: "low",
       blockerCount: 0,
@@ -304,7 +653,7 @@ async function createReleaseFixture(db: DatabaseClient, input: { projectName?: s
 
   await db.insert(releasePlanItems).values({
     releasePlanId: releasePlan.id,
-    targetUrl: "/dachreinigung/",
+    targetUrl: input.targetUrl ?? "/dachreinigung/",
     action: "publish",
     status: "deployed"
   });
@@ -316,11 +665,11 @@ async function createReleaseFixture(db: DatabaseClient, input: { projectName?: s
       releasePlanId: releasePlan.id,
       deploymentKey: `release_plan:${releasePlan.id}`,
       provider: "netlify",
-      providerDeployId: `deploy-${releasePlan.id}`,
+      providerDeployId: input.providerDeployId === undefined ? `deploy-${releasePlan.id}` : input.providerDeployId,
       providerOperationStatus: "recorded",
       liveUrl: "https://deploy-1--customer.netlify.app/",
-      status: "provider_succeeded",
-      verificationStatus: "not_started",
+      status: input.deploymentStatus ?? "provider_succeeded",
+      verificationStatus: input.verificationStatus ?? "not_started",
       evidenceJson: {
         provider: {
           liveUrls: ["https://deploy-1--customer.netlify.app/", "https://customer.example/"]
@@ -337,6 +686,251 @@ async function createReleaseFixture(db: DatabaseClient, input: { projectName?: s
   };
 }
 
+async function createPageVersionFixture(
+  db: DatabaseClient,
+  input: { route: string } = { route: "/dachreinigung/" }
+): Promise<PageVersionFixture> {
+  const [customer] = await db.insert(customers).values({ name: "Plan Route Customer" }).returning();
+  assert.ok(customer);
+
+  const [project] = await db
+    .insert(projects)
+    .values({
+      customerId: customer.id,
+      name: "Plan Route Project"
+    })
+    .returning();
+  assert.ok(project);
+
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId: project.id,
+      route: input.route,
+      primaryKeyword: "Dachreinigung",
+      uniquenessRationale: "Dedicated local proof.",
+      status: "approved",
+      sitemapReady: true
+    })
+    .returning();
+  assert.ok(proposal);
+
+  const [pageVersion] = await db
+    .insert(pageVersions)
+    .values({
+      pageProposalId: proposal.id,
+      versionNumber: 1,
+      status: "approved",
+      approvedAt: new Date("2026-06-30T10:00:00.000Z"),
+      pageJson: {}
+    })
+    .returning();
+  assert.ok(pageVersion);
+
+  return {
+    projectId: project.id,
+    pageVersionId: pageVersion.id
+  };
+}
+
+async function createPreflightRollbackFixture(
+  db: DatabaseClient,
+  input: {
+    previousProviderDeployId?: string | null;
+    previousDeploymentStatus?: DeploymentStatus;
+    previousVerificationStatus?: ReleaseVerificationStatus;
+    previousDeploymentUpdatedAt?: Date;
+  } = {}
+): Promise<PreflightRollbackFixture> {
+  const [customer] = await db.insert(customers).values({ name: "Preflight Customer" }).returning();
+  assert.ok(customer);
+
+  const [project] = await db
+    .insert(projects)
+    .values({
+      customerId: customer.id,
+      name: "Preflight Project"
+    })
+    .returning();
+  assert.ok(project);
+
+  const [previousReleasePlan] = await db
+    .insert(releasePlans)
+    .values({
+      projectId: project.id,
+      status: "live",
+      summary: "Previous live release.",
+      riskLevel: "low",
+      blockerCount: 0,
+      warningCount: 0
+    })
+    .returning();
+  assert.ok(previousReleasePlan);
+
+  const [previousDeployment] = await db
+    .insert(deployments)
+    .values({
+      projectId: project.id,
+      releasePlanId: previousReleasePlan.id,
+      deploymentKey: `release_plan:${previousReleasePlan.id}`,
+      provider: "netlify",
+      providerDeployId:
+        input.previousProviderDeployId === undefined ? "previous-provider-deploy" : input.previousProviderDeployId,
+      providerOperationStatus: "recorded",
+      liveUrl: "https://customer.example/",
+      status: input.previousDeploymentStatus ?? "live_healthy",
+      verificationStatus: input.previousVerificationStatus ?? "live_healthy",
+      updatedAt: input.previousDeploymentUpdatedAt,
+      evidenceJson: {
+        provider: {
+          status: "ready",
+          liveUrls: ["https://customer.example/"]
+        }
+      }
+    })
+    .returning();
+  assert.ok(previousDeployment);
+
+  const [releasePlan] = await db
+    .insert(releasePlans)
+    .values({
+      projectId: project.id,
+      status: "draft",
+      summary: "New release needing rollback preparation.",
+      riskLevel: "low",
+      blockerCount: 0,
+      warningCount: 0
+    })
+    .returning();
+  assert.ok(releasePlan);
+
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId: project.id,
+      route: "/dachreinigung/",
+      primaryKeyword: "Dachreinigung",
+      uniquenessRationale: "Dedicated local proof.",
+      status: "approved",
+      sitemapReady: true
+    })
+    .returning();
+  assert.ok(proposal);
+
+  const [pageVersion] = await db
+    .insert(pageVersions)
+    .values({
+      pageProposalId: proposal.id,
+      versionNumber: 1,
+      status: "approved",
+      approvedAt: new Date("2026-06-30T10:00:00.000Z"),
+      pageJson: {
+        title: "Dachreinigung Muenchen",
+        metaDescription: "Lokale Dachreinigung in Muenchen.",
+        h1: "Dachreinigung in Muenchen",
+        canonical: "https://customer.example/dachreinigung/",
+        jsonLd: { "@type": "LocalBusiness" },
+        areaServed: ["Muenchen"],
+        internalLinks: ["/dachreinigung/"],
+        localFaq: [{ question: "Wie schnell?", answer: "Nach Absprache." }],
+        cta: { label: "Anfragen" },
+        robots: "noindex,nofollow",
+        sitemapReady: true
+      }
+    })
+    .returning();
+  assert.ok(pageVersion);
+
+  await db.insert(releasePlanItems).values({
+    releasePlanId: releasePlan.id,
+    pageVersionId: pageVersion.id,
+    targetUrl: "/dachreinigung/",
+    action: "publish",
+    status: "pending"
+  });
+
+  await db.insert(projectTrackingKeys).values({
+    projectId: project.id,
+    keyHash: `hash-${releasePlan.id}`,
+    allowedOrigins: ["https://customer.example/"]
+  });
+
+  return {
+    projectId: project.id,
+    releasePlanId: releasePlan.id,
+    previousDeploymentId: previousDeployment.id
+  };
+}
+
+async function createPriorRollbackSourceCandidate(
+  db: DatabaseClient,
+  input: {
+    projectId: string;
+    status: DeploymentStatus;
+    verificationStatus: ReleaseVerificationStatus;
+    providerDeployId: string | null;
+    updatedAt: Date;
+  }
+): Promise<string> {
+  const [releasePlan] = await db
+    .insert(releasePlans)
+    .values({
+      projectId: input.projectId,
+      status: input.status === "rollback_recommended" || input.status === "failed" ? "failed" : "live",
+      summary: "Additional prior release.",
+      riskLevel: "low",
+      blockerCount: 0,
+      warningCount: 0
+    })
+    .returning();
+  assert.ok(releasePlan);
+
+  const [deployment] = await db
+    .insert(deployments)
+    .values({
+      projectId: input.projectId,
+      releasePlanId: releasePlan.id,
+      deploymentKey: `release_plan:${releasePlan.id}`,
+      provider: "netlify",
+      providerDeployId: input.providerDeployId,
+      providerOperationStatus: "recorded",
+      liveUrl: "https://customer.example/",
+      status: input.status,
+      verificationStatus: input.verificationStatus,
+      updatedAt: input.updatedAt,
+      evidenceJson: {
+        provider: {
+          status: "ready",
+          liveUrls: ["https://customer.example/"]
+        }
+      }
+    })
+    .returning();
+  assert.ok(deployment);
+
+  return deployment.id;
+}
+
+async function createRollbackPoint(
+  db: DatabaseClient,
+  fixture: ReleaseFixture,
+  input: { providerDeployId?: string | null } = {}
+): Promise<string> {
+  const [rollbackPoint] = await db
+    .insert(rollbackPoints)
+    .values({
+      projectId: fixture.projectId,
+      releasePlanId: fixture.releasePlanId,
+      deploymentId: fixture.deploymentId,
+      artifactKey: `rollback/${fixture.releasePlanId}/previous-stable.json`,
+      providerDeployId: input.providerDeployId === undefined ? "previous-provider-deploy" : input.providerDeployId,
+      liveUrl: "https://customer.example/"
+    })
+    .returning();
+  assert.ok(rollbackPoint);
+  return rollbackPoint.id;
+}
+
 function releaseCheck(input: ReleaseCheck): ReleaseCheck {
   return ReleaseCheckSchema.parse(input);
 }
@@ -351,4 +945,41 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
     ping: () => Promise.resolve("up"),
     onModuleDestroy: () => Promise.resolve()
   } as unknown as DatabaseService;
+}
+
+function setRollbackQueue(service: QueueProducerService, queue: FakeQueue): void {
+  (service as unknown as { queues: { rollback?: unknown } }).queues.rollback = queue;
+}
+
+class FakeQueue {
+  readonly addCalls: QueueAddCall[] = [];
+  private existingJob: FakeJob | undefined;
+
+  getJob(): Promise<FakeJob | undefined> {
+    return Promise.resolve(this.existingJob);
+  }
+
+  add(
+    name: string,
+    data: Record<string, unknown>,
+    options: Record<string, unknown>
+  ): Promise<{ id: string | undefined }> {
+    this.addCalls.push({ name, data, options });
+    this.existingJob = new FakeJob();
+    return Promise.resolve({ id: typeof options.jobId === "string" ? options.jobId : undefined });
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+class FakeJob {
+  getState(): Promise<string> {
+    return Promise.resolve("waiting");
+  }
+
+  remove(): Promise<void> {
+    return Promise.resolve();
+  }
 }

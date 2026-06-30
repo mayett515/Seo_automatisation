@@ -34,6 +34,7 @@ export const queueNames = [
   "page-generation",
   "seo-qa",
   "deploy",
+  "rollback",
   "gsc-sync",
   "analytics",
   "report",
@@ -111,6 +112,7 @@ export const releaseVerificationStatuses = [
   "live_healthy",
   "live_with_warnings",
   "rollback_recommended",
+  "execution_failed",
   "failed"
 ] as const;
 
@@ -218,6 +220,17 @@ export const DeployJobDataSchema = z.object({
   projectId: ProjectIdSchema,
   releasePlanId: z.string().min(1),
   deploymentKey: z.string().min(1),
+  maxAttempts: z.number().int().positive().optional(),
+  jobRunId: z.string().min(1).optional(),
+  triggeredByUserId: z.string().min(1).nullable().optional(),
+  triggerSource: z.string().min(1).optional()
+});
+
+export const RollbackJobDataSchema = z.object({
+  projectId: ProjectIdSchema,
+  releasePlanId: z.string().min(1),
+  deploymentId: z.string().min(1),
+  rollbackPointId: z.string().min(1),
   maxAttempts: z.number().int().positive().optional(),
   jobRunId: z.string().min(1).optional(),
   triggeredByUserId: z.string().min(1).nullable().optional(),
@@ -463,6 +476,10 @@ export const VerifyReleaseRequestSchema = z.object({
   deploymentId: z.string().min(1).optional()
 });
 
+export const ExecuteRollbackRequestSchema = z.object({
+  rollbackPointId: z.string().min(1)
+});
+
 export const HealthResponseSchema = z.object({
   status: z.enum(["ok", "degraded", "down"]),
   service: z.string().min(1),
@@ -492,6 +509,7 @@ export type ProjectSummary = z.output<typeof ProjectSummarySchema>;
 export type MainPreview = z.output<typeof MainPreviewSchema>;
 export type QueueJob = z.output<typeof QueueJobSchema>;
 export type DeployJobData = z.output<typeof DeployJobDataSchema>;
+export type RollbackJobData = z.output<typeof RollbackJobDataSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
@@ -521,6 +539,7 @@ export type TrackingKeySummary = z.output<typeof TrackingKeySummarySchema>;
 export type CreateTrackingKeyResponse = z.output<typeof CreateTrackingKeyResponseSchema>;
 export type CreateReleasePlanRequest = z.output<typeof CreateReleasePlanRequestSchema>;
 export type VerifyReleaseRequest = z.output<typeof VerifyReleaseRequestSchema>;
+export type ExecuteRollbackRequest = z.output<typeof ExecuteRollbackRequestSchema>;
 export type HealthResponse = z.output<typeof HealthResponseSchema>;
 export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
