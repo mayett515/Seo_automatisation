@@ -27,6 +27,18 @@ type PageFetchResult =
 
 const defaultTimeoutMs = 10_000;
 const defaultUserAgent = "localseo-verifier/0.1";
+const maxSameOriginRedirects = 5;
+const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+
+class VerificationRedirectError extends Error {
+  constructor(
+    message: string,
+    readonly finalUrl: string
+  ) {
+    super(message);
+    this.name = "VerificationRedirectError";
+  }
+}
 
 export class HttpReleaseVerificationAdapter implements VerificationPort {
   private readonly fetchImpl: typeof fetch;
@@ -75,13 +87,11 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
     const timeout = setTimeout(() => abort.abort(), this.timeoutMs);
 
     try {
-      const response = await this.fetchImpl(targetUrl, {
+      const { response, finalUrl } = await fetchSameOriginWithRedirects(this.fetchImpl, targetUrl, {
         headers: { "user-agent": this.userAgent },
-        redirect: "follow",
         signal: abort.signal
       });
       const statusCode = response.status;
-      const finalUrl = response.url || targetUrl;
 
       if (!response.ok) {
         return {
@@ -107,6 +117,7 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
       return {
         status: "failed",
         targetUrl,
+        finalUrl: error instanceof VerificationRedirectError ? error.finalUrl : undefined,
         message: error instanceof Error ? error.message : "Live route fetch failed."
       };
     } finally {
@@ -146,9 +157,8 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
     const timeout = setTimeout(() => abort.abort(), this.timeoutMs);
 
     try {
-      const response = await this.fetchImpl(sitemapUrl, {
+      const { response } = await fetchSameOriginWithRedirects(this.fetchImpl, sitemapUrl, {
         headers: { "user-agent": this.userAgent },
-        redirect: "follow",
         signal: abort.signal
       });
       const body = response.ok ? await response.text() : "";
@@ -180,13 +190,73 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
         message: "Sitemap could not be fetched during verification.",
         evidence: {
           targetUrl: sitemapUrl,
-          observed: { failure: error instanceof Error ? error.message : "sitemap_fetch_failed" }
+          observed: {
+            failure: error instanceof Error ? error.message : "sitemap_fetch_failed",
+            finalUrl: error instanceof VerificationRedirectError ? error.finalUrl : null
+          }
         }
       });
     } finally {
       clearTimeout(timeout);
     }
   }
+}
+
+async function fetchSameOriginWithRedirects(
+  fetchImpl: typeof fetch,
+  targetUrl: string,
+  init: Omit<RequestInit, "redirect">
+): Promise<{ response: Response; finalUrl: string }> {
+  const allowedOrigin = httpUrlOrigin(targetUrl);
+  let currentUrl = targetUrl;
+  let redirects = 0;
+
+  while (true) {
+    const response = await fetchImpl(currentUrl, {
+      ...init,
+      redirect: "manual"
+    });
+
+    if (!redirectStatuses.has(response.status)) {
+      return { response, finalUrl: currentUrl };
+    }
+
+    const location = response.headers.get("location");
+
+    if (!location) {
+      return { response, finalUrl: currentUrl };
+    }
+
+    if (redirects >= maxSameOriginRedirects) {
+      throw new VerificationRedirectError(
+        `Verification exceeded ${maxSameOriginRedirects} same-origin redirects.`,
+        currentUrl
+      );
+    }
+
+    const nextUrl = new URL(location, currentUrl);
+
+    if (!isHttpUrl(nextUrl) || nextUrl.origin !== allowedOrigin) {
+      throw new VerificationRedirectError("Verification redirect left the deployment origin.", nextUrl.toString());
+    }
+
+    redirects += 1;
+    currentUrl = nextUrl.toString();
+  }
+}
+
+function httpUrlOrigin(value: string): string {
+  const url = new URL(value);
+
+  if (!isHttpUrl(url)) {
+    throw new Error("Verification URL must use HTTP or HTTPS.");
+  }
+
+  return url.origin;
+}
+
+function isHttpUrl(url: URL): boolean {
+  return url.protocol === "http:" || url.protocol === "https:";
 }
 
 function pageChecks(result: PageFetchResult, trackingExpected: boolean): ReleaseCheck[] {
