@@ -216,6 +216,50 @@ void describe(
       assert.equal(manualDeployment?.status, "deploying");
       assert.equal(manualDeployment?.providerOperationStatus, "manual_reconciliation_required");
     });
+
+    void it("markFailed cannot overwrite manual reconciliation rows", async () => {
+      const fixture = await createDeployFixture(db);
+      await insertDeployment(db, fixture, {
+        providerDeployId: null,
+        providerOperationStatus: "manual_reconciliation_required",
+        status: "deploying"
+      });
+
+      await createDrizzleDeployRepository(db).markFailed(fixture.data, new Error("final attempt failed"));
+
+      const deployment = await selectDeployment(db, fixture.deploymentKey);
+      assert.equal(deployment?.status, "deploying");
+      assert.equal(deployment?.providerOperationStatus, "manual_reconciliation_required");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "approved_for_deploy");
+    });
+
+    void it("keeps pending provider deploys reconcilable", async () => {
+      const fixture = await createDeployFixture(db);
+      await insertDeployment(db, fixture, {
+        providerDeployId: "provider-pending",
+        providerOperationStatus: "recorded",
+        status: "deploying"
+      });
+      const hosting = new StatefulSiteHosting({
+        snapshots: [providerSnapshot("provider-pending", "pending")]
+      });
+
+      const result = await reconcilePendingDeployments({
+        db,
+        siteHosting: hosting,
+        limit: 10
+      });
+
+      assert.deepEqual(result, { checked: 1, succeeded: 0, pending: 1, failed: 0 });
+      assert.deepEqual(hosting.getDeployCalls, ["provider-pending"]);
+
+      const deployment = await selectDeployment(db, fixture.deploymentKey);
+      assert.equal(deployment?.status, "deploying");
+      assert.equal(deployment?.providerOperationStatus, "recorded");
+      assert.equal(deployment?.providerDeployId, "provider-pending");
+    });
   }
 );
 

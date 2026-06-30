@@ -173,11 +173,47 @@ void describe(
 
       assert.equal(rows.length, 0);
     });
+
+    void it("persists the scoped release plan id instead of adapter-returned identity", async () => {
+      const scoped = await createReleaseFixture(db, { projectName: "Scoped Project" });
+      const other = await createReleaseFixture(db, { projectName: "Other Project" });
+      verifier.releasePlanIdOverride = other.releasePlanId;
+
+      const result = await service.verify(scoped.projectId, scoped.releasePlanId, {});
+
+      assert.equal(result.releasePlanId, scoped.releasePlanId);
+
+      const [verification] = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.deploymentId, scoped.deploymentId));
+
+      assert.equal(verification?.releasePlanId, scoped.releasePlanId);
+      assert.notEqual(verification?.releasePlanId, other.releasePlanId);
+    });
+
+    void it("rejects deployment ids outside the scoped release plan", async () => {
+      const projectA = await createReleaseFixture(db, { projectName: "Project A" });
+      const projectB = await createReleaseFixture(db, { projectName: "Project B" });
+
+      await assert.rejects(
+        () => service.verify(projectA.projectId, projectA.releasePlanId, { deploymentId: projectB.deploymentId }),
+        /No provider-succeeded deployment is available for verification/u
+      );
+
+      const rows = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.deploymentId, projectB.deploymentId));
+
+      assert.equal(rows.length, 0);
+    });
   }
 );
 
 class FakeVerificationPort implements VerificationPort {
   mode: "healthy" | "rollback" | "throw" = "healthy";
+  releasePlanIdOverride: string | undefined;
   readonly requests: Array<{
     releasePlanId: string;
     deploymentId?: string;
@@ -225,7 +261,7 @@ class FakeVerificationPort implements VerificationPort {
 
     return Promise.resolve(
       ReleaseVerificationSchema.parse({
-        releasePlanId: input.releasePlanId,
+        releasePlanId: this.releasePlanIdOverride ?? input.releasePlanId,
         deploymentId: input.deploymentId,
         verificationStatus: this.mode === "rollback" ? "rollback_recommended" : "live_healthy",
         summary:

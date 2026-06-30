@@ -63,6 +63,10 @@ Implemented tests:
 2. Rollback-level verification persists blocker details, updates the deployment to `rollback_recommended`, and projects the release plan to the current coarse `failed` state.
 3. Verifier execution failure is converted into persisted failed verification evidence; it must not leave the deployment in `verifying` or `running`.
 4. Cross-project verification is rejected and writes no verification rows for the other project.
+5. Adapter-returned release-plan identity is ignored during persistence; the project-scoped route `releasePlanId` owns the verification row.
+6. A deployment id from another release plan or project is rejected and writes no verification rows.
+
+This file contributes 6 release verification tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
 
 Verified local run:
 
@@ -70,7 +74,7 @@ Verified local run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/api test:integration
 
-tests 4 | pass 4 | fail 0
+tests 15 | pass 15 | fail 0
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
@@ -88,6 +92,8 @@ Implemented tests:
 3. `in_flight` without a provider deploy id escalates to manual reconciliation.
 4. Retry/reconcile resumes upload from persisted provider resume evidence without starting another provider deploy.
 5. The pending-deploy reconciler skips manual rows even when they have `providerDeployId`.
+6. `markFailed` cannot overwrite `manual_reconciliation_required`.
+7. Pending provider deploys remain reconcilable instead of being mislabeled failed.
 
 Verified local run:
 
@@ -95,7 +101,7 @@ Verified local run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 5 | pass 5 | fail 0
+tests 7 | pass 7 | fail 0
 ```
 
 ### Queue And Job Audit
@@ -140,7 +146,7 @@ This keeps integration tests close to production schema behavior without using p
 
 ## Coarse Release Plan Projection
 
-`releasePlans.status = "failed"` is currently a coarse projection. It can mean the deploy itself failed, or it can mean the provider deploy succeeded but post-deploy verification found a rollback-level blocker.
+`releasePlans.status = "live"` and `releasePlans.status = "failed"` are currently coarse projections. `live` can mean the provider deploy succeeded before post-deploy verification has run. `failed` can mean the deploy itself failed, or it can mean the provider deploy succeeded but post-deploy verification found a rollback-level blocker.
 
 Precise lifecycle truth lives in:
 
@@ -149,7 +155,7 @@ Precise lifecycle truth lives in:
 - `release_verifications`,
 - `release_verification_checks`.
 
-Future UI and reporting work must read those detail rows before explaining a release as simply "failed".
+Future UI and reporting work must read those detail rows before explaining a release as simply "failed". The same rule applies before explaining a release as verified healthy: `releasePlans.status = "live"` alone is not enough; consumers must check deployment verification detail.
 
 ## Remaining Coverage
 
@@ -159,9 +165,7 @@ The next integration areas should stay focused on operator truth and DB constrai
 
 Further tests can prove:
 
-- provider pending remains reconcilable and is not mislabeled failed,
 - final-attempt pending stays reconcilable,
-- `markFailed` cannot overwrite manual rows through the real repository,
 - failed pre-provider rows with the same deployment key follow the intended strict/manual behavior.
 
 ### Still Useful In Queue And Job Audit

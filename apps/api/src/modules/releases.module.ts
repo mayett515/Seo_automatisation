@@ -396,6 +396,7 @@ export class ReleasesService {
 
     const persisted = await persistReleaseVerification(db, projectId, deployment.id, {
       ...verification,
+      releasePlanId,
       deploymentId: deployment.id
     });
 
