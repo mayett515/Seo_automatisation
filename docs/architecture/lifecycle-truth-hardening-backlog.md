@@ -19,6 +19,12 @@ Release-plan item target routes are now validated as relative paths when release
 
 Why: both security and evidence truth. Post-deploy verification must observe the release's own live URLs, not an arbitrary host.
 
+### GSC Sync Has DB-Backed Mutation Coverage
+
+The GSC sync worker now has real Postgres integration coverage for successful Search Analytics import, empty-result cleanup, and Search Console query failure persistence. The tests use a fake Search Console port and fake token decryptor, but the `gsc_sync_runs`, `gsc_search_analytics_rows`, `gsc_opportunity_signals`, and `gsc_connections` mutations run through the real schema.
+
+Why: GSC sync is a production mutation path with delete+insert analytics behavior and opportunity-signal derivation. Unit tests already covered parsing and signal classification; DB-backed tests now prove the operator-visible sync truth.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership

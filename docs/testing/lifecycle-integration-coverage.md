@@ -126,14 +126,7 @@ Implemented tests:
 6. `markFailed` cannot overwrite `manual_reconciliation_required`.
 7. Pending provider deploys remain reconcilable instead of being mislabeled failed.
 
-Verified local run:
-
-```text
-$env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
-corepack pnpm --filter @localseo/worker test:integration
-
-tests 7 | pass 7 | fail 0
-```
+This file contributes 7 deploy-worker tests to the worker integration command.
 
 ### Rollback Worker
 
@@ -152,13 +145,29 @@ Implemented tests:
 7. `not_configured` rollback results become terminal configuration errors.
 8. Missing rollback-point provider deploy evidence fails before calling the provider.
 
-Verified local run:
+This file contributes 8 rollback-worker tests to the worker integration command.
+
+### GSC Sync Worker
+
+File:
+
+- [gsc-sync.integration.ts](/C:/localseoproject/apps/worker/src/handlers/gsc-sync.integration.ts)
+
+Implemented tests:
+
+1. Successful sync refreshes access, queries Search Console through a fake port, replaces stale Search Analytics rows, inserts fresh rows, creates opportunity signals, marks the sync run completed, and clears connection failure state.
+2. Empty syncs complete honestly, clear stale analytics/signals for the sync run, and do not create opportunity signals.
+3. Search Console query failure marks the sync run `failed` with normalized failure evidence and does not mark the connection as synced.
+
+These tests use a fake `SearchConsolePort` and fake token decryptor. The database writes, deletes, foreign keys, and transaction ordering are real; no live Google Search Console network calls are made.
+
+Verified local worker integration run:
 
 ```text
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 15 | pass 15 | fail 0
+tests 18 | pass 18 | fail 0
 ```
 
 ### Queue And Job Audit
@@ -251,13 +260,21 @@ Further tests can prove:
 - malformed project ids reject before UUID-backed database lookup,
 - HTTP/controller header wiring matches service-level behavior.
 
+### Still Useful In GSC Sync
+
+Further tests can prove:
+
+- worker retry behavior keeps sync-run and `job_runs` lifecycle truth aligned,
+- API/controller sync queueing preserves actor metadata and rejects unavailable GSC connections before enqueue,
+- larger Search Analytics result sets continue to chunk inserts without dropping opportunity signals.
+
 ## Out Of Scope For This Milestone
 
 Do not include these in Lifecycle Integration Coverage:
 
 - real Netlify calls,
 - browser/Playwright verification,
-- Google Search Console calls,
+- live Google Search Console calls,
 - Mastra or AI reasoning behavior,
 - full public-internet end-to-end deploys.
 
