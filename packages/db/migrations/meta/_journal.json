@@ -71,6 +71,27 @@
       "when": 1782738108162,
       "tag": "0009_lying_namor",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782757034128,
+      "tag": "0010_provider_operation_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782757904672,
+      "tag": "0011_job_run_external_queue_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782816884029,
+      "tag": "0012_loose_synch",
+      "breakpoints": true
     }
   ]
 }

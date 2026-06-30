@@ -8,6 +8,7 @@ import {
   gscOpportunitySignalTypes,
   gscSyncStatuses,
   jobStatuses,
+  providerOperationStatuses,
   releaseCheckResults,
   releaseCheckSeverities,
   releaseNoteAudiences,
@@ -31,6 +32,7 @@ import {
 export const jobStatusEnum = pgEnum("job_status", jobStatuses);
 export const releaseStatusEnum = pgEnum("release_status", releasePlanStatuses);
 export const deploymentStatusEnum = pgEnum("deployment_status", deploymentStatuses);
+export const providerOperationStatusEnum = pgEnum("provider_operation_status", providerOperationStatuses);
 export const releaseVerificationStatusEnum = pgEnum("release_verification_status", releaseVerificationStatuses);
 export const gscConnectionStatusEnum = pgEnum("gsc_connection_status", gscConnectionStatuses);
 export const gscSyncStatusEnum = pgEnum("gsc_sync_status", gscSyncStatuses);
@@ -361,6 +363,7 @@ export const deployments = pgTable(
     deploymentKey: text("deployment_key").notNull(),
     provider: text("provider").notNull().default("netlify"),
     providerDeployId: text("provider_deploy_id"),
+    providerOperationStatus: providerOperationStatusEnum("provider_operation_status").notNull().default("not_started"),
     liveUrl: text("live_url"),
     status: deploymentStatusEnum("status").notNull().default("pending"),
     verificationStatus: releaseVerificationStatusEnum("verification_status").notNull().default("not_started"),
@@ -532,23 +535,27 @@ export const reports = pgTable("reports", {
   ...timestamps
 });
 
-export const jobRuns = pgTable("job_runs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").references(() => projects.id),
-  leadId: uuid("lead_id").references(() => leads.id),
-  externalJobId: text("external_job_id"),
-  queueName: text("queue_name"),
-  type: text("type").notNull(),
-  status: jobStatusEnum("status").notNull().default("queued"),
-  inputRef: text("input_ref"),
-  actorType: text("actor_type").notNull().default("system"),
-  actorUserId: uuid("actor_user_id").references(() => users.id),
-  triggerSource: text("trigger_source"),
-  failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
-  startedAt: timestamp("started_at", { withTimezone: true }),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  ...timestamps
-});
+export const jobRuns = pgTable(
+  "job_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id").references(() => projects.id),
+    leadId: uuid("lead_id").references(() => leads.id),
+    externalJobId: text("external_job_id"),
+    queueName: text("queue_name"),
+    type: text("type").notNull(),
+    status: jobStatusEnum("status").notNull().default("queued"),
+    inputRef: text("input_ref"),
+    actorType: text("actor_type").notNull().default("system"),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    triggerSource: text("trigger_source"),
+    failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [uniqueIndex("job_runs_external_queue_idx").on(table.externalJobId, table.queueName)]
+);
 
 export const projectRelations = relations(projects, ({ many, one }) => ({
   customer: one(customers, { fields: [projects.customerId], references: [customers.id] }),

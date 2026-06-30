@@ -1,0 +1,1 @@
+ALTER TABLE "deployments" ADD COLUMN "provider_operation_status" text DEFAULT 'not_started' NOT NULL;

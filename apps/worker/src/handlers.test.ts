@@ -1,9 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { GscSearchAnalyticsRow } from "@localseo/contracts";
-import type { Job } from "bullmq";
-import { DeployConfigurationError, DeployEvidenceError } from "./handlers/deploy.js";
-import { classifyOpportunitySignals, isTerminalWorkerError, parseGscSyncJobData, routeJob } from "./handlers.js";
+import { UnrecoverableError, type Job } from "bullmq";
+import { DeployConfigurationError, DeployEvidenceError, ManualReconciliationRequiredError } from "./handlers/deploy.js";
+import {
+  classifyOpportunitySignals,
+  isTerminalWorkerError,
+  parseGscSyncJobData,
+  routeJob,
+  toWorkerRethrowError
+} from "./handlers.js";
 
 void describe("parseGscSyncJobData", () => {
   void it("accepts valid GSC sync job data", () => {
@@ -108,7 +114,16 @@ void describe("isTerminalWorkerError", () => {
   void it("treats deploy configuration and evidence errors as terminal worker failures", () => {
     assert.equal(isTerminalWorkerError(new DeployConfigurationError("missing adapter")), true);
     assert.equal(isTerminalWorkerError(new DeployEvidenceError("not deployable")), true);
+    assert.equal(isTerminalWorkerError(new ManualReconciliationRequiredError("manual reconciliation")), true);
     assert.equal(isTerminalWorkerError(new Error("provider timeout")), false);
+  });
+
+  void it("maps terminal worker errors to BullMQ unrecoverable errors", () => {
+    const mapped = toWorkerRethrowError(new DeployEvidenceError("not deployable"));
+
+    assert.ok(mapped instanceof UnrecoverableError);
+    assert.equal(mapped.message, "not deployable");
+    assert.equal(toWorkerRethrowError(new Error("provider timeout")) instanceof UnrecoverableError, false);
   });
 });
 

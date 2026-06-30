@@ -1,6 +1,6 @@
 # Backend Foundation Status
 
-Current baseline: after the deterministic deploy reconciler slice following `bed5f63` (`Tighten deploy prep cleanup`).
+Current baseline: after the deploy retry hardening, Netlify artifact-handoff baseline, and provider-operation reconciliation hardening following `4cb3c4c` (`Harden deploy retry semantics`).
 
 This page records what the backend foundation now enforces, what is still intentionally incomplete, and where the next serious foundation items sit on the roadmap.
 
@@ -40,23 +40,24 @@ How to read this: the API owns request authorization and persistence. The public
 
 ## Finished
 
-| Area                      | Status                      | What is enforced                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth/session              | Finished foundation         | Better Auth owns sessions, sessions are DB-durable, Fastify mounts `/api/auth/*`, Nest guards consume session context.                                                                                                                                                                                                                               |
-| Tenant authorization      | Finished foundation         | Project access resolves before permissions; owner/admin/editor/viewer roles gate privileged actions.                                                                                                                                                                                                                                                 |
-| CSRF                      | Finished foundation         | Unsafe authenticated routes are Origin/Referer guarded outside local/test fallback.                                                                                                                                                                                                                                                                  |
-| GSC OAuth                 | Finished foundation         | Signed state, PKCE, Redis `GETDEL` nonce, session re-check, project access re-check, encrypted token storage, safe redirect.                                                                                                                                                                                                                         |
-| DB ownership              | Finished foundation         | API process uses a shared `DatabaseService` and an executable no-rogue-pool guard.                                                                                                                                                                                                                                                                   |
-| Redis ownership           | Finished foundation         | API process uses shared error-handled Redis for rate limits/OAuth state/Better Auth secondary storage.                                                                                                                                                                                                                                               |
-| Proxy/rate-limit topology | Finished foundation         | Broad `TRUST_PROXY=true` is rejected in production; Redis-backed rate limits are wired.                                                                                                                                                                                                                                                              |
-| Tracking ingestion        | Finished pre-MVP foundation | Per-project publishable keys, hashed storage, create/list/revoke API, owner/admin management, allowed-origin binding, `/track` IP, IP/project, true project, key, and key/project rate limits, explicit dry-run vs persisted result.                                                                                                                 |
-| Release preflight         | Finished pre-MVP foundation | Preflight reads persisted evidence and fails closed for missing approval, noindex, local SEO blockers, or rollback point. QA warnings and tracking readiness are warning-level.                                                                                                                                                                      |
-| Worker audit lifecycle    | Finished baseline           | Producers create `job_runs` before enqueue, workers prefer `jobRunId` payloads, and jobs mark running, retrying, completed, or failed for real BullMQ jobs.                                                                                                                                                                                          |
-| Deploy/verify prep        | Finished prep               | `deployments.deployment_key`, deployment evidence JSON, expanded provider-neutral `SiteHostingPort`, and `release_verification_checks` exist for the deterministic deploy/verifier slices. Migration 0009 backfills existing deployment rows before enforcing `NOT NULL`.                                                                            |
-| Deploy reconciler worker  | Finished baseline           | `deploy()` enqueues real deploy jobs when Redis exists. The worker reloads persisted plan/check/approval/rollback evidence, writes or reuses a deployment ledger row by `deployment_key`, calls `SiteHostingPort`, keeps transient failures retryable until the final attempt, and updates release/deployment status on terminal success or failure. |
-| Hosting adapter           | Not production-configured   | The default `NotConfiguredSiteHostingAdapter` returns `not_configured`, so deploy jobs fail truthfully until a Netlify or equivalent adapter and approved build artifact handoff are wired. A productive adapter must return `ready` only for provider-ready/live deploys.                                                                           |
-| Frontend auth UX          | Finished baseline           | Login/sign-up/sign-out, session gate, credentialed API fetches, explicit local scaffold bypass.                                                                                                                                                                                                                                                      |
-| Mastra slot               | Reserved baseline           | `@localseo/ai` contains workflow/agent descriptors, but the product workflows for site planning and creative assembly are not integrated yet and are not loaded by the worker.                                                                                                                                                                       |
+| Area                      | Status                      | What is enforced                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth/session              | Finished foundation         | Better Auth owns sessions, sessions are DB-durable, Fastify mounts `/api/auth/*`, Nest guards consume session context.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Tenant authorization      | Finished foundation         | Project access resolves before permissions; owner/admin/editor/viewer roles gate privileged actions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| CSRF                      | Finished foundation         | Unsafe authenticated routes are Origin/Referer guarded outside local/test fallback.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| GSC OAuth                 | Finished foundation         | Signed state, PKCE, Redis `GETDEL` nonce, session re-check, project access re-check, encrypted token storage, safe redirect.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| DB ownership              | Finished foundation         | API process uses a shared `DatabaseService` and an executable no-rogue-pool guard.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Redis ownership           | Finished foundation         | API process uses shared error-handled Redis for rate limits/OAuth state/Better Auth secondary storage.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Proxy/rate-limit topology | Finished foundation         | Broad `TRUST_PROXY=true` is rejected in production; Redis-backed rate limits are wired.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Tracking ingestion        | Finished pre-MVP foundation | Per-project publishable keys, hashed storage, create/list/revoke API, owner/admin management, allowed-origin binding, `/track` IP, IP/project, true project, key, and key/project rate limits, explicit dry-run vs persisted result.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Release preflight         | Finished pre-MVP foundation | Preflight reads persisted evidence and fails closed for missing approval, noindex, or local SEO blockers. Rollback evidence is required after a prior successful deploy; first deploys are allowed because there is no prior live deployment to snapshot. QA warnings and tracking readiness are warning-level.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Worker audit lifecycle    | Finished baseline           | Producers create `job_runs` before enqueue, use a DB unique key on stable BullMQ job ID + queue name, coalesce only active/waiting BullMQ jobs, archive terminal audit rows before legitimate re-enqueue, workers prefer `jobRunId` payloads, and jobs mark running, retrying, completed, or failed for real BullMQ jobs. Terminal worker errors are rethrown to BullMQ as unrecoverable failures.                                                                                                                                                                                                                                                                                                                                                   |
+| Deploy/verify prep        | Finished prep               | `deployments.deployment_key`, deployment evidence JSON, expanded provider-neutral `SiteHostingPort`, and `release_verification_checks` exist for the deterministic deploy/verifier slices. Migration 0009 backfills existing deployment rows before enforcing `NOT NULL`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Deploy reconciler worker  | Finished baseline           | `deploy()` enqueues real deploy jobs when Redis exists. The worker reloads persisted plan/check/approval/rollback/page-version/hosting evidence, writes or reuses a deployment ledger row by `deployment_key`, writes an approved release artifact, marks provider mutation intent, persists provider IDs and upload resume evidence before file upload, records local upload completion after file upload, and runs a periodic reconciliation loop for recorded pending provider deploys. Transient provider failures stay retryable; pending provider states stay reconcilable; unknown provider-create outcomes are marked `manual_reconciliation_required` instead of being mislabeled as ordinary failed deploys.                               |
+| Hosting adapter           | Baseline wired              | The worker composition root now wires a Netlify digest-deploy adapter when `NETLIFY_AUTH_TOKEN` is present and otherwise keeps the safe `not_configured` adapter. The Netlify adapter exposes phased `beginDeploy` and `uploadDeployFiles` operations, creates an async SHA1 digest deploy with a traceable title, polls until Netlify exposes required file digests, returns an opaque upload resume token, uploads required files as `application/octet-stream`, and returns `ready` only for provider-ready/live state. Production workers use S3-backed `ObjectStoragePort`; local/test workers use filesystem storage.                                                                                                                          |
+| Post-deploy verification  | Baseline wired              | `verify()` now loads a provider-succeeded deployment, derives intended live routes from the preferred stable production URL and release plan item routes, runs a deterministic HTTP verifier, persists `release_verifications` plus child `release_verification_checks`, and updates deployment verification/health status from observed evidence. The baseline checks HTTP success, noindex, canonical URL, JSON-LD parseability, exact sitemap `<loc>` inclusion, and tracking marker presence when tracking is configured. The renderer emits approved canonical and JSON-LD fields so the baseline deploy artifact and verifier agree. Browser-level checks, GSC handoff, rollback execution, and DB integration coverage remain follow-up work. |
+| Frontend auth UX          | Finished baseline           | Login/sign-up/sign-out, session gate, credentialed API fetches, explicit local scaffold bypass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Mastra slot               | Reserved baseline           | `@localseo/ai` contains workflow/agent descriptors, but the product workflows for site planning and creative assembly are not integrated yet and are not loaded by the worker.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Release Flow State
 
@@ -78,9 +79,17 @@ stateDiagram-v2
 
   note right of Deploying
     Reconciler worker exists.
-    Default hosting adapter fails
-    as not_configured until a
-    production adapter is wired.
+    Netlify adapter baseline exists.
+    Recorded pending provider deploys
+    are also polled by a worker loop.
+    If provider create may have happened
+    but no providerDeployId was recorded,
+    providerOperationStatus becomes
+    manual_reconciliation_required and
+    automation stops.
+    Default adapter still fails as
+    not_configured when credentials
+    are absent.
   end note
 
   note right of ApprovedForDeploy
@@ -91,32 +100,57 @@ stateDiagram-v2
   end note
 
   note right of Live
-    verify() is still synthetic today.
-    Real post-deploy verification must
-    exist before production deploys.
+    verify() now runs HTTP-first
+    checks and persists evidence.
+    Browser/GSC/rollback depth and
+    integration coverage are still
+    required before production deploys.
   end note
 ```
 
-How to read this: the preflight, approval, deploy enqueue, and deploy worker state transitions are now real enough to trust as backend control flow. Productive hosting is not yet production-complete because the default hosting adapter is intentionally `not_configured`, and post-deploy verification is still synthetic.
+How to read this: the preflight, approval, deploy enqueue, deploy worker, and HTTP-first verification state transitions are now real enough to trust as backend control flow. Productive hosting has a Netlify adapter baseline, approved-artifact handoff, async required-file upload handling, persisted provider IDs before upload, a recorded-pending-deploy reconciler, and persisted post-deploy verification evidence. It is still not production-complete because integration coverage is still mostly unit-level, rollback execution is still stubbed, browser-level tracking/script checks are not wired, and the tiny provider-create window before provider ID persistence still escalates to manual reconciliation rather than automatic lookup.
 
 ## Next Serious Foundation Items
 
-### 1. Productive Hosting Adapter And Artifact Handoff
+### 1. Foundation Integration Coverage
 
-Meaning: connect the existing deterministic deploy reconciler to a real provider adapter and approved release artifact. This work still must not rely on AI reasoning during execution.
+Meaning: prove the assembled foundation through API/DB/worker paths rather than isolated unit tests.
+
+High-value items:
+
+- API/DB-backed tracking ingestion tests for valid key, revoked key, wrong origin, malformed IDs, and route limit behavior.
+- Release state-machine tests for create, preflight, approve, deploy queueing, cross-project rejection, and non-approvable statuses.
+- Queue producer tests proving stable job IDs reuse one `job_runs` row under duplicate enqueue races.
+- Worker audit tests proving `jobRunId` lifecycle updates, enqueue-failure audit failure, and zero-row warnings.
+- Deploy worker retry tests proving transient provider failures stay retryable and pending provider states remain reconcilable instead of being downgraded to failed only because the BullMQ retry window ended.
+- Deploy adapter integration tests proving approved artifact handoff, provider pending reconciliation, and no duplicate provider mutation after an in-flight marker.
+- Release verification integration tests proving live route checks persist verification rows, child check rows, deployment verification status, and rollback recommendation status from real evidence.
+- GSC sync retry test proving delete+insert analytics mutation is transactional.
+- Login/session browser smoke for unauthenticated redirect, sign-in, protected route access, and sign-out.
+
+### 2. Productive Hosting Follow-Up
+
+Meaning: keep the newly wired Netlify adapter/artifact handoff production-operable as verification and integration tests land. This work still must not rely on AI reasoning during execution.
 
 Required behavior:
 
 - Keep `SiteHostingPort` provider-neutral; Netlify details stay inside the adapter.
-- Build or load the approved release artifact referenced by the deploy worker.
-- Wire a Netlify adapter or equivalent provider adapter into the worker composition root.
+- Keep production artifact storage on durable object storage (`S3_BUCKET`); keep filesystem storage local/test only.
+- Keep the approved release artifact writer and provider adapter on the shared `ObjectStoragePort`.
+- Keep Netlify async digest deploys in the poll-until-required-digests flow before file upload.
+- Keep deploy jobs on the longer fixed retry window so provider-ready polling has real time to complete.
+- Keep the periodic reconciler for deployments that already have `providerDeployId` recorded.
+- Keep upload resume controlled by local upload-complete evidence, not provider-neutral `deploying` state.
 - Publish only approved page versions.
 - Inject/verify the project tracking snippet only from approved tracking config.
 - Continue to validate rollback artifacts before productive mutation.
 - Preserve deployment ledger idempotency by `deployment_key`.
-- Use `deployment_key` as the provider-side idempotency key or maintain an equivalent local operation reference so a crash after provider creation cannot create a duplicate provider deploy on retry.
-- Return a `ready` deploy result only when the provider deploy is ready/live; accepted, uploaded, queued, or building provider states must remain pending and be reconciled with `getDeploy`.
+- Keep provider-operation state typed and guarded; `manual_reconciliation_required` must stop automation and must not be overwritten back to `in_flight`.
+- Keep the provider mutation in-flight marker fail-closed: a retry must not create another provider deploy when a provider call may have succeeded but no provider deploy id was recorded.
+- If Netlify exposes a reliable provider-side idempotency or metadata lookup path later, replace manual reconciliation with automatic provider lookup only when the match is exact, time-windowed, state-filtered, and non-ambiguous.
+- Keep `ready` deploy results limited to provider-ready/live state; accepted, uploaded, queued, or building provider states must remain pending and be reconciled with `getDeploy`.
 - Keep default `not_configured` behavior for environments without provider credentials.
+- Keep HTTP-first verification as the baseline and add browser-level script checks only when HTTP/HTML evidence is insufficient.
 
 Definition of done:
 
@@ -127,46 +161,9 @@ approved_for_deploy + passing checks
 -> provider adapter executes hosting mutation
 -> deployment row has providerDeployId/liveUrl
 -> release status reflects provider side effect
+-> retry after provider-created crash either resumes from recorded providerDeployId or stops at manual_reconciliation_required instead of creating a duplicate provider deploy
+-> verify endpoint persists live evidence and updates deployment health
 ```
-
-### 2. Real Post-Deploy Verification
-
-Meaning: replace the current synthetic `verify()` response with deterministic checks against live deployment evidence.
-
-Required behavior:
-
-- Fetch each intended live route.
-- Check HTTP success status.
-- Confirm live pages are not blocked by `noindex`.
-- Check canonical URL and trailing slash expectations.
-- Parse structured data enough to catch invalid JSON-LD/schema output.
-- Confirm sitemap readiness/publication state when relevant.
-- Confirm tracking script loads where tracking is configured.
-- Persist `release_verifications`, child `release_verification_checks`, and update deployment verification status.
-- Return `live_healthy`, `live_with_warnings`, or `rollback_recommended` only from real evidence.
-
-Definition of done:
-
-```text
-deployed release
--> live route checks
--> persisted verification row
--> deployment/release status updated from evidence
--> rollback recommended when blockers exist
-```
-
-### 3. Foundation Integration Coverage
-
-Meaning: prove the assembled foundation through API/DB/worker paths rather than isolated unit tests.
-
-High-value items:
-
-- API/DB-backed tracking ingestion tests for valid key, revoked key, wrong origin, malformed IDs, and route limit behavior.
-- Release state-machine tests for create, preflight, approve, deploy queueing, cross-project rejection, and non-approvable statuses.
-- Worker audit tests proving `jobRunId` lifecycle updates, enqueue-failure audit failure, and zero-row warnings.
-- Deploy worker retry tests proving transient provider failures stay retryable until the final attempt and final pending provider state becomes terminal.
-- GSC sync retry test proving delete+insert analytics mutation is transactional.
-- Login/session browser smoke for unauthenticated redirect, sign-in, protected route access, and sign-out.
 
 ## Mastra Reasoning And Creative Assembly Lane
 
@@ -251,7 +248,7 @@ Programming-wise, the backend foundation is set for continued product build and 
 - DB/Redis ownership is consolidated,
 - worker jobs have baseline lifecycle audit.
 
-It is not yet set for production deploys. The deploy reconciler worker exists, but productive hosting still needs a real provider adapter/artifact handoff, and live health still needs real post-deploy verification. The Mastra creative assembly lane is also not product-integrated yet; it is planned as the proposal layer for site strategy, copy, layout, and design, not as an execution bypass. Until provider deploy and verification are done, deploy success and live health must not be treated as customer-safe production facts.
+It is not yet set for production deploys. The deploy reconciler worker, approved-artifact handoff, durable production artifact storage, Netlify adapter baseline, typed provider-operation state, manual reconciliation stop state, and HTTP-first verification baseline now exist, but rollback execution, browser-level script checks, GSC handoff, and API/DB/worker integration coverage still need to land. The Mastra creative assembly lane is also not product-integrated yet; it is planned as the proposal layer for site strategy, copy, layout, and design, not as an execution bypass. Until integration coverage and recovery paths are done, deploy success and live health must not be treated as customer-safe production facts.
 
 ## Pattern Mining Checkpoint
 

@@ -4,8 +4,10 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Injectable,
   Module,
+  Optional,
   Param,
   Post,
   Req,
@@ -19,34 +21,37 @@ import {
   ReleaseCheckSchema,
   ReleaseNoteSchema,
   ReleasePlanSchema,
+  ReleaseVerificationCheckSchema,
   ReleaseVerificationSchema,
   RollbackPointSchema,
   VerifyReleaseRequestSchema,
+  type DeploymentStatus,
   type ReleasePlan,
   type ReleaseCheck,
   type ReleaseNote,
+  type ReleasePlanStatus,
   type ReleaseVerification,
+  type ReleaseVerificationStatus,
   type RollbackPoint
 } from "@localseo/contracts";
-import {
-  buildReleaseDeploymentKey,
-  canDeployRelease,
-  decideReleaseReadiness,
-  decideReleaseVerificationStatus
-} from "@localseo/domain";
+import { HttpReleaseVerificationAdapter, type VerificationPort } from "@localseo/adapters";
+import { buildReleaseDeploymentKey, canDeployRelease, decideReleaseReadiness } from "@localseo/domain";
 import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "@localseo/seo";
 import {
   approvals,
+  deployments,
   pageProposals,
   pageVersions,
   projectTrackingKeys,
   releaseChecks,
   releasePlanItems,
   releasePlans,
+  releaseVerificationChecks,
+  releaseVerifications,
   rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -61,12 +66,25 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 type Db = DatabaseClient;
 
 const approvableReleaseStatuses = new Set<ReleasePlan["status"]>(["ready", "ready_with_warnings"]);
+const rollbackReadyDeploymentStatuses = [
+  "provider_succeeded",
+  "verifying",
+  "live_healthy",
+  "live_with_warnings",
+  "rollback_recommended"
+] as const satisfies DeploymentStatus[];
+const deployJobAttempts = 20;
+const deployJobBackoffDelayMs = 15_000;
+export const RELEASE_VERIFICATION_PORT = Symbol("RELEASE_VERIFICATION_PORT");
 
 @Injectable()
 export class ReleasesService {
   constructor(
     private readonly queues: QueueProducerService,
-    private readonly database: DatabaseService
+    private readonly database: DatabaseService,
+    @Optional()
+    @Inject(RELEASE_VERIFICATION_PORT)
+    private readonly verification: VerificationPort = new HttpReleaseVerificationAdapter()
   ) {}
 
   async createPlan(projectId: string, body: unknown): Promise<ReleasePlan> {
@@ -175,6 +193,7 @@ export class ReleasesService {
         : {
             pages: [],
             rollbackPointCount: 0,
+            priorSuccessfulDeploymentCount: 0,
             usableTrackingKeyCount: 0
           };
     const checks = buildReleasePreflightChecks(evidence);
@@ -283,6 +302,15 @@ export class ReleasesService {
         triggeredByUserId: userId ?? null,
         triggerSource: "user_action"
       }),
+      options: {
+        attempts: deployJobAttempts,
+        backoff: {
+          type: "fixed",
+          delay: deployJobBackoffDelayMs
+        },
+        removeOnComplete: true,
+        removeOnFail: true
+      },
       audit: {
         projectId,
         type: "deploy",
@@ -323,59 +351,63 @@ export class ReleasesService {
   ): Promise<ReleaseVerification & { projectId: string }> {
     await this.assertReleasePlanForProject(projectId, releasePlanId);
     const input = VerifyReleaseRequestSchema.parse(body ?? {});
+    const db = this.database.db;
 
-    const checks = [
-      ReleaseCheckSchema.parse({
-        checkKey: "http_status_check",
-        scope: "domain",
-        severity: "blocker",
-        result: "passed",
-        message: "Live routes returned successful HTTP responses."
-      }),
-      ReleaseCheckSchema.parse({
-        checkKey: "canonical_trailing_slash_check",
-        scope: "page",
-        severity: "blocker",
-        result: "passed",
-        message: "Canonical URLs match intended trailing-slash live routes."
-      }),
-      ReleaseCheckSchema.parse({
-        checkKey: "schema_parse_check",
-        scope: "page",
-        severity: "warning",
-        result: "passed",
-        message: "Structured data parsed successfully."
-      }),
-      ReleaseCheckSchema.parse({
-        checkKey: "sitemap_readiness_check",
-        scope: "sitemap",
-        severity: "warning",
-        result: "passed",
-        message: "Published pages are ready for sitemap submission."
-      }),
-      ReleaseCheckSchema.parse({
-        checkKey: "tracking_load_check",
-        scope: "tracking",
-        severity: "warning",
-        result: "passed",
-        message: "Tracking script loaded on verified routes."
+    if (!db || !isPersistedId(releasePlanId)) {
+      return {
+        projectId,
+        ...ReleaseVerificationSchema.parse({
+          releasePlanId,
+          deploymentId: input.deploymentId,
+          verificationStatus: "failed",
+          summary: "Release persistence is required before post-deploy verification can run.",
+          checkedAt: new Date().toISOString(),
+          checks: [
+            ReleaseCheckSchema.parse({
+              checkKey: "verification_persistence_check",
+              scope: "project",
+              severity: "blocker",
+              result: "failed",
+              message: "Release persistence is required before post-deploy verification can run."
+            })
+          ]
+        })
+      };
+    }
+
+    const deployment = await loadDeploymentForVerification(db, projectId, releasePlanId, input.deploymentId);
+    const targetUrls = await loadVerificationTargetUrls(db, releasePlanId, deployment);
+    const trackingExpected = await hasActiveTrackingKey(db, projectId);
+
+    const verification = await this.verification
+      .verifyRelease({
+        releasePlanId,
+        deploymentId: deployment.id,
+        liveUrls: targetUrls,
+        trackingExpected
       })
-    ];
+      .catch((error: unknown) =>
+        verificationFailureResult({
+          releasePlanId,
+          deploymentId: deployment.id,
+          error
+        })
+      );
 
-    const verificationStatus = decideReleaseVerificationStatus(checks);
+    const persisted = await persistReleaseVerification(db, projectId, deployment.id, {
+      ...verification,
+      deploymentId: deployment.id
+    });
 
     return {
       projectId,
       ...ReleaseVerificationSchema.parse({
         releasePlanId,
-        deploymentId: input.deploymentId,
-        verificationStatus,
-        summary:
-          verificationStatus === "live_healthy"
-            ? "Post-deploy verification passed."
-            : "Post-deploy verification completed with issues.",
-        checkedAt: new Date().toISOString(),
-        checks
+        deploymentId: persisted.deploymentId ?? undefined,
+        verificationStatus: persisted.verificationStatus,
+        summary: persisted.summary,
+        checkedAt: persisted.checkedAt,
+        checks: persisted.checks
       })
     };
   }
@@ -542,7 +574,13 @@ class ReleasesController {
 
 @Module({
   controllers: [ReleasesController],
-  providers: [ReleasesService]
+  providers: [
+    ReleasesService,
+    {
+      provide: RELEASE_VERIFICATION_PORT,
+      useFactory: () => new HttpReleaseVerificationAdapter()
+    }
+  ]
 })
 export class ReleasesModule {}
 
@@ -590,6 +628,10 @@ async function loadReleasePreflightEvidence(
     .select({ id: rollbackPoints.id })
     .from(rollbackPoints)
     .where(and(eq(rollbackPoints.projectId, projectId), eq(rollbackPoints.releasePlanId, releasePlanId)));
+  const priorDeploymentRows = await db
+    .select({ id: deployments.id })
+    .from(deployments)
+    .where(and(eq(deployments.projectId, projectId), inArray(deployments.status, rollbackReadyDeploymentStatuses)));
   const activeTrackingKeyRows = await db
     .select({
       id: projectTrackingKeys.id,
@@ -614,6 +656,7 @@ async function loadReleasePreflightEvidence(
       uniquenessRationale: row.uniquenessRationale ?? null
     })),
     rollbackPointCount: rollbackRows.length,
+    priorSuccessfulDeploymentCount: priorDeploymentRows.length,
     usableTrackingKeyCount: activeTrackingKeyRows.filter((row) => hasUsableTrackingOrigins(row.allowedOrigins)).length
   };
 }
@@ -642,6 +685,279 @@ async function loadReleaseChecks(db: Db, releasePlanId: string): Promise<Release
       evidence: row.evidenceJson ?? undefined
     })
   );
+}
+
+async function loadDeploymentForVerification(
+  db: Db,
+  projectId: string,
+  releasePlanId: string,
+  deploymentId?: string
+): Promise<typeof deployments.$inferSelect> {
+  const verificationReadyStatuses = [
+    "provider_succeeded",
+    "verifying",
+    "live_healthy",
+    "live_with_warnings",
+    "rollback_recommended"
+  ] as const satisfies DeploymentStatus[];
+
+  const filters = [
+    eq(deployments.projectId, projectId),
+    eq(deployments.releasePlanId, releasePlanId),
+    inArray(deployments.status, verificationReadyStatuses)
+  ];
+
+  if (deploymentId) {
+    if (!isPersistedId(deploymentId)) {
+      throw new BadRequestException("Deployment id must be a UUID.");
+    }
+
+    filters.push(eq(deployments.id, deploymentId));
+  }
+
+  const [deployment] = await db
+    .select()
+    .from(deployments)
+    .where(and(...filters))
+    .orderBy(desc(deployments.updatedAt))
+    .limit(1);
+
+  if (!deployment) {
+    throw new BadRequestException("No provider-succeeded deployment is available for verification.");
+  }
+
+  return deployment;
+}
+
+async function loadVerificationTargetUrls(
+  db: Db,
+  releasePlanId: string,
+  deployment: typeof deployments.$inferSelect
+): Promise<string[]> {
+  const baseLiveUrl = liveUrlsFromDeployment(deployment)[0];
+  const itemRows = await db
+    .select({
+      targetUrl: releasePlanItems.targetUrl
+    })
+    .from(releasePlanItems)
+    .where(eq(releasePlanItems.releasePlanId, releasePlanId));
+
+  if (!baseLiveUrl || itemRows.length === 0) {
+    return liveUrlsFromDeployment(deployment);
+  }
+
+  return [
+    ...new Set(
+      itemRows.map((row) => {
+        try {
+          return new URL(row.targetUrl, baseLiveUrl).toString();
+        } catch {
+          return row.targetUrl;
+        }
+      })
+    )
+  ];
+}
+
+async function hasActiveTrackingKey(db: Db, projectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: projectTrackingKeys.id })
+    .from(projectTrackingKeys)
+    .where(
+      and(
+        eq(projectTrackingKeys.projectId, projectId),
+        eq(projectTrackingKeys.status, "active"),
+        isNull(projectTrackingKeys.revokedAt)
+      )
+    )
+    .limit(1);
+
+  return Boolean(row);
+}
+
+async function persistReleaseVerification(
+  db: Db,
+  projectId: string,
+  deploymentId: string,
+  verification: ReleaseVerification
+): Promise<ReleaseVerification> {
+  const checkedAt = new Date(verification.checkedAt);
+  const verificationStatus = verification.verificationStatus;
+
+  return db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(releaseVerifications)
+      .values({
+        releasePlanId: verification.releasePlanId,
+        deploymentId,
+        status: verificationStatus,
+        summary: verification.summary,
+        checkedAt,
+        evidenceJson: {
+          source: "release_verify_endpoint",
+          checkCount: verification.checks.length
+        }
+      })
+      .returning();
+
+    if (!created) {
+      throw new Error("Failed to persist release verification");
+    }
+
+    if (verification.checks.length > 0) {
+      await tx.insert(releaseVerificationChecks).values(
+        verification.checks.map((check) => {
+          const evidence = recordFromUnknown(check.evidence);
+
+          return {
+            verificationId: created.id,
+            checkKey: check.checkKey,
+            scope: check.scope,
+            targetUrl: stringFromUnknown(evidence.targetUrl),
+            severity: check.severity,
+            result: check.result,
+            message: check.message,
+            expectedJson: recordOrUndefined(evidence.expected),
+            observedJson: recordOrUndefined(evidence.observed),
+            evidenceJson: check.evidence,
+            checkedAt
+          };
+        })
+      );
+    }
+
+    await tx
+      .update(deployments)
+      .set({
+        status: deploymentStatusFromVerification(verificationStatus),
+        verificationStatus,
+        verifiedAt: checkedAt,
+        updatedAt: new Date()
+      })
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.projectId, projectId)));
+
+    const nextReleasePlanStatus = releasePlanStatusFromVerification(verificationStatus);
+
+    if (nextReleasePlanStatus) {
+      await tx
+        .update(releasePlans)
+        .set({
+          status: nextReleasePlanStatus,
+          updatedAt: new Date()
+        })
+        .where(and(eq(releasePlans.id, verification.releasePlanId), eq(releasePlans.projectId, projectId)));
+    }
+
+    return ReleaseVerificationSchema.parse({
+      releasePlanId: created.releasePlanId,
+      deploymentId: created.deploymentId ?? undefined,
+      verificationStatus: created.status,
+      summary: created.summary,
+      checkedAt: created.checkedAt.toISOString(),
+      checks: verification.checks.map((check) =>
+        ReleaseVerificationCheckSchema.parse({
+          ...check,
+          checkedAt: verification.checkedAt
+        })
+      )
+    });
+  });
+}
+
+function deploymentStatusFromVerification(status: ReleaseVerificationStatus): DeploymentStatus {
+  if (status === "live_healthy" || status === "live_with_warnings" || status === "rollback_recommended") {
+    return status;
+  }
+
+  if (status === "running") {
+    return "verifying";
+  }
+
+  return "failed";
+}
+
+function releasePlanStatusFromVerification(status: ReleaseVerificationStatus): ReleasePlanStatus | undefined {
+  if (status === "live_healthy" || status === "live_with_warnings") {
+    return "live";
+  }
+
+  if (status === "rollback_recommended" || status === "failed") {
+    return "failed";
+  }
+
+  return undefined;
+}
+
+function verificationFailureResult(input: {
+  releasePlanId: string;
+  deploymentId: string;
+  error: unknown;
+}): ReleaseVerification {
+  const message = normalizeFailureMessage(input.error);
+
+  return ReleaseVerificationSchema.parse({
+    releasePlanId: input.releasePlanId,
+    deploymentId: input.deploymentId,
+    verificationStatus: "failed",
+    summary: "Post-deploy verification failed before checks could complete.",
+    checkedAt: new Date().toISOString(),
+    checks: [
+      ReleaseCheckSchema.parse({
+        checkKey: "verification_execution_check",
+        scope: "project",
+        severity: "blocker",
+        result: "failed",
+        message: "Post-deploy verification failed before checks could complete.",
+        evidence: {
+          targetUrl: "",
+          observed: { failure: message }
+        }
+      })
+    ]
+  });
+}
+
+function liveUrlsFromDeployment(deployment: typeof deployments.$inferSelect): string[] {
+  const evidence = recordFromUnknown(deployment.evidenceJson);
+  const provider = recordFromUnknown(evidence.provider);
+  const providerLiveUrls = Array.isArray(provider.liveUrls)
+    ? provider.liveUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
+    : [];
+  const urls = deployment.liveUrl ? [deployment.liveUrl, ...providerLiveUrls] : providerLiveUrls;
+
+  return [...new Set(urls)].sort(compareLiveUrlsForVerification);
+}
+
+function compareLiveUrlsForVerification(left: string, right: string): number {
+  return liveUrlVerificationScore(left) - liveUrlVerificationScore(right);
+}
+
+function liveUrlVerificationScore(value: string): number {
+  try {
+    const url = new URL(value);
+    const previewPenalty = url.hostname.includes("--") ? 10 : 0;
+    const insecurePenalty = url.protocol === "https:" ? 0 : 1;
+    return previewPenalty + insecurePenalty;
+  } catch {
+    return 100;
+  }
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function recordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  const record = recordFromUnknown(value);
+  return Object.keys(record).length > 0 ? record : undefined;
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function normalizeFailureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "verification_failed";
 }
 
 async function hasApprovedRelease(db: Db, releasePlanId: string): Promise<boolean> {

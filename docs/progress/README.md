@@ -35,3 +35,5 @@ Do not log every tiny edit. Commit history already covers that.
 ## Current Log
 
 - [2026-06-25.md](2026-06-25.md)
+- [2026-06-29.md](2026-06-29.md)
+- [2026-06-30.md](2026-06-30.md)

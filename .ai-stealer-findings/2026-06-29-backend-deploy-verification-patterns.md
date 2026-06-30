@@ -24,6 +24,7 @@ Primary references:
   - https://docs.bullmq.io/guide/retrying-failing-jobs
   - https://docs.bullmq.io/guide/workers/graceful-shutdown
 - Netlify deploy/readback/restore API:
+  - https://docs.netlify.com/api-and-cli-guides/api-guides/get-started-with-api/
   - https://open-api.netlify.com/
   - https://docs.netlify.com/manage/monitoring/notifications/
 - Idempotency and atomic deployment patterns:
@@ -85,6 +86,11 @@ Local decision:
 - Re-check release plan, release checks, persisted approval, rollback evidence, page versions, tracking config, and provider target inside the worker.
 - Keep provider DTOs inside a `SiteHostingPort` adapter.
 - Never mark a release live from enqueue or provider acceptance.
+- For Netlify's async digest deploy flow, create the deploy with path -> SHA1 manifest, poll until Netlify exposes the `required` SHA1 digests, upload those files to `/deploys/{deploy_id}/files/{path}` with `Content-Type: application/octet-stream`, then read/poll deploy state. Only provider state `ready` may map to local provider success; `preparing`, `prepared`, `upload_required`, `accepted`, `queued`, `uploading`, `uploaded`, building, or unknown states must persist a provider deploy id and remain pending for worker reconciliation.
+- Netlify's public API docs do not provide a general idempotency-key guarantee for create-deploy calls. The local worker therefore records a provider mutation `in_flight` marker before calling the provider. If a retry sees `in_flight` with no provider deploy id, it must fail closed for manual reconciliation instead of issuing another create call.
+- Recorded pending provider deploys need a reconciliation loop beyond one BullMQ execution. BullMQ retries are useful for short transient failures, but provider builds can outlast the retry window; a deterministic worker loop should poll rows with `status = deploying` and `providerDeployId IS NOT NULL`.
+- Preflight should require rollback evidence after a prior successful deploy. A first deploy has no prior live provider state to snapshot, so it may pass rollback readiness without a rollback point.
+- Local/test artifact handoff may use filesystem storage, but production artifact handoff must use durable object storage through `ObjectStoragePort`.
 
 Recommended port shape:
 
@@ -151,13 +157,45 @@ Updated sequence:
 
 1. Deploy ledger/provider boundary and tracking-rate hardening prerequisites.
 2. Idempotent deploy reconciler worker.
-3. HTTP-first post-deploy verifier.
-4. API/DB/worker integration coverage around deploy, verification, tracking, and audit lifecycle.
-5. Mastra creative proposal lane after production truth paths exist.
+3. Productive hosting adapter plus approved artifact handoff.
+4. Hosting hardening: async required-file polling/upload, state-aware re-enqueue, first-deploy rollback exemption, and recorded-pending deployment reconciliation.
+5. HTTP-first post-deploy verifier.
+6. API/DB/worker integration coverage around deploy, verification, tracking, and audit lifecycle.
+7. Provider reconciliation polish if Netlify exposes a reliable deployment-key lookup/idempotency path.
+8. Mastra creative proposal lane after production truth paths exist.
 
 ## Non-Decisions
 
 - Do not implement Mastra creative workflows before deploy/verifier.
 - Do not add browser automation to verification until HTTP/HTML checks are insufficient.
 - Do not copy implementation code from referenced repositories.
-- Do not treat provider `accepted`, `uploaded`, or `processing` states as live health.
+- Do not treat provider `accepted`, `uploaded`, `upload_required`, or `processing` states as live health.
+
+## 2026-06-30 Reconciliation Pattern Synthesis
+
+Additional pattern-mining on lost responses / dangling remote resources refined the Netlify deploy strategy.
+
+Accepted local adaptations:
+
+- Split provider mutation into phases: `beginDeploy -> persist providerDeployId + resume token -> uploadDeployFiles -> getDeploy`.
+- Persist the Netlify provider deploy id before file upload.
+- Persist provider-specific upload recovery details as opaque deployment evidence, not as domain-level Netlify digest fields.
+- Persist local upload completion after successful file upload; retry must not treat provider-neutral `deploying` as proof that upload is done.
+- Treat `manual_reconciliation_required` as provider-operation truth when a create call may have happened but no provider deploy id was recorded.
+- Use DB state and guarded updates as the crash-safety boundary; retry must not overwrite manual state back to `in_flight`.
+
+Rejected or deferred patterns:
+
+- Do not auto-create a new provider deploy after an `in_flight` lookup returns zero matches. Provider listing can be eventually consistent.
+- Do not use Postgres advisory locks across Netlify create/upload/poll I/O.
+- Do not automatically delete/cancel provider resources as saga compensation while the remote outcome is unknown.
+- Do not add a `recoveryPoint` column, `provider_operations` table, or per-file upload table until multiple provider operations need first-class audit rows.
+- Do not use artifact payload hashing as a terminal retry gate while approved artifacts contain volatile metadata such as `createdAt`.
+
+Future lookup rule if implemented:
+
+```text
+findDeployByKey may auto-attach only when the provider returns exactly one candidate that matches the persisted operation key,
+falls within the provider-mutation time window, and is in an acceptable state.
+Zero, multiple, stale, or wrong-state matches stay manual_reconciliation_required.
+```

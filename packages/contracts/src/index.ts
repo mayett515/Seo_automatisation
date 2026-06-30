@@ -97,6 +97,14 @@ export const deploymentStatuses = [
   "rolled_back"
 ] as const;
 
+export const providerOperationStatuses = [
+  "not_started",
+  "in_flight",
+  "recorded",
+  "failed",
+  "manual_reconciliation_required"
+] as const;
+
 export const releaseVerificationStatuses = [
   "not_started",
   "running",
@@ -135,6 +143,7 @@ export const TrackingEventNameSchema = z.enum(trackingEventNames);
 export const DomainEventNameSchema = z.enum(domainEventNames);
 export const ReleasePlanStatusSchema = z.enum(releasePlanStatuses);
 export const DeploymentStatusSchema = z.enum(deploymentStatuses);
+export const ProviderOperationStatusSchema = z.enum(providerOperationStatuses);
 export const ReleaseVerificationStatusSchema = z.enum(releaseVerificationStatuses);
 export const GscConnectionStatusSchema = z.enum(gscConnectionStatuses);
 export const GscSyncStatusSchema = z.enum(gscSyncStatuses);
@@ -209,9 +218,27 @@ export const DeployJobDataSchema = z.object({
   projectId: ProjectIdSchema,
   releasePlanId: z.string().min(1),
   deploymentKey: z.string().min(1),
+  maxAttempts: z.number().int().positive().optional(),
   jobRunId: z.string().min(1).optional(),
   triggeredByUserId: z.string().min(1).nullable().optional(),
   triggerSource: z.string().min(1).optional()
+});
+
+export const ApprovedReleaseArtifactPageSchema = z.object({
+  releasePlanItemId: z.string().min(1),
+  pageVersionId: z.string().min(1).nullable(),
+  targetUrl: z.string().min(1),
+  targetSubdomain: z.string().min(1).nullable(),
+  action: z.string().min(1),
+  pageJson: z.record(z.string(), z.unknown())
+});
+
+export const ApprovedReleaseArtifactSchema = z.object({
+  projectId: ProjectIdSchema,
+  releasePlanId: z.string().min(1),
+  deploymentKey: z.string().min(1),
+  createdAt: z.string().datetime(),
+  pages: z.array(ApprovedReleaseArtifactPageSchema).min(1)
 });
 
 export const PageProposalSchema = z.object({
@@ -465,6 +492,8 @@ export type ProjectSummary = z.output<typeof ProjectSummarySchema>;
 export type MainPreview = z.output<typeof MainPreviewSchema>;
 export type QueueJob = z.output<typeof QueueJobSchema>;
 export type DeployJobData = z.output<typeof DeployJobDataSchema>;
+export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
+export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
 export type PageProposal = z.output<typeof PageProposalSchema>;
 export type ReleaseCheck = z.output<typeof ReleaseCheckSchema>;
@@ -500,6 +529,7 @@ export type JobType = z.output<typeof JobTypeSchema>;
 export type DomainEventName = z.output<typeof DomainEventNameSchema>;
 export type ReleasePlanStatus = z.output<typeof ReleasePlanStatusSchema>;
 export type DeploymentStatus = z.output<typeof DeploymentStatusSchema>;
+export type ProviderOperationStatus = z.output<typeof ProviderOperationStatusSchema>;
 export type ReleaseVerificationStatus = z.output<typeof ReleaseVerificationStatusSchema>;
 export type GscConnectionStatus = z.output<typeof GscConnectionStatusSchema>;
 export type GscSyncStatus = z.output<typeof GscSyncStatusSchema>;

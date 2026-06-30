@@ -27,6 +27,7 @@ Use this file as the inventory for all flat sibling rule files. This is not the 
 - `01A-decision-algorithm.md` — how to apply the schema.
 - `01B-ceremony-review-ratings.md` — meaning vs ceremony and ratings.
 - `01C-readable-code-for-humans-and-ai.md` — optional readability rules for human and AI maintainability.
+- `01D-pre-edit-implementation-checklist.md` — boundary, idempotency, storage, migration, and documentation checklist before implementation edits.
 
 ## Type strategy
 

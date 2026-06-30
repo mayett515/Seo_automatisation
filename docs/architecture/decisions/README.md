@@ -50,3 +50,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0006 - Anti-Regression Guardrails](0006-anti-regression-guardrails.md)
 - [0007 - Review Synthesis: Security And Product Gates](0007-review-synthesis-security-and-product-gates.md)
 - [0008 - Better Auth Integration Topology](0008-better-auth-integration-topology.md)
+- [0009 - Deploy Provider Reconciliation And Operation State](0009-deploy-provider-reconciliation-and-operation-state.md)

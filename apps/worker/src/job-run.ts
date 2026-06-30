@@ -132,7 +132,18 @@ function normalizeJobFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unknown_worker_failure";
 }
 
-export function isFinalJobAttempt(job: Pick<Job, "attemptsMade" | "opts">): boolean {
-  const attempts = typeof job.opts.attempts === "number" ? job.opts.attempts : 1;
+export function isFinalJobAttempt(job: Pick<Job, "attemptsMade" | "data" | "opts">, maxAttempts?: number): boolean {
+  // BullMQ v5 exposes attemptsMade as zero-based completed failures; attempts includes the first run.
+  const attempts =
+    maxAttempts ?? maxAttemptsFromJobData(job.data) ?? (typeof job.opts.attempts === "number" ? job.opts.attempts : 1);
   return job.attemptsMade + 1 >= attempts;
+}
+
+function maxAttemptsFromJobData(data: unknown): number | undefined {
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+
+  const value = (data as Record<string, unknown>).maxAttempts;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }

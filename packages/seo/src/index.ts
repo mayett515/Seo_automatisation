@@ -55,6 +55,7 @@ export type ReleasePreflightPageEvidence = {
 export type ReleasePreflightEvidence = {
   pages: ReleasePreflightPageEvidence[];
   rollbackPointCount: number;
+  priorSuccessfulDeploymentCount: number;
   usableTrackingKeyCount: number;
 };
 
@@ -132,13 +133,16 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
       checkKey: "rollback_point_ready",
       scope: "project",
       severity: "blocker",
-      result: evidence.rollbackPointCount > 0 ? "passed" : "failed",
+      result: hasRollbackEvidence(evidence) ? "passed" : "failed",
       message:
         evidence.rollbackPointCount > 0
           ? "Rollback point artifact is available."
-          : "A rollback point artifact must exist before deploy approval.",
+          : evidence.priorSuccessfulDeploymentCount === 0
+            ? "First deploy has no prior live deployment to snapshot."
+            : "A rollback point artifact must exist before deploy approval.",
       evidence: {
-        rollbackPointCount: evidence.rollbackPointCount
+        rollbackPointCount: evidence.rollbackPointCount,
+        priorSuccessfulDeploymentCount: evidence.priorSuccessfulDeploymentCount
       }
     }),
     ReleaseCheckSchema.parse({
@@ -170,6 +174,12 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
       }
     })
   ];
+}
+
+function hasRollbackEvidence(
+  evidence: Pick<ReleasePreflightEvidence, "rollbackPointCount" | "priorSuccessfulDeploymentCount">
+): boolean {
+  return evidence.rollbackPointCount > 0 || evidence.priorSuccessfulDeploymentCount === 0;
 }
 
 function toLocalPageQaInput(page: ReleasePreflightPageEvidence): LocalPageQaInput {

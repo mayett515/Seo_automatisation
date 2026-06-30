@@ -5,7 +5,7 @@ import { parseAppEnv } from "@localseo/config";
 import type { QueueName } from "@localseo/contracts";
 import { jobRuns } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
@@ -50,11 +50,27 @@ export class QueueProducerService implements OnModuleDestroy {
 
   async enqueue(input: EnqueueInput): Promise<boolean> {
     const queue = this.queues[input.queueName];
+    const attempts = typeof input.options?.attempts === "number" ? input.options.attempts : 3;
 
     if (!queue) {
       await this.recordJobRun(input, "dry_run");
       return false;
     }
+
+    const existingJob = await queue.getJob(input.jobId);
+
+    if (existingJob) {
+      const existingJobState = await existingJob.getState();
+
+      if (shouldCoalesceExistingBullMqJob(existingJobState)) {
+        return true;
+      }
+
+      await existingJob.remove();
+      await this.archiveJobRun(input);
+    }
+
+    await this.archiveTerminalJobRun(input);
 
     const jobRunId = await this.recordJobRun(input, "queued");
 
@@ -63,16 +79,17 @@ export class QueueProducerService implements OnModuleDestroy {
         input.jobName,
         {
           ...input.data,
+          maxAttempts: attempts,
           ...(jobRunId ? { jobRunId } : {})
         },
         {
+          ...input.options,
+          attempts,
           jobId: input.jobId,
-          attempts: 3,
-          backoff: {
+          backoff: input.options?.backoff ?? {
             type: "exponential",
             delay: 1000
-          },
-          ...input.options
+          }
         }
       );
     } catch (error) {
@@ -95,21 +112,75 @@ export class QueueProducerService implements OnModuleDestroy {
     }
 
     const jobRunId = randomUUID();
-    await db.insert(jobRuns).values({
-      id: jobRunId,
-      projectId: input.audit.projectId,
-      leadId: input.audit.leadId,
-      externalJobId: input.jobId,
-      queueName: input.queueName,
-      type: input.audit.type,
-      status,
-      inputRef: input.audit.inputRef,
-      actorType: input.audit.actorType,
-      actorUserId: input.audit.actorUserId,
-      triggerSource: input.audit.triggerSource
-    });
+    const [inserted] = await db
+      .insert(jobRuns)
+      .values({
+        id: jobRunId,
+        projectId: input.audit.projectId,
+        leadId: input.audit.leadId,
+        externalJobId: input.jobId,
+        queueName: input.queueName,
+        type: input.audit.type,
+        status,
+        inputRef: input.audit.inputRef,
+        actorType: input.audit.actorType,
+        actorUserId: input.audit.actorUserId,
+        triggerSource: input.audit.triggerSource
+      })
+      .onConflictDoNothing({
+        target: [jobRuns.externalJobId, jobRuns.queueName]
+      })
+      .returning({ id: jobRuns.id });
 
-    return jobRunId;
+    if (inserted) {
+      return inserted.id;
+    }
+
+    const [existing] = await db
+      .select({ id: jobRuns.id })
+      .from(jobRuns)
+      .where(and(eq(jobRuns.externalJobId, input.jobId), eq(jobRuns.queueName, input.queueName)))
+      .limit(1);
+
+    return existing?.id;
+  }
+
+  private async archiveJobRun(input: EnqueueInput): Promise<void> {
+    const db = this.database.db;
+
+    if (!db || !input.audit) {
+      return;
+    }
+
+    await db
+      .update(jobRuns)
+      .set({
+        externalJobId: sql<string>`${jobRuns.externalJobId} || ':archived:' || ${jobRuns.id}::text`,
+        updatedAt: new Date()
+      })
+      .where(and(eq(jobRuns.externalJobId, input.jobId), eq(jobRuns.queueName, input.queueName)));
+  }
+
+  private async archiveTerminalJobRun(input: EnqueueInput): Promise<void> {
+    const db = this.database.db;
+
+    if (!db || !input.audit) {
+      return;
+    }
+
+    await db
+      .update(jobRuns)
+      .set({
+        externalJobId: sql<string>`${jobRuns.externalJobId} || ':archived:' || ${jobRuns.id}::text`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(jobRuns.externalJobId, input.jobId),
+          eq(jobRuns.queueName, input.queueName),
+          inArray(jobRuns.status, ["completed", "failed", "cancelled", "dry_run"])
+        )
+      );
   }
 
   private async markJobRunFailed(jobRunId: string | undefined, error: unknown): Promise<void> {
@@ -135,6 +206,16 @@ export class QueueProducerService implements OnModuleDestroy {
 
 function normalizeQueueFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "queue_add_failed";
+}
+
+export function shouldCoalesceExistingBullMqJob(state: string): boolean {
+  return (
+    state === "active" ||
+    state === "waiting" ||
+    state === "waiting-children" ||
+    state === "delayed" ||
+    state === "prioritized"
+  );
 }
 
 @Global()

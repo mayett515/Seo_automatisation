@@ -1,7 +1,21 @@
-import { createDatabaseClient } from "@localseo/db";
+import {
+  FileSystemObjectStorageAdapter,
+  NetlifySiteHostingAdapter,
+  NotConfiguredSiteHostingAdapter,
+  S3ObjectStorageAdapter,
+  type ObjectStoragePort,
+  type SiteHostingPort
+} from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import type { Job } from "bullmq";
-import { DeployConfigurationError, DeployEvidenceError, handleDeployJob } from "./handlers/deploy.js";
+import { createDatabaseClient } from "@localseo/db";
+import { UnrecoverableError, type Job } from "bullmq";
+import {
+  DeployConfigurationError,
+  DeployEvidenceError,
+  handleDeployJob,
+  ManualReconciliationRequiredError,
+  reconcilePendingDeployments
+} from "./handlers/deploy.js";
 import { handleGscSyncJob } from "./handlers/gsc-sync.js";
 import {
   isFinalJobAttempt,
@@ -13,6 +27,8 @@ import {
 
 const env = parseAppEnv(process.env);
 const sharedDbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
+const sharedObjectStorage = createObjectStorageAdapter();
+const sharedSiteHosting = createSiteHostingAdapter(env.NETLIFY_AUTH_TOKEN, sharedObjectStorage);
 
 export async function handleJob(job: Job): Promise<Record<string, unknown>> {
   await markJobRunRunning(sharedDbHandle?.db, job);
@@ -22,13 +38,15 @@ export async function handleJob(job: Job): Promise<Record<string, unknown>> {
     await markJobRunCompleted(sharedDbHandle?.db, job);
     return result;
   } catch (error) {
-    if (isFinalJobAttempt(job) || isTerminalWorkerError(error)) {
+    const terminalWorkerError = isTerminalWorkerError(error);
+
+    if (isFinalJobAttempt(job) || terminalWorkerError) {
       await markJobRunFailed(sharedDbHandle?.db, job, error);
     } else {
       await markJobRunRetrying(sharedDbHandle?.db, job, error);
     }
 
-    throw error;
+    throw toWorkerRethrowError(error);
   }
 }
 
@@ -36,9 +54,25 @@ export async function closeWorkerResources(): Promise<void> {
   await sharedDbHandle?.close();
 }
 
+export async function reconcileDeployments(): Promise<Record<string, unknown>> {
+  if (!sharedDbHandle) {
+    return {
+      checked: 0,
+      succeeded: 0,
+      pending: 0,
+      failed: 0
+    };
+  }
+
+  return reconcilePendingDeployments({
+    db: sharedDbHandle.db,
+    siteHosting: sharedSiteHosting
+  });
+}
+
 export async function routeJob(job: Job): Promise<Record<string, unknown>> {
   if (job.queueName === "deploy" || job.name === "deploy") {
-    return handleDeployJob(job, sharedDbHandle);
+    return handleDeployJob(job, sharedDbHandle, sharedSiteHosting, sharedObjectStorage);
   }
 
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
@@ -51,5 +85,44 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
 
 export function isTerminalWorkerError(error: unknown): boolean {
-  return error instanceof DeployConfigurationError || error instanceof DeployEvidenceError;
+  return (
+    error instanceof DeployConfigurationError ||
+    error instanceof DeployEvidenceError ||
+    error instanceof ManualReconciliationRequiredError
+  );
+}
+
+export function toWorkerRethrowError(error: unknown): unknown {
+  if (!isTerminalWorkerError(error)) {
+    return error;
+  }
+
+  return new UnrecoverableError(normalizeWorkerErrorMessage(error));
+}
+
+function normalizeWorkerErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "terminal_worker_failure";
+}
+
+function createSiteHostingAdapter(
+  netlifyAuthToken: string | undefined,
+  objectStorage: ObjectStoragePort
+): SiteHostingPort {
+  return netlifyAuthToken
+    ? new NetlifySiteHostingAdapter({
+        authToken: netlifyAuthToken,
+        objectStorage
+      })
+    : new NotConfiguredSiteHostingAdapter();
+}
+
+function createObjectStorageAdapter(): ObjectStoragePort {
+  if (env.NODE_ENV === "production" && env.S3_BUCKET) {
+    return new S3ObjectStorageAdapter({
+      bucket: env.S3_BUCKET,
+      region: env.AWS_REGION
+    });
+  }
+
+  return new FileSystemObjectStorageAdapter(env.LOCAL_OBJECT_STORAGE_DIR);
 }

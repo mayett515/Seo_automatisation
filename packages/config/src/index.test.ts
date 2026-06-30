@@ -137,6 +137,7 @@ function productionEnv(): NodeJS.ProcessEnv {
     TRUST_PROXY: "1",
     DATABASE_URL: "postgres://postgres:postgres@example.com:5432/local_seo",
     REDIS_URL: "redis://redis.example.com:6379",
+    S3_BUCKET: "local-seo-artifacts",
     BETTER_AUTH_SECRET: "12345678901234567890123456789012",
     BETTER_AUTH_URL: "https://api.example.com",
     GOOGLE_OAUTH_CLIENT_ID: "google-client-id",

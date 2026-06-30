@@ -5,7 +5,8 @@ import {
   buildReleaseDeploymentKey,
   canDeployRelease,
   decideReleaseReadiness,
-  decideReleaseVerificationStatus
+  decideReleaseVerificationStatus,
+  renderApprovedReleaseArtifact
 } from "./index.js";
 
 void describe("release readiness decisions", () => {
@@ -71,6 +72,95 @@ void describe("release verification status", () => {
 void describe("buildReleaseDeploymentKey", () => {
   void it("derives a stable local idempotency key from a release plan id", () => {
     assert.equal(buildReleaseDeploymentKey("release-plan-1"), "release_plan:release-plan-1");
+  });
+});
+
+void describe("renderApprovedReleaseArtifact", () => {
+  void it("renders intended routes without adding a position-based root fallback", () => {
+    const site = renderApprovedReleaseArtifact({
+      projectId: "project-1",
+      releasePlanId: "release-1",
+      deploymentKey: "release_plan:release-1",
+      createdAt: "2026-06-29T00:00:00.000Z",
+      pages: [
+        {
+          releasePlanItemId: "item-1",
+          pageVersionId: "version-1",
+          targetUrl: "/dachreinigung-dachau/",
+          targetSubdomain: null,
+          action: "publish",
+          pageJson: { title: "Dachreinigung Dachau" }
+        }
+      ]
+    });
+
+    assert.deepEqual(
+      site.files.map((file) => file.path),
+      ["/dachreinigung-dachau/index.html"]
+    );
+  });
+
+  void it("escapes page JSON before writing HTML", () => {
+    const site = renderApprovedReleaseArtifact({
+      projectId: "project-1",
+      releasePlanId: "release-1",
+      deploymentKey: "release_plan:release-1",
+      createdAt: "2026-06-29T00:00:00.000Z",
+      pages: [
+        {
+          releasePlanItemId: "item-1",
+          pageVersionId: "version-1",
+          targetUrl: "/",
+          targetSubdomain: null,
+          action: "publish",
+          pageJson: {
+            title: "<script>alert(1)</script>",
+            description: '"onload=alert(1)',
+            body: "javascript:<img src=x onerror=alert(1)>"
+          }
+        }
+      ]
+    });
+
+    const body = site.files[0]?.body ?? "";
+
+    assert.match(body, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/u);
+    assert.match(body, /&quot;onload=alert\(1\)/u);
+    assert.match(body, /javascript:&lt;img src=x onerror=alert\(1\)&gt;/u);
+    assert.doesNotMatch(body, /<script>/u);
+  });
+
+  void it("renders canonical and JSON-LD from approved page JSON", () => {
+    const site = renderApprovedReleaseArtifact({
+      projectId: "project-1",
+      releasePlanId: "release-1",
+      deploymentKey: "release_plan:release-1",
+      createdAt: "2026-06-29T00:00:00.000Z",
+      pages: [
+        {
+          releasePlanItemId: "item-1",
+          pageVersionId: "version-1",
+          targetUrl: "/dachreinigung-dachau/",
+          targetSubdomain: null,
+          action: "publish",
+          pageJson: {
+            title: "Dachreinigung Dachau",
+            canonical: "https://example.test/dachreinigung-dachau/",
+            jsonLd: {
+              "@context": "https://schema.org",
+              "@type": "LocalBusiness",
+              name: "Dachreinigung Dachau"
+            }
+          }
+        }
+      ]
+    });
+
+    const body = site.files[0]?.body ?? "";
+
+    assert.match(body, /<link rel="canonical" href="https:\/\/example\.test\/dachreinigung-dachau\/">/u);
+    assert.match(body, /<script type="application\/ld\+json">/u);
+    assert.match(body, /"@type":"LocalBusiness"/u);
   });
 });
 

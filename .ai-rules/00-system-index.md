@@ -17,7 +17,7 @@ You are operating under the Pragmatic TypeScript v3 schema. Before writing or re
 
 <routing-logic>
 IF the task asks for TypeScript architecture, refactoring, code review, or implementation:
-THEN you MUST load `.ai-rules/01-core.md`, `.ai-rules/01A-decision-algorithm.md`, and `.ai-rules/01B-ceremony-review-ratings.md`.
+THEN you MUST load `.ai-rules/01-core.md`, `.ai-rules/01A-decision-algorithm.md`, `.ai-rules/01B-ceremony-review-ratings.md`, and `.ai-rules/01D-pre-edit-implementation-checklist.md`.
 
 IF the task touches readability, AI-generated TypeScript cleanup, nested functions, handler placement, unclear positional arguments, boolean/operator clarity, or discriminated-union readability:
 THEN you SHOULD load and lightly apply: `.ai-rules/01C-readable-code-for-humans-and-ai.md`.
@@ -128,4 +128,5 @@ THEN you MAY load: `.ai-rules/91D-template-error-handling-snippets.md`.
 2. [ ] Did I identify the target responsibility before applying the schema?
 3. [ ] Did I preserve existing repo architecture unless asked for schema-native design?
 4. [ ] Did I avoid ceremony that does not reveal meaning?
+5. [ ] For implementation, did I run the pre-edit boundary/idempotency/storage/migration checklist before editing?
 </pre-flight-checklist>

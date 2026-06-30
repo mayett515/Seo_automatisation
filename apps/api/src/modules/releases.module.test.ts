@@ -17,6 +17,7 @@ void describe("buildReleasePreflightChecks", () => {
         }
       ],
       rollbackPointCount: 0,
+      priorSuccessfulDeploymentCount: 1,
       usableTrackingKeyCount: 0
     });
 
@@ -35,6 +36,16 @@ void describe("buildReleasePreflightChecks", () => {
     assert.equal(checks.find((check) => check.checkKey === "local_seo_page_quality_gate")?.result, "passed");
     assert.equal(checks.find((check) => check.checkKey === "rollback_point_ready")?.result, "passed");
     assert.equal(checks.find((check) => check.checkKey === "tracking_key_ready")?.result, "passed");
+  });
+
+  void it("allows first deploys without rollback point evidence", () => {
+    const checks = buildReleasePreflightChecks({
+      ...readyEvidence(),
+      rollbackPointCount: 0,
+      priorSuccessfulDeploymentCount: 0
+    });
+
+    assert.equal(checks.find((check) => check.checkKey === "rollback_point_ready")?.result, "passed");
   });
 
   void it("keeps tracking readiness as a warning instead of a deploy blocker", () => {
@@ -108,6 +119,7 @@ function readyEvidence(): ReleasePreflightEvidence {
       }
     ],
     rollbackPointCount: 1,
+    priorSuccessfulDeploymentCount: 1,
     usableTrackingKeyCount: 1
   };
 }

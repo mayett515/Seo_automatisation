@@ -6,18 +6,24 @@ import type {
   GscSitemapSubmission,
   GscUrlInspectionResult,
   ReleaseVerification,
+  ReleaseVerificationCheck,
   RollbackPoint,
   TrackingEvent
 } from "@localseo/contracts";
 
 export * from "./google-search-console.js";
+export * from "./file-system-object-storage.js";
+export * from "./http-release-verification.js";
 export * from "./redis-connection.js";
+export * from "./netlify-site-hosting.js";
+export * from "./s3-object-storage.js";
 export * from "./token-cipher.js";
 
 export type DeployReleaseInput = {
   releasePlanId: string;
   projectId: string;
   buildArtifactKey: string;
+  hostingSiteId?: string;
 };
 
 export type DeployReleaseResult =
@@ -28,14 +34,50 @@ export type DeployReleaseResult =
       evidence?: Record<string, unknown>;
     }
   | {
+      status: "pending";
+      providerDeployId: string;
+      liveUrls: string[];
+      evidence?: Record<string, unknown>;
+    }
+  | {
       status: "not_configured";
       message: string;
       liveUrls: [];
     };
 
+export type ProviderUploadResumeToken = Record<string, unknown>;
+
 export type CreateDeployInput = DeployReleaseInput & {
+  deploymentId?: string;
   deploymentKey: string;
   jobRunId?: string;
+  evidence?: Record<string, unknown>;
+};
+
+export type BeginDeployResult =
+  | {
+      status: "started";
+      providerDeployId: string;
+      liveUrls: string[];
+      resumeToken?: ProviderUploadResumeToken;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      status: "not_configured";
+      message: string;
+      liveUrls: [];
+    };
+
+export type UploadDeployFilesInput = {
+  projectId: string;
+  releasePlanId: string;
+  deploymentKey: string;
+  buildArtifactKey: string;
+  providerDeployId: string;
+  resumeToken?: ProviderUploadResumeToken;
+};
+
+export type UploadDeployFilesResult = {
   evidence?: Record<string, unknown>;
 };
 
@@ -104,6 +146,8 @@ export type DomainEvent = {
 };
 
 export interface SiteHostingPort {
+  beginDeploy(input: CreateDeployInput): Promise<BeginDeployResult>;
+  uploadDeployFiles(input: UploadDeployFilesInput): Promise<UploadDeployFilesResult>;
   createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult>;
   getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot>;
   restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult>;
@@ -183,8 +227,20 @@ export interface VerificationPort {
     releasePlanId: string;
     deploymentId?: string;
     liveUrls: string[];
+    trackingExpected?: boolean;
   }): Promise<ReleaseVerification>;
 }
+
+export type VerificationCheckEvidence = {
+  targetUrl?: string;
+  expected?: Record<string, unknown>;
+  observed?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type DetailedReleaseVerificationCheck = ReleaseVerificationCheck & {
+  evidence?: VerificationCheckEvidence;
+};
 
 export interface SitemapPort {
   publishSitemap(input: { projectId: string; sitemapUrl: string }): Promise<void>;
@@ -200,6 +256,20 @@ export interface RollbackPort {
 }
 
 export class NotConfiguredSiteHostingAdapter implements SiteHostingPort {
+  beginDeploy(input: CreateDeployInput): Promise<BeginDeployResult> {
+    return Promise.resolve({
+      status: "not_configured",
+      message: `Site hosting is not configured for release plan ${input.releasePlanId}.`,
+      liveUrls: []
+    });
+  }
+
+  uploadDeployFiles(): Promise<UploadDeployFilesResult> {
+    return Promise.resolve({
+      evidence: { adapter: "not_configured" }
+    });
+  }
+
   createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult> {
     return Promise.resolve({
       status: "not_configured",

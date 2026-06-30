@@ -64,5 +64,6 @@ Architecture guidance (read-only, locked for implementation quality):
 - Do not duplicate TypeScript audit modes as Codex subagents unless the user explicitly asks for parallel subagent work.
 - Do not copy external code verbatim from GitHub or the web without checking license and recording attribution.
 - Do not bypass preview, approval, release preflight, or post-deploy verification in product plans.
+- For TypeScript/backend implementation, use `.ai-rules` as a pre-edit checklist, not only as review criteria.
 - Do not re-decide accepted architecture decisions silently; update or supersede the relevant ADR when the direction changes.
 - Do not use ADRs as a running changelog; use `docs/progress/` for chronological progress notes.

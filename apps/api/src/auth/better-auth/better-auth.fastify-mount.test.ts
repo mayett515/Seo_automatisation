@@ -35,6 +35,7 @@ function testEnv(): AppEnv {
     DATABASE_IDLE_TIMEOUT_SECONDS: 30,
     DATABASE_CONNECT_TIMEOUT_SECONDS: 5,
     DATABASE_PING_TIMEOUT_MS: 2000,
-    AWS_REGION: "eu-central-1"
+    AWS_REGION: "eu-central-1",
+    LOCAL_OBJECT_STORAGE_DIR: ".local-object-storage"
   };
 }

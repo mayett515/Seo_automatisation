@@ -58,6 +58,8 @@ void describe("job run lifecycle helpers", () => {
     assert.equal(isFinalJobAttempt(job({ attemptsMade: 0, attempts: 3 })), false);
     assert.equal(isFinalJobAttempt(job({ attemptsMade: 2, attempts: 3 })), true);
     assert.equal(isFinalJobAttempt(job({ attemptsMade: 0, attempts: undefined })), true);
+    assert.equal(isFinalJobAttempt(job({ attemptsMade: 1, attempts: undefined, data: { maxAttempts: 3 } })), false);
+    assert.equal(isFinalJobAttempt(job({ attemptsMade: 2, attempts: undefined, data: { maxAttempts: 3 } })), true);
   });
 
   void it("warns when no audit row matches", async () => {
