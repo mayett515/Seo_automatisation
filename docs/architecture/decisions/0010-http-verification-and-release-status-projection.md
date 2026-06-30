@@ -65,7 +65,7 @@ Trade-offs:
 
 Follow-up:
 
-- Before rollback execution or customer-facing lifecycle UI, decide whether to add richer release-plan states such as `verification_failed` or `rollback_recommended`, or a separate release health projection field.
+- Before customer-facing lifecycle UI, decide whether to add richer release-plan states such as `verification_failed`, `rollback_recommended`, or `rollback_pending`, or a separate release health projection field.
 - Integration tests must prove that verification writes parent and child verification rows, updates deployment health, and updates the release plan coarse projection transactionally.
 
 ## Alternatives Considered

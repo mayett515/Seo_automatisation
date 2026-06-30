@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { GscSearchAnalyticsRow } from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
 import { DeployConfigurationError, DeployEvidenceError, ManualReconciliationRequiredError } from "./handlers/deploy.js";
+import { RollbackConfigurationError, RollbackEvidenceError, RollbackProviderFailedError } from "./handlers/rollback.js";
 import {
   classifyOpportunitySignals,
   isTerminalWorkerError,
@@ -97,6 +98,23 @@ void describe("routeJob", () => {
     );
   });
 
+  void it("routes rollback jobs to the rollback handler instead of returning success metadata", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "rollback-job-1",
+        queueName: "rollback",
+        name: "rollback",
+        data: {
+          projectId: "project-1",
+          releasePlanId: "release-1",
+          deploymentId: "deployment-1",
+          rollbackPointId: "rollback-point-1"
+        }
+      } as Job),
+      /DATABASE_URL is required for rollback jobs/u
+    );
+  });
+
   void it("fails unknown jobs honestly instead of returning success metadata", async () => {
     await assert.rejects(
       routeJob({
@@ -115,6 +133,9 @@ void describe("isTerminalWorkerError", () => {
     assert.equal(isTerminalWorkerError(new DeployConfigurationError("missing adapter")), true);
     assert.equal(isTerminalWorkerError(new DeployEvidenceError("not deployable")), true);
     assert.equal(isTerminalWorkerError(new ManualReconciliationRequiredError("manual reconciliation")), true);
+    assert.equal(isTerminalWorkerError(new RollbackConfigurationError("missing hosting site")), true);
+    assert.equal(isTerminalWorkerError(new RollbackEvidenceError("missing rollback evidence")), true);
+    assert.equal(isTerminalWorkerError(new RollbackProviderFailedError("provider failed")), true);
     assert.equal(isTerminalWorkerError(new Error("provider timeout")), false);
   });
 

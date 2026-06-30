@@ -10,7 +10,8 @@ export const projectPermissions = [
   "release:preflight",
   "release:approve",
   "deploy:execute",
-  "release:verify"
+  "release:verify",
+  "rollback:execute"
 ] as const;
 
 export type ProjectPermission = (typeof projectPermissions)[number];

@@ -66,7 +66,23 @@ Implemented tests:
 5. Adapter-returned release-plan identity is ignored during persistence; the project-scoped route `releasePlanId` owns the verification row.
 6. A deployment id from another release plan or project is rejected and writes no verification rows.
 
-This file contributes 6 release verification tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+This file contributes 6 release verification tests plus 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+
+### Rollback Queueing
+
+File:
+
+- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+
+Implemented tests:
+
+1. `executeRollback()` scopes the rollback point to the authorized project and release plan, pins the current rollback-target deployment id into the job payload, queues a `rollback` job, and writes a `job_runs` audit row without marking the release rolled back in the API.
+2. A rollback point from another project or release plan is rejected and writes no rollback job audit row.
+3. A release plan that is not in the rollback-ready `failed` projection is rejected before enqueue.
+4. A target deployment without provider deploy evidence is rejected before enqueue.
+5. A rollback point without provider deploy evidence is rejected before enqueue.
+
+These tests prove the API boundary. The provider mutation belongs to the worker tests below.
 
 Verified local run:
 
@@ -74,7 +90,7 @@ Verified local run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/api test:integration
 
-tests 15 | pass 15 | fail 0
+tests 20 | pass 20 | fail 0
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
@@ -102,6 +118,32 @@ $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_te
 corepack pnpm --filter @localseo/worker test:integration
 
 tests 7 | pass 7 | fail 0
+```
+
+### Rollback Worker
+
+File:
+
+- [rollback.integration.ts](/C:/localseoproject/apps/worker/src/handlers/rollback.integration.ts)
+
+Implemented tests:
+
+1. Completed provider rollback marks the deployment and release plan `rolled_back`, writes rollback execution evidence, and records the provider deploy id that was rolled back from.
+2. Provider rollback failure records normalized failed rollback execution evidence and is treated as a terminal provider failure, without marking the deployment or release plan rolled back.
+3. Provider-pending rollback records normalized pending evidence and does not retry the restore mutation in the same worker.
+4. A release plan that is no longer rollback-eligible stops before provider restore.
+5. Stale target deployment state after provider restore does not persist `rolled_back`.
+6. A rollback job updates only the pinned target deployment, even when a newer deployment row exists.
+7. `not_configured` rollback results become terminal configuration errors.
+8. Missing rollback-point provider deploy evidence fails before calling the provider.
+
+Verified local run:
+
+```text
+$env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
+corepack pnpm --filter @localseo/worker test:integration
+
+tests 15 | pass 15 | fail 0
 ```
 
 ### Queue And Job Audit
@@ -168,6 +210,14 @@ Further tests can prove:
 - final-attempt pending stays reconcilable,
 - failed pre-provider rows with the same deployment key follow the intended strict/manual behavior.
 
+### Still Useful In Rollback Execution
+
+Further tests can prove:
+
+- provider rollback pending is reconciled by a dedicated rollback reconciler instead of repeating provider restore calls,
+- rollback queue deduplication across repeated operator clicks remains one active rollback job,
+- rollback execution can use a rollback point prepared by the real deploy lifecycle, once rollback point preparation is wired.
+
 ### Still Useful In Queue And Job Audit
 
 Further tests can prove:
@@ -191,7 +241,6 @@ Do not include these in Lifecycle Integration Coverage:
 - real Netlify calls,
 - browser/Playwright verification,
 - Google Search Console calls,
-- rollback execution,
 - Mastra or AI reasoning behavior,
 - full public-internet end-to-end deploys.
 

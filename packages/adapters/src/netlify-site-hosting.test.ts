@@ -299,6 +299,43 @@ void describe("NetlifySiteHostingAdapter", () => {
 
     assert.equal(snapshot.liveUrls[0], "https://customer-site.netlify.app/");
   });
+
+  void it("executes rollback through the Netlify restore endpoint", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const adapter = new NetlifySiteHostingAdapter({
+      authToken: "netlify-token",
+      objectStorage: createObjectStorage(artifact()),
+      fetchImpl: (url, init = {}) => {
+        const requestUrl = requestUrlToString(url);
+        calls.push({ url: requestUrl, init });
+
+        if (requestUrl.endsWith("/sites/site-1/deploys/deploy-previous/restore")) {
+          return Promise.resolve(
+            jsonResponse({
+              id: "deploy-previous",
+              state: "current",
+              ssl_url: "https://customer-site.netlify.app/"
+            })
+          );
+        }
+
+        return Promise.resolve(new Response("unexpected", { status: 500 }));
+      }
+    });
+
+    const result = await adapter.rollbackDeploy({
+      projectId: "project-1",
+      releasePlanId: "release-1",
+      rollbackPointId: "rollback-point-1",
+      hostingSiteId: "site-1",
+      providerDeployId: "deploy-previous"
+    });
+
+    assert.equal(result.status, "completed");
+    assert.equal(result.providerDeployId, "deploy-previous");
+    assert.equal(result.liveUrl, "https://customer-site.netlify.app/");
+    assert.equal(calls[0]?.init.method, "POST");
+  });
 });
 
 function createObjectStorage(value: ApprovedReleaseArtifact): ObjectStoragePort {

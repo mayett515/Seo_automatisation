@@ -18,6 +18,12 @@ import {
 } from "./handlers/deploy.js";
 import { handleGscSyncJob } from "./handlers/gsc-sync.js";
 import {
+  handleRollbackJob,
+  RollbackConfigurationError,
+  RollbackEvidenceError,
+  RollbackProviderFailedError
+} from "./handlers/rollback.js";
+import {
   isFinalJobAttempt,
   markJobRunCompleted,
   markJobRunFailed,
@@ -75,6 +81,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     return handleDeployJob(job, sharedDbHandle, sharedSiteHosting, sharedObjectStorage);
   }
 
+  if (job.queueName === "rollback" || job.name === "rollback") {
+    return handleRollbackJob(job, sharedDbHandle, sharedSiteHosting);
+  }
+
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
@@ -88,6 +98,9 @@ export function isTerminalWorkerError(error: unknown): boolean {
   return (
     error instanceof DeployConfigurationError ||
     error instanceof DeployEvidenceError ||
+    error instanceof RollbackConfigurationError ||
+    error instanceof RollbackEvidenceError ||
+    error instanceof RollbackProviderFailedError ||
     error instanceof ManualReconciliationRequiredError
   );
 }

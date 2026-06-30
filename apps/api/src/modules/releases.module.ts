@@ -18,11 +18,13 @@ import {
   QueueJobSchema,
   CreateReleasePlanRequestSchema,
   DeployJobDataSchema,
+  ExecuteRollbackRequestSchema,
   ReleaseCheckSchema,
   ReleaseNoteSchema,
   ReleasePlanSchema,
   ReleaseVerificationCheckSchema,
   ReleaseVerificationSchema,
+  RollbackJobDataSchema,
   RollbackPointSchema,
   VerifyReleaseRequestSchema,
   type DeploymentStatus,
@@ -51,7 +53,7 @@ import {
   rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -73,8 +75,17 @@ const rollbackReadyDeploymentStatuses = [
   "live_with_warnings",
   "rollback_recommended"
 ] as const satisfies DeploymentStatus[];
+const rollbackExecutionReadyStatuses = [
+  "provider_succeeded",
+  "live_healthy",
+  "live_with_warnings",
+  "rollback_recommended",
+  "failed"
+] as const satisfies DeploymentStatus[];
 const deployJobAttempts = 20;
 const deployJobBackoffDelayMs = 15_000;
+const rollbackJobAttempts = 5;
+const rollbackJobBackoffDelayMs = 15_000;
 export const RELEASE_VERIFICATION_PORT = Symbol("RELEASE_VERIFICATION_PORT");
 
 @Injectable()
@@ -344,6 +355,78 @@ export class ReleasesService {
     });
   }
 
+  async executeRollback(projectId: string, releasePlanId: string, userId: string | undefined, body: unknown) {
+    await this.assertReleasePlanForProject(projectId, releasePlanId);
+    const input = ExecuteRollbackRequestSchema.parse(body ?? {});
+    const db = this.database.db;
+    const jobId = rollbackJobId(releasePlanId, input.rollbackPointId);
+
+    if (!isPersistedId(input.rollbackPointId)) {
+      throw new BadRequestException("Rollback point id must be a UUID.");
+    }
+
+    if (!db || !isPersistedId(releasePlanId)) {
+      return QueueJobSchema.parse({
+        projectId,
+        releasePlanId,
+        jobId,
+        type: "rollback",
+        status: "dry_run",
+        inputRef: input.rollbackPointId,
+        createdBy: userId,
+        message: "Release persistence is not configured. This is an explicit dry-run response.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    await loadRollbackPointForRelease(db, projectId, releasePlanId, input.rollbackPointId);
+    await loadReleasePlanForRollbackExecution(db, projectId, releasePlanId);
+    const deployment = await loadDeploymentForRollbackExecution(db, projectId, releasePlanId);
+
+    const enqueued = await this.queues.enqueue({
+      queueName: "rollback",
+      jobName: "rollback",
+      jobId,
+      data: RollbackJobDataSchema.parse({
+        projectId,
+        releasePlanId,
+        deploymentId: deployment.id,
+        rollbackPointId: input.rollbackPointId,
+        triggeredByUserId: userId ?? null,
+        triggerSource: "user_action"
+      }),
+      options: {
+        attempts: rollbackJobAttempts,
+        backoff: {
+          type: "fixed",
+          delay: rollbackJobBackoffDelayMs
+        },
+        removeOnComplete: true,
+        removeOnFail: true
+      },
+      audit: {
+        projectId,
+        type: "rollback",
+        inputRef: input.rollbackPointId,
+        actorType: userId ? "user" : "system",
+        actorUserId: userId,
+        triggerSource: "user_action"
+      }
+    });
+
+    return QueueJobSchema.parse({
+      projectId,
+      releasePlanId,
+      jobId,
+      type: "rollback",
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: input.rollbackPointId,
+      createdBy: userId,
+      message: enqueued ? undefined : "Rollback queue is not configured. This is an explicit dry-run response.",
+      createdAt: new Date().toISOString()
+    });
+  }
+
   async verify(
     projectId: string,
     releasePlanId: string,
@@ -556,6 +639,17 @@ class ReleasesController {
     return this.releases.deploy(projectId, releasePlanId, request.auth?.user.id);
   }
 
+  @Post("projects/:projectId/releases/:releasePlanId/rollback/execute")
+  @RequireProjectPermission("rollback:execute")
+  executeRollback(
+    @Param("projectId") projectId: string,
+    @Param("releasePlanId") releasePlanId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.releases.executeRollback(projectId, releasePlanId, request.auth?.user.id, body);
+  }
+
   @Post("projects/:projectId/releases/:releasePlanId/verify")
   @RequireProjectPermission("release:verify")
   verify(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string, @Body() body: unknown) {
@@ -660,6 +754,81 @@ async function loadReleasePreflightEvidence(
     priorSuccessfulDeploymentCount: priorDeploymentRows.length,
     usableTrackingKeyCount: activeTrackingKeyRows.filter((row) => hasUsableTrackingOrigins(row.allowedOrigins)).length
   };
+}
+
+async function loadRollbackPointForRelease(
+  db: Db,
+  projectId: string,
+  releasePlanId: string,
+  rollbackPointId: string
+): Promise<typeof rollbackPoints.$inferSelect> {
+  const [rollbackPoint] = await db
+    .select()
+    .from(rollbackPoints)
+    .where(
+      and(
+        eq(rollbackPoints.id, rollbackPointId),
+        eq(rollbackPoints.projectId, projectId),
+        eq(rollbackPoints.releasePlanId, releasePlanId)
+      )
+    )
+    .limit(1);
+
+  if (!rollbackPoint) {
+    throw new BadRequestException("Rollback point is not available for this release plan.");
+  }
+
+  if (!rollbackPoint.providerDeployId) {
+    throw new BadRequestException("Rollback point is missing provider deploy evidence.");
+  }
+
+  return rollbackPoint;
+}
+
+async function loadDeploymentForRollbackExecution(
+  db: Db,
+  projectId: string,
+  releasePlanId: string
+): Promise<typeof deployments.$inferSelect> {
+  const [deployment] = await db
+    .select()
+    .from(deployments)
+    .where(
+      and(
+        eq(deployments.projectId, projectId),
+        eq(deployments.releasePlanId, releasePlanId),
+        isNotNull(deployments.providerDeployId),
+        inArray(deployments.status, rollbackExecutionReadyStatuses)
+      )
+    )
+    .orderBy(desc(deployments.updatedAt))
+    .limit(1);
+
+  if (!deployment) {
+    throw new BadRequestException("No rollback-eligible deployment is available for this release plan.");
+  }
+
+  return deployment;
+}
+
+async function loadReleasePlanForRollbackExecution(
+  db: Db,
+  projectId: string,
+  releasePlanId: string
+): Promise<typeof releasePlans.$inferSelect> {
+  const [releasePlan] = await db
+    .select()
+    .from(releasePlans)
+    .where(
+      and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId), eq(releasePlans.status, "failed"))
+    )
+    .limit(1);
+
+  if (!releasePlan) {
+    throw new BadRequestException("Release plan is not eligible for rollback execution.");
+  }
+
+  return releasePlan;
 }
 
 function hasUsableTrackingOrigins(allowedOrigins: string[]): boolean {
@@ -980,6 +1149,10 @@ function mapReleasePlan(plan: typeof releasePlans.$inferSelect): ReleasePlan {
     blockerCount: plan.blockerCount,
     warningCount: plan.warningCount
   });
+}
+
+function rollbackJobId(releasePlanId: string, rollbackPointId: string): string {
+  return `rollback:${releasePlanId}:${rollbackPointId}`;
 }
 
 function isPersistedId(value: string): boolean {
