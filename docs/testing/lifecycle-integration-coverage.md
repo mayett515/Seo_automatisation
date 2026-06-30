@@ -74,12 +74,14 @@ Implemented tests:
 
 1. Healthy verification persists a `release_verifications` row, persists child `release_verification_checks`, updates `deployments.status` and `deployments.verificationStatus` to `live_healthy`, and projects `releasePlans.status` to `live`.
 2. Rollback-level verification persists blocker details, updates the deployment to `rollback_recommended`, and projects the release plan to the current coarse `failed` state.
-3. Verifier execution failure is converted into persisted failed verification evidence; it must not leave the deployment in `verifying` or `running`.
+3. Verifier execution failure is persisted as `execution_failed` evidence without marking the deployment or release plan as observed failed health; it must not leave the deployment in `verifying` or `running`.
 4. Cross-project verification is rejected and writes no verification rows for the other project.
 5. Adapter-returned release-plan identity is ignored during persistence; the project-scoped route `releasePlanId` owns the verification row.
 6. A deployment id from another release plan or project is rejected and writes no verification rows.
+7. Absolute verification target routes are rejected before the verifier adapter can fetch them.
+8. Absolute page proposal routes are rejected when release plan items are created.
 
-This file contributes 2 rollback-preflight tests, 6 release verification tests, and 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+This file contributes 2 rollback-preflight tests, 8 release verification tests, and 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
 
 ### Rollback Queueing
 
@@ -103,7 +105,7 @@ Verified local run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/api test:integration
 
-tests 22 | pass 22 | fail 0
+tests 24 | pass 24 | fail 0
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
@@ -202,6 +204,8 @@ This keeps integration tests close to production schema behavior without using p
 ## Coarse Release Plan Projection
 
 `releasePlans.status = "live"` and `releasePlans.status = "failed"` are currently coarse projections. `live` can mean the provider deploy succeeded before post-deploy verification has run. `failed` can mean the deploy itself failed, or it can mean the provider deploy succeeded but post-deploy verification found a rollback-level blocker.
+
+Verifier infrastructure errors are now separate from observed live-page failures: `deployments.verificationStatus = "execution_failed"` and the matching `release_verifications` row mean the verifier did not complete, not that the page was proven broken.
 
 Precise lifecycle truth lives in:
 

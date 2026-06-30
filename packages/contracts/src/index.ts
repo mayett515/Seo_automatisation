@@ -112,6 +112,7 @@ export const releaseVerificationStatuses = [
   "live_healthy",
   "live_with_warnings",
   "rollback_recommended",
+  "execution_failed",
   "failed"
 ] as const;
 

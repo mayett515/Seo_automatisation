@@ -5,31 +5,21 @@ Status: Accepted follow-up notes
 
 This note records review findings from the DeepSeek logic/state audit and the Opus triage that should shape the next backend hardening patch. It is intentionally separate from ADR 0011 because these items are broader lifecycle-truth work, not rollback executor wiring.
 
-## Accepted For The Next Hardening Patch
+## Completed Hardening Follow-Ups
 
 ### Verification Execution Failure Is Not Live-Page Failure
 
-Current behavior converts a verifier execution failure into failed verification evidence so the deployment is not stranded. That solved the stuck-state problem, but it still overloads the meaning of failure: a timeout or verifier bug is not the same as observing a broken canonical, noindex, or HTTP failure on the live page.
-
-Follow-up direction:
-
-- Add a distinct execution-error/unknown verification outcome.
-- Persist the infrastructure failure as evidence without pretending the live page itself failed a verifier check.
-- Avoid downgrading release/deployment state as if the page was proven unhealthy when the verifier did not complete.
+`verify()` now persists verifier infrastructure failures as `execution_failed`. The deployment keeps its provider/live health status instead of being downgraded to observed failed health, and `releasePlans.status` is not projected to `failed` for a verifier crash.
 
 Why: operator truth. A healthy site should not look rollback-worthy just because the verifier infrastructure failed.
 
 ### Verification Target URLs Must Stay On The Deployment Host
 
-`new URL(targetUrl, baseLiveUrl)` accepts absolute and protocol-relative `targetUrl` values. If a release plan item ever stores `https://other.example/page` or `//other.example/page`, verification can fetch a different host than the deployment host.
-
-Follow-up direction:
-
-- Validate release-plan item target routes as relative paths at creation/update boundaries.
-- Defensively reject or normalize absolute/protocol-relative target URLs before verification fetches.
-- Keep the verifier constrained to the intended deployment host.
+Release-plan item target routes are now validated as relative paths when release plans are created, and `verify()` defensively rejects absolute or protocol-relative target routes before calling the verifier adapter.
 
 Why: both security and evidence truth. Post-deploy verification must observe the release's own live URLs, not an arbitrary host.
+
+## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership
 
@@ -62,16 +52,16 @@ SHA-256 hashing of short tracking keys is not a meaningful bottleneck for the cu
 
 Why: this is not a correctness issue and does not justify replacing the current hashed-key design.
 
-## Relationship To Milestone 4
+## Relationship To Milestone 4 And Follow-Ups
 
-Milestone 4 hardening landed only rollback-executor-specific changes:
+The original Milestone 4 hardening commit landed rollback-executor-specific changes:
 
 - terminal classification for definitive provider rollback failure,
 - API pre-rejection for rollback points without provider deploy evidence,
 - provider-neutral pending/failed rollback evidence,
 - successful rollback evidence that records the provider deploy id rolled back from.
 
-The broader verification and release-status items above should be a separate follow-up patch after Milestone 4 review/commit.
+The first two broader verification hardening items have since landed as follow-up patches. The release-status split remains future work.
 
 ## Rollback Point Preparation Follow-Up
 

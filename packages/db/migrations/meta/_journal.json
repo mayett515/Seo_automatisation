@@ -92,6 +92,13 @@
       "when": 1782816884029,
       "tag": "0012_loose_synch",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782841787558,
+      "tag": "0013_bored_alice",
+      "breakpoints": true
     }
   ]
 }

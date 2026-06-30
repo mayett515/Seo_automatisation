@@ -160,7 +160,7 @@ export class ReleasesService {
         rows.map((row) => ({
           releasePlanId,
           pageVersionId: row.pageVersionId,
-          targetUrl: row.targetUrl,
+          targetUrl: normalizeRelativeReleaseTargetRoute(row.targetUrl),
           action: "create",
           status: "pending"
         }))
@@ -442,15 +442,15 @@ export class ReleasesService {
         ...ReleaseVerificationSchema.parse({
           releasePlanId,
           deploymentId: input.deploymentId,
-          verificationStatus: "failed",
+          verificationStatus: "execution_failed",
           summary: "Release persistence is required before post-deploy verification can run.",
           checkedAt: new Date().toISOString(),
           checks: [
             ReleaseCheckSchema.parse({
               checkKey: "verification_persistence_check",
               scope: "project",
-              severity: "blocker",
-              result: "failed",
+              severity: "warning",
+              result: "skipped",
               message: "Release persistence is required before post-deploy verification can run."
             })
           ]
@@ -470,7 +470,7 @@ export class ReleasesService {
         trackingExpected
       })
       .catch((error: unknown) =>
-        verificationFailureResult({
+        verificationExecutionFailureResult({
           releasePlanId,
           deploymentId: deployment.id,
           error
@@ -1005,17 +1005,34 @@ async function loadVerificationTargetUrls(
     return liveUrlsFromDeployment(deployment);
   }
 
-  return [
-    ...new Set(
-      itemRows.map((row) => {
-        try {
-          return new URL(row.targetUrl, baseLiveUrl).toString();
-        } catch {
-          return row.targetUrl;
-        }
-      })
-    )
-  ];
+  return [...new Set(itemRows.map((row) => resolveVerificationTargetUrl(row.targetUrl, baseLiveUrl)))];
+}
+
+function resolveVerificationTargetUrl(targetUrl: string, baseLiveUrl: string): string {
+  const route = normalizeRelativeReleaseTargetRoute(targetUrl);
+  const base = new URL(baseLiveUrl);
+  const resolved = new URL(route, base);
+
+  if (resolved.origin !== base.origin) {
+    throw new BadRequestException("Release verification target routes must stay on the deployment host.");
+  }
+
+  return resolved.toString();
+}
+
+function normalizeRelativeReleaseTargetRoute(targetUrl: string): string {
+  const trimmed = targetUrl.trim();
+
+  if (
+    trimmed.length === 0 ||
+    trimmed.startsWith("//") ||
+    trimmed.includes("\\") ||
+    /^[a-z][a-z\d+\-.]*:/iu.test(trimmed)
+  ) {
+    throw new BadRequestException("Release verification target routes must be relative paths.");
+  }
+
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
 async function hasActiveTrackingKey(db: Db, projectId: string): Promise<boolean> {
@@ -1085,10 +1102,12 @@ async function persistReleaseVerification(
       );
     }
 
+    const nextDeploymentStatus = deploymentStatusFromVerification(verificationStatus);
+
     await tx
       .update(deployments)
       .set({
-        status: deploymentStatusFromVerification(verificationStatus),
+        ...(nextDeploymentStatus ? { status: nextDeploymentStatus } : {}),
         verificationStatus,
         verifiedAt: checkedAt,
         updatedAt: new Date()
@@ -1123,13 +1142,17 @@ async function persistReleaseVerification(
   });
 }
 
-function deploymentStatusFromVerification(status: ReleaseVerificationStatus): DeploymentStatus {
+function deploymentStatusFromVerification(status: ReleaseVerificationStatus): DeploymentStatus | undefined {
   if (status === "live_healthy" || status === "live_with_warnings" || status === "rollback_recommended") {
     return status;
   }
 
   if (status === "running") {
     return "verifying";
+  }
+
+  if (status === "execution_failed" || status === "not_started") {
+    return undefined;
   }
 
   return "failed";
@@ -1147,7 +1170,7 @@ function releasePlanStatusFromVerification(status: ReleaseVerificationStatus): R
   return undefined;
 }
 
-function verificationFailureResult(input: {
+function verificationExecutionFailureResult(input: {
   releasePlanId: string;
   deploymentId: string;
   error: unknown;
@@ -1157,19 +1180,18 @@ function verificationFailureResult(input: {
   return ReleaseVerificationSchema.parse({
     releasePlanId: input.releasePlanId,
     deploymentId: input.deploymentId,
-    verificationStatus: "failed",
-    summary: "Post-deploy verification failed before checks could complete.",
+    verificationStatus: "execution_failed",
+    summary: "Post-deploy verification did not complete.",
     checkedAt: new Date().toISOString(),
     checks: [
       ReleaseCheckSchema.parse({
-        checkKey: "verification_execution_check",
+        checkKey: "verification_execution_error",
         scope: "project",
-        severity: "blocker",
-        result: "failed",
-        message: "Post-deploy verification failed before checks could complete.",
+        severity: "warning",
+        result: "skipped",
+        message: "Post-deploy verification did not complete.",
         evidence: {
-          targetUrl: "",
-          observed: { failure: message }
+          executionFailure: { message }
         }
       })
     ]

@@ -48,6 +48,11 @@ type PreflightRollbackFixture = {
   previousDeploymentId: string;
 };
 
+type PageVersionFixture = {
+  projectId: string;
+  pageVersionId: string;
+};
+
 type QueueAddCall = {
   name: string;
   data: Record<string, unknown>;
@@ -144,17 +149,20 @@ void describe(
       assert.equal(checks[0]?.targetUrl, "https://customer.example/dachreinigung/");
     });
 
-    void it("persists failed verification evidence when the verifier throws", async () => {
+    void it("persists execution-failed verification evidence when the verifier throws", async () => {
       const fixture = await createReleaseFixture(db);
       verifier.mode = "throw";
 
       const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
 
-      assert.equal(result.verificationStatus, "failed");
+      assert.equal(result.verificationStatus, "execution_failed");
 
       const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
-      assert.equal(deployment?.status, "failed");
-      assert.equal(deployment?.verificationStatus, "failed");
+      assert.equal(deployment?.status, "provider_succeeded");
+      assert.equal(deployment?.verificationStatus, "execution_failed");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "live");
 
       const [verification] = await db
         .select()
@@ -165,9 +173,11 @@ void describe(
         .from(releaseVerificationChecks)
         .where(eq(releaseVerificationChecks.verificationId, verification?.id ?? ""));
 
-      assert.equal(verification?.status, "failed");
-      assert.equal(checks[0]?.checkKey, "verification_execution_check");
-      assert.equal(checks[0]?.result, "failed");
+      assert.equal(verification?.status, "execution_failed");
+      assert.equal(checks[0]?.checkKey, "verification_execution_error");
+      assert.equal(checks[0]?.severity, "warning");
+      assert.equal(checks[0]?.result, "skipped");
+      assert.deepEqual(checks[0]?.evidenceJson?.executionFailure, { message: "verifier network failure" });
       assert.notEqual(deployment?.status, "verifying");
       assert.notEqual(deployment?.verificationStatus, "running");
     });
@@ -226,6 +236,36 @@ void describe(
         .from(releaseVerifications)
         .where(eq(releaseVerifications.deploymentId, projectB.deploymentId));
 
+      assert.equal(rows.length, 0);
+    });
+
+    void it("rejects absolute verification target routes before calling the verifier", async () => {
+      const fixture = await createReleaseFixture(db, { targetUrl: "https://attacker.example/dachreinigung/" });
+
+      await assert.rejects(
+        () => service.verify(fixture.projectId, fixture.releasePlanId, {}),
+        /Release verification target routes must be relative paths/u
+      );
+
+      assert.equal(verifier.requests.length, 0);
+
+      const rows = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.deploymentId, fixture.deploymentId));
+
+      assert.equal(rows.length, 0);
+    });
+
+    void it("rejects absolute page proposal routes when creating release plans", async () => {
+      const fixture = await createPageVersionFixture(db, { route: "https://attacker.example/dachreinigung/" });
+
+      await assert.rejects(
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        /Release verification target routes must be relative paths/u
+      );
+
+      const rows = await db.select().from(releasePlanItems);
       assert.equal(rows.length, 0);
     });
 
@@ -479,6 +519,7 @@ async function createReleaseFixture(
     deploymentStatus?: DeploymentStatus;
     verificationStatus?: ReleaseVerificationStatus;
     providerDeployId?: string | null;
+    targetUrl?: string;
   } = {}
 ): Promise<ReleaseFixture> {
   const [customer] = await db
@@ -511,7 +552,7 @@ async function createReleaseFixture(
 
   await db.insert(releasePlanItems).values({
     releasePlanId: releasePlan.id,
-    targetUrl: "/dachreinigung/",
+    targetUrl: input.targetUrl ?? "/dachreinigung/",
     action: "publish",
     status: "deployed"
   });
@@ -541,6 +582,53 @@ async function createReleaseFixture(
     projectId: project.id,
     releasePlanId: releasePlan.id,
     deploymentId: deployment.id
+  };
+}
+
+async function createPageVersionFixture(
+  db: DatabaseClient,
+  input: { route: string } = { route: "/dachreinigung/" }
+): Promise<PageVersionFixture> {
+  const [customer] = await db.insert(customers).values({ name: "Plan Route Customer" }).returning();
+  assert.ok(customer);
+
+  const [project] = await db
+    .insert(projects)
+    .values({
+      customerId: customer.id,
+      name: "Plan Route Project"
+    })
+    .returning();
+  assert.ok(project);
+
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId: project.id,
+      route: input.route,
+      primaryKeyword: "Dachreinigung",
+      uniquenessRationale: "Dedicated local proof.",
+      status: "approved",
+      sitemapReady: true
+    })
+    .returning();
+  assert.ok(proposal);
+
+  const [pageVersion] = await db
+    .insert(pageVersions)
+    .values({
+      pageProposalId: proposal.id,
+      versionNumber: 1,
+      status: "approved",
+      approvedAt: new Date("2026-06-30T10:00:00.000Z"),
+      pageJson: {}
+    })
+    .returning();
+  assert.ok(pageVersion);
+
+  return {
+    projectId: project.id,
+    pageVersionId: pageVersion.id
   };
 }
 
