@@ -7,5 +7,6 @@
     "sourceMap": true,
     "paths": {}
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.integration.ts", "src/integration/**"]
 }

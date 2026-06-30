@@ -445,7 +445,7 @@ export function buildReleaseArtifactKey(releasePlanId: string): string {
   return `releases/${releasePlanId}/approved-artifact.json`;
 }
 
-function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
+export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
   return {
     async loadContext(data) {
       const [plan] = await db

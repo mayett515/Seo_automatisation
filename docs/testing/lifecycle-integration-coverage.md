@@ -12,7 +12,7 @@ Integration tests require a disposable PostgreSQL database. The harness resets t
 
 ```powershell
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
-corepack pnpm --filter @localseo/api test:integration
+corepack pnpm test:integration
 ```
 
 Safety guard:
@@ -47,7 +47,7 @@ Local environment recommendation:
 
 ## Current Coverage
 
-The first integration slice covers `ReleasesService.verify()` with a real migrated database and a deterministic fake `VerificationPort`.
+### Release Verification
 
 File:
 
@@ -74,6 +74,58 @@ tests 4 | pass 4 | fail 0
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
+
+### Deploy Worker
+
+File:
+
+- [deploy.integration.ts](/C:/localseoproject/apps/worker/src/handlers/deploy.integration.ts)
+
+Implemented tests:
+
+1. Full deploy execution persists provider success while leaving `verificationStatus = not_started`.
+2. Retry cannot overwrite `manual_reconciliation_required`.
+3. `in_flight` without a provider deploy id escalates to manual reconciliation.
+4. Retry/reconcile resumes upload from persisted provider resume evidence without starting another provider deploy.
+5. The pending-deploy reconciler skips manual rows even when they have `providerDeployId`.
+
+Verified local run:
+
+```text
+$env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
+corepack pnpm --filter @localseo/worker test:integration
+
+tests 5 | pass 5 | fail 0
+```
+
+### Queue And Job Audit
+
+File:
+
+- [queue-producer.integration.ts](/C:/localseoproject/apps/api/src/queue-producer.integration.ts)
+
+Implemented tests:
+
+1. Missing queue infrastructure records an explicit `dry_run` audit row.
+2. Duplicate active jobs coalesce without duplicate active `job_runs`.
+3. Terminal re-enqueue archives the old audit row and creates a new queued row.
+4. Queue add failure marks the queued audit row `failed` with failure evidence.
+
+These tests use a stateful fake BullMQ queue with a real database because the DB audit truth is the project-owned behavior. Full Redis/BullMQ worker processing remains out of scope for this milestone slice.
+
+### Tracking Ingestion
+
+File:
+
+- [tracking.integration.ts](/C:/localseoproject/apps/api/src/modules/tracking.integration.ts)
+
+Implemented tests:
+
+1. Valid publishable key + allowed origin persists an event for the correct project.
+2. Revoked keys reject and write no events.
+3. Origin mismatches reject before accepted-event rate-limit accounting and persistence.
+4. Cross-project key reuse rejects and writes no events.
+5. `lastUsedAt` updates are coalesced while accepted events still persist.
 
 ## Harness Design
 
@@ -103,35 +155,30 @@ Future UI and reporting work must read those detail rows before explaining a rel
 
 The next integration areas should stay focused on operator truth and DB constraints.
 
-### Deploy Worker DB
+### Still Useful In Deploy Worker DB
 
-Prove with a real database that:
+Further tests can prove:
 
-- `manual_reconciliation_required` rows cannot be overwritten by retry, reconcile, provider pending/success, or failure paths,
-- upload resume evidence survives retry/reconcile,
 - provider pending remains reconcilable and is not mislabeled failed,
-- provider success does not become live-health truth before verification,
-- the reconciler skips manual rows.
+- final-attempt pending stays reconcilable,
+- `markFailed` cannot overwrite manual rows through the real repository,
+- failed pre-provider rows with the same deployment key follow the intended strict/manual behavior.
 
-### Queue And Job Audit
+### Still Useful In Queue And Job Audit
 
-Prove that:
+Further tests can prove:
 
-- duplicate enqueue does not create duplicate active audit rows,
-- terminal re-enqueue archives or separates prior audit rows truthfully,
 - job state transitions remain honest across retry and terminal errors,
-- queue unavailable paths do not return fake queued success.
+- worker-side `job_runs` updates by `jobRunId` and fallback external job id,
+- enqueue/audit partial-failure behavior when Redis and Postgres disagree.
 
-### Tracking Ingestion
+### Still Useful In Tracking Ingestion
 
-Prove that:
+Further tests can prove:
 
-- valid project-scoped keys persist events for the correct project,
-- revoked keys reject and write nothing,
-- origin mismatch rejects and writes nothing,
-- cross-tenant key/project mismatch cannot write events,
 - rate limits are applied after validation,
-- accepted production tracking means persisted or durably queued.
+- malformed project ids reject before UUID-backed database lookup,
+- HTTP/controller header wiring matches service-level behavior.
 
 ## Out Of Scope For This Milestone
 
