@@ -53,7 +53,7 @@ import {
   rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -200,7 +200,7 @@ export class ReleasesService {
     const db = this.database.db;
     const evidence =
       db && isPersistedId(releasePlanId)
-        ? await loadReleasePreflightEvidence(db, projectId, releasePlanId)
+        ? await loadPreparedReleasePreflightEvidence(db, projectId, releasePlanId)
         : {
             pages: [],
             rollbackPointCount: 0,
@@ -722,11 +722,23 @@ async function loadReleasePreflightEvidence(
   const rollbackRows = await db
     .select({ id: rollbackPoints.id })
     .from(rollbackPoints)
-    .where(and(eq(rollbackPoints.projectId, projectId), eq(rollbackPoints.releasePlanId, releasePlanId)));
+    .where(
+      and(
+        eq(rollbackPoints.projectId, projectId),
+        eq(rollbackPoints.releasePlanId, releasePlanId),
+        isNotNull(rollbackPoints.providerDeployId)
+      )
+    );
   const priorDeploymentRows = await db
     .select({ id: deployments.id })
     .from(deployments)
-    .where(and(eq(deployments.projectId, projectId), inArray(deployments.status, rollbackReadyDeploymentStatuses)));
+    .where(
+      and(
+        eq(deployments.projectId, projectId),
+        ne(deployments.releasePlanId, releasePlanId),
+        inArray(deployments.status, rollbackReadyDeploymentStatuses)
+      )
+    );
   const activeTrackingKeyRows = await db
     .select({
       id: projectTrackingKeys.id,
@@ -754,6 +766,83 @@ async function loadReleasePreflightEvidence(
     priorSuccessfulDeploymentCount: priorDeploymentRows.length,
     usableTrackingKeyCount: activeTrackingKeyRows.filter((row) => hasUsableTrackingOrigins(row.allowedOrigins)).length
   };
+}
+
+async function loadPreparedReleasePreflightEvidence(
+  db: Db,
+  projectId: string,
+  releasePlanId: string
+): Promise<ReleasePreflightEvidence> {
+  await prepareRollbackPointForReleasePreflight(db, projectId, releasePlanId);
+  return loadReleasePreflightEvidence(db, projectId, releasePlanId);
+}
+
+async function prepareRollbackPointForReleasePreflight(
+  db: Db,
+  projectId: string,
+  releasePlanId: string
+): Promise<void> {
+  const [existingRollbackPoint] = await db
+    .select({ id: rollbackPoints.id })
+    .from(rollbackPoints)
+    .where(
+      and(
+        eq(rollbackPoints.projectId, projectId),
+        eq(rollbackPoints.releasePlanId, releasePlanId),
+        isNotNull(rollbackPoints.providerDeployId)
+      )
+    )
+    .limit(1);
+
+  if (existingRollbackPoint) {
+    return;
+  }
+
+  const [sourceDeployment] = await db
+    .select({
+      id: deployments.id,
+      releasePlanId: deployments.releasePlanId,
+      deploymentKey: deployments.deploymentKey,
+      providerDeployId: deployments.providerDeployId,
+      liveUrl: deployments.liveUrl,
+      status: deployments.status,
+      verificationStatus: deployments.verificationStatus
+    })
+    .from(deployments)
+    .where(
+      and(
+        eq(deployments.projectId, projectId),
+        ne(deployments.releasePlanId, releasePlanId),
+        isNotNull(deployments.providerDeployId),
+        inArray(deployments.status, rollbackReadyDeploymentStatuses)
+      )
+    )
+    .orderBy(desc(deployments.updatedAt))
+    .limit(1);
+
+  if (!sourceDeployment?.providerDeployId) {
+    return;
+  }
+
+  const preparedAt = new Date();
+
+  await db.insert(rollbackPoints).values({
+    projectId,
+    releasePlanId,
+    deploymentId: sourceDeployment.id,
+    artifactKey: `rollback/${releasePlanId}/${sourceDeployment.id}.json`,
+    providerDeployId: sourceDeployment.providerDeployId,
+    liveUrl: sourceDeployment.liveUrl,
+    evidenceJson: {
+      source: "release_preflight_rollback_point_preparation",
+      preparedAt: preparedAt.toISOString(),
+      sourceDeploymentId: sourceDeployment.id,
+      sourceReleasePlanId: sourceDeployment.releasePlanId,
+      sourceDeploymentKey: sourceDeployment.deploymentKey,
+      sourceDeploymentStatus: sourceDeployment.status,
+      sourceVerificationStatus: sourceDeployment.verificationStatus
+    }
+  });
 }
 
 async function loadRollbackPointForRelease(

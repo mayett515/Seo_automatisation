@@ -34,6 +34,8 @@ rollback job
 
 The Netlify adapter implements rollback by restoring the selected deploy through Netlify's restore endpoint. Netlify details stay inside the adapter; the worker consumes the provider-neutral `SiteHostingPort.rollbackDeploy` operation.
 
+Release preflight now prepares rollback points when the database has a provider-backed prior deployment for the project. The preflight helper records the source deployment id, provider deploy id, live URL, derived rollback artifact key, and evidence into `rollback_points` for the new release before evaluating `rollback_point_ready`. Rollback point rows without provider deploy evidence are not counted as deploy-ready.
+
 ## Consequences
 
 What becomes safer:
@@ -44,10 +46,11 @@ What becomes safer:
 - The final transaction guards that the target deployment and release plan are still rollback-eligible after provider I/O.
 - Rollback success updates `rollback_points.evidenceJson`, `deployments.status`, and `releasePlans.status` in one database transaction.
 - Rollback evidence records both the restored provider deploy id and the provider deploy id that was rolled back from, so audit consumers can explain the before/after provider state.
+- A new release with prior provider-backed deploy evidence can now become rollback-ready through normal preflight instead of depending on test fixtures or manual rollback point rows.
 
 Trade-offs:
 
-- Rollback point creation remains separate; this milestone executes existing persisted rollback points.
+- Rollback point preparation is a DB-only preflight baseline; it does not call providers and it does not choose between multiple historical rollback strategies beyond latest provider-backed restorable deployment.
 - Provider `queued` rollback results are recorded as pending and the worker does not immediately re-post the restore mutation. A richer rollback reconciler can be added if a provider exposes long-running rollback states often enough.
 - The rollback-ready release-plan set currently contains only `failed`. If future product policy allows rollback while another status is active, the API gate, worker pre-provider gate, and final transaction guard must be expanded together.
 - `releasePlans.status` is still a coarse projection. `rolled_back` means the rollback worker completed, while the detailed rollback evidence lives on the deployment and rollback point.

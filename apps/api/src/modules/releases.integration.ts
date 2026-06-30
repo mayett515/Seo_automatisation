@@ -14,7 +14,10 @@ import {
   customers,
   deployments,
   jobRuns,
+  pageProposals,
+  pageVersions,
   projects,
+  projectTrackingKeys,
   releasePlanItems,
   releasePlans,
   releaseVerificationChecks,
@@ -37,6 +40,12 @@ type ReleaseFixture = {
   projectId: string;
   releasePlanId: string;
   deploymentId: string;
+};
+
+type PreflightRollbackFixture = {
+  projectId: string;
+  releasePlanId: string;
+  previousDeploymentId: string;
 };
 
 type QueueAddCall = {
@@ -344,6 +353,59 @@ void describe(
 
       assert.equal(queue.addCalls.length, 0);
     });
+
+    void it("preflight prepares a provider-backed rollback point from the latest restorable deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+
+      const result = await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      assert.equal(result.readiness, "ready");
+      assert.equal(result.checks.find((check) => check.checkKey === "rollback_point_ready")?.result, "passed");
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.deploymentId, fixture.previousDeploymentId);
+      assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
+      assert.equal(rows[0]?.liveUrl, "https://customer.example/");
+      assert.equal(rows[0]?.artifactKey, `rollback/${fixture.releasePlanId}/${fixture.previousDeploymentId}.json`);
+      assert.deepEqual(rows[0]?.evidenceJson?.source, "release_preflight_rollback_point_preparation");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceDeploymentStatus, "live_healthy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "live_healthy");
+    });
+
+    void it("preflight does not count rollback points without provider evidence as deploy-ready", async () => {
+      const fixture = await createPreflightRollbackFixture(db, { previousProviderDeployId: null });
+      await createRollbackPoint(
+        db,
+        {
+          projectId: fixture.projectId,
+          releasePlanId: fixture.releasePlanId,
+          deploymentId: fixture.previousDeploymentId
+        },
+        { providerDeployId: null }
+      );
+
+      const result = await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      assert.equal(result.readiness, "blocked");
+      assert.equal(result.checks.find((check) => check.checkKey === "rollback_point_ready")?.result, "failed");
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.providerDeployId, null);
+    });
   }
 );
 
@@ -479,6 +541,129 @@ async function createReleaseFixture(
     projectId: project.id,
     releasePlanId: releasePlan.id,
     deploymentId: deployment.id
+  };
+}
+
+async function createPreflightRollbackFixture(
+  db: DatabaseClient,
+  input: { previousProviderDeployId?: string | null } = {}
+): Promise<PreflightRollbackFixture> {
+  const [customer] = await db.insert(customers).values({ name: "Preflight Customer" }).returning();
+  assert.ok(customer);
+
+  const [project] = await db
+    .insert(projects)
+    .values({
+      customerId: customer.id,
+      name: "Preflight Project"
+    })
+    .returning();
+  assert.ok(project);
+
+  const [previousReleasePlan] = await db
+    .insert(releasePlans)
+    .values({
+      projectId: project.id,
+      status: "live",
+      summary: "Previous live release.",
+      riskLevel: "low",
+      blockerCount: 0,
+      warningCount: 0
+    })
+    .returning();
+  assert.ok(previousReleasePlan);
+
+  const [previousDeployment] = await db
+    .insert(deployments)
+    .values({
+      projectId: project.id,
+      releasePlanId: previousReleasePlan.id,
+      deploymentKey: `release_plan:${previousReleasePlan.id}`,
+      provider: "netlify",
+      providerDeployId:
+        input.previousProviderDeployId === undefined ? "previous-provider-deploy" : input.previousProviderDeployId,
+      providerOperationStatus: "recorded",
+      liveUrl: "https://customer.example/",
+      status: "live_healthy",
+      verificationStatus: "live_healthy",
+      evidenceJson: {
+        provider: {
+          status: "ready",
+          liveUrls: ["https://customer.example/"]
+        }
+      }
+    })
+    .returning();
+  assert.ok(previousDeployment);
+
+  const [releasePlan] = await db
+    .insert(releasePlans)
+    .values({
+      projectId: project.id,
+      status: "draft",
+      summary: "New release needing rollback preparation.",
+      riskLevel: "low",
+      blockerCount: 0,
+      warningCount: 0
+    })
+    .returning();
+  assert.ok(releasePlan);
+
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId: project.id,
+      route: "/dachreinigung/",
+      primaryKeyword: "Dachreinigung",
+      uniquenessRationale: "Dedicated local proof.",
+      status: "approved",
+      sitemapReady: true
+    })
+    .returning();
+  assert.ok(proposal);
+
+  const [pageVersion] = await db
+    .insert(pageVersions)
+    .values({
+      pageProposalId: proposal.id,
+      versionNumber: 1,
+      status: "approved",
+      approvedAt: new Date("2026-06-30T10:00:00.000Z"),
+      pageJson: {
+        title: "Dachreinigung Muenchen",
+        metaDescription: "Lokale Dachreinigung in Muenchen.",
+        h1: "Dachreinigung in Muenchen",
+        canonical: "https://customer.example/dachreinigung/",
+        jsonLd: { "@type": "LocalBusiness" },
+        areaServed: ["Muenchen"],
+        internalLinks: ["/dachreinigung/"],
+        localFaq: [{ question: "Wie schnell?", answer: "Nach Absprache." }],
+        cta: { label: "Anfragen" },
+        robots: "noindex,nofollow",
+        sitemapReady: true
+      }
+    })
+    .returning();
+  assert.ok(pageVersion);
+
+  await db.insert(releasePlanItems).values({
+    releasePlanId: releasePlan.id,
+    pageVersionId: pageVersion.id,
+    targetUrl: "/dachreinigung/",
+    action: "publish",
+    status: "pending"
+  });
+
+  await db.insert(projectTrackingKeys).values({
+    projectId: project.id,
+    keyHash: `hash-${releasePlan.id}`,
+    allowedOrigins: ["https://customer.example/"]
+  });
+
+  return {
+    projectId: project.id,
+    releasePlanId: releasePlan.id,
+    previousDeploymentId: previousDeployment.id
   };
 }
 

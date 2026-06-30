@@ -47,6 +47,19 @@ Local environment recommendation:
 
 ## Current Coverage
 
+### Release Preflight Rollback Preparation
+
+File:
+
+- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+
+Implemented tests:
+
+1. Preflight prepares a provider-backed rollback point for the new release from the latest restorable prior deployment, then persists a passing `rollback_point_ready` check.
+2. Rollback point rows without provider deploy evidence do not satisfy preflight; if no provider-backed prior deployment can be snapshotted, preflight stays blocked instead of queueing an unrecoverable deploy.
+
+The deploy worker also counts only provider-backed rollback points as usable rollback evidence, so bypassing API preflight cannot treat placeholder rollback rows as deploy-safe.
+
 ### Release Verification
 
 File:
@@ -66,7 +79,7 @@ Implemented tests:
 5. Adapter-returned release-plan identity is ignored during persistence; the project-scoped route `releasePlanId` owns the verification row.
 6. A deployment id from another release plan or project is rejected and writes no verification rows.
 
-This file contributes 6 release verification tests plus 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+This file contributes 2 rollback-preflight tests, 6 release verification tests, and 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
 
 ### Rollback Queueing
 
@@ -90,7 +103,7 @@ Verified local run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/api test:integration
 
-tests 20 | pass 20 | fail 0
+tests 22 | pass 22 | fail 0
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
@@ -216,7 +229,7 @@ Further tests can prove:
 
 - provider rollback pending is reconciled by a dedicated rollback reconciler instead of repeating provider restore calls,
 - rollback queue deduplication across repeated operator clicks remains one active rollback job,
-- rollback execution can use a rollback point prepared by the real deploy lifecycle, once rollback point preparation is wired.
+- rollback point selection prefers the strongest verified-stable source when richer lifecycle states split provider success from live health.
 
 ### Still Useful In Queue And Job Audit
 

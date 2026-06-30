@@ -72,3 +72,13 @@ Milestone 4 hardening landed only rollback-executor-specific changes:
 - successful rollback evidence that records the provider deploy id rolled back from.
 
 The broader verification and release-status items above should be a separate follow-up patch after Milestone 4 review/commit.
+
+## Rollback Point Preparation Follow-Up
+
+The first post-Milestone-4 follow-up wired DB-only rollback point preparation into release preflight:
+
+- preflight prepares a rollback point for the new release from the latest provider-backed prior deployment when no usable rollback point exists,
+- placeholder rollback point rows without `providerDeployId` no longer satisfy API preflight,
+- the deploy worker's final safety check also counts only provider-backed rollback points as usable rollback evidence.
+
+Why this was done before the broader status-column refactor: rollback execution was otherwise waiting on inputs that only tests created. Preparing rollback points closes that functional loop without changing provider mutation ownership, while the larger release-status split remains a separate lifecycle-truth design task.
