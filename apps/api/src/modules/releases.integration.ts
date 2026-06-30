@@ -419,6 +419,107 @@ void describe(
       assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "live_healthy");
     });
 
+    void it("preflight does not prepare a rollback point from a rollback-recommended deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentStatus: "rollback_recommended",
+        previousVerificationStatus: "rollback_recommended"
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 0);
+    });
+
+    void it("preflight skips rollback point preparation when all prior deployments are unsafe sources", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentStatus: "rollback_recommended",
+        previousVerificationStatus: "rollback_recommended"
+      });
+      await createPriorRollbackSourceCandidate(db, {
+        projectId: fixture.projectId,
+        status: "failed",
+        verificationStatus: "failed",
+        providerDeployId: "failed-provider-deploy",
+        updatedAt: new Date("2026-06-30T10:00:00.000Z")
+      });
+      await createPriorRollbackSourceCandidate(db, {
+        projectId: fixture.projectId,
+        status: "verifying",
+        verificationStatus: "running",
+        providerDeployId: "verifying-provider-deploy",
+        updatedAt: new Date("2026-06-30T11:00:00.000Z")
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 0);
+    });
+
+    void it("preflight prefers an older verified-good rollback source over a newer bad deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentUpdatedAt: new Date("2026-06-30T09:00:00.000Z")
+      });
+      const badDeploymentId = await createPriorRollbackSourceCandidate(db, {
+        projectId: fixture.projectId,
+        status: "rollback_recommended",
+        verificationStatus: "rollback_recommended",
+        providerDeployId: "newer-bad-provider-deploy",
+        updatedAt: new Date("2026-06-30T11:00:00.000Z")
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.deploymentId, fixture.previousDeploymentId);
+      assert.notEqual(rows[0]?.deploymentId, badDeploymentId);
+      assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceDeploymentStatus, "live_healthy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "live_healthy");
+    });
+
+    void it("preflight falls back to provider-succeeded rollback sources when no verified-good source exists", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentStatus: "provider_succeeded",
+        previousVerificationStatus: "not_started"
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.deploymentId, fixture.previousDeploymentId);
+      assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceDeploymentStatus, "provider_succeeded");
+      assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "not_started");
+    });
+
     void it("preflight does not count rollback points without provider evidence as deploy-ready", async () => {
       const fixture = await createPreflightRollbackFixture(db, { previousProviderDeployId: null });
       await createRollbackPoint(
@@ -634,7 +735,12 @@ async function createPageVersionFixture(
 
 async function createPreflightRollbackFixture(
   db: DatabaseClient,
-  input: { previousProviderDeployId?: string | null } = {}
+  input: {
+    previousProviderDeployId?: string | null;
+    previousDeploymentStatus?: DeploymentStatus;
+    previousVerificationStatus?: ReleaseVerificationStatus;
+    previousDeploymentUpdatedAt?: Date;
+  } = {}
 ): Promise<PreflightRollbackFixture> {
   const [customer] = await db.insert(customers).values({ name: "Preflight Customer" }).returning();
   assert.ok(customer);
@@ -672,8 +778,9 @@ async function createPreflightRollbackFixture(
         input.previousProviderDeployId === undefined ? "previous-provider-deploy" : input.previousProviderDeployId,
       providerOperationStatus: "recorded",
       liveUrl: "https://customer.example/",
-      status: "live_healthy",
-      verificationStatus: "live_healthy",
+      status: input.previousDeploymentStatus ?? "live_healthy",
+      verificationStatus: input.previousVerificationStatus ?? "live_healthy",
+      updatedAt: input.previousDeploymentUpdatedAt,
       evidenceJson: {
         provider: {
           status: "ready",
@@ -753,6 +860,55 @@ async function createPreflightRollbackFixture(
     releasePlanId: releasePlan.id,
     previousDeploymentId: previousDeployment.id
   };
+}
+
+async function createPriorRollbackSourceCandidate(
+  db: DatabaseClient,
+  input: {
+    projectId: string;
+    status: DeploymentStatus;
+    verificationStatus: ReleaseVerificationStatus;
+    providerDeployId: string | null;
+    updatedAt: Date;
+  }
+): Promise<string> {
+  const [releasePlan] = await db
+    .insert(releasePlans)
+    .values({
+      projectId: input.projectId,
+      status: input.status === "rollback_recommended" || input.status === "failed" ? "failed" : "live",
+      summary: "Additional prior release.",
+      riskLevel: "low",
+      blockerCount: 0,
+      warningCount: 0
+    })
+    .returning();
+  assert.ok(releasePlan);
+
+  const [deployment] = await db
+    .insert(deployments)
+    .values({
+      projectId: input.projectId,
+      releasePlanId: releasePlan.id,
+      deploymentKey: `release_plan:${releasePlan.id}`,
+      provider: "netlify",
+      providerDeployId: input.providerDeployId,
+      providerOperationStatus: "recorded",
+      liveUrl: "https://customer.example/",
+      status: input.status,
+      verificationStatus: input.verificationStatus,
+      updatedAt: input.updatedAt,
+      evidenceJson: {
+        provider: {
+          status: "ready",
+          liveUrls: ["https://customer.example/"]
+        }
+      }
+    })
+    .returning();
+  assert.ok(deployment);
+
+  return deployment.id;
 }
 
 async function createRollbackPoint(

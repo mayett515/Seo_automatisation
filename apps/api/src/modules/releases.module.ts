@@ -68,12 +68,15 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 type Db = DatabaseClient;
 
 const approvableReleaseStatuses = new Set<ReleasePlan["status"]>(["ready", "ready_with_warnings"]);
-const rollbackReadyDeploymentStatuses = [
-  "provider_succeeded",
-  "verifying",
+const rollbackVerifiedSourceDeploymentStatuses = [
   "live_healthy",
-  "live_with_warnings",
-  "rollback_recommended"
+  "live_with_warnings"
+] as const satisfies DeploymentStatus[];
+const rollbackFallbackSourceDeploymentStatuses = ["provider_succeeded"] as const satisfies DeploymentStatus[];
+const rollbackSourceDeploymentStatuses = [
+  "provider_succeeded",
+  "live_healthy",
+  "live_with_warnings"
 ] as const satisfies DeploymentStatus[];
 const rollbackExecutionReadyStatuses = [
   "provider_succeeded",
@@ -736,7 +739,7 @@ async function loadReleasePreflightEvidence(
       and(
         eq(deployments.projectId, projectId),
         ne(deployments.releasePlanId, releasePlanId),
-        inArray(deployments.status, rollbackReadyDeploymentStatuses)
+        inArray(deployments.status, rollbackSourceDeploymentStatuses)
       )
     );
   const activeTrackingKeyRows = await db
@@ -798,27 +801,9 @@ async function prepareRollbackPointForReleasePreflight(
     return;
   }
 
-  const [sourceDeployment] = await db
-    .select({
-      id: deployments.id,
-      releasePlanId: deployments.releasePlanId,
-      deploymentKey: deployments.deploymentKey,
-      providerDeployId: deployments.providerDeployId,
-      liveUrl: deployments.liveUrl,
-      status: deployments.status,
-      verificationStatus: deployments.verificationStatus
-    })
-    .from(deployments)
-    .where(
-      and(
-        eq(deployments.projectId, projectId),
-        ne(deployments.releasePlanId, releasePlanId),
-        isNotNull(deployments.providerDeployId),
-        inArray(deployments.status, rollbackReadyDeploymentStatuses)
-      )
-    )
-    .orderBy(desc(deployments.updatedAt))
-    .limit(1);
+  const sourceDeployment =
+    (await loadRollbackSourceDeployment(db, projectId, releasePlanId, rollbackVerifiedSourceDeploymentStatuses)) ??
+    (await loadRollbackSourceDeployment(db, projectId, releasePlanId, rollbackFallbackSourceDeploymentStatuses));
 
   if (!sourceDeployment?.providerDeployId) {
     return;
@@ -843,6 +828,48 @@ async function prepareRollbackPointForReleasePreflight(
       sourceVerificationStatus: sourceDeployment.verificationStatus
     }
   });
+}
+
+async function loadRollbackSourceDeployment(
+  db: Db,
+  projectId: string,
+  releasePlanId: string,
+  statuses: readonly DeploymentStatus[]
+): Promise<
+  | {
+      id: string;
+      releasePlanId: string | null;
+      deploymentKey: string;
+      providerDeployId: string | null;
+      liveUrl: string | null;
+      status: DeploymentStatus;
+      verificationStatus: ReleaseVerificationStatus;
+    }
+  | undefined
+> {
+  const [sourceDeployment] = await db
+    .select({
+      id: deployments.id,
+      releasePlanId: deployments.releasePlanId,
+      deploymentKey: deployments.deploymentKey,
+      providerDeployId: deployments.providerDeployId,
+      liveUrl: deployments.liveUrl,
+      status: deployments.status,
+      verificationStatus: deployments.verificationStatus
+    })
+    .from(deployments)
+    .where(
+      and(
+        eq(deployments.projectId, projectId),
+        ne(deployments.releasePlanId, releasePlanId),
+        isNotNull(deployments.providerDeployId),
+        inArray(deployments.status, statuses)
+      )
+    )
+    .orderBy(desc(deployments.updatedAt))
+    .limit(1);
+
+  return sourceDeployment;
 }
 
 async function loadRollbackPointForRelease(
