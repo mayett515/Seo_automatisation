@@ -12,6 +12,7 @@
     "text:check": "tsx tools/check-text-health.ts",
     "typecheck": "corepack pnpm -r --if-present --workspace-concurrency=1 run typecheck",
     "test": "corepack pnpm -r --if-present --workspace-concurrency=1 run test",
+    "test:integration": "corepack pnpm -r --if-present --workspace-concurrency=1 run test:integration",
     "db:check": "corepack pnpm --filter @localseo/db db:check",
     "check": "corepack pnpm format:check && corepack pnpm text:check && git diff --check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm db:check && corepack pnpm build && corepack pnpm test",
     "turbo:build": "turbo run build",

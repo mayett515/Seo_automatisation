@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node --conditions=production dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test --test-isolation=none src/**/*.test.ts"
+    "test": "tsx --test --test-isolation=none src/**/*.test.ts",
+    "test:integration": "tsx --test --test-isolation=none src/**/*.integration.ts"
   },
   "dependencies": {
     "@fastify/helmet": "^13.0.2",
