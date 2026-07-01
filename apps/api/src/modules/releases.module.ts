@@ -811,23 +811,28 @@ async function prepareRollbackPointForReleasePreflight(
 
   const preparedAt = new Date();
 
-  await db.insert(rollbackPoints).values({
-    projectId,
-    releasePlanId,
-    deploymentId: sourceDeployment.id,
-    artifactKey: `rollback/${releasePlanId}/${sourceDeployment.id}.json`,
-    providerDeployId: sourceDeployment.providerDeployId,
-    liveUrl: sourceDeployment.liveUrl,
-    evidenceJson: {
-      source: "release_preflight_rollback_point_preparation",
-      preparedAt: preparedAt.toISOString(),
-      sourceDeploymentId: sourceDeployment.id,
-      sourceReleasePlanId: sourceDeployment.releasePlanId,
-      sourceDeploymentKey: sourceDeployment.deploymentKey,
-      sourceDeploymentStatus: sourceDeployment.status,
-      sourceVerificationStatus: sourceDeployment.verificationStatus
-    }
-  });
+  await db
+    .insert(rollbackPoints)
+    .values({
+      projectId,
+      releasePlanId,
+      deploymentId: sourceDeployment.id,
+      artifactKey: `rollback/${releasePlanId}/${sourceDeployment.id}.json`,
+      providerDeployId: sourceDeployment.providerDeployId,
+      liveUrl: sourceDeployment.liveUrl,
+      evidenceJson: {
+        source: "release_preflight_rollback_point_preparation",
+        preparedAt: preparedAt.toISOString(),
+        sourceDeploymentId: sourceDeployment.id,
+        sourceReleasePlanId: sourceDeployment.releasePlanId,
+        sourceDeploymentKey: sourceDeployment.deploymentKey,
+        sourceDeploymentStatus: sourceDeployment.status,
+        sourceVerificationStatus: sourceDeployment.verificationStatus
+      }
+    })
+    .onConflictDoNothing({
+      target: [rollbackPoints.releasePlanId, rollbackPoints.deploymentId, rollbackPoints.providerDeployId]
+    });
 }
 
 async function loadRollbackSourceDeployment(

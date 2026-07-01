@@ -37,6 +37,12 @@ Release preflight prepares rollback points from verified-good prior deployments 
 
 Why: rollback-to sources and rollback-from targets have opposite health requirements. A known-bad deployment can be a rollback target, but it must not be the source that gets restored.
 
+### Rollback Point Preparation Is Idempotent For A Source Identity
+
+Rollback point preparation now has a database uniqueness guard for the same `(release_plan_id, deployment_id, provider_deploy_id)` source identity, and the preflight insert uses conflict-safe insertion. Concurrent preflight calls that target the same source cannot create duplicate provider-backed rollback options.
+
+Why: preflight was already written as "skip if a provider-backed point exists," but that check happened before insert. The database now owns the duplicate guard for the race shape that matters.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership
@@ -87,9 +93,8 @@ The first post-Milestone-4 follow-up wired DB-only rollback point preparation in
 
 - preflight prepares a rollback point for the new release from a safe provider-backed prior deployment when no usable rollback point exists,
 - source selection prefers verified-good deployments and excludes known-bad or unknown-health deployments,
+- duplicate preparation for the same release/source is suppressed by a database uniqueness/conflict guard,
 - placeholder rollback point rows without `providerDeployId` no longer satisfy API preflight,
 - the deploy worker's final safety check also counts only provider-backed rollback points as usable rollback evidence.
 
 Why this was done before the broader status-column refactor: rollback execution was otherwise waiting on inputs that only tests created. Preparing rollback points closes that functional loop without changing provider mutation ownership, while the larger release-status split remains a separate lifecycle-truth design task.
-
-Remaining follow-up: rollback point preparation is still check-then-insert under concurrent preflight calls. Add a database uniqueness/idempotency guard before automated preflight traffic or repeated operator workflows make duplicate rollback points likely.

@@ -412,21 +412,31 @@ export const releaseVerificationChecks = pgTable(
   (table) => [index("release_verification_checks_verification_idx").on(table.verificationId)]
 );
 
-export const rollbackPoints = pgTable("rollback_points", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id),
-  releasePlanId: uuid("release_plan_id")
-    .notNull()
-    .references(() => releasePlans.id),
-  deploymentId: uuid("deployment_id").references(() => deployments.id),
-  artifactKey: text("artifact_key").notNull(),
-  providerDeployId: text("provider_deploy_id"),
-  liveUrl: text("live_url"),
-  evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
-  ...timestamps
-});
+export const rollbackPoints = pgTable(
+  "rollback_points",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    releasePlanId: uuid("release_plan_id")
+      .notNull()
+      .references(() => releasePlans.id),
+    deploymentId: uuid("deployment_id").references(() => deployments.id),
+    artifactKey: text("artifact_key").notNull(),
+    providerDeployId: text("provider_deploy_id"),
+    liveUrl: text("live_url"),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("rollback_points_release_source_idx").on(
+      table.releasePlanId,
+      table.deploymentId,
+      table.providerDeployId
+    )
+  ]
+);
 
 export const gscConnections = pgTable(
   "gsc_connections",

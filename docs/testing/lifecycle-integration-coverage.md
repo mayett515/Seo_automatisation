@@ -60,7 +60,8 @@ Implemented tests:
 3. Preflight skips rollback point preparation when all prior deployments are unsafe sources (`rollback_recommended`, `failed`, or `verifying`).
 4. Preflight prefers an older verified-good source over a newer bad deployment.
 5. Preflight falls back to a `provider_succeeded` source when no verified-good source exists.
-6. Rollback point rows without provider deploy evidence do not satisfy preflight; if no provider-backed prior deployment can be snapshotted, preflight stays blocked instead of queueing an unrecoverable deploy.
+6. The rollback source identity is idempotent at the database boundary: an exact duplicate `(release_plan_id, deployment_id, provider_deploy_id)` insert is conflict-suppressed instead of creating a second rollback option.
+7. Rollback point rows without provider deploy evidence do not satisfy preflight; if no provider-backed prior deployment can be snapshotted, preflight stays blocked instead of queueing an unrecoverable deploy.
 
 The deploy worker also counts only provider-backed rollback points as usable rollback evidence, so bypassing API preflight cannot treat placeholder rollback rows as deploy-safe.
 
@@ -85,7 +86,7 @@ Implemented tests:
 7. Absolute verification target routes are rejected before the verifier adapter can fetch them.
 8. Absolute page proposal routes are rejected when release plan items are created.
 
-This file contributes 6 rollback-preflight tests, 8 release verification tests, and 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+This file contributes 7 rollback-preflight tests, 8 release verification tests, and 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
 
 ### Rollback Queueing
 
@@ -109,7 +110,7 @@ Verified local run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/api test:integration
 
-tests 28 | pass 28 | fail 0
+tests 29 | pass 29 | fail 0
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
@@ -245,8 +246,7 @@ Further tests can prove:
 Further tests can prove:
 
 - provider rollback pending is reconciled by a dedicated rollback reconciler instead of repeating provider restore calls,
-- rollback queue deduplication across repeated operator clicks remains one active rollback job,
-- rollback point preparation remains idempotent under concurrent preflight calls once a database uniqueness/conflict guard is added.
+- rollback queue deduplication across repeated operator clicks remains one active rollback job.
 
 ### Still Useful In Queue And Job Audit
 

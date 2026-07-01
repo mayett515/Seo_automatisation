@@ -419,6 +419,50 @@ void describe(
       assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "live_healthy");
     });
 
+    void it("preflight rollback source identity is idempotent at the database boundary", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const [preparedPoint] = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        )
+        .limit(1);
+      assert.ok(preparedPoint);
+      assert.ok(preparedPoint.deploymentId);
+      assert.ok(preparedPoint.providerDeployId);
+
+      const duplicateRows = await db
+        .insert(rollbackPoints)
+        .values({
+          projectId: fixture.projectId,
+          releasePlanId: fixture.releasePlanId,
+          deploymentId: preparedPoint.deploymentId,
+          artifactKey: preparedPoint.artifactKey,
+          providerDeployId: preparedPoint.providerDeployId,
+          liveUrl: preparedPoint.liveUrl,
+          evidenceJson: preparedPoint.evidenceJson
+        })
+        .onConflictDoNothing({
+          target: [rollbackPoints.releasePlanId, rollbackPoints.deploymentId, rollbackPoints.providerDeployId]
+        })
+        .returning({ id: rollbackPoints.id });
+
+      assert.equal(duplicateRows.length, 0);
+
+      const rows = await db
+        .select({ id: rollbackPoints.id })
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+    });
+
     void it("preflight does not prepare a rollback point from a rollback-recommended deployment", async () => {
       const fixture = await createPreflightRollbackFixture(db, {
         previousDeploymentStatus: "rollback_recommended",
