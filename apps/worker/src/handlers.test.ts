@@ -2,7 +2,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { GscSearchAnalyticsRow } from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
-import { DeployConfigurationError, DeployEvidenceError, ManualReconciliationRequiredError } from "./handlers/deploy.js";
+import {
+  DeployConfigurationError,
+  DeployEvidenceError,
+  ManualReconciliationRequiredError,
+  ProviderDeployTerminalStatusError
+} from "./handlers/deploy.js";
+import { GscSyncFailureError } from "./handlers/gsc-sync.js";
 import { RollbackConfigurationError, RollbackEvidenceError, RollbackProviderFailedError } from "./handlers/rollback.js";
 import {
   classifyOpportunitySignals,
@@ -133,9 +139,15 @@ void describe("isTerminalWorkerError", () => {
     assert.equal(isTerminalWorkerError(new DeployConfigurationError("missing adapter")), true);
     assert.equal(isTerminalWorkerError(new DeployEvidenceError("not deployable")), true);
     assert.equal(isTerminalWorkerError(new ManualReconciliationRequiredError("manual reconciliation")), true);
+    assert.equal(isTerminalWorkerError(new ProviderDeployTerminalStatusError("failed")), true);
     assert.equal(isTerminalWorkerError(new RollbackConfigurationError("missing hosting site")), true);
     assert.equal(isTerminalWorkerError(new RollbackEvidenceError("missing rollback evidence")), true);
     assert.equal(isTerminalWorkerError(new RollbackProviderFailedError("provider failed")), true);
+    assert.equal(
+      isTerminalWorkerError(new GscSyncFailureError("google_refresh_token_invalid", { reconnectRequired: true })),
+      true
+    );
+    assert.equal(isTerminalWorkerError(new GscSyncFailureError("google_oauth_refresh_failed")), false);
     assert.equal(isTerminalWorkerError(new Error("provider timeout")), false);
   });
 
@@ -144,6 +156,12 @@ void describe("isTerminalWorkerError", () => {
 
     assert.ok(mapped instanceof UnrecoverableError);
     assert.equal(mapped.message, "not deployable");
+    assert.ok(
+      toWorkerRethrowError(
+        new GscSyncFailureError("refresh_token_decrypt_failed", { reconnectRequired: true })
+      ) instanceof UnrecoverableError
+    );
+    assert.ok(toWorkerRethrowError(new ProviderDeployTerminalStatusError("rolled_back")) instanceof UnrecoverableError);
     assert.equal(toWorkerRethrowError(new Error("provider timeout")) instanceof UnrecoverableError, false);
   });
 });

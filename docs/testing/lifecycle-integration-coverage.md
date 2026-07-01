@@ -131,8 +131,10 @@ Implemented tests:
 6. The pending-deploy reconciler skips manual rows even when they have `providerDeployId`.
 7. `markFailed` cannot overwrite `manual_reconciliation_required`.
 8. Pending provider deploys remain reconcilable instead of being mislabeled failed.
+9. Provider read failures during pending-deploy reconciliation remain reconcilable instead of being mislabeled failed.
+10. Unexpected pending-deploy reconciliation errors are surfaced instead of being silently counted as pending.
 
-This file contributes 8 deploy-worker tests to the worker integration command.
+This file contributes 10 deploy-worker tests to the worker integration command.
 
 ### Rollback Worker
 
@@ -176,7 +178,7 @@ Verified local worker integration run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 22 | pass 22 | fail 0
+tests 24 | pass 24 | fail 0
 ```
 
 ### Queue And Job Audit

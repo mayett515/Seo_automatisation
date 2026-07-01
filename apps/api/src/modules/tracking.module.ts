@@ -74,13 +74,13 @@ export class TrackingRateLimiter {
 
   async enforcePreValidationRequest(input: { ip: string; projectId: string }): Promise<void> {
     const keys = trackingRateLimitKeys(input);
-    const ipCount = await this.increment(keys.ip);
+    const ipCount = await this.incrementSoftLimit(keys.ip);
 
     if (ipCount > trackingIpRateLimitMax) {
       throw trackingRateLimitExceeded();
     }
 
-    const ipProjectCount = await this.increment(keys.ipProject);
+    const ipProjectCount = await this.incrementSoftLimit(keys.ipProject);
 
     if (ipProjectCount > trackingProjectRateLimitMax) {
       throw trackingRateLimitExceeded();
@@ -89,19 +89,19 @@ export class TrackingRateLimiter {
 
   async enforceAcceptedEvent(input: { projectId: string; trackingKeyId: string }): Promise<void> {
     const keys = trackingRateLimitKeys(input);
-    const projectCount = await this.increment(keys.project);
+    const projectCount = await this.incrementWriteProtectionLimit(keys.project);
 
     if (projectCount > trackingGlobalProjectRateLimitMax) {
       throw trackingRateLimitExceeded();
     }
 
-    const keyCount = await this.increment(keys.trackingKey);
+    const keyCount = await this.incrementWriteProtectionLimit(keys.trackingKey);
 
     if (keyCount > trackingKeyRateLimitMax) {
       throw trackingRateLimitExceeded();
     }
 
-    const keyProjectCount = await this.increment(keys.trackingKeyProject);
+    const keyProjectCount = await this.incrementWriteProtectionLimit(keys.trackingKeyProject);
 
     if (keyProjectCount > trackingKeyProjectRateLimitMax) {
       throw trackingRateLimitExceeded();
@@ -127,23 +127,55 @@ export class TrackingRateLimiter {
     return this.shouldFlushTrackingKeyLastUsedAtInMemory(trackingKeyId);
   }
 
-  private async increment(key: string): Promise<number> {
-    if (this.redis.client) {
-      try {
-        const redisKey = `tracking:rate-limit:${key}`;
-        const count = await this.redis.client.incr(redisKey);
+  protected shouldFailClosedAcceptedEventLimits(): boolean {
+    return env.NODE_ENV === "production";
+  }
 
-        if (count === 1) {
-          await this.redis.client.expire(redisKey, trackingRateLimitWindowSeconds);
-        }
+  private async incrementSoftLimit(key: string): Promise<number> {
+    const client = this.redis.client;
 
-        return count;
-      } catch {
-        return this.incrementInMemory(key);
-      }
+    if (!client) {
+      return this.incrementInMemory(key);
     }
 
-    return this.incrementInMemory(key);
+    try {
+      return await this.incrementRedisLimit(client, key);
+    } catch {
+      return this.incrementInMemory(key);
+    }
+  }
+
+  private async incrementWriteProtectionLimit(key: string): Promise<number> {
+    const client = this.redis.client;
+
+    if (!client) {
+      if (this.shouldFailClosedAcceptedEventLimits()) {
+        throw trackingRateLimitUnavailable();
+      }
+
+      return this.incrementInMemory(key);
+    }
+
+    try {
+      return await this.incrementRedisLimit(client, key);
+    } catch {
+      if (this.shouldFailClosedAcceptedEventLimits()) {
+        throw trackingRateLimitUnavailable();
+      }
+
+      return this.incrementInMemory(key);
+    }
+  }
+
+  private async incrementRedisLimit(client: NonNullable<RedisService["client"]>, key: string): Promise<number> {
+    const redisKey = `tracking:rate-limit:${key}`;
+    const count = await client.incr(redisKey);
+
+    if (count === 1) {
+      await client.expire(redisKey, trackingRateLimitWindowSeconds);
+    }
+
+    return count;
   }
 
   private incrementInMemory(key: string): number {
@@ -478,6 +510,10 @@ export function trackingRateLimitKeys(input: { ip?: string; projectId?: string; 
 
 function trackingRateLimitExceeded(): HttpException {
   return new HttpException("Tracking rate limit exceeded.", HttpStatus.TOO_MANY_REQUESTS);
+}
+
+function trackingRateLimitUnavailable(): HttpException {
+  return new HttpException("Tracking rate limit temporarily unavailable.", HttpStatus.SERVICE_UNAVAILABLE);
 }
 
 export function hashTrackingKey(trackingKey: string): string {

@@ -147,7 +147,7 @@ void describe("executeDeploy", () => {
     assert.equal(repository.failed.length, 0);
   });
 
-  void it("marks upload failures failed on the final attempt after the provider id is recorded", async () => {
+  void it("keeps upload failures reconcilable on the final attempt after the provider id is recorded", async () => {
     const data = deployJobData();
     const repository = createRepository();
 
@@ -174,7 +174,71 @@ void describe("executeDeploy", () => {
     assert.equal(repository.started.length, 1);
     assert.equal(repository.providerStarted.length, 1);
     assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.failed.length, 0);
+  });
+
+  void it("marks explicit provider terminal failures failed before the final attempt", async () => {
+    const data = deployJobData();
+    const repository = createRepository();
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        isFinalAttempt: false,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(
+          {
+            status: "ready",
+            providerDeployId: "provider-deploy-1",
+            liveUrls: ["https://example.test/"]
+          },
+          {
+            providerDeployId: "provider-deploy-1",
+            status: "failed",
+            liveUrls: []
+          }
+        )
+      }),
+      /Provider deploy finished as failed/u
+    );
+
+    assert.equal(repository.started.length, 1);
+    assert.equal(repository.providerStarted.length, 1);
+    assert.equal(repository.providerUploadCompleted.length, 1);
+    assert.equal(repository.providerSucceeded.length, 0);
     assert.equal(repository.failed.length, 1);
+  });
+
+  void it("keeps provider read failures reconcilable on the final attempt", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        existingDeployment: deploymentRow({
+          status: "deploying",
+          providerDeployId: "provider-deploy-1"
+        })
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        isFinalAttempt: true,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not create another deploy"), undefined, {
+          getDeployError: new Error("provider read timeout")
+        })
+      }),
+      /provider read timeout/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.failed.length, 0);
   });
 
   void it("replays an already successful deployment without creating another provider deploy", async () => {
@@ -953,6 +1017,7 @@ function createSiteHosting(
   options: {
     uploadError?: Error;
     uploadCalls?: Array<Parameters<SiteHostingPort["uploadDeployFiles"]>[0]>;
+    getDeployError?: Error;
     getDeploySnapshots?: Array<Awaited<ReturnType<SiteHostingPort["getDeploy"]>>>;
   } = {}
 ): SiteHostingPort {
@@ -1009,6 +1074,10 @@ function createSiteHosting(
       return Promise.resolve(result);
     },
     getDeploy: () => {
+      if (options.getDeployError) {
+        return Promise.reject(options.getDeployError);
+      }
+
       const nextSnapshot = options.getDeploySnapshots?.[getDeployIndex];
       getDeployIndex += 1;
 

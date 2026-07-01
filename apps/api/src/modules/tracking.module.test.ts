@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, HttpException } from "@nestjs/common";
 import { CreateTrackingKeyRequestSchema } from "@localseo/contracts";
 import type { DatabaseService } from "../database/database.service.js";
 import type { RedisService } from "../redis/redis.service.js";
@@ -147,7 +147,63 @@ void describe("tracking ingestion authorization", () => {
     assert.equal(await limiter.shouldFlushTrackingKeyLastUsedAt("key-1"), false);
     assert.equal(await limiter.shouldFlushTrackingKeyLastUsedAt("key-2"), true);
   });
+
+  void it("fails accepted event limits closed when strict mode has no Redis client", async () => {
+    const limiter = new StrictTrackingRateLimiter({ client: undefined } as RedisService);
+
+    await assert.rejects(
+      limiter.enforceAcceptedEvent({
+        projectId: "11111111-1111-4111-8111-111111111111",
+        trackingKeyId: "22222222-2222-4222-8222-222222222222"
+      }),
+      isServiceUnavailableRateLimit
+    );
+  });
+
+  void it("fails accepted event limits closed when Redis increment fails", async () => {
+    const limiter = new StrictTrackingRateLimiter(failingRedisService());
+
+    await assert.rejects(
+      limiter.enforceAcceptedEvent({
+        projectId: "11111111-1111-4111-8111-111111111111",
+        trackingKeyId: "22222222-2222-4222-8222-222222222222"
+      }),
+      isServiceUnavailableRateLimit
+    );
+  });
+
+  void it("keeps pre-validation limits as a soft local throttle when Redis fails", async () => {
+    const limiter = new StrictTrackingRateLimiter(failingRedisService());
+
+    await limiter.enforcePreValidationRequest({
+      ip: "203.0.113.10",
+      projectId: "11111111-1111-4111-8111-111111111111"
+    });
+  });
 });
+
+class StrictTrackingRateLimiter extends TrackingRateLimiter {
+  protected override shouldFailClosedAcceptedEventLimits(): boolean {
+    return true;
+  }
+}
+
+function failingRedisService(): RedisService {
+  return {
+    client: {
+      incr: () => Promise.reject(new Error("redis down")),
+      expire: () => Promise.resolve(1)
+    }
+  } as unknown as RedisService;
+}
+
+function isServiceUnavailableRateLimit(error: unknown): boolean {
+  return (
+    error instanceof HttpException &&
+    error.getStatus() === 503 &&
+    error.message === "Tracking rate limit temporarily unavailable."
+  );
+}
 
 async function withEnv<T>(updates: Record<string, string | undefined>, run: () => T | Promise<T>): Promise<T> {
   const previous = new Map(Object.keys(updates).map((key) => [key, process.env[key]]));

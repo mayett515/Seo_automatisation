@@ -55,6 +55,16 @@ The Netlify and Google Search Console adapters now throw typed provider request 
 
 Why: provider response bodies can contain sensitive diagnostic data, and unbounded provider calls can stall worker retry/shutdown behavior. GSC connection state must tell operators when reconnect is required instead of leaving a broken connection looking healthy.
 
+### ADR 0012 Production Policy Guards Are Implemented
+
+The accepted production-readiness policy now has code-level guards for the slices that do not require pending rollback reconciler design:
+
+- reconnect-required GSC sync failures are classified as terminal worker errors and rethrown to BullMQ as unrecoverable, preserving the precise reconnect-required connection failure instead of retrying into a generic not-ready state,
+- accepted tracking events use Redis-backed write-protection limits in strict/production mode and fail closed with `503` when those limits are unavailable, while pre-validation request limits remain a soft local throttle,
+- provider-backed deploy timeout or unknown read/upload outcomes remain reconcilable after final attempts and during the periodic deploy reconciler; an explicit provider terminal `failed` or `rolled_back` snapshot marks the deployment failed immediately and stops BullMQ retries.
+
+Why: ADR 0012 intentionally separated policy decisions from implementation. These guards encode the decided production posture without changing rollback automation semantics.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership
@@ -67,6 +77,19 @@ Follow-up direction:
 - Keep one writer per projection: approval API owns approval truth, deploy worker owns provider mutation truth, verifier owns live-health truth, rollback worker owns restore truth.
 
 Why: avoid overloading one column with several meanings and reduce the chance that UI/reporting treats provider success as verified health.
+
+### Search Console OAuth Start Should Be A Port-Owned Operation
+
+`GscService` currently depends on the concrete `GoogleSearchConsoleAdapter` because the API needs more than a redirect URL when starting OAuth. It must persist the provider, nonce, project/user/session binding, redirect target, expiry, and PKCE code verifier in `GscOAuthStateStore`. The adapter already owns the OAuth mechanics through `createAuthorizationRequest(...)`, but `SearchConsolePort` only exposes the narrower redirect-intent shape.
+
+Follow-up direction:
+
+- When next touching GSC OAuth, promote `createAuthorizationRequest(...)` and its return shape into `SearchConsolePort`.
+- Type the API dependency as `SearchConsolePort | undefined`, not `GoogleSearchConsoleAdapter | undefined`.
+- Keep PKCE/state signing in the adapter and keep Redis/state persistence in the API-owned `GscOAuthStateStore`.
+- Do not create a generic `BaseOAuthAdapter` or inheritance layer; one honest port method is enough.
+
+Why: the API use case is "start Search Console OAuth and return redirect intent plus state/code verifier to persist." The purpose-named port should describe that full boundary so tests/fakes and the API module do not couple to the concrete Google adapter.
 
 ## Deferred Or Rejected
 

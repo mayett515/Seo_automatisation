@@ -203,4 +203,8 @@ class CountingTrackingRateLimiter extends TrackingRateLimiter {
     this.acceptedInputs.push(input);
     await super.enforceAcceptedEvent(input);
   }
+
+  protected override shouldFailClosedAcceptedEventLimits(): boolean {
+    return false;
+  }
 }
