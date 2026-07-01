@@ -1,0 +1,1 @@
+ALTER TYPE "public"."deployment_status" ADD VALUE 'rollback_pending' BEFORE 'rolled_back';

@@ -65,6 +65,14 @@ The accepted production-readiness policy now has code-level guards for the slice
 
 Why: ADR 0012 intentionally separated policy decisions from implementation. These guards encode the decided production posture without changing rollback automation semantics.
 
+### Pending Rollback Reconciliation Is Read-Only And Queryable
+
+Provider `queued` rollback results now transition the target deployment to `rollback_pending` with ADR 0013 rollback-operation evidence. The worker writes `restore_in_flight` before the provider restore POST, stores an `operationAttemptId`, and does not re-post restore when a retry sees `restore_in_flight` or `rollback_pending`.
+
+The periodic rollback reconciler reads `deployments.status = "rollback_pending"`, reloads the rollback point by the `rollbackPointId` stored in deployment evidence, reads the provider's current published deploy identity, and only marks `rolled_back` through the guarded rollback success transaction when the intended provider deploy is currently published. Provider read failures and still-published target deployments leave the row pending; third-deploy identity mismatches or malformed evidence move the deployment to `providerOperationStatus = "manual_reconciliation_required"`. Duplicate completion races are counted as `staleNoop` and do not overwrite terminal success evidence with manual reconciliation.
+
+Why: rollback restore is an external mutation with ambiguous completion behavior. The system should mutate the provider once, persist evidence, and reconcile by observation instead of repeating restore calls or overclaiming `rolled_back`.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership

@@ -1083,6 +1083,13 @@ function createSiteHosting(
 
       return Promise.resolve(nextSnapshot ?? providerSnapshot);
     },
+    getPublishedDeploy: () =>
+      Promise.resolve({
+        providerDeployId: providerSnapshot.providerDeployId,
+        status: providerSnapshot.status,
+        liveUrls: providerSnapshot.liveUrls,
+        evidence: providerSnapshot.evidence
+      }),
     restoreDeploy: () =>
       Promise.resolve({
         artifactKey: "rollback/release-1/previous-stable.json"

@@ -7,6 +7,7 @@ import type {
   CreateDeployInput,
   DeployReleaseResult,
   ObjectStoragePort,
+  PublishedDeploySnapshot,
   ProviderDeploySnapshot,
   ProviderDeployStatus,
   ProviderUploadResumeToken,
@@ -28,6 +29,15 @@ type NetlifyDeployResponse = {
   deploy_ssl_url?: unknown;
   required?: unknown;
   required_functions?: unknown;
+  [key: string]: unknown;
+};
+
+type NetlifySiteResponse = {
+  id?: unknown;
+  deploy_id?: unknown;
+  published_deploy?: unknown;
+  url?: unknown;
+  ssl_url?: unknown;
   [key: string]: unknown;
 };
 
@@ -187,6 +197,37 @@ export class NetlifySiteHostingAdapter implements SiteHostingPort {
       evidence: {
         adapter: "netlify",
         state: typeof deploy.state === "string" ? deploy.state : "unknown"
+      }
+    };
+  }
+
+  async getPublishedDeploy(input: { hostingSiteId: string }): Promise<PublishedDeploySnapshot | undefined> {
+    const site = await this.netlifyRequest<NetlifySiteResponse>(`/sites/${input.hostingSiteId}`, {
+      method: "GET"
+    });
+    const publishedDeploy = recordFromUnknown(site.published_deploy);
+    const providerDeployId =
+      stringFieldOrUndefined(publishedDeploy.id) ?? stringFieldOrUndefined(site.deploy_id) ?? undefined;
+
+    if (!providerDeployId) {
+      return undefined;
+    }
+
+    const status = mapNetlifyDeployState(publishedDeploy.state);
+    const liveUrls = liveUrlsFromDeploy({
+      ...publishedDeploy,
+      ssl_url: publishedDeploy.ssl_url ?? site.ssl_url,
+      url: publishedDeploy.url ?? site.url
+    });
+
+    return {
+      providerDeployId,
+      status,
+      liveUrls,
+      evidence: {
+        adapter: "netlify",
+        source: "site_published_deploy",
+        state: typeof publishedDeploy.state === "string" ? publishedDeploy.state : "unknown"
       }
     };
   }
@@ -427,6 +468,14 @@ function stringField(value: unknown, label: string): string {
   }
 
   return value;
+}
+
+function stringFieldOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function sleep(ms: number): Promise<void> {

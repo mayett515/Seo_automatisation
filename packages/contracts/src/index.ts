@@ -95,6 +95,7 @@ export const deploymentStatuses = [
   "live_with_warnings",
   "rollback_recommended",
   "failed",
+  "rollback_pending",
   "rolled_back"
 ] as const;
 

@@ -20,6 +20,7 @@ import {
 import { handleGscSyncJob, isTerminalGscSyncFailure } from "./handlers/gsc-sync.js";
 import {
   handleRollbackJob,
+  reconcilePendingRollbacks,
   RollbackConfigurationError,
   RollbackEvidenceError,
   RollbackProviderFailedError
@@ -72,6 +73,23 @@ export async function reconcileDeployments(): Promise<Record<string, unknown>> {
   }
 
   return reconcilePendingDeployments({
+    db: sharedDbHandle.db,
+    siteHosting: sharedSiteHosting
+  });
+}
+
+export async function reconcileRollbacks(): Promise<Record<string, unknown>> {
+  if (!sharedDbHandle) {
+    return {
+      checked: 0,
+      succeeded: 0,
+      pending: 0,
+      manualRequired: 0,
+      staleNoop: 0
+    };
+  }
+
+  return reconcilePendingRollbacks({
     db: sharedDbHandle.db,
     siteHosting: sharedSiteHosting
   });

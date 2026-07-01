@@ -586,6 +586,10 @@ class StatefulSiteHosting implements SiteHostingPort {
     return Promise.resolve(this.snapshots.shift() ?? providerSnapshot(input.providerDeployId, "ready"));
   }
 
+  getPublishedDeploy(): Promise<ProviderDeploySnapshot | undefined> {
+    return Promise.resolve(providerSnapshot("provider-deploy-1", "ready"));
+  }
+
   restoreDeploy(): Promise<{ artifactKey: string }> {
     return Promise.resolve({ artifactKey: "unused" });
   }
