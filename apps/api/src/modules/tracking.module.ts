@@ -50,6 +50,13 @@ const trackingKeyProjectRateLimitMax = 1000;
 const trackingMemoryBucketMax = 10_000;
 const trackingLastUsedAtCoalesceSeconds = 60;
 const trackingLastUsedAtCoalesceMs = trackingLastUsedAtCoalesceSeconds * 1000;
+const trackingRateLimitIncrementScript = `
+local count = redis.call("INCR", KEYS[1])
+if count == 1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+end
+return count
+`;
 const env = parseAppEnv(process.env);
 const localScaffoldTrackingEnabled = allowsLocalScaffoldAuth(env);
 
@@ -169,13 +176,19 @@ export class TrackingRateLimiter {
 
   private async incrementRedisLimit(client: NonNullable<RedisService["client"]>, key: string): Promise<number> {
     const redisKey = `tracking:rate-limit:${key}`;
-    const count = await client.incr(redisKey);
+    const count = await client.eval(
+      trackingRateLimitIncrementScript,
+      1,
+      redisKey,
+      String(trackingRateLimitWindowSeconds)
+    );
+    const parsedCount = Number(count);
 
-    if (count === 1) {
-      await client.expire(redisKey, trackingRateLimitWindowSeconds);
+    if (!Number.isFinite(parsedCount)) {
+      throw new Error("tracking_rate_limit_increment_invalid");
     }
 
-    return count;
+    return parsedCount;
   }
 
   private incrementInMemory(key: string): number {

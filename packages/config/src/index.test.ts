@@ -127,6 +127,17 @@ void describe("AppEnvSchema", () => {
       /TRUST_PROXY/u
     );
   });
+
+  void it("rejects production boot when browser verification is disabled", () => {
+    assert.throws(
+      () =>
+        assertProductionRuntimeEnv({
+          ...productionEnv(),
+          RELEASE_BROWSER_VERIFICATION_ENABLED: "false"
+        }),
+      /RELEASE_BROWSER_VERIFICATION_ENABLED/u
+    );
+  });
 });
 
 function productionEnv(): NodeJS.ProcessEnv {
@@ -144,6 +155,7 @@ function productionEnv(): NodeJS.ProcessEnv {
     GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
     GOOGLE_OAUTH_REDIRECT_URI: "https://api.example.com/gsc/callback",
     GSC_TOKEN_ENCRYPTION_KEY: "12345678901234567890123456789012",
-    GSC_OAUTH_STATE_SECRET: "12345678901234567890123456789012"
+    GSC_OAUTH_STATE_SECRET: "12345678901234567890123456789012",
+    RELEASE_BROWSER_VERIFICATION_ENABLED: "true"
   };
 }

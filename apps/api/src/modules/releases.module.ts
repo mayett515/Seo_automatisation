@@ -36,12 +36,26 @@ import {
   type ReleaseVerificationStatus,
   type RollbackPoint
 } from "@localseo/contracts";
-import { HttpReleaseVerificationAdapter, type VerificationPort } from "@localseo/adapters";
-import { buildReleaseDeploymentKey, canDeployRelease, decideReleaseReadiness } from "@localseo/domain";
+import {
+  AesGcmTokenCipher,
+  GoogleSearchConsoleAdapter,
+  HttpReleaseVerificationAdapter,
+  PlaywrightBrowserRuntimeVerifier,
+  isProviderRequestError,
+  type VerificationPort
+} from "@localseo/adapters";
+import { parseAppEnv } from "@localseo/config";
+import {
+  buildReleaseDeploymentKey,
+  canDeployRelease,
+  decideReleaseReadiness,
+  decideReleaseVerificationStatus
+} from "@localseo/domain";
 import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "@localseo/seo";
 import {
   approvals,
   deployments,
+  gscConnections,
   pageProposals,
   pageVersions,
   projectTrackingKeys,
@@ -63,6 +77,7 @@ import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
+const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type Db = DatabaseClient;
@@ -89,6 +104,7 @@ const deployJobAttempts = 20;
 const deployJobBackoffDelayMs = 15_000;
 const rollbackJobAttempts = 5;
 const rollbackJobBackoffDelayMs = 15_000;
+const maxGscInspectionUrlsPerVerification = 10;
 export const RELEASE_VERIFICATION_PORT = Symbol("RELEASE_VERIFICATION_PORT");
 
 @Injectable()
@@ -98,7 +114,7 @@ export class ReleasesService {
     private readonly database: DatabaseService,
     @Optional()
     @Inject(RELEASE_VERIFICATION_PORT)
-    private readonly verification: VerificationPort = new HttpReleaseVerificationAdapter()
+    private readonly verification: VerificationPort = createReleaseVerificationAdapter()
   ) {}
 
   async createPlan(projectId: string, body: unknown): Promise<ReleasePlan> {
@@ -479,11 +495,23 @@ export class ReleasesService {
           error
         })
       );
+    const gscChecks = await buildGscPostDeployChecks(db, projectId, targetUrls);
+    const checks = [...verification.checks, ...gscChecks];
+    const verificationStatus =
+      verification.verificationStatus === "execution_failed"
+        ? verification.verificationStatus
+        : decideReleaseVerificationStatus(checks);
 
     const persisted = await persistReleaseVerification(db, projectId, deployment.id, {
       ...verification,
       releasePlanId,
-      deploymentId: deployment.id
+      deploymentId: deployment.id,
+      verificationStatus,
+      summary:
+        verificationStatus === "execution_failed"
+          ? verification.summary
+          : verificationSummaryFromStatus(verificationStatus),
+      checks
     });
 
     return {
@@ -676,11 +704,22 @@ class ReleasesController {
     ReleasesService,
     {
       provide: RELEASE_VERIFICATION_PORT,
-      useFactory: () => new HttpReleaseVerificationAdapter()
+      useFactory: () => createReleaseVerificationAdapter()
     }
   ]
 })
 export class ReleasesModule {}
+
+function createReleaseVerificationAdapter(): VerificationPort {
+  return new HttpReleaseVerificationAdapter({
+    browserCheckTimeoutMs: env.RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS,
+    browserRuntime: env.RELEASE_BROWSER_VERIFICATION_ENABLED
+      ? new PlaywrightBrowserRuntimeVerifier({
+          executablePath: env.RELEASE_BROWSER_VERIFICATION_EXECUTABLE_PATH
+        })
+      : undefined
+  });
+}
 
 async function persistReleaseChecks(db: Db, releasePlanId: string, checks: ReleaseCheck[]): Promise<void> {
   await db.transaction(async (tx) => {
@@ -1065,6 +1104,286 @@ function normalizeRelativeReleaseTargetRoute(targetUrl: string): string {
   }
 
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+async function buildGscPostDeployChecks(db: Db, projectId: string, targetUrls: string[]): Promise<ReleaseCheck[]> {
+  const connection = await loadLatestGscConnection(db, projectId);
+  const propertyUrl = connection?.propertyUrl ?? undefined;
+  const firstTargetUrl = targetUrls[0];
+
+  if (!connection || connection.status !== "connected" || !connection.encryptedRefreshToken || !propertyUrl) {
+    return [
+      gscCheck({
+        checkKey: "gsc_connection_check",
+        result: "skipped",
+        message: "Google Search Console handoff skipped because no connected property is available.",
+        evidence: {
+          observed: {
+            connectionStatus: connection?.status ?? "missing"
+          }
+        }
+      })
+    ];
+  }
+
+  const searchConsole = createSearchConsoleForHandoff();
+  const tokenCipher = env.GSC_TOKEN_ENCRYPTION_KEY ? new AesGcmTokenCipher(env.GSC_TOKEN_ENCRYPTION_KEY) : undefined;
+
+  if (!searchConsole || !tokenCipher) {
+    return [
+      gscCheck({
+        checkKey: "gsc_connection_check",
+        result: "skipped",
+        message: "Google Search Console handoff skipped because OAuth runtime configuration is incomplete.",
+        evidence: {
+          observed: { connectionStatus: "connected", runtimeConfigured: false }
+        }
+      })
+    ];
+  }
+
+  let refreshToken: string;
+  let accessToken: string;
+
+  try {
+    refreshToken = tokenCipher.decrypt(connection.encryptedRefreshToken);
+  } catch {
+    const reason = "refresh_token_decrypt_failed";
+    await markGscConnectionError(db, connection.id, reason);
+
+    return [
+      gscCheck({
+        checkKey: "gsc_connection_check",
+        result: "failed",
+        message: "Google Search Console handoff could not decrypt the stored refresh token. Reconnect Search Console.",
+        evidence: {
+          observed: {
+            reason,
+            reconnectRequired: true
+          }
+        }
+      })
+    ];
+  }
+
+  try {
+    const tokens = await searchConsole.refreshAccessToken({ refreshToken });
+    accessToken = tokens.accessToken;
+  } catch (error) {
+    const reason = classifyGscHandoffAuthFailure(error);
+
+    if (reason.reconnectRequired) {
+      await markGscConnectionError(db, connection.id, reason.reason);
+    }
+
+    return [
+      gscCheck({
+        checkKey: "gsc_connection_check",
+        result: "failed",
+        message: "Google Search Console handoff could not refresh access. Reconnect Search Console.",
+        evidence: {
+          observed: {
+            reason: reason.reason,
+            reconnectRequired: reason.reconnectRequired,
+            provider: providerDiagnostic(error)
+          }
+        }
+      })
+    ];
+  }
+
+  const checks: ReleaseCheck[] = [
+    gscCheck({
+      checkKey: "gsc_connection_check",
+      result: "passed",
+      message: "Google Search Console connection is ready for post-deploy handoff.",
+      evidence: {
+        observed: {
+          propertyUrl
+        }
+      }
+    })
+  ];
+
+  if (firstTargetUrl) {
+    const sitemapUrl = new URL("/sitemap.xml", firstTargetUrl).toString();
+
+    try {
+      await searchConsole.submitSitemap({
+        accessToken,
+        projectId,
+        propertyUrl,
+        sitemapUrl
+      });
+      checks.push(
+        gscCheck({
+          checkKey: "gsc_sitemap_submission_check",
+          result: "passed",
+          message: "Sitemap was submitted to Google Search Console.",
+          evidence: {
+            targetUrl: sitemapUrl,
+            observed: { propertyUrl, sitemapUrl }
+          }
+        })
+      );
+    } catch (error) {
+      checks.push(
+        gscCheck({
+          checkKey: "gsc_sitemap_submission_check",
+          result: "failed",
+          message: "Sitemap submission to Google Search Console failed.",
+          evidence: {
+            targetUrl: sitemapUrl,
+            observed: {
+              propertyUrl,
+              provider: providerDiagnostic(error)
+            }
+          }
+        })
+      );
+    }
+  }
+
+  for (const inspectionUrl of targetUrls.slice(0, maxGscInspectionUrlsPerVerification)) {
+    try {
+      const inspection = await searchConsole.inspectUrl({
+        accessToken,
+        siteUrl: propertyUrl,
+        inspectionUrl
+      });
+      checks.push(
+        gscCheck({
+          checkKey: "gsc_url_inspection_check",
+          result: "passed",
+          message: "Google Search Console URL Inspection returned indexing diagnostics.",
+          evidence: {
+            targetUrl: inspectionUrl,
+            observed: {
+              siteUrl: inspection.siteUrl,
+              inspectionUrl: inspection.inspectionUrl,
+              verdict: inspection.verdict ?? null,
+              coverageState: inspection.coverageState ?? null,
+              checkedAt: inspection.checkedAt
+            }
+          }
+        })
+      );
+    } catch (error) {
+      checks.push(
+        gscCheck({
+          checkKey: "gsc_url_inspection_check",
+          result: "failed",
+          message: "Google Search Console URL Inspection failed.",
+          evidence: {
+            targetUrl: inspectionUrl,
+            observed: {
+              propertyUrl,
+              provider: providerDiagnostic(error)
+            }
+          }
+        })
+      );
+    }
+  }
+
+  if (targetUrls.length > maxGscInspectionUrlsPerVerification) {
+    checks.push(
+      gscCheck({
+        checkKey: "gsc_url_inspection_limit_check",
+        result: "skipped",
+        message: "Additional URLs were not inspected because the post-deploy GSC handoff batch is bounded.",
+        evidence: {
+          observed: {
+            inspectedUrlCount: maxGscInspectionUrlsPerVerification,
+            skippedUrlCount: targetUrls.length - maxGscInspectionUrlsPerVerification
+          }
+        }
+      })
+    );
+  }
+
+  return checks;
+}
+
+async function loadLatestGscConnection(db: Db, projectId: string) {
+  const [connection] = await db
+    .select()
+    .from(gscConnections)
+    .where(eq(gscConnections.projectId, projectId))
+    .orderBy(desc(gscConnections.createdAt))
+    .limit(1);
+
+  return connection;
+}
+
+function createSearchConsoleForHandoff() {
+  const redirectUri = env.GOOGLE_OAUTH_REDIRECT_URI ?? `${env.API_PUBLIC_URL}/gsc/callback`;
+  const stateSecret = env.GSC_OAUTH_STATE_SECRET ?? env.BETTER_AUTH_SECRET;
+
+  if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !stateSecret) {
+    return undefined;
+  }
+
+  return new GoogleSearchConsoleAdapter({
+    clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+    clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+    redirectUri,
+    stateSecret
+  });
+}
+
+async function markGscConnectionError(db: Db, connectionId: string, reason: string): Promise<void> {
+  await db
+    .update(gscConnections)
+    .set({
+      status: "error",
+      failureJson: { reason },
+      updatedAt: new Date()
+    })
+    .where(eq(gscConnections.id, connectionId));
+}
+
+function classifyGscHandoffAuthFailure(error: unknown): { reason: string; reconnectRequired: boolean } {
+  if (
+    isProviderRequestError(error) &&
+    (error.providerReasonCode === "invalid_grant" ||
+      error.providerReasonCode === "invalid_client" ||
+      error.statusCode === 400 ||
+      error.statusCode === 401 ||
+      error.statusCode === 403)
+  ) {
+    return { reason: "google_refresh_token_invalid", reconnectRequired: true };
+  }
+
+  return { reason: "google_oauth_refresh_failed", reconnectRequired: false };
+}
+
+function providerDiagnostic(error: unknown): Record<string, unknown> {
+  if (!isProviderRequestError(error)) {
+    return { reason: error instanceof Error ? error.name : "unknown_error" };
+  }
+
+  return {
+    provider: error.provider,
+    operation: error.operation,
+    reasonCode: error.reasonCode,
+    statusCode: error.statusCode ?? null,
+    providerReasonCode: error.providerReasonCode ?? null
+  };
+}
+
+function gscCheck(input: Omit<ReleaseCheck, "scope" | "severity">): ReleaseCheck {
+  return ReleaseCheckSchema.parse({
+    ...input,
+    scope: "gsc",
+    severity: "warning"
+  });
+}
+
+function verificationSummaryFromStatus(status: ReleaseVerificationStatus): string {
+  return status === "live_healthy"
+    ? "Post-deploy verification passed."
+    : "Post-deploy verification completed with issues.";
 }
 
 async function hasActiveTrackingKey(db: Db, projectId: string): Promise<boolean> {

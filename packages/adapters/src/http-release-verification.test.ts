@@ -1,7 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { renderApprovedReleaseArtifact } from "@localseo/domain";
-import { HttpReleaseVerificationAdapter } from "./http-release-verification.js";
+import {
+  HttpReleaseVerificationAdapter,
+  type BrowserRuntimeCheckResult,
+  type BrowserRuntimeVerifier
+} from "./http-release-verification.js";
 
 void describe("HttpReleaseVerificationAdapter", () => {
   void it("marks live routes healthy when HTTP, indexability, canonical, schema, sitemap, and tracking pass", async () => {
@@ -20,6 +24,11 @@ void describe("HttpReleaseVerificationAdapter", () => {
         "https://example.test/sitemap.xml": textResponse(
           "<urlset><url><loc>https://example.test/dachreinigung-muenchen/</loc></url></urlset>"
         )
+      }),
+      browserRuntime: browserRuntimeResult({
+        status: "passed",
+        targetUrl: "https://example.test/dachreinigung-muenchen/",
+        observed: { trackingRequestCount: 1 }
       })
     });
 
@@ -35,6 +44,69 @@ void describe("HttpReleaseVerificationAdapter", () => {
       result.checks.every((check) => check.result === "passed"),
       true
     );
+  });
+
+  void it("keeps missing browser tracking execution as a warning instead of a rollback blocker", async () => {
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch({
+        "https://example.test/dachreinigung-muenchen/": htmlResponse(
+          healthyPageHtml("https://example.test/dachreinigung-muenchen/", {
+            body: '<h1>Dachreinigung</h1><script src="/track" data-localseo="project"></script>'
+          })
+        ),
+        "https://example.test/sitemap.xml": textResponse(
+          "<urlset><url><loc>https://example.test/dachreinigung-muenchen/</loc></url></urlset>"
+        )
+      }),
+      browserRuntime: browserRuntimeResult({
+        status: "failed",
+        targetUrl: "https://example.test/dachreinigung-muenchen/",
+        reason: "tracking_request_not_observed",
+        observed: { trackingRequestCount: 0 }
+      })
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung-muenchen/"],
+      trackingExpected: true
+    });
+
+    assert.equal(result.verificationStatus, "live_with_warnings");
+    assert.equal(result.checks.find((check) => check.checkKey === "tracking_runtime_check")?.result, "failed");
+    assert.equal(result.checks.find((check) => check.checkKey === "http_status_check")?.result, "passed");
+  });
+
+  void it("skips browser runtime failures instead of treating verifier infrastructure as page failure", async () => {
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch({
+        "https://example.test/dachreinigung-muenchen/": htmlResponse(
+          healthyPageHtml("https://example.test/dachreinigung-muenchen/", {
+            body: '<h1>Dachreinigung</h1><script src="/track" data-localseo="project"></script>'
+          })
+        ),
+        "https://example.test/sitemap.xml": textResponse(
+          "<urlset><url><loc>https://example.test/dachreinigung-muenchen/</loc></url></urlset>"
+        )
+      }),
+      browserRuntime: {
+        verifyTracking() {
+          throw new Error("browser launch failed");
+        }
+      }
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung-muenchen/"],
+      trackingExpected: true
+    });
+
+    const runtimeCheck = result.checks.find((check) => check.checkKey === "tracking_runtime_check");
+    const observed = runtimeCheck?.evidence?.observed as Record<string, unknown> | undefined;
+    assert.equal(result.verificationStatus, "live_healthy");
+    assert.equal(runtimeCheck?.result, "skipped");
+    assert.equal(observed?.reason, "browser_execution_failed");
   });
 
   void it("recommends rollback for live routes blocked by noindex or wrong canonical", async () => {
@@ -375,6 +447,14 @@ function createConcurrentFetchProbe(
   };
 
   return probe;
+}
+
+function browserRuntimeResult(result: BrowserRuntimeCheckResult): BrowserRuntimeVerifier {
+  return {
+    verifyTracking() {
+      return Promise.resolve(result);
+    }
+  };
 }
 
 function healthyPageHtml(

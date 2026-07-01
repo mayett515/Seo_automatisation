@@ -44,6 +44,9 @@ export const AppEnvSchema = z.object({
   GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
   GSC_TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
   GSC_OAUTH_STATE_SECRET: z.string().min(32).optional(),
+  RELEASE_BROWSER_VERIFICATION_ENABLED: BooleanEnvSchema,
+  RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  RELEASE_BROWSER_VERIFICATION_EXECUTABLE_PATH: z.string().min(1).optional(),
   BETTER_AUTH_SECRET: z.string().min(32).optional(),
   BETTER_AUTH_URL: z.string().url().optional()
 });
@@ -89,6 +92,10 @@ export function assertProductionRuntimeEnv(input: NodeJS.ProcessEnv, env = parse
 
   if (env.TRUST_PROXY.toLowerCase() === "true") {
     throw new Error("Production runtime configuration must scope TRUST_PROXY instead of using broad true.");
+  }
+
+  if (!env.RELEASE_BROWSER_VERIFICATION_ENABLED) {
+    throw new Error("Production runtime configuration must enable RELEASE_BROWSER_VERIFICATION_ENABLED.");
   }
 
   const missing = productionRequiredEnvKeys.filter((key) => {

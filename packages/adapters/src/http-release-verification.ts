@@ -7,7 +7,40 @@ export type HttpReleaseVerificationAdapterOptions = {
   timeoutMs?: number;
   userAgent?: string;
   maxConcurrentPageFetches?: number;
+  maxConcurrentBrowserChecks?: number;
+  browserCheckTimeoutMs?: number;
+  browserRuntime?: BrowserRuntimeVerifier;
 };
+
+export type BrowserRuntimeCheckResult =
+  | {
+      status: "passed";
+      targetUrl: string;
+      finalUrl?: string;
+      observed: Record<string, unknown>;
+    }
+  | {
+      status: "failed";
+      targetUrl: string;
+      finalUrl?: string;
+      observed: Record<string, unknown>;
+      reason: "tracking_request_not_observed";
+    }
+  | {
+      status: "skipped";
+      targetUrl: string;
+      finalUrl?: string;
+      observed: Record<string, unknown>;
+      reason: "browser_unavailable" | "browser_timeout" | "browser_execution_failed" | "tracking_not_expected";
+    };
+
+export interface BrowserRuntimeVerifier {
+  verifyTracking(input: {
+    targetUrl: string;
+    timeoutMs: number;
+    trackingExpected: boolean;
+  }): Promise<BrowserRuntimeCheckResult>;
+}
 
 type PageFetchResult =
   | {
@@ -29,6 +62,8 @@ type PageFetchResult =
 const defaultTimeoutMs = 10_000;
 const defaultUserAgent = "localseo-verifier/0.1";
 const defaultMaxConcurrentPageFetches = 5;
+const defaultMaxConcurrentBrowserChecks = 2;
+const defaultBrowserCheckTimeoutMs = 15_000;
 const maxSameOriginRedirects = 5;
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 const localSeoSchemaTypes = new Set(["LocalBusiness", "Service", "FAQPage"]);
@@ -48,12 +83,21 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
   private readonly timeoutMs: number;
   private readonly userAgent: string;
   private readonly maxConcurrentPageFetches: number;
+  private readonly maxConcurrentBrowserChecks: number;
+  private readonly browserCheckTimeoutMs: number;
+  private readonly browserRuntime: BrowserRuntimeVerifier | undefined;
 
   constructor(options: HttpReleaseVerificationAdapterOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
     this.userAgent = options.userAgent ?? defaultUserAgent;
     this.maxConcurrentPageFetches = Math.max(1, options.maxConcurrentPageFetches ?? defaultMaxConcurrentPageFetches);
+    this.maxConcurrentBrowserChecks = Math.max(
+      1,
+      options.maxConcurrentBrowserChecks ?? defaultMaxConcurrentBrowserChecks
+    );
+    this.browserCheckTimeoutMs = options.browserCheckTimeoutMs ?? defaultBrowserCheckTimeoutMs;
+    this.browserRuntime = options.browserRuntime;
   }
 
   async verifyRelease(input: {
@@ -84,9 +128,62 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
       this.fetchPage(liveUrl)
     );
     const checks = pageResults.flatMap((result) => pageChecks(result, Boolean(input.trackingExpected)));
+    checks.push(...(await this.browserTrackingChecks(pageResults, Boolean(input.trackingExpected))));
     checks.push(await this.sitemapCheck(liveUrls));
 
     return verificationResult(input, checkedAt, checks);
+  }
+
+  private async browserTrackingChecks(
+    pageResults: PageFetchResult[],
+    trackingExpected: boolean
+  ): Promise<ReleaseCheck[]> {
+    const fetchablePages = pageResults.filter((result): result is Extract<PageFetchResult, { status: "ok" }> => {
+      return result.status === "ok";
+    });
+
+    if (fetchablePages.length === 0) {
+      return [];
+    }
+
+    const browserRuntime = this.browserRuntime;
+
+    if (!browserRuntime) {
+      return fetchablePages.map((result) =>
+        browserTrackingCheck({
+          status: "skipped",
+          targetUrl: result.targetUrl,
+          finalUrl: result.finalUrl,
+          reason: trackingExpected ? "browser_unavailable" : "tracking_not_expected",
+          observed: {
+            browserRuntimeConfigured: false,
+            trackingExpected
+          }
+        })
+      );
+    }
+
+    const runtimeResults = await mapWithConcurrency(fetchablePages, this.maxConcurrentBrowserChecks, async (result) => {
+      try {
+        return await browserRuntime.verifyTracking({
+          targetUrl: result.finalUrl,
+          timeoutMs: this.browserCheckTimeoutMs,
+          trackingExpected
+        });
+      } catch (error) {
+        return {
+          status: "skipped",
+          targetUrl: result.targetUrl,
+          finalUrl: result.finalUrl,
+          reason: "browser_execution_failed",
+          observed: {
+            failure: error instanceof Error ? error.message : "browser_execution_failed"
+          }
+        } satisfies BrowserRuntimeCheckResult;
+      }
+    });
+
+    return runtimeResults.map((result) => browserTrackingCheck(result));
   }
 
   private async fetchPage(targetUrl: string): Promise<PageFetchResult> {
@@ -534,6 +631,54 @@ function trackingCheck(result: Extract<PageFetchResult, { status: "ok" }>, track
       targetUrl: result.targetUrl,
       expected: { trackingExpected: true },
       observed: { trackingMarkerFound: loaded }
+    }
+  });
+}
+
+function browserTrackingCheck(result: BrowserRuntimeCheckResult): ReleaseCheck {
+  if (result.status === "passed") {
+    return releaseCheck({
+      checkKey: "tracking_runtime_check",
+      scope: "tracking",
+      severity: "warning",
+      result: "passed",
+      message: "Tracking request was observed during browser execution.",
+      evidence: {
+        targetUrl: result.targetUrl,
+        observed: result.observed
+      }
+    });
+  }
+
+  if (result.status === "failed") {
+    return releaseCheck({
+      checkKey: "tracking_runtime_check",
+      scope: "tracking",
+      severity: "warning",
+      result: "failed",
+      message: "Tracking request was not observed during browser execution.",
+      evidence: {
+        targetUrl: result.targetUrl,
+        observed: result.observed
+      }
+    });
+  }
+
+  return releaseCheck({
+    checkKey: "tracking_runtime_check",
+    scope: "tracking",
+    severity: "warning",
+    result: "skipped",
+    message:
+      result.reason === "tracking_not_expected"
+        ? "Browser tracking verification skipped because no active tracking key is configured."
+        : "Browser tracking verification skipped because the browser runtime did not complete.",
+    evidence: {
+      targetUrl: result.targetUrl,
+      observed: {
+        ...result.observed,
+        reason: result.reason
+      }
     }
   });
 }

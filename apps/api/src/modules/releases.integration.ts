@@ -106,9 +106,9 @@ void describe(
         .select()
         .from(releaseVerificationChecks)
         .where(eq(releaseVerificationChecks.verificationId, verification?.id ?? ""));
-      assert.equal(checks.length, 1);
-      assert.equal(checks[0]?.checkKey, "http_status_check");
-      assert.equal(checks[0]?.result, "passed");
+      assert.equal(checks.length, 2);
+      assert.equal(checks.find((check) => check.checkKey === "http_status_check")?.result, "passed");
+      assert.equal(checks.find((check) => check.checkKey === "gsc_connection_check")?.result, "skipped");
 
       const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
       assert.equal(deployment?.status, "live_healthy");

@@ -172,6 +172,27 @@ void describe("tracking ingestion authorization", () => {
     );
   });
 
+  void it("uses one Redis script for rate-limit increment and TTL creation", async () => {
+    const evalCalls: unknown[][] = [];
+    const limiter = new TrackingRateLimiter({
+      client: {
+        eval: (...args: unknown[]) => {
+          evalCalls.push(args);
+          return Promise.resolve(evalCalls.length);
+        }
+      }
+    } as unknown as RedisService);
+
+    await limiter.enforcePreValidationRequest({
+      ip: "203.0.113.10",
+      projectId: "11111111-1111-4111-8111-111111111111"
+    });
+
+    assert.equal(evalCalls.length, 2);
+    assert.match(String(evalCalls[0]?.[0]), /EXPIRE/u);
+    assert.deepEqual(evalCalls[0]?.slice(1), [1, "tracking:rate-limit:track:ip:203.0.113.10", "60"]);
+  });
+
   void it("keeps pre-validation limits as a soft local throttle when Redis fails", async () => {
     const limiter = new StrictTrackingRateLimiter(failingRedisService());
 
@@ -191,8 +212,7 @@ class StrictTrackingRateLimiter extends TrackingRateLimiter {
 function failingRedisService(): RedisService {
   return {
     client: {
-      incr: () => Promise.reject(new Error("redis down")),
-      expire: () => Promise.resolve(1)
+      eval: () => Promise.reject(new Error("redis down"))
     }
   } as unknown as RedisService;
 }

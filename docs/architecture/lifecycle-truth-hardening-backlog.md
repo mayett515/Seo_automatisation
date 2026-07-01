@@ -91,6 +91,30 @@ Why: the pending rollback reconciler makes rollback execution reliable and truth
 
 Why: the API use case is "start Search Console OAuth and return redirect intent plus state/code verifier to persist." The purpose-named port now describes that boundary, so tests/fakes and the API module no longer need concrete Google adapter internals.
 
+### Browser Tracking Runtime Verification Is Warning-Level
+
+The HTTP verifier now accepts an optional browser runtime. Production API startup requires browser verification to be enabled. The Playwright-backed browser verifier observes whether tracking requests fire during rendered-page execution while blocking cross-origin browser requests after observation. Missing tracking execution is warning-level evidence; browser launch, timeout, or runtime failures are skipped warning evidence and never rollback blockers.
+
+Why: browser execution is useful for proving script behavior but is also a flaky infrastructure dependency. It must deepen verification evidence without converting browser infrastructure failure into observed live-page failure.
+
+### GSC Post-Deploy Handoff Is Diagnostic Evidence
+
+Release verification now appends GSC-scoped checks when a Search Console connection exists. The API refreshes the stored connection token, submits `/sitemap.xml`, and runs bounded URL Inspection diagnostics for verified target URLs. Missing configuration or connection state becomes skipped/failed warning evidence, reconnect-required token failures mark the GSC connection `error`, and no GSC handoff result can create a rollback recommendation.
+
+Why: Search Console is an internal indexing and diagnostics radar. Sitemap submission and URL Inspection should be recorded with post-deploy evidence, but indexing uncertainty must not be treated as customer-facing success proof or live-page failure.
+
+### Tracking Rate-Limit Redis Buckets Are Atomic
+
+Tracking rate-limit increments now use one Redis Lua operation that increments the bucket and sets the TTL when the bucket is first created.
+
+Why: the previous `INCR` then `EXPIRE` sequence could leave a TTL-less bucket if the second Redis call failed. Atomic bucket creation keeps the strict production fail-closed posture without poisoning future requests.
+
+### Browser Smoke Tests Cover Frontend Route And Auth Basics
+
+The repository now has a Playwright browser-smoke command and CI job. It starts the Vite app in local scaffold mode and verifies the mission-control shell, route navigation, and login/sign-up screen states without requiring a live API or seeded account.
+
+Why: route/auth regressions are runtime-sensitive and should not rely on TypeScript compilation alone.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership

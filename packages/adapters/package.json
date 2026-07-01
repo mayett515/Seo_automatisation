@@ -20,6 +20,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
     "@localseo/contracts": "workspace:*",
-    "@localseo/domain": "workspace:*"
+    "@localseo/domain": "workspace:*",
+    "playwright": "^1.61.1"
   }
 }
