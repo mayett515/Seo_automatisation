@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { ApprovedReleaseArtifactSchema } from "@localseo/contracts";
 import { renderApprovedReleaseArtifact } from "@localseo/domain";
+import { ProviderRequestError, runProviderRequestWithTimeout } from "./provider-errors.js";
 import type {
   BeginDeployResult,
   CreateDeployInput,
@@ -35,6 +36,7 @@ export type NetlifySiteHostingAdapterOptions = {
   objectStorage: ObjectStoragePort;
   apiBaseUrl?: string;
   fetchImpl?: typeof fetch;
+  requestTimeoutMs?: number;
   requiredFilePollAttempts?: number;
   requiredFilePollIntervalMs?: number;
 };
@@ -53,12 +55,14 @@ type StaticFileManifest = {
 export class NetlifySiteHostingAdapter implements SiteHostingPort {
   private readonly apiBaseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly requestTimeoutMs: number;
   private readonly requiredFilePollAttempts: number;
   private readonly requiredFilePollIntervalMs: number;
 
   constructor(private readonly options: NetlifySiteHostingAdapterOptions) {
     this.apiBaseUrl = options.apiBaseUrl ?? "https://api.netlify.com/api/v1";
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
     this.requiredFilePollAttempts = options.requiredFilePollAttempts ?? 12;
     this.requiredFilePollIntervalMs = options.requiredFilePollIntervalMs ?? 2500;
   }
@@ -231,28 +235,50 @@ export class NetlifySiteHostingAdapter implements SiteHostingPort {
   }
 
   private async netlifyRequest<T>(pathname: string, init: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(`${this.apiBaseUrl}${pathname}`, {
-      ...init,
-      headers: {
-        authorization: `Bearer ${this.options.authToken}`,
-        "user-agent": "localseo-deploy-worker",
-        ...(init.headers ?? {})
+    const method = init.method ?? "GET";
+
+    return runProviderRequestWithTimeout(
+      {
+        provider: "netlify",
+        operation: `${method} ${pathname}`,
+        timeoutMs: this.requestTimeoutMs
+      },
+      async (signal) => {
+        const response = await this.fetchImpl(`${this.apiBaseUrl}${pathname}`, {
+          ...init,
+          signal,
+          headers: {
+            authorization: `Bearer ${this.options.authToken}`,
+            "user-agent": "localseo-deploy-worker",
+            ...(init.headers ?? {})
+          }
+        });
+
+        if (!response.ok) {
+          throw new ProviderRequestError({
+            provider: "netlify",
+            operation: `${method} ${pathname}`,
+            reasonCode: "http_error",
+            statusCode: response.status
+          });
+        }
+
+        if (response.status === 204) {
+          return undefined as T;
+        }
+
+        try {
+          return (await response.json()) as T;
+        } catch {
+          throw new ProviderRequestError({
+            provider: "netlify",
+            operation: `${method} ${pathname}`,
+            reasonCode: "invalid_json_response",
+            statusCode: response.status
+          });
+        }
       }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Netlify API request failed: ${response.status} ${await response.text()}`);
-    }
-
-    if (response.status === 204) {
-      return undefined as T;
-    }
-
-    try {
-      return (await response.json()) as T;
-    } catch {
-      throw new Error(`Netlify API returned non-JSON response for ${pathname}: ${response.status}`);
-    }
+    );
   }
 
   private async waitForRequiredFileDigests(

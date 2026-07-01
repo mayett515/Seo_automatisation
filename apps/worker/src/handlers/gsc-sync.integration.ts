@@ -1,7 +1,7 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import type { SearchConsolePort, TokenCipher } from "@localseo/adapters";
+import { ProviderRequestError, type SearchConsolePort, type TokenCipher } from "@localseo/adapters";
 import type { GscSearchAnalyticsRow } from "@localseo/contracts";
 import {
   customers,
@@ -153,22 +153,101 @@ void describe(
       assert.equal(signals.length, 0);
     });
 
+    void it("marks sync runs and connections failed when refresh token decryption fails", async () => {
+      const fixture = await createGscSyncFixture(db);
+
+      await assert.rejects(
+        handleGscSyncJob(
+          jobFor(fixture),
+          handle,
+          testEnv,
+          dependenciesFor(new FakeSearchConsole([]), new FailingTokenCipher())
+        ),
+        /refresh_token_decrypt_failed/u
+      );
+
+      const [syncRun] = await db.select().from(gscSyncRuns).where(eq(gscSyncRuns.id, fixture.syncRunId));
+      assert.equal(syncRun?.status, "failed");
+      assert.deepEqual(syncRun?.failureJson, { message: "refresh_token_decrypt_failed" });
+
+      const [connection] = await db.select().from(gscConnections).where(eq(gscConnections.id, fixture.connectionId));
+      assert.equal(connection?.status, "error");
+      assert.deepEqual(connection?.failureJson, { reason: "refresh_token_decrypt_failed" });
+    });
+
+    void it("marks GSC connections error when Google rejects refresh tokens", async () => {
+      const fixture = await createGscSyncFixture(db);
+      const searchConsole = new FakeSearchConsole(
+        [],
+        undefined,
+        new ProviderRequestError({
+          provider: "google_search_console",
+          operation: "oauth_token",
+          reasonCode: "http_error",
+          statusCode: 400,
+          providerReasonCode: "invalid_grant"
+        })
+      );
+
+      await assert.rejects(
+        handleGscSyncJob(jobFor(fixture), handle, testEnv, dependenciesFor(searchConsole)),
+        /google_refresh_token_invalid/u
+      );
+
+      const [syncRun] = await db.select().from(gscSyncRuns).where(eq(gscSyncRuns.id, fixture.syncRunId));
+      assert.equal(syncRun?.status, "failed");
+      assert.deepEqual(syncRun?.failureJson, { message: "google_refresh_token_invalid" });
+
+      const [connection] = await db.select().from(gscConnections).where(eq(gscConnections.id, fixture.connectionId));
+      assert.equal(connection?.status, "error");
+      assert.deepEqual(connection?.failureJson, { reason: "google_refresh_token_invalid" });
+    });
+
+    void it("keeps GSC connections connected when Google refresh failure may be transient", async () => {
+      const fixture = await createGscSyncFixture(db);
+      const searchConsole = new FakeSearchConsole(
+        [],
+        undefined,
+        new ProviderRequestError({
+          provider: "google_search_console",
+          operation: "oauth_token",
+          reasonCode: "http_error",
+          statusCode: 503
+        })
+      );
+
+      await assert.rejects(
+        handleGscSyncJob(jobFor(fixture), handle, testEnv, dependenciesFor(searchConsole)),
+        /google_oauth_refresh_failed/u
+      );
+
+      const [syncRun] = await db.select().from(gscSyncRuns).where(eq(gscSyncRuns.id, fixture.syncRunId));
+      assert.equal(syncRun?.status, "failed");
+      assert.deepEqual(syncRun?.failureJson, { message: "google_oauth_refresh_failed" });
+
+      const [connection] = await db.select().from(gscConnections).where(eq(gscConnections.id, fixture.connectionId));
+      assert.equal(connection?.status, "connected");
+      assert.deepEqual(connection?.failureJson, { reason: "google_oauth_refresh_failed" });
+    });
+
     void it("marks sync runs failed when Search Console querying fails", async () => {
       const fixture = await createGscSyncFixture(db);
       const searchConsole = new FakeSearchConsole([], new Error("Search Console API request failed: quota exhausted"));
 
       await assert.rejects(
         handleGscSyncJob(jobFor(fixture), handle, testEnv, dependenciesFor(searchConsole)),
-        /Search Console API request failed/u
+        /search_console_query_failed/u
       );
 
       const [syncRun] = await db.select().from(gscSyncRuns).where(eq(gscSyncRuns.id, fixture.syncRunId));
       assert.equal(syncRun?.status, "failed");
       assert.ok(syncRun?.completedAt instanceof Date);
-      assert.deepEqual(syncRun?.failureJson, { message: "search_console_api_request_failed" });
+      assert.deepEqual(syncRun?.failureJson, { message: "search_console_query_failed" });
 
       const [connection] = await db.select().from(gscConnections).where(eq(gscConnections.id, fixture.connectionId));
       assert.equal(connection?.lastSyncedAt, null);
+      assert.equal(connection?.status, "connected");
+      assert.deepEqual(connection?.failureJson, { reason: "search_console_query_failed" });
 
       const rows = await db
         .select()
@@ -284,10 +363,13 @@ function jobFor(fixture: GscSyncFixture): Job {
   } as Job;
 }
 
-function dependenciesFor(searchConsole: FakeSearchConsole): GscSyncDependencies {
+function dependenciesFor(
+  searchConsole: FakeSearchConsole,
+  tokenCipher: Pick<TokenCipher, "decrypt"> = new FakeTokenCipher()
+): GscSyncDependencies {
   return {
     searchConsole,
-    tokenCipher: new FakeTokenCipher()
+    tokenCipher
   };
 }
 
@@ -297,11 +379,17 @@ class FakeSearchConsole implements Pick<SearchConsolePort, "refreshAccessToken" 
 
   constructor(
     private readonly rows: GscSearchAnalyticsRow[],
-    private readonly queryError?: Error
+    private readonly queryError?: Error,
+    private readonly refreshError?: Error
   ) {}
 
   refreshAccessToken(input: Parameters<SearchConsolePort["refreshAccessToken"]>[0]) {
     this.refreshCalls.push(input);
+
+    if (this.refreshError) {
+      return Promise.reject(this.refreshError);
+    }
+
     return Promise.resolve({ accessToken: "access-token", expiresIn: 3600 });
   }
 
@@ -320,5 +408,11 @@ class FakeTokenCipher implements Pick<TokenCipher, "decrypt"> {
   decrypt(value: string): string {
     assert.equal(value, "encrypted-refresh-token");
     return "refresh-token";
+  }
+}
+
+class FailingTokenCipher implements Pick<TokenCipher, "decrypt"> {
+  decrypt(): string {
+    throw new Error("bad decrypt with secret details");
   }
 }

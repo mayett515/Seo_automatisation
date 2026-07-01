@@ -12,6 +12,11 @@ import {
   type GscUrlInspectionResult
 } from "@localseo/contracts";
 import type { SearchConsolePort } from "./index.js";
+import {
+  ProviderRequestError,
+  providerReasonCodeFromResponseText,
+  runProviderRequestWithTimeout
+} from "./provider-errors.js";
 
 const defaultScopes = ["https://www.googleapis.com/auth/webmasters.readonly"] as const;
 
@@ -47,13 +52,19 @@ export type GoogleSearchConsoleAdapterConfig = {
   redirectUri: string;
   stateSecret: string;
   scopes?: string[];
+  fetchImpl?: typeof fetch;
+  requestTimeoutMs?: number;
 };
 
 export class GoogleSearchConsoleAdapter implements SearchConsolePort {
   private readonly scopes: string[];
+  private readonly fetchImpl: typeof fetch;
+  private readonly requestTimeoutMs: number;
 
   constructor(private readonly config: GoogleSearchConsoleAdapterConfig) {
     this.scopes = config.scopes?.length ? config.scopes : [...defaultScopes];
+    this.fetchImpl = config.fetchImpl ?? fetch;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? 20_000;
   }
 
   createAuthorizationUrl(input: {
@@ -136,7 +147,7 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
       body.set("code_verifier", input.codeVerifier);
     }
 
-    return parseTokenResponse(await postForm("https://oauth2.googleapis.com/token", body));
+    return parseTokenResponse(await postForm("https://oauth2.googleapis.com/token", body, this.request("oauth_token")));
   }
 
   async refreshAccessToken(input: { refreshToken: string }): Promise<SearchConsoleTokenSet> {
@@ -147,11 +158,15 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
       refresh_token: input.refreshToken
     });
 
-    return parseTokenResponse(await postForm("https://oauth2.googleapis.com/token", body));
+    return parseTokenResponse(await postForm("https://oauth2.googleapis.com/token", body, this.request("oauth_token")));
   }
 
   async listSites(input: { accessToken: string; projectId: string }): Promise<GscPropertyList> {
-    const response = await getJson("https://www.googleapis.com/webmasters/v3/sites", input.accessToken);
+    const response = await getJson(
+      "https://www.googleapis.com/webmasters/v3/sites",
+      input.accessToken,
+      this.request("list_sites")
+    );
     const body = asRecord(response);
     const siteEntries = Array.isArray(body.siteEntry) ? body.siteEntry : [];
 
@@ -176,14 +191,19 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
   }): Promise<GscSearchAnalyticsRow[]> {
     const dimensions = input.dimensions?.length ? input.dimensions : ["query", "page"];
     const endpoint = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(input.propertyUrl)}/searchAnalytics/query`;
-    const response = await postJson(endpoint, input.accessToken, {
-      startDate: input.dateRange.from,
-      endDate: input.dateRange.to,
-      dimensions,
-      rowLimit: input.rowLimit ?? 25000,
-      type: "web",
-      dataState: "final"
-    });
+    const response = await postJson(
+      endpoint,
+      input.accessToken,
+      {
+        startDate: input.dateRange.from,
+        endDate: input.dateRange.to,
+        dimensions,
+        rowLimit: input.rowLimit ?? 25000,
+        type: "web",
+        dataState: "final"
+      },
+      this.request("query_search_analytics")
+    );
 
     const body = asRecord(response);
     const rows = Array.isArray(body.rows) ? body.rows : [];
@@ -222,7 +242,7 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
     sitemapUrl: string;
   }): Promise<GscSitemapSubmission> {
     const endpoint = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(input.propertyUrl)}/sitemaps/${encodeURIComponent(input.sitemapUrl)}`;
-    await putJson(endpoint, input.accessToken);
+    await putJson(endpoint, input.accessToken, this.request("submit_sitemap"));
 
     return GscSitemapSubmissionSchema.parse({
       projectId: input.projectId,
@@ -243,7 +263,8 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
       {
         siteUrl: input.siteUrl,
         inspectionUrl: input.inspectionUrl
-      }
+      },
+      this.request("inspect_url")
     );
     const body = asRecord(response);
     const inspectionResult = asRecord(body.inspectionResult);
@@ -257,6 +278,14 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
       checkedAt: new Date().toISOString(),
       raw: body
     });
+  }
+
+  private request(operation: string): GoogleRequestContext {
+    return {
+      fetchImpl: this.fetchImpl,
+      operation,
+      timeoutMs: this.requestTimeoutMs
+    };
   }
 }
 
@@ -314,60 +343,126 @@ export function createPkcePair(): { codeVerifier: string; codeChallenge: string 
   };
 }
 
-async function postForm(url: string, body: URLSearchParams): Promise<unknown> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
+type GoogleRequestContext = {
+  fetchImpl: typeof fetch;
+  operation: string;
+  timeoutMs: number;
+};
+
+async function postForm(url: string, body: URLSearchParams, context: GoogleRequestContext): Promise<unknown> {
+  return runProviderRequestWithTimeout(
+    {
+      provider: "google_search_console",
+      operation: context.operation,
+      timeoutMs: context.timeoutMs
     },
-    body
-  });
+    async (signal) => {
+      const response = await context.fetchImpl(url, {
+        method: "POST",
+        signal,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body
+      });
 
-  return parseJsonResponse(response);
-}
-
-async function getJson(url: string, accessToken: string): Promise<unknown> {
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`
+      return parseJsonResponse(response, context.operation);
     }
-  });
-
-  return parseJsonResponse(response);
+  );
 }
 
-async function postJson(url: string, accessToken: string, body: unknown): Promise<unknown> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
+async function getJson(url: string, accessToken: string, context: GoogleRequestContext): Promise<unknown> {
+  return runProviderRequestWithTimeout(
+    {
+      provider: "google_search_console",
+      operation: context.operation,
+      timeoutMs: context.timeoutMs
     },
-    body: JSON.stringify(body)
-  });
+    async (signal) => {
+      const response = await context.fetchImpl(url, {
+        signal,
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
 
-  return parseJsonResponse(response);
-}
-
-async function putJson(url: string, accessToken: string): Promise<unknown> {
-  const response = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${accessToken}`
+      return parseJsonResponse(response, context.operation);
     }
-  });
-
-  return parseJsonResponse(response);
+  );
 }
 
-async function parseJsonResponse(response: Response): Promise<unknown> {
+async function postJson(
+  url: string,
+  accessToken: string,
+  body: unknown,
+  context: GoogleRequestContext
+): Promise<unknown> {
+  return runProviderRequestWithTimeout(
+    {
+      provider: "google_search_console",
+      operation: context.operation,
+      timeoutMs: context.timeoutMs
+    },
+    async (signal) => {
+      const response = await context.fetchImpl(url, {
+        method: "POST",
+        signal,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+
+      return parseJsonResponse(response, context.operation);
+    }
+  );
+}
+
+async function putJson(url: string, accessToken: string, context: GoogleRequestContext): Promise<unknown> {
+  return runProviderRequestWithTimeout(
+    {
+      provider: "google_search_console",
+      operation: context.operation,
+      timeoutMs: context.timeoutMs
+    },
+    async (signal) => {
+      const response = await context.fetchImpl(url, {
+        method: "PUT",
+        signal,
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
+
+      return parseJsonResponse(response, context.operation);
+    }
+  );
+}
+
+async function parseJsonResponse(response: Response, operation: string): Promise<unknown> {
+  const text = await response.text();
+
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Search Console API request failed: ${response.status} ${message}`);
+    throw new ProviderRequestError({
+      provider: "google_search_console",
+      operation,
+      reasonCode: "http_error",
+      statusCode: response.status,
+      providerReasonCode: providerReasonCodeFromResponseText(text)
+    });
   }
 
-  const text = await response.text();
-  return text ? JSON.parse(text) : {};
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new ProviderRequestError({
+      provider: "google_search_console",
+      operation,
+      reasonCode: "invalid_json_response",
+      statusCode: response.status
+    });
+  }
 }
 
 function parseTokenResponse(response: unknown): SearchConsoleTokenSet {
@@ -375,7 +470,11 @@ function parseTokenResponse(response: unknown): SearchConsoleTokenSet {
   const accessToken = body.access_token;
 
   if (typeof accessToken !== "string") {
-    throw new Error("Google OAuth response did not include an access token");
+    throw new ProviderRequestError({
+      provider: "google_search_console",
+      operation: "oauth_token",
+      reasonCode: "invalid_provider_response"
+    });
   }
 
   return {

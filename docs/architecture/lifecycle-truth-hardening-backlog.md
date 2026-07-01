@@ -49,6 +49,12 @@ The deploy worker's final rollback-evidence guard now counts prior deployments w
 
 Why: API preflight and worker execution must agree about when rollback evidence is required. A known-bad or unknown-health prior deployment cannot be a rollback-to source, and a stale deploy retry must not turn observed bad health back into a live projection.
 
+### Provider Failures Are Redacted And Timeout-Bounded
+
+The Netlify and Google Search Console adapters now throw typed provider request errors that include safe provider, operation, status, timeout, and structured provider reason codes without storing raw response bodies. Both adapters wrap provider HTTP calls in `AbortController` timeouts. GSC sync failures now classify decrypt, invalid refresh-token, transient refresh, and query failures separately; reconnect-required failures mark the GSC connection `error`, while transient/query failures keep the connection connected but visible through `failureJson`.
+
+Why: provider response bodies can contain sensitive diagnostic data, and unbounded provider calls can stall worker retry/shutdown behavior. GSC connection state must tell operators when reconnect is required instead of leaving a broken connection looking healthy.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership
