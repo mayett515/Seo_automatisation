@@ -145,7 +145,6 @@ High-value items:
 - Queue producer partial-failure behavior when Redis and Postgres disagree.
 - HTTP/controller-level tracking ingestion tests for header extraction and guard ordering.
 - GSC sync retry behavior proving worker retry state and `job_runs` lifecycle remain aligned.
-- When next touching GSC OAuth, promote OAuth start-state generation into `SearchConsolePort` so `GscService` no longer depends on the concrete Google adapter for `createAuthorizationRequest(...)`.
 - Login/session browser smoke for unauthenticated redirect, sign-in, protected route access, and sign-out.
 
 ### 3. Lifecycle Truth Hardening
