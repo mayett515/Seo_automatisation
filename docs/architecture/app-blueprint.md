@@ -16,30 +16,33 @@ Analytics MVP: own anonymous tracking events
 
 1. Lead capture and pre-audit.
 2. Project setup and website import.
-3. Potential Searcher / Opportunity Explorer.
-4. Page brief or page proposal from a service-location opportunity.
-5. Preview, notes, and approval.
-6. Deployment Agent release plan.
-7. Netlify deploy, sitemap, tracking injector, verification.
-8. GSC OAuth/API sync, then customer-safe reports and next opportunity.
+3. AI Opportunity Scout using website, GSC, tracking, SERP, competitor, and field evidence.
+4. Opportunity Explorer with evidence, risk, confidence, and next actions.
+5. Page brief or page proposal from an approved service-location opportunity.
+6. Component-constrained preview, notes, and approval.
+7. Deployment Agent release plan.
+8. Netlify deploy, sitemap, tracking injector, verification.
+9. GSC OAuth/API sync, then customer-safe reports and next opportunity.
 
 ## MVP Product Loop
 
 ```text
-website import / GSC / tracking / site evidence
--> Potential Searcher
+website import / GSC / tracking / SERP / competitor / field evidence
+-> AI Opportunity Scout
 -> Opportunity Explorer
 -> page brief / proposal
--> preview and notes
+-> component-constrained preview and notes
 -> approval
 -> release preflight
 -> deploy and verify
 -> report and next opportunity
 ```
 
-The MVP should make local SEO opportunity discovery visible before automation feels magical. The customer/operator should see nearby places, service-location gaps, evidence tiers, warnings, and the next controlled action.
+The MVP should make AI-assisted local SEO opportunity discovery visible before automation feels magical. The customer/operator should see nearby places, service-location gaps, competitor observations, evidence tiers, confidence, warnings, and the next controlled action.
 
-Website import and rebuild preview is the evidence-gathering entry point for new projects. It imports the customer's own site, extracts brand/service/area/design facts, creates a noindex preview from controlled components, and feeds the Potential Searcher with route and service-area context.
+Website import and rebuild preview is the evidence-gathering entry point for new projects. It imports the customer's own site, extracts brand/service/area/design facts, creates a noindex preview from controlled components, and feeds the AI Opportunity Scout with route and service-area context.
+
+Reference: [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md).
 
 ## Full Platform Modules
 
@@ -115,8 +118,9 @@ RollbackPort           -> rollback prepare/execute adapter
 - AI suggests, customer approves, deterministic workers execute.
 - Frontend never calls workers directly.
 - Agents never deploy production directly.
+- Agents scout, reason, classify, draft, and explain from evidence; they do not approve, deploy, roll back, or mutate providers.
 - Website import is read-only evidence gathering; rebuild output is a controlled preview, not arbitrary cloning.
-- Potential Searcher output creates briefs, proposals, monitoring, or approval tasks; it does not publish by itself.
+- AI Opportunity Scout output creates briefs, proposals, monitoring, or approval tasks; it does not publish by itself.
 - Zod owns external input and output contracts.
 - Drizzle owns persistence contracts.
 - Ports are named by purpose; vendor names live in adapters, provider records, and deployment configuration.

@@ -223,10 +223,13 @@ How to read this: Mastra proposes strategy, content, layout, and design choices.
 
 ### Mastra Lane Status
 
+The corrected MVP roadmap is agent-first: website import, GSC, tracking, SERP, competitor, and field evidence feed an AI Opportunity Scout, then the platform validates and previews controlled proposals. See [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md).
+
 | Slice                             | Status  | Purpose                                                                                                                           |
 | --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | AI reasoning port                 | Planned | Define the application interface for invoking Mastra without leaking agent/provider details into controllers or core packages.    |
 | Website understanding workflow    | Planned | Convert imported website evidence into structured business, service, area, tone, color, layout, and CTA facts.                    |
+| Opportunity scout workflow        | Planned | Use website, GSC, tracking, SERP, competitor, and field evidence to classify opportunities and draft page briefs.                 |
 | Component registry                | Planned | Define which frontend/site components Mastra may choose, including prop schemas and allowed style/theme tokens.                   |
 | Page proposal workflow            | Planned | Produce route, page purpose, sections, component props, draft copy, metadata, schema, FAQ, CTA, and internal-link suggestions.    |
 | Validation pipeline               | Planned | Validate every Mastra output with Zod, component prop schemas, local SEO QA, duplicate/cannibalization checks, and policy guards. |
@@ -235,6 +238,8 @@ How to read this: Mastra proposes strategy, content, layout, and design choices.
 
 ### Mastra Can Suggest
 
+- competitor observations and SERP positioning,
+- opportunity classifications and page brief candidates,
 - main-domain and subdomain/local-page structure,
 - service/area page strategy,
 - page hierarchy and internal links,

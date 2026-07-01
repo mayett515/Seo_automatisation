@@ -21,6 +21,8 @@ Clone any website.
 
 The product imports the customer's own website, extracts evidence, maps it into controlled components, and creates a noindex preview. It does not copy competitors, generate arbitrary production code, or publish without approval.
 
+Roadmap context: website import is the evidence foundation for the AI Opportunity Scout. It supplies route, brand, service, area, content, and design facts to later agent workflows; it is not meant to replace AI-assisted SERP/competitor research or page proposal reasoning.
+
 ## MVP Flow
 
 ```text
@@ -30,6 +32,7 @@ customer enters own website URL
 -> worker crawls bounded same-origin public pages
 -> worker extracts content, metadata, assets, links, schema, screenshots, and design cues
 -> facts and artifacts are persisted
+-> AI Opportunity Scout and page proposal workflows use the evidence
 -> rebuild preview is generated from the controlled page registry
 -> customer/operator reviews preview and notes
 -> approved page version enters release preflight
@@ -122,7 +125,7 @@ project dashboard
 ```
 
 This baseline does not yet generate page proposals, screenshots, design-system facts, or AI-assisted rebuild output.
-The derived facts are candidates for operator/customer review, not ranking proof or publishable page content.
+The derived facts are agent context and candidates for operator/customer review, not ranking proof or publishable page content.
 
 ## Import Evidence Model
 
@@ -264,7 +267,7 @@ claim ranking success from weak evidence
 
 ## Potential Subpages And Subdomains
 
-Website import should feed the Potential Searcher.
+Website import should feed the AI Opportunity Scout.
 
 Inputs:
 
@@ -273,6 +276,7 @@ imported services
 imported locations / service area
 existing route inventory
 detected gaps
+SERP and competitor observations
 GSC opportunity signals
 tracking behavior
 operator SERP notes

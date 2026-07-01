@@ -7,8 +7,8 @@ This document defines the frontend product shape after the backend foundation mi
 ## MVP Product Loop
 
 ```text
-GSC / tracking / site evidence
--> Potential Searcher
+website import / GSC / tracking / SERP / competitor / field evidence
+-> AI Opportunity Scout
 -> Opportunity Explorer
 -> page brief / proposal
 -> preview and notes
@@ -18,7 +18,9 @@ GSC / tracking / site evidence
 -> report and next opportunity
 ```
 
-The customer-facing value is not "AI generated a page." The value is that the app shows where local SEO opportunities are, why they matter, what evidence supports them, and what controlled action follows.
+The customer-facing value is not "AI generated a page." The value is that the app shows where local SEO opportunities are, why they matter, what evidence and competitor observations support them, and what controlled action follows.
+
+Roadmap reference: [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md).
 
 ## Two Component Systems
 
@@ -219,7 +221,7 @@ The registry should produce controlled page JSON. It must not accept arbitrary a
 
 ## Opportunity Explorer MVP
 
-The first real product screen should make opportunity discovery visible and actionable.
+The first real product screen should make AI-assisted opportunity discovery visible and actionable. It should look like a decision surface for evidence-backed local SEO work, not a generic chat UI.
 
 ```text
 Left:
@@ -236,6 +238,7 @@ Right:
   "why this page should exist"
   evidence stack
   GSC/search signal summary
+  competitor observations
   existing page match
   next action controls
 
@@ -274,7 +277,7 @@ reject
 approve for release
 ```
 
-GSC/search signals can justify investigation and page proposals. They are not customer-facing success proof by themselves.
+GSC/search/SERP/competitor signals can justify investigation and page proposals. They are not customer-facing success proof by themselves.
 
 ## Mission Control And Agent Runs
 
@@ -329,6 +332,7 @@ Project Mission Control shell
 Opportunity table/list
 Selected opportunity evidence panel
 Simple nearby-place/service-location surface
+Agent run timeline
 Page brief/proposal action
 Preview decision card
 Approve / hold / reject controls
