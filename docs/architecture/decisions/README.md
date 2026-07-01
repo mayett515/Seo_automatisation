@@ -55,3 +55,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0011 - Rollback Restore Execution Lifecycle](0011-rollback-restore-execution-lifecycle.md)
 - [0012 - Production Readiness Policy Batch](0012-production-readiness-policy-batch.md)
 - [0013 - Rollback Operation Vocabulary And Storage Model](0013-rollback-operation-vocabulary-and-storage-model.md)
+- [0014 - Rollback Trigger Policy](0014-rollback-trigger-policy.md)

@@ -73,6 +73,12 @@ The periodic rollback reconciler reads `deployments.status = "rollback_pending"`
 
 Why: rollback restore is an external mutation with ambiguous completion behavior. The system should mutate the provider once, persist evidence, and reconcile by observation instead of repeating restore calls or overclaiming `rolled_back`.
 
+### Rollback Trigger Policy Is Manual-Only For MVP
+
+ADR 0014 accepts explicit human/operator rollback as the MVP trigger policy. Automatic rollback is deliberately deferred and must later be per-project opt-in, default off, verified-good-source-only, debounced, single-flight, loop-protected, and audited as `system_auto`.
+
+Why: the pending rollback reconciler makes rollback execution reliable and truthful, but it does not decide whether the product should autonomously mutate a customer's live site after a machine-derived verification signal. Product autonomy and provider-operation reliability are separate gates.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership
