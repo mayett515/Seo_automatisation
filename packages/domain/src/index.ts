@@ -50,6 +50,42 @@ export function decideReleaseVerificationStatus(checks: ReleaseCheck[]): Release
   return "live_healthy";
 }
 
+export type RollbackPublishedDeployStatus = "pending" | "deploying" | "ready" | "failed" | "rolled_back" | "unknown";
+
+export type RollbackReconciliationDecision =
+  | { kind: "completed"; publishedProviderDeployId: string }
+  | { kind: "still_pending"; reason: "provider_not_ready" | "published_identity_not_available" }
+  | { kind: "manual_required"; reason: "provider_failed" | "published_identity_mismatch" };
+
+export function classifyRollbackReconciliation(input: {
+  intendedProviderDeployId: string;
+  targetProviderDeployId: string;
+  publishedProviderDeployId?: string;
+  publishedStatus?: RollbackPublishedDeployStatus;
+}): RollbackReconciliationDecision {
+  if (!input.publishedProviderDeployId || !input.publishedStatus || input.publishedStatus === "unknown") {
+    return { kind: "still_pending", reason: "published_identity_not_available" };
+  }
+
+  if (input.publishedStatus === "failed" || input.publishedStatus === "rolled_back") {
+    return { kind: "manual_required", reason: "provider_failed" };
+  }
+
+  if (input.publishedProviderDeployId === input.targetProviderDeployId) {
+    return { kind: "still_pending", reason: "provider_not_ready" };
+  }
+
+  if (input.publishedProviderDeployId !== input.intendedProviderDeployId) {
+    return { kind: "manual_required", reason: "published_identity_mismatch" };
+  }
+
+  if (input.publishedStatus === "ready") {
+    return { kind: "completed", publishedProviderDeployId: input.publishedProviderDeployId };
+  }
+
+  return { kind: "still_pending", reason: "provider_not_ready" };
+}
+
 export type StaticSiteFile = {
   path: string;
   body: string;

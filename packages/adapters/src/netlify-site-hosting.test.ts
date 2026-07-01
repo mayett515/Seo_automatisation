@@ -279,6 +279,34 @@ void describe("NetlifySiteHostingAdapter", () => {
     assert.equal(snapshot.status, "pending");
   });
 
+  void it("reads the currently published deploy identity from the site response", async () => {
+    const adapter = new NetlifySiteHostingAdapter({
+      authToken: "netlify-token",
+      objectStorage: createObjectStorage(artifact()),
+      fetchImpl: (url) => {
+        assert.equal(requestUrlToString(url).endsWith("/sites/site-1"), true);
+        return Promise.resolve(
+          jsonResponse({
+            id: "site-1",
+            ssl_url: "https://customer-site.netlify.app/",
+            published_deploy: {
+              id: "deploy-current",
+              state: "current",
+              deploy_ssl_url: "https://deploy-current--customer-site.netlify.app/"
+            }
+          })
+        );
+      }
+    });
+
+    const snapshot = await adapter.getPublishedDeploy({ hostingSiteId: "site-1" });
+
+    assert.equal(snapshot?.providerDeployId, "deploy-current");
+    assert.equal(snapshot?.status, "ready");
+    assert.equal(snapshot?.liveUrls[0], "https://customer-site.netlify.app/");
+    assert.equal(snapshot?.evidence?.source, "site_published_deploy");
+  });
+
   void it("redacts Netlify error response bodies", async () => {
     const adapter = new NetlifySiteHostingAdapter({
       authToken: "netlify-token",

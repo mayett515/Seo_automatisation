@@ -4,6 +4,7 @@ import type { ReleaseCheck, ReleasePlan } from "@localseo/contracts";
 import {
   buildReleaseDeploymentKey,
   canDeployRelease,
+  classifyRollbackReconciliation,
   decideReleaseReadiness,
   decideReleaseVerificationStatus,
   renderApprovedReleaseArtifact
@@ -72,6 +73,56 @@ void describe("release verification status", () => {
 void describe("buildReleaseDeploymentKey", () => {
   void it("derives a stable local idempotency key from a release plan id", () => {
     assert.equal(buildReleaseDeploymentKey("release-plan-1"), "release_plan:release-plan-1");
+  });
+});
+
+void describe("classifyRollbackReconciliation", () => {
+  void it("completes only when the intended deploy is published and ready", () => {
+    assert.deepEqual(
+      classifyRollbackReconciliation({
+        intendedProviderDeployId: "deploy-a",
+        targetProviderDeployId: "deploy-b",
+        publishedProviderDeployId: "deploy-a",
+        publishedStatus: "ready"
+      }),
+      { kind: "completed", publishedProviderDeployId: "deploy-a" }
+    );
+  });
+
+  void it("keeps rollback pending while the intended deploy is not ready", () => {
+    assert.deepEqual(
+      classifyRollbackReconciliation({
+        intendedProviderDeployId: "deploy-a",
+        targetProviderDeployId: "deploy-b",
+        publishedProviderDeployId: "deploy-a",
+        publishedStatus: "deploying"
+      }),
+      { kind: "still_pending", reason: "provider_not_ready" }
+    );
+  });
+
+  void it("keeps rollback pending while the target deploy is still published", () => {
+    assert.deepEqual(
+      classifyRollbackReconciliation({
+        intendedProviderDeployId: "deploy-a",
+        targetProviderDeployId: "deploy-b",
+        publishedProviderDeployId: "deploy-b",
+        publishedStatus: "ready"
+      }),
+      { kind: "still_pending", reason: "provider_not_ready" }
+    );
+  });
+
+  void it("requires manual reconciliation when another deploy is published", () => {
+    assert.deepEqual(
+      classifyRollbackReconciliation({
+        intendedProviderDeployId: "deploy-a",
+        targetProviderDeployId: "deploy-b",
+        publishedProviderDeployId: "deploy-c",
+        publishedStatus: "ready"
+      }),
+      { kind: "manual_required", reason: "published_identity_mismatch" }
+    );
   });
 });
 

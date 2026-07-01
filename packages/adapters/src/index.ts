@@ -91,6 +91,13 @@ export type ProviderDeploySnapshot = {
   evidence?: Record<string, unknown>;
 };
 
+export type PublishedDeploySnapshot = {
+  providerDeployId: string;
+  status: ProviderDeployStatus;
+  liveUrls: string[];
+  evidence?: Record<string, unknown>;
+};
+
 export type RestoreDeployInput = {
   projectId: string;
   releasePlanId: string;
@@ -152,6 +159,7 @@ export interface SiteHostingPort {
   uploadDeployFiles(input: UploadDeployFilesInput): Promise<UploadDeployFilesResult>;
   createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult>;
   getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot>;
+  getPublishedDeploy(input: { hostingSiteId: string }): Promise<PublishedDeploySnapshot | undefined>;
   restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult>;
   rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult>;
 }
@@ -286,6 +294,10 @@ export class NotConfiguredSiteHostingAdapter implements SiteHostingPort {
       status: "unknown",
       liveUrls: []
     });
+  }
+
+  getPublishedDeploy(): Promise<PublishedDeploySnapshot | undefined> {
+    return Promise.resolve(undefined);
   }
 
   restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult> {

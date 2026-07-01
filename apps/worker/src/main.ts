@@ -1,11 +1,11 @@
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import { Worker } from "bullmq";
-import { closeWorkerResources, handleJob, reconcileDeployments } from "./handlers.js";
+import { closeWorkerResources, handleJob, reconcileDeployments, reconcileRollbacks } from "./handlers.js";
 import { queueNames } from "./queue-names.js";
 
 const env = parseAppEnv(process.env);
-const deployReconcileIntervalMs = 60_000;
+const lifecycleReconcileIntervalMs = 60_000;
 
 if (!env.REDIS_URL) {
   console.log("REDIS_URL is not set. Worker host booted in dry-run mode.");
@@ -28,23 +28,23 @@ for (const worker of workers) {
   });
 }
 
-let isReconcilingDeployments = false;
-const deployReconcileInterval = setInterval(() => {
-  if (isReconcilingDeployments) {
+let isReconcilingLifecycle = false;
+const lifecycleReconcileInterval = setInterval(() => {
+  if (isReconcilingLifecycle) {
     return;
   }
 
-  isReconcilingDeployments = true;
-  void reconcileDeployments()
+  isReconcilingLifecycle = true;
+  void Promise.all([reconcileDeployments(), reconcileRollbacks()])
     .catch((error) => {
-      console.error("Deploy reconciliation failed", normalizeWorkerError(error));
+      console.error("Lifecycle reconciliation failed", normalizeWorkerError(error));
     })
     .finally(() => {
-      isReconcilingDeployments = false;
+      isReconcilingLifecycle = false;
     });
-}, deployReconcileIntervalMs);
+}, lifecycleReconcileIntervalMs);
 
-deployReconcileInterval.unref();
+lifecycleReconcileInterval.unref();
 
 console.log(`Worker host started with ${workers.length} queues.`);
 
@@ -59,7 +59,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`Worker host received ${signal}; closing workers.`);
 
   try {
-    clearInterval(deployReconcileInterval);
+    clearInterval(lifecycleReconcileInterval);
     await Promise.all(workers.map((worker) => worker.close()));
     await closeWorkerResources();
     console.log("Worker host shutdown completed.");

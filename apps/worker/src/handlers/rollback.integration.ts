@@ -28,8 +28,10 @@ import {
   RollbackConfigurationError,
   RollbackEvidenceError,
   RollbackProviderFailedError,
+  RollbackProviderPendingError,
   createDrizzleRollbackRepository,
   executeRollback,
+  reconcilePendingRollbacks,
   rollbackJobId
 } from "./rollback.js";
 
@@ -149,7 +151,7 @@ void describe(
         .where(eq(rollbackPoints.id, fixture.rollbackPointId));
       assert.equal(
         (recordFromUnknown(rollbackPoint?.evidenceJson).rollbackExecution as { status?: string } | undefined)?.status,
-        "failed"
+        "provider_failed"
       );
       const rollbackExecution = recordFromUnknown(recordFromUnknown(rollbackPoint?.evidenceJson).rollbackExecution);
       assert.equal(rollbackExecution.providerResultStatus, "failed");
@@ -158,7 +160,7 @@ void describe(
       assert.deepEqual(rollbackExecution.evidence, { adapter: "fake", restored: false });
     });
 
-    void it("records pending provider rollback without retrying the restore mutation", async () => {
+    void it("records queued provider rollback as queryable rollback_pending state", async () => {
       const fixture = await createRollbackFixture(db);
       const hosting = new FakeRollbackHosting({
         status: "queued",
@@ -177,7 +179,15 @@ void describe(
       assert.equal(hosting.rollbackCalls.length, 1);
 
       const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
-      assert.equal(deployment?.status, "rollback_recommended");
+      assert.equal(deployment?.status, "rollback_pending");
+      assert.equal(deployment?.providerDeployId, "bad-provider-deploy");
+      const rollbackEvidence = recordFromUnknown(recordFromUnknown(deployment?.evidenceJson).rollback);
+      assert.equal(rollbackEvidence.status, "rollback_pending");
+      assert.equal(rollbackEvidence.rollbackPointId, fixture.rollbackPointId);
+      assert.equal(rollbackEvidence.sourceProviderDeployId, "previous-provider-deploy");
+      assert.equal(rollbackEvidence.targetProviderDeployId, "bad-provider-deploy");
+      assert.equal(rollbackEvidence.restoredProviderDeployId, "restored-pending-deploy");
+      assert.equal(typeof rollbackEvidence.operationAttemptId, "string");
 
       const [rollbackPoint] = await db
         .select()
@@ -185,13 +195,331 @@ void describe(
         .where(eq(rollbackPoints.id, fixture.rollbackPointId));
       assert.equal(
         (recordFromUnknown(rollbackPoint?.evidenceJson).rollbackExecution as { status?: string } | undefined)?.status,
-        "pending"
+        "rollback_pending"
       );
       const rollbackExecution = recordFromUnknown(recordFromUnknown(rollbackPoint?.evidenceJson).rollbackExecution);
       assert.equal(rollbackExecution.providerResultStatus, "queued");
       assert.equal(rollbackExecution.providerDeployId, "restored-pending-deploy");
+      assert.equal(rollbackExecution.rollbackPointId, fixture.rollbackPointId);
+      assert.equal(rollbackExecution.sourceProviderDeployId, "previous-provider-deploy");
+      assert.equal(rollbackExecution.targetProviderDeployId, "bad-provider-deploy");
+      assert.equal(rollbackExecution.restoredProviderDeployId, "restored-pending-deploy");
+      assert.equal(typeof rollbackExecution.operationAttemptId, "string");
       assert.equal(rollbackExecution.liveUrl, null);
       assert.deepEqual(rollbackExecution.evidence, { adapter: "fake", accepted: true });
+    });
+
+    void it("reconciles pending rollback when the intended deploy is published", async () => {
+      const fixture = await createRollbackFixture(db);
+      await executeRollback({
+        data: fixture.data,
+        jobId: rollbackJobId(fixture.data),
+        repository: createDrizzleRollbackRepository(db),
+        siteHosting: new FakeRollbackHosting({
+          status: "queued",
+          providerDeployId: "restored-pending-deploy"
+        })
+      });
+      const hosting = new FakeRollbackHosting(
+        { status: "failed" },
+        providerSnapshot("restored-pending-deploy", "ready")
+      );
+
+      const result = await reconcilePendingRollbacks({
+        db,
+        siteHosting: hosting
+      });
+
+      assert.deepEqual(result, {
+        checked: 1,
+        succeeded: 1,
+        pending: 0,
+        manualRequired: 0,
+        staleNoop: 0
+      });
+      assert.equal(hosting.rollbackCalls.length, 0);
+      assert.deepEqual(hosting.publishedDeployCalls, ["hosting-site-1"]);
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rolled_back");
+      assert.equal(deployment?.providerDeployId, "restored-pending-deploy");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "rolled_back");
+    });
+
+    void it("treats duplicate pending rollback completion as a stale no-op", async () => {
+      const fixture = await createRollbackFixture(db);
+      await executeRollback({
+        data: fixture.data,
+        jobId: rollbackJobId(fixture.data),
+        repository: createDrizzleRollbackRepository(db),
+        siteHosting: new FakeRollbackHosting({
+          status: "queued",
+          providerDeployId: "restored-pending-deploy"
+        })
+      });
+
+      const [pendingDeployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.ok(pendingDeployment);
+      const pendingEvidence = recordFromUnknown(recordFromUnknown(pendingDeployment.evidenceJson).rollback);
+      const operationAttemptId = pendingEvidence.operationAttemptId;
+      assert.equal(typeof operationAttemptId, "string");
+
+      const result = await reconcilePendingRollbacks({
+        db,
+        siteHosting: new FakeRollbackHosting({ status: "failed" }, async () => {
+          const completedAt = new Date();
+          const [currentDeployment] = await db
+            .select()
+            .from(deployments)
+            .where(eq(deployments.id, fixture.deploymentId));
+          assert.ok(currentDeployment);
+          const currentDeploymentEvidence = recordFromUnknown(currentDeployment.evidenceJson);
+          const currentRollbackEvidence = recordFromUnknown(currentDeploymentEvidence.rollback);
+
+          await db
+            .update(deployments)
+            .set({
+              status: "rolled_back",
+              providerDeployId: "restored-pending-deploy",
+              evidenceJson: {
+                ...currentDeploymentEvidence,
+                rollback: {
+                  ...currentRollbackEvidence,
+                  status: "completed",
+                  operationAttemptId,
+                  providerResultStatus: "completed",
+                  providerDeployId: "restored-pending-deploy",
+                  rollbackPointId: fixture.rollbackPointId,
+                  sourceProviderDeployId: "previous-provider-deploy",
+                  targetProviderDeployId: "bad-provider-deploy",
+                  restoredProviderDeployId: "restored-pending-deploy",
+                  executedAt: completedAt.toISOString()
+                }
+              },
+              updatedAt: completedAt
+            })
+            .where(eq(deployments.id, fixture.deploymentId));
+
+          const [currentRollbackPoint] = await db
+            .select()
+            .from(rollbackPoints)
+            .where(eq(rollbackPoints.id, fixture.rollbackPointId));
+          assert.ok(currentRollbackPoint);
+          const currentRollbackPointEvidence = recordFromUnknown(currentRollbackPoint.evidenceJson);
+          const currentRollbackExecution = recordFromUnknown(currentRollbackPointEvidence.rollbackExecution);
+
+          await db
+            .update(rollbackPoints)
+            .set({
+              evidenceJson: {
+                ...currentRollbackPointEvidence,
+                rollbackExecution: {
+                  ...currentRollbackExecution,
+                  status: "completed",
+                  operationAttemptId,
+                  providerResultStatus: "completed",
+                  providerDeployId: "restored-pending-deploy",
+                  sourceProviderDeployId: "previous-provider-deploy",
+                  targetProviderDeployId: "bad-provider-deploy",
+                  restoredProviderDeployId: "restored-pending-deploy",
+                  executedAt: completedAt.toISOString()
+                }
+              },
+              updatedAt: completedAt
+            })
+            .where(eq(rollbackPoints.id, fixture.rollbackPointId));
+
+          await db
+            .update(releasePlans)
+            .set({
+              status: "rolled_back",
+              updatedAt: completedAt
+            })
+            .where(eq(releasePlans.id, fixture.releasePlanId));
+
+          return providerSnapshot("restored-pending-deploy", "ready");
+        })
+      });
+
+      assert.deepEqual(result, {
+        checked: 1,
+        succeeded: 0,
+        pending: 0,
+        manualRequired: 0,
+        staleNoop: 1
+      });
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rolled_back");
+      assert.equal(deployment?.providerOperationStatus, "recorded");
+      const rollbackEvidence = recordFromUnknown(recordFromUnknown(deployment?.evidenceJson).rollback);
+      assert.equal(rollbackEvidence.status, "completed");
+      assert.equal(rollbackEvidence.manualReason, undefined);
+
+      const [rollbackPoint] = await db
+        .select()
+        .from(rollbackPoints)
+        .where(eq(rollbackPoints.id, fixture.rollbackPointId));
+      const rollbackExecution = recordFromUnknown(recordFromUnknown(rollbackPoint?.evidenceJson).rollbackExecution);
+      assert.equal(rollbackExecution.status, "completed");
+      assert.equal(rollbackExecution.manualReason, undefined);
+    });
+
+    void it("leaves pending rollback queryable when provider published-deploy read is unavailable", async () => {
+      const fixture = await createRollbackFixture(db);
+      await executeRollback({
+        data: fixture.data,
+        jobId: rollbackJobId(fixture.data),
+        repository: createDrizzleRollbackRepository(db),
+        siteHosting: new FakeRollbackHosting({
+          status: "queued",
+          providerDeployId: "restored-pending-deploy"
+        })
+      });
+
+      const result = await reconcilePendingRollbacks({
+        db,
+        siteHosting: new FakeRollbackHosting({ status: "failed" }, new Error("provider unavailable"))
+      });
+
+      assert.deepEqual(result, {
+        checked: 1,
+        succeeded: 0,
+        pending: 1,
+        manualRequired: 0,
+        staleNoop: 0
+      });
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rollback_pending");
+      assert.equal(deployment?.providerOperationStatus, "recorded");
+    });
+
+    void it("keeps rollback pending when the original target deploy is still published", async () => {
+      const fixture = await createRollbackFixture(db);
+      await executeRollback({
+        data: fixture.data,
+        jobId: rollbackJobId(fixture.data),
+        repository: createDrizzleRollbackRepository(db),
+        siteHosting: new FakeRollbackHosting({
+          status: "queued",
+          providerDeployId: "restored-pending-deploy"
+        })
+      });
+
+      const result = await reconcilePendingRollbacks({
+        db,
+        siteHosting: new FakeRollbackHosting({ status: "failed" }, providerSnapshot("bad-provider-deploy", "ready"))
+      });
+
+      assert.deepEqual(result, {
+        checked: 1,
+        succeeded: 0,
+        pending: 1,
+        manualRequired: 0,
+        staleNoop: 0
+      });
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rollback_pending");
+      assert.equal(deployment?.providerOperationStatus, "recorded");
+      const rollbackEvidence = recordFromUnknown(recordFromUnknown(deployment?.evidenceJson).rollback);
+      assert.equal(rollbackEvidence.status, "rollback_pending");
+      assert.equal(rollbackEvidence.targetProviderDeployId, "bad-provider-deploy");
+    });
+
+    void it("marks pending rollback manual when a different deploy is published", async () => {
+      const fixture = await createRollbackFixture(db);
+      await executeRollback({
+        data: fixture.data,
+        jobId: rollbackJobId(fixture.data),
+        repository: createDrizzleRollbackRepository(db),
+        siteHosting: new FakeRollbackHosting({
+          status: "queued",
+          providerDeployId: "restored-pending-deploy"
+        })
+      });
+
+      const result = await reconcilePendingRollbacks({
+        db,
+        siteHosting: new FakeRollbackHosting({ status: "failed" }, providerSnapshot("unexpected-deploy", "ready"))
+      });
+
+      assert.deepEqual(result, {
+        checked: 1,
+        succeeded: 0,
+        pending: 0,
+        manualRequired: 1,
+        staleNoop: 0
+      });
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rollback_pending");
+      assert.equal(deployment?.providerOperationStatus, "manual_reconciliation_required");
+      const rollbackEvidence = recordFromUnknown(recordFromUnknown(deployment?.evidenceJson).rollback);
+      assert.equal(rollbackEvidence.status, "manual_reconciliation_required");
+      assert.equal(rollbackEvidence.manualReason, "published_identity_mismatch");
+      assert.equal(rollbackEvidence.publishedProviderDeployId, "unexpected-deploy");
+    });
+
+    void it("does not re-post restore when a rollback job retries after pending state was recorded", async () => {
+      const fixture = await createRollbackFixture(db);
+      await executeRollback({
+        data: fixture.data,
+        jobId: rollbackJobId(fixture.data),
+        repository: createDrizzleRollbackRepository(db),
+        siteHosting: new FakeRollbackHosting({
+          status: "queued",
+          providerDeployId: "restored-pending-deploy"
+        })
+      });
+      const retryHosting = new FakeRollbackHosting({ status: "completed", providerDeployId: "should-not-post" });
+
+      const result = await executeRollback({
+        data: fixture.data,
+        jobId: rollbackJobId(fixture.data),
+        repository: createDrizzleRollbackRepository(db),
+        siteHosting: retryHosting
+      });
+
+      assert.equal(result.status, "rollback_pending");
+      assert.equal(retryHosting.rollbackCalls.length, 0);
+      assert.deepEqual(retryHosting.publishedDeployCalls, ["hosting-site-1"]);
+    });
+
+    void it("does not re-post restore when retry sees restore_in_flight evidence", async () => {
+      const fixture = await createRollbackFixture(db);
+      await db
+        .update(rollbackPoints)
+        .set({
+          evidenceJson: {
+            rollbackExecution: {
+              status: "restore_in_flight",
+              operationAttemptId: "attempt-restore-in-flight",
+              rollbackPointId: fixture.rollbackPointId,
+              sourceProviderDeployId: "previous-provider-deploy",
+              targetProviderDeployId: "bad-provider-deploy",
+              attemptedAt: new Date().toISOString()
+            }
+          }
+        })
+        .where(eq(rollbackPoints.id, fixture.rollbackPointId));
+      const retryHosting = new FakeRollbackHosting({ status: "completed", providerDeployId: "should-not-post" });
+
+      await assert.rejects(
+        executeRollback({
+          data: fixture.data,
+          jobId: rollbackJobId(fixture.data),
+          repository: createDrizzleRollbackRepository(db),
+          siteHosting: retryHosting
+        }),
+        RollbackProviderPendingError
+      );
+
+      assert.equal(retryHosting.rollbackCalls.length, 0);
+      assert.deepEqual(retryHosting.publishedDeployCalls, ["hosting-site-1"]);
     });
 
     void it("does not call the provider when the release plan is no longer rollback-eligible", async () => {
@@ -266,12 +594,10 @@ void describe(
         .where(eq(rollbackPoints.id, fixture.rollbackPointId));
       assert.equal(
         (recordFromUnknown(rollbackPoint?.evidenceJson).rollbackExecution as { status?: string } | undefined)?.status,
-        "failed"
+        "manual_reconciliation_required"
       );
       const rollbackExecution = recordFromUnknown(recordFromUnknown(rollbackPoint?.evidenceJson).rollbackExecution);
-      assert.equal(rollbackExecution.providerResultStatus, "completed");
-      assert.equal(rollbackExecution.providerDeployId, "previous-provider-deploy");
-      assert.equal(rollbackExecution.liveUrl, "https://customer.example/");
+      assert.equal(rollbackExecution.manualReason, "completed_rollback_persistence_failed");
       assert.match(String(rollbackExecution.message), /Rollback target changed/u);
     });
 
@@ -402,12 +728,31 @@ async function createRollbackFixture(
     .returning();
   assert.ok(deployment);
 
+  const [sourceDeployment] = await db
+    .insert(deployments)
+    .values({
+      projectId: project.id,
+      releasePlanId: null,
+      deploymentKey: `rollback_source:${releasePlan.id}`,
+      provider: "netlify",
+      providerDeployId: "previous-provider-deploy",
+      providerOperationStatus: "recorded",
+      liveUrl: "https://customer.example/",
+      status: "live_healthy",
+      verificationStatus: "live_healthy",
+      evidenceJson: {
+        provider: { providerDeployId: "previous-provider-deploy" }
+      }
+    })
+    .returning();
+  assert.ok(sourceDeployment);
+
   const [rollbackPoint] = await db
     .insert(rollbackPoints)
     .values({
       projectId: project.id,
       releasePlanId: releasePlan.id,
-      deploymentId: deployment.id,
+      deploymentId: sourceDeployment.id,
       artifactKey: `rollback/${releasePlan.id}/previous-stable.json`,
       providerDeployId: input.providerDeployId === undefined ? "previous-provider-deploy" : input.providerDeployId,
       liveUrl: "https://customer.example/",
@@ -436,10 +781,29 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function providerSnapshot(providerDeployId: string, status: ProviderDeploySnapshot["status"]): ProviderDeploySnapshot {
+  return {
+    providerDeployId,
+    status,
+    liveUrls: ["https://customer.example/"],
+    evidence: {
+      adapter: "fake",
+      source: "published_deploy"
+    }
+  };
+}
+
 class FakeRollbackHosting implements SiteHostingPort {
   readonly rollbackCalls: RollbackDeployInput[] = [];
+  readonly publishedDeployCalls: string[] = [];
 
-  constructor(private readonly result: RollbackDeployResult) {}
+  constructor(
+    private readonly result: RollbackDeployResult,
+    private readonly publishedDeploy?:
+      | ProviderDeploySnapshot
+      | Error
+      | (() => Promise<ProviderDeploySnapshot | undefined>)
+  ) {}
 
   beginDeploy(): Promise<BeginDeployResult> {
     return Promise.reject(new Error("beginDeploy should not be called by rollback integration tests"));
@@ -459,6 +823,20 @@ class FakeRollbackHosting implements SiteHostingPort {
       status: "ready",
       liveUrls: ["https://customer.example/"]
     });
+  }
+
+  getPublishedDeploy(input: { hostingSiteId: string }): Promise<ProviderDeploySnapshot | undefined> {
+    this.publishedDeployCalls.push(input.hostingSiteId);
+
+    if (typeof this.publishedDeploy === "function") {
+      return this.publishedDeploy();
+    }
+
+    if (this.publishedDeploy instanceof Error) {
+      return Promise.reject(this.publishedDeploy);
+    }
+
+    return Promise.resolve(this.publishedDeploy);
   }
 
   restoreDeploy(): Promise<{ artifactKey: string }> {

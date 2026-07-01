@@ -146,14 +146,21 @@ Implemented tests:
 
 1. Completed provider rollback marks the deployment and release plan `rolled_back`, writes rollback execution evidence, and records the provider deploy id that was rolled back from.
 2. Provider rollback failure records normalized failed rollback execution evidence and is treated as a terminal provider failure, without marking the deployment or release plan rolled back.
-3. Provider-pending rollback records normalized pending evidence and does not retry the restore mutation in the same worker.
-4. A release plan that is no longer rollback-eligible stops before provider restore.
-5. Stale target deployment state after provider restore does not persist `rolled_back`.
-6. A rollback job updates only the pinned target deployment, even when a newer deployment row exists.
-7. `not_configured` rollback results become terminal configuration errors.
-8. Missing rollback-point provider deploy evidence fails before calling the provider.
+3. Provider-pending rollback records `rollback_pending` evidence, updates the target deployment to queryable `rollback_pending`, and keeps the original bad provider deploy id pinned until terminal success.
+4. The rollback reconciler marks `rolled_back` only when the provider-published deploy id matches the intended restored deploy.
+5. Duplicate completion of the same pending rollback is treated as a `staleNoop` metric outcome and does not stamp manual reconciliation onto the already-rolled-back deployment.
+6. Provider-published-deploy read failures leave rollback pending for a later cycle.
+7. A still-published original target deployment leaves rollback pending instead of escalating to manual reconciliation.
+8. Provider-published third-deploy identity mismatches mark the deployment `manual_reconciliation_required` without changing `rollback_pending`.
+9. Retried rollback jobs do not re-post restore after `rollback_pending` was recorded.
+10. Retried rollback jobs do not re-post restore when they see `restore_in_flight` evidence.
+11. A release plan that is no longer rollback-eligible stops before provider restore.
+12. Stale target deployment state after provider restore does not persist `rolled_back`.
+13. A rollback job updates only the pinned target deployment, even when a newer deployment row exists.
+14. `not_configured` rollback results become terminal configuration errors.
+15. Missing rollback-point provider deploy evidence fails before calling the provider.
 
-This file contributes 8 rollback-worker tests to the worker integration command.
+This file contributes 15 rollback-worker tests to the worker integration command.
 
 ### GSC Sync Worker
 
@@ -178,7 +185,7 @@ Verified local worker integration run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 24 | pass 24 | fail 0
+tests 31 | pass 31 | fail 0
 ```
 
 ### Queue And Job Audit
@@ -251,8 +258,8 @@ Further tests can prove:
 
 Further tests can prove:
 
-- provider rollback pending is reconciled by a dedicated rollback reconciler instead of repeating provider restore calls,
-- rollback queue deduplication across repeated operator clicks remains one active rollback job.
+- rollback queue deduplication across repeated operator clicks remains one active rollback job,
+- final-attempt `restore_in_flight` escalation to manual reconciliation remains visible through `job_runs` as well as deployment/rollback evidence.
 
 ### Still Useful In Queue And Job Audit
 
