@@ -6,6 +6,7 @@ export type HttpReleaseVerificationAdapterOptions = {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   userAgent?: string;
+  maxConcurrentPageFetches?: number;
 };
 
 type PageFetchResult =
@@ -27,8 +28,10 @@ type PageFetchResult =
 
 const defaultTimeoutMs = 10_000;
 const defaultUserAgent = "localseo-verifier/0.1";
+const defaultMaxConcurrentPageFetches = 5;
 const maxSameOriginRedirects = 5;
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+const localSeoSchemaTypes = new Set(["LocalBusiness", "Service", "FAQPage"]);
 
 class VerificationRedirectError extends Error {
   constructor(
@@ -44,11 +47,13 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly userAgent: string;
+  private readonly maxConcurrentPageFetches: number;
 
   constructor(options: HttpReleaseVerificationAdapterOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
     this.userAgent = options.userAgent ?? defaultUserAgent;
+    this.maxConcurrentPageFetches = Math.max(1, options.maxConcurrentPageFetches ?? defaultMaxConcurrentPageFetches);
   }
 
   async verifyRelease(input: {
@@ -75,7 +80,9 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
       return verificationResult(input, checkedAt, checks);
     }
 
-    const pageResults = await Promise.all(liveUrls.map((liveUrl) => this.fetchPage(liveUrl)));
+    const pageResults = await mapWithConcurrency(liveUrls, this.maxConcurrentPageFetches, (liveUrl) =>
+      this.fetchPage(liveUrl)
+    );
     const checks = pageResults.flatMap((result) => pageChecks(result, Boolean(input.trackingExpected)));
     checks.push(await this.sitemapCheck(liveUrls));
 
@@ -295,11 +302,16 @@ function pageChecks(result: PageFetchResult, trackingExpected: boolean): Release
     ];
   }
 
+  const schemaAnalysis = analyzeJsonLd(result.html);
+
   return [
     httpStatusCheck(result),
     indexabilityCheck(result),
     canonicalCheck(result),
-    schemaCheck(result),
+    htmlMetadataCheck(result),
+    primaryHeadingCheck(result),
+    schemaCheck(result, schemaAnalysis),
+    schemaTypeCheck(result, schemaAnalysis),
     trackingCheck(result, trackingExpected)
   ];
 }
@@ -367,10 +379,8 @@ function canonicalCheck(result: Extract<PageFetchResult, { status: "ok" }>): Rel
   });
 }
 
-function schemaCheck(result: Extract<PageFetchResult, { status: "ok" }>): ReleaseCheck {
-  const scripts = jsonLdScripts(result.html);
-
-  if (scripts.length === 0) {
+function schemaCheck(result: Extract<PageFetchResult, { status: "ok" }>, analysis: JsonLdAnalysis): ReleaseCheck {
+  if (analysis.scriptCount === 0) {
     return releaseCheck({
       checkKey: "schema_parse_check",
       scope: "page",
@@ -381,24 +391,120 @@ function schemaCheck(result: Extract<PageFetchResult, { status: "ok" }>): Releas
     });
   }
 
-  const parseFailures = scripts
-    .map((script, index) => ({ index, parsed: parseJson(script) }))
-    .filter((item) => !item.parsed.ok);
-
   return releaseCheck({
     checkKey: "schema_parse_check",
     scope: "page",
     severity: "warning",
-    result: parseFailures.length === 0 ? "passed" : "failed",
+    result: analysis.parseFailures.length === 0 ? "passed" : "failed",
     message:
-      parseFailures.length === 0
+      analysis.parseFailures.length === 0
         ? "JSON-LD structured data parsed successfully."
         : "One or more JSON-LD structured data blocks could not be parsed.",
     evidence: {
       targetUrl: result.targetUrl,
       observed: {
-        jsonLdScriptCount: scripts.length,
-        parseFailures: parseFailures.map((failure) => failure.index)
+        jsonLdScriptCount: analysis.scriptCount,
+        parseFailures: analysis.parseFailures
+      }
+    }
+  });
+}
+
+function schemaTypeCheck(result: Extract<PageFetchResult, { status: "ok" }>, analysis: JsonLdAnalysis): ReleaseCheck {
+  if (analysis.scriptCount === 0) {
+    return releaseCheck({
+      checkKey: "schema_type_check",
+      scope: "page",
+      severity: "warning",
+      result: "skipped",
+      message: "Local SEO schema type verification skipped because no JSON-LD was found.",
+      evidence: { targetUrl: result.targetUrl, observed: { jsonLdScriptCount: 0 } }
+    });
+  }
+
+  if (analysis.parseFailures.length > 0) {
+    return releaseCheck({
+      checkKey: "schema_type_check",
+      scope: "page",
+      severity: "warning",
+      result: "skipped",
+      message: "Local SEO schema type verification skipped because JSON-LD could not be parsed.",
+      evidence: {
+        targetUrl: result.targetUrl,
+        observed: {
+          jsonLdScriptCount: analysis.scriptCount,
+          parseFailures: analysis.parseFailures
+        }
+      }
+    });
+  }
+
+  const matchingTypes = analysis.schemaTypes.filter((schemaType) => localSeoSchemaTypes.has(schemaType));
+
+  return releaseCheck({
+    checkKey: "schema_type_check",
+    scope: "page",
+    severity: "warning",
+    result: matchingTypes.length > 0 ? "passed" : "failed",
+    message:
+      matchingTypes.length > 0
+        ? "JSON-LD includes local SEO structured data types."
+        : "JSON-LD parsed, but no LocalBusiness, Service, or FAQPage schema type was found.",
+    evidence: {
+      targetUrl: result.targetUrl,
+      expected: { schemaTypes: [...localSeoSchemaTypes] },
+      observed: { schemaTypes: analysis.schemaTypes }
+    }
+  });
+}
+
+function htmlMetadataCheck(result: Extract<PageFetchResult, { status: "ok" }>): ReleaseCheck {
+  const metadata = htmlMetadata(result.html);
+  const missing = [
+    metadata.title ? undefined : "title",
+    metadata.metaDescription ? undefined : "meta_description"
+  ].filter((item): item is string => Boolean(item));
+
+  return releaseCheck({
+    checkKey: "html_metadata_check",
+    scope: "page",
+    severity: "warning",
+    result: missing.length === 0 ? "passed" : "failed",
+    message:
+      missing.length === 0
+        ? "Live route includes title and meta description source tags."
+        : "Live route is missing title or meta description source tags.",
+    evidence: {
+      targetUrl: result.targetUrl,
+      expected: { title: "present", metaDescription: "present" },
+      observed: {
+        missing,
+        titleLength: metadata.title?.length ?? 0,
+        metaDescriptionLength: metadata.metaDescription?.length ?? 0
+      }
+    }
+  });
+}
+
+function primaryHeadingCheck(result: Extract<PageFetchResult, { status: "ok" }>): ReleaseCheck {
+  const headings = h1Texts(result.html);
+  const nonEmptyHeadings = headings.filter((heading) => heading.length > 0);
+  const passed = nonEmptyHeadings.length === 1;
+
+  return releaseCheck({
+    checkKey: "primary_heading_check",
+    scope: "page",
+    severity: "warning",
+    result: passed ? "passed" : "failed",
+    message: passed
+      ? "Live route includes exactly one non-empty H1."
+      : "Live route should include exactly one non-empty H1.",
+    evidence: {
+      targetUrl: result.targetUrl,
+      expected: { nonEmptyH1Count: 1 },
+      observed: {
+        h1Count: headings.length,
+        nonEmptyH1Count: nonEmptyHeadings.length
       }
     }
   });
@@ -456,6 +562,27 @@ function releaseCheck(input: ReleaseCheck): ReleaseCheck {
   return input;
 }
 
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  limit: number,
+  mapper: (value: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index] as T);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, () => worker()));
+
+  return results;
+}
+
 function uniqueUrls(urls: string[]): string[] {
   const normalized = new Set<string>();
 
@@ -499,9 +626,78 @@ function canonicalHref(html: string, baseUrl: string): string | undefined {
   }
 }
 
+function htmlMetadata(html: string): { title?: string; metaDescription?: string } {
+  const title = firstTagText(html, "title");
+  const metaTags = html.match(/<meta\b[^>]*>/giu) ?? [];
+  const descriptionTag = metaTags.find((tag) => {
+    const name = attributeValue(tag, "name") ?? "";
+    return name.toLowerCase() === "description";
+  });
+  const metaDescription = descriptionTag ? attributeValue(descriptionTag, "content") : undefined;
+
+  return {
+    title: title && title.length > 0 ? title : undefined,
+    metaDescription:
+      metaDescription && metaDescription.trim().length > 0 ? htmlDecode(metaDescription).trim() : undefined
+  };
+}
+
+function h1Texts(html: string): string[] {
+  const headings: string[] = [];
+  const pattern = /<h1\b[^>]*>([\s\S]*?)<\/h1>/giu;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(html))) {
+    headings.push(textContent(match[1] ?? ""));
+  }
+
+  return headings;
+}
+
+function firstTagText(html: string, tagName: string): string | undefined {
+  const pattern = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "iu");
+  const value = pattern.exec(html)?.[1];
+  return value ? textContent(value) : undefined;
+}
+
+function textContent(html: string): string {
+  return htmlDecode(html.replace(/<[^>]+>/gu, " "))
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function attributeValue(tag: string, attribute: string): string | undefined {
   const pattern = new RegExp(`\\b${attribute}\\s*=\\s*["']([^"']+)["']`, "iu");
   return pattern.exec(tag)?.[1];
+}
+
+type JsonLdAnalysis = {
+  scriptCount: number;
+  parseFailures: number[];
+  schemaTypes: string[];
+};
+
+function analyzeJsonLd(html: string): JsonLdAnalysis {
+  const scripts = jsonLdScripts(html);
+  const parseFailures: number[] = [];
+  const schemaTypes = new Set<string>();
+
+  scripts.forEach((script, index) => {
+    const parsed = parseJsonValue(script);
+
+    if (!parsed.ok) {
+      parseFailures.push(index);
+      return;
+    }
+
+    collectJsonLdTypes(parsed.value, schemaTypes);
+  });
+
+  return {
+    scriptCount: scripts.length,
+    parseFailures,
+    schemaTypes: [...schemaTypes].sort()
+  };
 }
 
 function jsonLdScripts(html: string): string[] {
@@ -516,13 +712,52 @@ function jsonLdScripts(html: string): string[] {
   return scripts;
 }
 
-function parseJson(value: string): { ok: true } | { ok: false } {
+function parseJsonValue(value: string): { ok: true; value: unknown } | { ok: false } {
   try {
-    JSON.parse(value);
-    return { ok: true };
+    return { ok: true, value: JSON.parse(value) };
   } catch {
     return { ok: false };
   }
+}
+
+function collectJsonLdTypes(value: unknown, types: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectJsonLdTypes(item, types);
+    }
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  const schemaType = value["@type"];
+
+  if (typeof schemaType === "string" && schemaType.trim().length > 0) {
+    types.add(normalizeSchemaType(schemaType));
+  } else if (Array.isArray(schemaType)) {
+    for (const item of schemaType) {
+      if (typeof item === "string" && item.trim().length > 0) {
+        types.add(normalizeSchemaType(item));
+      }
+    }
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    collectJsonLdTypes(nestedValue, types);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeSchemaType(value: string): string {
+  const trimmed = value.trim();
+  const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("#"), trimmed.lastIndexOf(":"));
+
+  return separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) || trimmed : trimmed;
 }
 
 function sitemapLocations(xml: string): Set<string> {
