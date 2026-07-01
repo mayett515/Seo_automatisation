@@ -98,6 +98,39 @@ Follow-up direction:
 
 Why: avoid overloading one column with several meanings and reduce the chance that UI/reporting treats provider success as verified health.
 
+### Restore In-Flight Orphan Sweep
+
+`restore_in_flight` is intentionally owned by rollback job retry, not the periodic rollback reconciler. A hard crash or lost job before the final retry can still strand rollback intent evidence in JSON while no periodic worker polls it.
+
+Follow-up direction:
+
+- Add a stale `restore_in_flight` sweep only if job loss or operational visibility requires it.
+- The sweep must not call provider restore again; it may only read provider-published identity and then complete, leave pending, or move to manual reconciliation.
+
+Why: this is an underclaim and visibility issue, not an overclaim. ADR 0013's retry-owned model is correct, but a future staleness sweep would close the remaining lost-job edge.
+
+### Job-Path Rollback Completion Race Audit Noise
+
+The periodic rollback reconciler handles duplicate completion as a `staleNoop`, but an operator-triggered rollback job that loses a completion race can still record noisy failed job audit even when the durable deployment truth is already `rolled_back`.
+
+Follow-up direction:
+
+- Apply the same completed-operation check to the job-path reconcile branch if this audit noise appears in practice.
+- Do not weaken the guarded success transaction; the durable rollback truth is already protected.
+
+Why: the state remains truthful, but audit rows should not imply a failed rollback job when another worker already completed the same operation.
+
+### Verification Fetch Fan-Out Should Be Bounded Later
+
+The HTTP verifier currently fans out route checks concurrently. This is fine for small release plans, but large release plans should use a bounded concurrency pool.
+
+Follow-up direction:
+
+- Add bounded verification concurrency before supporting large multi-page releases.
+- Keep per-route evidence intact; this is a resource-control change, not a verification semantics change.
+
+Why: unbounded fan-out is an operational scaling edge. It does not affect current lifecycle truth, but it should be fixed before large route batches.
+
 ## Deferred Or Rejected
 
 ### Deploy State Machine Rewrite
