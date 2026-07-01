@@ -163,7 +163,10 @@ Implemented tests:
 
 1. Successful sync refreshes access, queries Search Console through a fake port, replaces stale Search Analytics rows, inserts fresh rows, creates opportunity signals, marks the sync run completed, and clears connection failure state.
 2. Empty syncs complete honestly, clear stale analytics/signals for the sync run, and do not create opportunity signals.
-3. Search Console query failure marks the sync run `failed` with normalized failure evidence and does not mark the connection as synced.
+3. Refresh-token decrypt failure marks the sync run failed, marks the GSC connection `error`, and stores reconnect-required connection failure evidence.
+4. Google OAuth `invalid_grant` refresh failure marks the sync run failed, marks the GSC connection `error`, and stores reconnect-required connection failure evidence.
+5. Transient Google OAuth refresh failure marks the sync run failed and records connection failure evidence without flipping the connection out of `connected`.
+6. Search Console query failure marks the sync run `failed`, records connection failure evidence, and does not mark the connection as synced.
 
 These tests use a fake `SearchConsolePort` and fake token decryptor. The database writes, deletes, foreign keys, and transaction ordering are real; no live Google Search Console network calls are made.
 
@@ -173,7 +176,7 @@ Verified local worker integration run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 19 | pass 19 | fail 0
+tests 22 | pass 22 | fail 0
 ```
 
 ### Queue And Job Audit

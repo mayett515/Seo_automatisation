@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AesGcmTokenCipher, GoogleSearchConsoleAdapter } from "@localseo/adapters";
+import { AesGcmTokenCipher, GoogleSearchConsoleAdapter, isProviderRequestError } from "@localseo/adapters";
 import type { SearchConsolePort, TokenCipher } from "@localseo/adapters";
 import type { GscOpportunitySignalType, GscSearchAnalyticsRow } from "@localseo/contracts";
 import type { parseAppEnv } from "@localseo/config";
@@ -14,10 +14,30 @@ type StoredSearchAnalyticsRow = {
   rowId: string;
   row: GscSearchAnalyticsRow;
 };
+type GscSyncFailureReason =
+  | "google_oauth_configuration_missing"
+  | "google_oauth_refresh_failed"
+  | "google_refresh_token_invalid"
+  | "gsc_connection_not_ready"
+  | "refresh_token_decrypt_failed"
+  | "search_console_query_failed"
+  | "unknown_gsc_sync_failure";
 export type GscSyncDependencies = {
   searchConsole: Pick<SearchConsolePort, "refreshAccessToken" | "querySearchAnalytics">;
   tokenCipher: Pick<TokenCipher, "decrypt">;
 };
+
+class GscSyncFailureError extends Error {
+  readonly reason: GscSyncFailureReason;
+  readonly reconnectRequired: boolean;
+
+  constructor(reason: GscSyncFailureReason, input?: { reconnectRequired?: boolean }) {
+    super(reason);
+    this.name = "GscSyncFailureError";
+    this.reason = reason;
+    this.reconnectRequired = input?.reconnectRequired ?? false;
+  }
+}
 
 export async function handleGscSyncJob(
   job: Job,
@@ -68,7 +88,7 @@ export async function runGscSync(
     .limit(1);
 
   if (!connection?.encryptedRefreshToken || connection.status !== "connected") {
-    throw new Error("GSC connection is not connected or has no encrypted refresh token");
+    throw new GscSyncFailureError("gsc_connection_not_ready", { reconnectRequired: true });
   }
 
   await db
@@ -81,9 +101,9 @@ export async function runGscSync(
     })
     .where(eq(gscSyncRuns.id, syncRun.id));
 
-  const refreshToken = tokenCipher.decrypt(connection.encryptedRefreshToken);
-  const tokenSet = await searchConsole.refreshAccessToken({ refreshToken });
-  const rows = await searchConsole.querySearchAnalytics({
+  const refreshToken = decryptRefreshToken(tokenCipher, connection.encryptedRefreshToken);
+  const tokenSet = await refreshGscAccessToken(searchConsole, refreshToken);
+  const rows = await queryGscSearchAnalytics(searchConsole, {
     accessToken: tokenSet.accessToken,
     projectId: data.projectId,
     propertyUrl: syncRun.propertyUrl,
@@ -127,6 +147,36 @@ export async function runGscSync(
     rowCount: rows.length,
     opportunitySignals: storedRows.flatMap((stored) => classifyOpportunitySignals(stored.row)).length
   };
+}
+
+function decryptRefreshToken(tokenCipher: Pick<TokenCipher, "decrypt">, encryptedRefreshToken: string): string {
+  try {
+    return tokenCipher.decrypt(encryptedRefreshToken);
+  } catch {
+    throw new GscSyncFailureError("refresh_token_decrypt_failed", { reconnectRequired: true });
+  }
+}
+
+async function refreshGscAccessToken(
+  searchConsole: Pick<SearchConsolePort, "refreshAccessToken">,
+  refreshToken: string
+): Promise<{ accessToken: string; expiresIn?: number; scope?: string }> {
+  try {
+    return await searchConsole.refreshAccessToken({ refreshToken });
+  } catch (error) {
+    throw classifyGscRefreshFailure(error);
+  }
+}
+
+async function queryGscSearchAnalytics(
+  searchConsole: Pick<SearchConsolePort, "querySearchAnalytics">,
+  input: Parameters<SearchConsolePort["querySearchAnalytics"]>[0]
+): Promise<GscSearchAnalyticsRow[]> {
+  try {
+    return await searchConsole.querySearchAnalytics(input);
+  } catch {
+    throw new GscSyncFailureError("search_console_query_failed");
+  }
 }
 
 async function resetSyncRunData(db: GscSyncWriteDb, syncRunId: string): Promise<void> {
@@ -275,36 +325,82 @@ function createTokenCipher(env: WorkerEnv): AesGcmTokenCipher {
 }
 
 async function markSyncRunFailed(db: WorkerDb, syncRunId: string, error: unknown): Promise<void> {
+  const failure = classifyGscSyncFailure(error);
+  const [syncRun] = await db
+    .select({ connectionId: gscSyncRuns.connectionId })
+    .from(gscSyncRuns)
+    .where(eq(gscSyncRuns.id, syncRunId))
+    .limit(1);
+
   await db
     .update(gscSyncRuns)
     .set({
       status: "failed",
       completedAt: new Date(),
       failureJson: {
-        message: normalizeFailureReason(error)
+        message: failure.reason
       }
     })
     .where(eq(gscSyncRuns.id, syncRunId));
+
+  if (syncRun?.connectionId) {
+    await db
+      .update(gscConnections)
+      .set({
+        ...(failure.reconnectRequired ? { status: "error" as const } : {}),
+        failureJson: {
+          reason: failure.reason
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(gscConnections.id, syncRun.connectionId));
+  }
 }
 
-function normalizeFailureReason(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "unknown_gsc_sync_failure";
+function classifyGscRefreshFailure(error: unknown): GscSyncFailureError {
+  if (
+    isProviderRequestError(error) &&
+    error.provider === "google_search_console" &&
+    error.operation === "oauth_token" &&
+    error.reasonCode === "http_error" &&
+    isReconnectRequiredOAuthFailure(error.statusCode, error.providerReasonCode)
+  ) {
+    return new GscSyncFailureError("google_refresh_token_invalid", { reconnectRequired: true });
   }
 
-  if (error.message.includes("Search Console API request failed")) {
-    return "search_console_api_request_failed";
+  return new GscSyncFailureError("google_oauth_refresh_failed");
+}
+
+function classifyGscSyncFailure(error: unknown): { reason: GscSyncFailureReason; reconnectRequired: boolean } {
+  if (error instanceof GscSyncFailureError) {
+    return {
+      reason: error.reason,
+      reconnectRequired: error.reconnectRequired
+    };
   }
 
-  if (error.message.includes("Google OAuth")) {
-    return "google_oauth_configuration_missing";
+  if (error instanceof Error && error.message.includes("Google OAuth")) {
+    return {
+      reason: "google_oauth_configuration_missing",
+      reconnectRequired: false
+    };
   }
 
-  if (error.message.includes("GSC connection")) {
-    return "gsc_connection_not_ready";
+  return {
+    reason: "unknown_gsc_sync_failure",
+    reconnectRequired: false
+  };
+}
+
+function isReconnectRequiredOAuthFailure(
+  statusCode: number | undefined,
+  providerReasonCode: string | undefined
+): boolean {
+  if (providerReasonCode === "invalid_grant" || providerReasonCode === "invalid_client") {
+    return true;
   }
 
-  return "gsc_sync_failed";
+  return statusCode === 400 || statusCode === 401 || statusCode === 403;
 }
 
 export function parseGscSyncJobData(data: unknown): {

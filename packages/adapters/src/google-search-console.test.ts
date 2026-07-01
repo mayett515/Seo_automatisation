@@ -7,6 +7,7 @@ import {
   verifyOAuthState,
   type SearchConsoleAuthorizationState
 } from "./google-search-console.js";
+import { ProviderRequestError } from "./provider-errors.js";
 
 const secret = "test-state-secret-with-at-least-32-characters";
 const now = new Date("2026-06-26T10:00:00.000Z");
@@ -67,6 +68,59 @@ void describe("Google Search Console OAuth state", () => {
     assert.notEqual(first.codeChallenge, second.codeChallenge);
     assert.ok(first.codeVerifier.length >= 43);
     assert.ok(first.codeChallenge.length >= 43);
+  });
+
+  void it("redacts Google OAuth error response bodies", async () => {
+    const adapter = new GoogleSearchConsoleAdapter({
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://api.example.test/gsc/callback",
+      stateSecret: secret,
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: "invalid_grant", error_description: "secret provider body" }), {
+            status: 400
+          })
+        )
+    });
+
+    await assert.rejects(adapter.refreshAccessToken({ refreshToken: "refresh-token" }), (error) => {
+      assert.ok(error instanceof ProviderRequestError);
+      assert.equal(error.provider, "google_search_console");
+      assert.equal(error.operation, "oauth_token");
+      assert.equal(error.reasonCode, "http_error");
+      assert.equal(error.statusCode, 400);
+      assert.equal(error.providerReasonCode, "invalid_grant");
+      assert.equal(error.message.includes("secret provider body"), false);
+      return true;
+    });
+  });
+
+  void it("times out Google provider requests", async () => {
+    const adapter = new GoogleSearchConsoleAdapter({
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://api.example.test/gsc/callback",
+      stateSecret: secret,
+      requestTimeoutMs: 1,
+      fetchImpl: (_url, init = {}) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init.signal;
+          signal?.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        })
+    });
+
+    await assert.rejects(adapter.refreshAccessToken({ refreshToken: "refresh-token" }), (error) => {
+      assert.ok(error instanceof ProviderRequestError);
+      assert.equal(error.provider, "google_search_console");
+      assert.equal(error.operation, "oauth_token");
+      assert.equal(error.reasonCode, "timeout");
+      return true;
+    });
   });
 });
 

@@ -5,6 +5,7 @@ import type { ApprovedReleaseArtifact } from "@localseo/contracts";
 import { renderApprovedReleaseArtifact } from "@localseo/domain";
 import type { ObjectStoragePort } from "./index.js";
 import { NetlifySiteHostingAdapter } from "./netlify-site-hosting.js";
+import { ProviderRequestError } from "./provider-errors.js";
 
 void describe("NetlifySiteHostingAdapter", () => {
   void it("uploads required digest files and returns pending for accepted deploys", async () => {
@@ -276,6 +277,47 @@ void describe("NetlifySiteHostingAdapter", () => {
     const snapshot = await adapter.getDeploy({ providerDeployId: "deploy-1" });
 
     assert.equal(snapshot.status, "pending");
+  });
+
+  void it("redacts Netlify error response bodies", async () => {
+    const adapter = new NetlifySiteHostingAdapter({
+      authToken: "netlify-token",
+      objectStorage: createObjectStorage(artifact()),
+      fetchImpl: () => Promise.resolve(new Response("secret provider body", { status: 500 }))
+    });
+
+    await assert.rejects(adapter.getDeploy({ providerDeployId: "deploy-1" }), (error) => {
+      assert.ok(error instanceof ProviderRequestError);
+      assert.equal(error.provider, "netlify");
+      assert.equal(error.reasonCode, "http_error");
+      assert.equal(error.statusCode, 500);
+      assert.equal(error.message.includes("secret provider body"), false);
+      return true;
+    });
+  });
+
+  void it("times out Netlify provider requests", async () => {
+    const adapter = new NetlifySiteHostingAdapter({
+      authToken: "netlify-token",
+      objectStorage: createObjectStorage(artifact()),
+      requestTimeoutMs: 1,
+      fetchImpl: (_url, init = {}) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init.signal;
+          signal?.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        })
+    });
+
+    await assert.rejects(adapter.getDeploy({ providerDeployId: "deploy-1" }), (error) => {
+      assert.ok(error instanceof ProviderRequestError);
+      assert.equal(error.provider, "netlify");
+      assert.equal(error.reasonCode, "timeout");
+      return true;
+    });
   });
 
   void it("prefers stable production URLs before deploy permalinks", async () => {
