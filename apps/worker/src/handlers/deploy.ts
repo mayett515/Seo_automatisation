@@ -132,6 +132,16 @@ export class ManualReconciliationRequiredError extends Error {}
 
 export class ProviderDeployPendingError extends Error {}
 
+class ProviderDeployTerminalStatusError extends Error {
+  readonly status: "failed" | "rolled_back";
+
+  constructor(status: "failed" | "rolled_back") {
+    super(`Provider deploy finished as ${status}`);
+    this.name = "ProviderDeployTerminalStatusError";
+    this.status = status;
+  }
+}
+
 export async function handleDeployJob(
   job: Job,
   dbHandle: WorkerDbHandle | undefined,
@@ -163,6 +173,7 @@ export async function executeDeploy(input: {
   siteHosting: SiteHostingPort;
 }): Promise<Record<string, unknown>> {
   const isFinalAttempt = input.isFinalAttempt ?? true;
+  let hasProviderDeployEvidence = false;
 
   try {
     const context = await input.repository.loadContext(input.data);
@@ -182,6 +193,7 @@ export async function executeDeploy(input: {
     }
 
     if (existingDeployment?.providerDeployId) {
+      hasProviderDeployEvidence = true;
       return await reconcileExistingProviderDeploy({
         data: input.data,
         deployment: existingDeployment,
@@ -237,6 +249,7 @@ export async function executeDeploy(input: {
     }
 
     if (deployment.providerDeployId) {
+      hasProviderDeployEvidence = true;
       return await reconcileExistingProviderDeploy({
         data: input.data,
         deployment,
@@ -336,6 +349,7 @@ export async function executeDeploy(input: {
         );
       }
     }
+    hasProviderDeployEvidence = true;
 
     const upload = await input.siteHosting.uploadDeployFiles({
       projectId: input.data.projectId,
@@ -363,7 +377,7 @@ export async function executeDeploy(input: {
     const snapshot = await input.siteHosting.getDeploy({ providerDeployId: started.providerDeployId });
 
     if (snapshot.status === "failed" || snapshot.status === "rolled_back") {
-      throw new Error(`Provider deploy finished as ${snapshot.status}`);
+      throw new ProviderDeployTerminalStatusError(snapshot.status);
     }
 
     if (snapshot.status !== "ready") {
@@ -413,7 +427,7 @@ export async function executeDeploy(input: {
       startedDeploymentId: deployment.id
     };
   } catch (error) {
-    if (shouldMarkDeployFailed(error, isFinalAttempt)) {
+    if (shouldMarkDeployFailed(error, isFinalAttempt, { hasProviderDeployEvidence })) {
       await input.repository.markFailed(input.data, error);
     }
 
@@ -983,6 +997,11 @@ export async function reconcilePendingDeployments(input: {
         continue;
       }
 
+      if (shouldKeepProviderBackedDeploymentReconcilable(error)) {
+        result.pending += 1;
+        continue;
+      }
+
       await repository.markFailed(data, error);
       result.failed += 1;
     }
@@ -1041,7 +1060,7 @@ async function reconcileExistingProviderDeploy(input: {
   }
 
   if (snapshot.status === "failed" || snapshot.status === "rolled_back") {
-    throw new Error(`Provider deploy reconciled as ${snapshot.status}`);
+    throw new ProviderDeployTerminalStatusError(snapshot.status);
   }
 
   await input.repository.markProviderPending({
@@ -1264,7 +1283,11 @@ function normalizeFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "deploy_worker_failed";
 }
 
-function shouldMarkDeployFailed(error: unknown, isFinalAttempt: boolean): boolean {
+function shouldMarkDeployFailed(
+  error: unknown,
+  isFinalAttempt: boolean,
+  input: { hasProviderDeployEvidence: boolean } = { hasProviderDeployEvidence: false }
+): boolean {
   if (
     error instanceof ProviderDeployPendingError ||
     error instanceof ManualReconciliationRequiredError ||
@@ -1278,7 +1301,15 @@ function shouldMarkDeployFailed(error: unknown, isFinalAttempt: boolean): boolea
     return true;
   }
 
+  if (input.hasProviderDeployEvidence && !(error instanceof ProviderDeployTerminalStatusError)) {
+    return false;
+  }
+
   return isFinalAttempt;
+}
+
+function shouldKeepProviderBackedDeploymentReconcilable(error: unknown): boolean {
+  return !(error instanceof ProviderDeployTerminalStatusError);
 }
 
 function providerOperationFailureStatus(error: unknown): "not_started" | "failed" {

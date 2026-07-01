@@ -292,6 +292,32 @@ void describe(
       assert.equal(deployment?.providerOperationStatus, "recorded");
       assert.equal(deployment?.providerDeployId, "provider-pending");
     });
+
+    void it("keeps provider read failures reconcilable during pending deployment reconciliation", async () => {
+      const fixture = await createDeployFixture(db);
+      await insertDeployment(db, fixture, {
+        providerDeployId: "provider-timeout",
+        providerOperationStatus: "recorded",
+        status: "deploying"
+      });
+      const hosting = new StatefulSiteHosting({
+        getDeployError: new Error("provider read timeout")
+      });
+
+      const result = await reconcilePendingDeployments({
+        db,
+        siteHosting: hosting,
+        limit: 10
+      });
+
+      assert.deepEqual(result, { checked: 1, succeeded: 0, pending: 1, failed: 0 });
+      assert.deepEqual(hosting.getDeployCalls, ["provider-timeout"]);
+
+      const deployment = await selectDeployment(db, fixture.deploymentKey);
+      assert.equal(deployment?.status, "deploying");
+      assert.equal(deployment?.providerOperationStatus, "recorded");
+      assert.equal(deployment?.providerDeployId, "provider-timeout");
+    });
   }
 );
 
@@ -491,9 +517,11 @@ class StatefulSiteHosting implements SiteHostingPort {
   readonly uploadCalls: Array<Parameters<SiteHostingPort["uploadDeployFiles"]>[0]> = [];
   readonly getDeployCalls: string[] = [];
   private readonly snapshots: ProviderDeploySnapshot[];
+  private readonly getDeployError: Error | undefined;
 
-  constructor(input: { snapshots?: ProviderDeploySnapshot[] } = {}) {
+  constructor(input: { snapshots?: ProviderDeploySnapshot[]; getDeployError?: Error } = {}) {
     this.snapshots = [...(input.snapshots ?? [providerSnapshot("provider-deploy-1", "ready")])];
+    this.getDeployError = input.getDeployError;
   }
 
   beginDeploy(input: Parameters<SiteHostingPort["beginDeploy"]>[0]): Promise<BeginDeployResult> {
@@ -518,6 +546,10 @@ class StatefulSiteHosting implements SiteHostingPort {
 
   getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot> {
     this.getDeployCalls.push(input.providerDeployId);
+    if (this.getDeployError) {
+      return Promise.reject(this.getDeployError);
+    }
+
     return Promise.resolve(this.snapshots.shift() ?? providerSnapshot(input.providerDeployId, "ready"));
   }
 

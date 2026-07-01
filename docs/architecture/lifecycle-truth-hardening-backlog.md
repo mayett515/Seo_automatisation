@@ -55,6 +55,16 @@ The Netlify and Google Search Console adapters now throw typed provider request 
 
 Why: provider response bodies can contain sensitive diagnostic data, and unbounded provider calls can stall worker retry/shutdown behavior. GSC connection state must tell operators when reconnect is required instead of leaving a broken connection looking healthy.
 
+### ADR 0012 Production Policy Guards Are Implemented
+
+The accepted production-readiness policy now has code-level guards for the slices that do not require pending rollback reconciler design:
+
+- reconnect-required GSC sync failures are classified as terminal worker errors and rethrown to BullMQ as unrecoverable, preserving the precise reconnect-required connection failure instead of retrying into a generic not-ready state,
+- accepted tracking events use Redis-backed write-protection limits in strict/production mode and fail closed with `503` when those limits are unavailable, while pre-validation request limits remain a soft local throttle,
+- provider-backed deploy timeout or unknown read/upload outcomes remain reconcilable after final attempts and during the periodic deploy reconciler; only an explicit provider terminal `failed` or `rolled_back` snapshot marks the deployment failed.
+
+Why: ADR 0012 intentionally separated policy decisions from implementation. These guards encode the decided production posture without changing rollback automation semantics.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership

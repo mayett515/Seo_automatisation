@@ -16,7 +16,7 @@ import {
   ManualReconciliationRequiredError,
   reconcilePendingDeployments
 } from "./handlers/deploy.js";
-import { handleGscSyncJob } from "./handlers/gsc-sync.js";
+import { handleGscSyncJob, isTerminalGscSyncFailure } from "./handlers/gsc-sync.js";
 import {
   handleRollbackJob,
   RollbackConfigurationError,
@@ -101,7 +101,8 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof RollbackConfigurationError ||
     error instanceof RollbackEvidenceError ||
     error instanceof RollbackProviderFailedError ||
-    error instanceof ManualReconciliationRequiredError
+    error instanceof ManualReconciliationRequiredError ||
+    isTerminalGscSyncFailure(error)
   );
 }
 

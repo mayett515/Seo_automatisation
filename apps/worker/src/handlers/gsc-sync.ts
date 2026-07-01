@@ -14,7 +14,7 @@ type StoredSearchAnalyticsRow = {
   rowId: string;
   row: GscSearchAnalyticsRow;
 };
-type GscSyncFailureReason =
+export type GscSyncFailureReason =
   | "google_oauth_configuration_missing"
   | "google_oauth_refresh_failed"
   | "google_refresh_token_invalid"
@@ -27,7 +27,7 @@ export type GscSyncDependencies = {
   tokenCipher: Pick<TokenCipher, "decrypt">;
 };
 
-class GscSyncFailureError extends Error {
+export class GscSyncFailureError extends Error {
   readonly reason: GscSyncFailureReason;
   readonly reconnectRequired: boolean;
 
@@ -37,6 +37,10 @@ class GscSyncFailureError extends Error {
     this.reason = reason;
     this.reconnectRequired = input?.reconnectRequired ?? false;
   }
+}
+
+export function isTerminalGscSyncFailure(error: unknown): boolean {
+  return error instanceof GscSyncFailureError && error.reconnectRequired;
 }
 
 export async function handleGscSyncJob(
