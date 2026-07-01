@@ -1,4 +1,5 @@
 import {
+  isProviderRequestError,
   NotConfiguredSiteHostingAdapter,
   type BeginDeployResult,
   type DeployReleaseResult,
@@ -132,7 +133,7 @@ export class ManualReconciliationRequiredError extends Error {}
 
 export class ProviderDeployPendingError extends Error {}
 
-class ProviderDeployTerminalStatusError extends Error {
+export class ProviderDeployTerminalStatusError extends Error {
   readonly status: "failed" | "rolled_back";
 
   constructor(status: "failed" | "rolled_back") {
@@ -1002,6 +1003,10 @@ export async function reconcilePendingDeployments(input: {
         continue;
       }
 
+      if (!(error instanceof ProviderDeployTerminalStatusError)) {
+        throw error;
+      }
+
       await repository.markFailed(data, error);
       result.failed += 1;
     }
@@ -1301,7 +1306,11 @@ function shouldMarkDeployFailed(
     return true;
   }
 
-  if (input.hasProviderDeployEvidence && !(error instanceof ProviderDeployTerminalStatusError)) {
+  if (error instanceof ProviderDeployTerminalStatusError) {
+    return true;
+  }
+
+  if (input.hasProviderDeployEvidence) {
     return false;
   }
 
@@ -1309,7 +1318,7 @@ function shouldMarkDeployFailed(
 }
 
 function shouldKeepProviderBackedDeploymentReconcilable(error: unknown): boolean {
-  return !(error instanceof ProviderDeployTerminalStatusError);
+  return isProviderRequestError(error);
 }
 
 function providerOperationFailureStatus(error: unknown): "not_started" | "failed" {

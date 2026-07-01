@@ -177,14 +177,14 @@ void describe("executeDeploy", () => {
     assert.equal(repository.failed.length, 0);
   });
 
-  void it("marks explicit provider terminal failures failed after the provider id is recorded", async () => {
+  void it("marks explicit provider terminal failures failed before the final attempt", async () => {
     const data = deployJobData();
     const repository = createRepository();
 
     await assert.rejects(
       executeDeploy({
         data,
-        isFinalAttempt: true,
+        isFinalAttempt: false,
         jobId: data.deploymentKey,
         objectStorage: createObjectStorage(),
         repository,

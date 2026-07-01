@@ -10,6 +10,7 @@ import type {
   SiteHostingPort,
   UploadDeployFilesResult
 } from "@localseo/adapters";
+import { ProviderRequestError } from "@localseo/adapters";
 import type { DeploymentStatus, DeployJobData, ReleaseVerificationStatus } from "@localseo/contracts";
 import {
   approvals,
@@ -301,7 +302,11 @@ void describe(
         status: "deploying"
       });
       const hosting = new StatefulSiteHosting({
-        getDeployError: new Error("provider read timeout")
+        getDeployError: new ProviderRequestError({
+          provider: "netlify",
+          operation: "GET /deploys/provider-timeout",
+          reasonCode: "timeout"
+        })
       });
 
       const result = await reconcilePendingDeployments({
@@ -317,6 +322,34 @@ void describe(
       assert.equal(deployment?.status, "deploying");
       assert.equal(deployment?.providerOperationStatus, "recorded");
       assert.equal(deployment?.providerDeployId, "provider-timeout");
+    });
+
+    void it("surfaces unexpected pending-deploy reconciliation errors without marking deployments failed", async () => {
+      const fixture = await createDeployFixture(db);
+      await insertDeployment(db, fixture, {
+        providerDeployId: "provider-bug",
+        providerOperationStatus: "recorded",
+        status: "deploying"
+      });
+      const hosting = new StatefulSiteHosting({
+        getDeployError: new Error("unexpected reconciler bug")
+      });
+
+      await assert.rejects(
+        reconcilePendingDeployments({
+          db,
+          siteHosting: hosting,
+          limit: 10
+        }),
+        /unexpected reconciler bug/u
+      );
+
+      assert.deepEqual(hosting.getDeployCalls, ["provider-bug"]);
+
+      const deployment = await selectDeployment(db, fixture.deploymentKey);
+      assert.equal(deployment?.status, "deploying");
+      assert.equal(deployment?.providerOperationStatus, "recorded");
+      assert.equal(deployment?.providerDeployId, "provider-bug");
     });
   }
 );

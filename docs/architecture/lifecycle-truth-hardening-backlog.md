@@ -61,7 +61,7 @@ The accepted production-readiness policy now has code-level guards for the slice
 
 - reconnect-required GSC sync failures are classified as terminal worker errors and rethrown to BullMQ as unrecoverable, preserving the precise reconnect-required connection failure instead of retrying into a generic not-ready state,
 - accepted tracking events use Redis-backed write-protection limits in strict/production mode and fail closed with `503` when those limits are unavailable, while pre-validation request limits remain a soft local throttle,
-- provider-backed deploy timeout or unknown read/upload outcomes remain reconcilable after final attempts and during the periodic deploy reconciler; only an explicit provider terminal `failed` or `rolled_back` snapshot marks the deployment failed.
+- provider-backed deploy timeout or unknown read/upload outcomes remain reconcilable after final attempts and during the periodic deploy reconciler; an explicit provider terminal `failed` or `rolled_back` snapshot marks the deployment failed immediately and stops BullMQ retries.
 
 Why: ADR 0012 intentionally separated policy decisions from implementation. These guards encode the decided production posture without changing rollback automation semantics.
 
