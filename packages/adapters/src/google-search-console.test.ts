@@ -4,9 +4,9 @@ import {
   GoogleSearchConsoleAdapter,
   createPkcePair,
   signOAuthState,
-  verifyOAuthState,
-  type SearchConsoleAuthorizationState
+  verifyOAuthState
 } from "./google-search-console.js";
+import type { SearchConsoleAuthorizationState } from "./index.js";
 import { ProviderRequestError } from "./provider-errors.js";
 
 const secret = "test-state-secret-with-at-least-32-characters";
