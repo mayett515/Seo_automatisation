@@ -14,6 +14,7 @@ import type {
 export * from "./google-search-console.js";
 export * from "./file-system-object-storage.js";
 export * from "./http-release-verification.js";
+export * from "./playwright-browser-verification.js";
 export * from "./provider-errors.js";
 export * from "./redis-connection.js";
 export * from "./netlify-site-hosting.js";

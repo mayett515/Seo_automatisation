@@ -9,6 +9,8 @@ dist/
 .env.*
 !.env.example
 coverage/
+test-results/
+playwright-report/
 *.tsbuildinfo
 apps/web/dist/
 *.zip

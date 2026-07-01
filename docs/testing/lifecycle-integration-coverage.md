@@ -290,7 +290,7 @@ Further tests can prove:
 Do not include these in Lifecycle Integration Coverage:
 
 - real Netlify calls,
-- browser/Playwright verification,
+- live public-deploy browser verification,
 - live Google Search Console calls,
 - Mastra or AI reasoning behavior,
 - full public-internet end-to-end deploys.
