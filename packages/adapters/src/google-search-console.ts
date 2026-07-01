@@ -11,7 +11,7 @@ import {
   type GscSitemapSubmission,
   type GscUrlInspectionResult
 } from "@localseo/contracts";
-import type { SearchConsolePort } from "./index.js";
+import type { SearchConsoleAuthorizationRequest, SearchConsoleAuthorizationState, SearchConsolePort } from "./index.js";
 import {
   ProviderRequestError,
   providerReasonCodeFromResponseText,
@@ -25,25 +25,6 @@ export type SearchConsoleTokenSet = {
   refreshToken?: string;
   expiresIn?: number;
   scope?: string;
-};
-
-export type SearchConsoleAuthorizationState = {
-  provider: "google_search_console";
-  projectId: string;
-  customerId: string;
-  userId: string;
-  sessionId?: string;
-  issuedAt: string;
-  expiresAt: string;
-  nonce: string;
-  redirectTo?: string;
-};
-
-export type SearchConsoleAuthorizationRequest = {
-  intent: GscOAuthIntent;
-  state: string;
-  statePayload: SearchConsoleAuthorizationState;
-  codeVerifier: string;
 };
 
 export type GoogleSearchConsoleAdapterConfig = {
@@ -134,18 +115,15 @@ export class GoogleSearchConsoleAdapter implements SearchConsolePort {
     return verifyOAuthState(input.state, this.config.stateSecret, input.now ?? new Date());
   }
 
-  async exchangeCode(input: { code: string; codeVerifier?: string }): Promise<SearchConsoleTokenSet> {
+  async exchangeCode(input: { code: string; codeVerifier: string }): Promise<SearchConsoleTokenSet> {
     const body = new URLSearchParams({
       client_id: this.config.clientId,
       client_secret: this.config.clientSecret,
       code: input.code,
+      code_verifier: input.codeVerifier,
       grant_type: "authorization_code",
       redirect_uri: this.config.redirectUri
     });
-
-    if (input.codeVerifier) {
-      body.set("code_verifier", input.codeVerifier);
-    }
 
     return parseTokenResponse(await postForm("https://oauth2.googleapis.com/token", body, this.request("oauth_token")));
   }

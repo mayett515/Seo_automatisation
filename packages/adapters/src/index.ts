@@ -165,6 +165,13 @@ export interface SiteHostingPort {
 }
 
 export interface SearchConsolePort {
+  createAuthorizationRequest(input: {
+    projectId: string;
+    customerId: string;
+    userId: string;
+    sessionId?: string;
+    redirectTo?: string;
+  }): SearchConsoleAuthorizationRequest;
   createAuthorizationUrl(input: {
     projectId: string;
     customerId: string;
@@ -185,6 +192,7 @@ export interface SearchConsolePort {
   };
   exchangeCode(input: {
     code: string;
+    codeVerifier: string;
   }): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string }>;
   refreshAccessToken(input: {
     refreshToken: string;
@@ -206,6 +214,25 @@ export interface SearchConsolePort {
   }): Promise<GscSitemapSubmission>;
   inspectUrl(input: { accessToken: string; siteUrl: string; inspectionUrl: string }): Promise<GscUrlInspectionResult>;
 }
+
+export type SearchConsoleAuthorizationState = {
+  provider: "google_search_console";
+  projectId: string;
+  customerId: string;
+  userId: string;
+  sessionId?: string;
+  issuedAt: string;
+  expiresAt: string;
+  nonce: string;
+  redirectTo?: string;
+};
+
+export type SearchConsoleAuthorizationRequest = {
+  intent: GscOAuthIntent;
+  state: string;
+  statePayload: SearchConsoleAuthorizationState;
+  codeVerifier: string;
+};
 
 export interface CrawlerPort {
   crawlWebsite(input: { projectId: string; sourceUrl: string }): Promise<CrawledWebsiteSnapshot>;

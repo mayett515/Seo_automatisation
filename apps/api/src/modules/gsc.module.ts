@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { AesGcmTokenCipher, GoogleSearchConsoleAdapter, createRedisConnection } from "@localseo/adapters";
+import {
+  AesGcmTokenCipher,
+  GoogleSearchConsoleAdapter,
+  createRedisConnection,
+  type SearchConsoleAuthorizationState,
+  type SearchConsolePort
+} from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import {
   GscConnectionSchema,
@@ -64,7 +70,7 @@ const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type Db = DatabaseClient;
-type OptionalSearchConsole = GoogleSearchConsoleAdapter | undefined;
+type OptionalSearchConsole = SearchConsolePort | undefined;
 type OptionalTokenCipher = AesGcmTokenCipher | undefined;
 type OptionalQueue = Queue | undefined;
 
@@ -669,10 +675,7 @@ function requireProjectAccessContext(request: RequestWithAuth): ProjectAccessCon
   return request.projectAccess;
 }
 
-function assertNonceRecordMatchesState(
-  record: GscOAuthNonceRecord,
-  state: ReturnType<GoogleSearchConsoleAdapter["verifyState"]>
-): void {
+function assertNonceRecordMatchesState(record: GscOAuthNonceRecord, state: SearchConsoleAuthorizationState): void {
   if (
     record.provider !== state.provider ||
     record.nonce !== state.nonce ||
