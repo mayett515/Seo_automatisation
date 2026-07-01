@@ -117,7 +117,7 @@ stateDiagram-v2
   end note
 ```
 
-How to read this: the preflight, approval, deploy enqueue, deploy worker, HTTP-first verification, rollback point preparation, and rollback execution state transitions are now real enough to trust as backend control flow. Productive hosting has a Netlify adapter baseline, approved-artifact handoff, async required-file upload handling, persisted provider IDs before upload, recorded provider-deploy and provider-rollback reconcilers, persisted post-deploy verification evidence, source-filtered and duplicate-guarded preflight rollback points, and a provider-native rollback restore baseline. It is still not production-complete because browser-level tracking/script checks are not wired, GSC handoff is not wired, rollback is still explicit operator action rather than automatic self-healing, and the tiny provider-create window before provider ID persistence still escalates to manual reconciliation rather than automatic lookup.
+How to read this: the preflight, approval, deploy enqueue, deploy worker, HTTP-first verification, rollback point preparation, and rollback execution state transitions are now real enough to trust as backend control flow. Productive hosting has a Netlify adapter baseline, approved-artifact handoff, async required-file upload handling, persisted provider IDs before upload, recorded provider-deploy and provider-rollback reconcilers, persisted post-deploy verification evidence, source-filtered and duplicate-guarded preflight rollback points, and a provider-native rollback restore baseline. It is still not production-complete because browser-level tracking/script checks are not wired, GSC handoff is not wired, rollback trigger policy is manual-only for MVP by ADR 0014, and the tiny provider-create window before provider ID persistence still escalates to manual reconciliation rather than automatic lookup.
 
 Important UI/reporting interpretation: `releasePlans.status = "failed"` is a coarse "do not present this release as healthy/live" projection. It can mean the provider deploy failed, or it can mean the provider deploy succeeded but post-deploy verification found a blocker and wrote `deployments.status = "rollback_recommended"` or `deployments.verificationStatus = "failed"`. UI, reports, release notes, and customer-facing explanations must read the deployment and verification detail rows before explaining why a release is failed or rollback-recommended.
 
@@ -131,7 +131,8 @@ High-value items:
 
 - Keep rollback reconciliation read-only against provider restore mutations; do not repeat the restore mutation just to poll.
 - Add richer release-plan or release-health states if UI needs to distinguish provider failure, verification failure, rollback recommended, rollback pending, and rolled back.
-- Decide whether rollback execution is automatic after `rollback_recommended` or requires a human/operator trigger for MVP.
+- Keep rollback execution manual/operator-triggered for MVP per ADR 0014.
+- Treat automatic rollback as a future per-project opt-in feature only after verified-good-source, debounce, single-flight, circuit-breaker, audit, notification, and no-loop gates exist.
 - Keep rollback execution deterministic; Mastra/AI may explain or recommend but must not mutate provider state.
 
 ### 2. Foundation Integration Coverage Depth
@@ -280,7 +281,7 @@ Programming-wise, the backend foundation is set for continued product build and 
 - DB/Redis ownership is consolidated,
 - worker jobs have baseline lifecycle audit.
 
-It is not yet set for production deploys. The deploy reconciler worker, rollback reconciler worker, approved-artifact handoff, durable production artifact storage, Netlify adapter baseline, typed provider-operation state, manual reconciliation stop state, HTTP-first verification baseline, and lifecycle integration coverage baseline now exist. Browser-level script checks, GSC handoff, automatic rollback policy, and a few deeper API/DB/worker integration edges still need to land. The Mastra creative assembly lane is also not product-integrated yet; it is planned as the proposal layer for site strategy, copy, layout, and design, not as an execution bypass. Until browser/GSC depth and recovery paths are complete, deploy success and live health must not be treated as customer-safe production facts.
+It is not yet set for production deploys. The deploy reconciler worker, rollback reconciler worker, approved-artifact handoff, durable production artifact storage, Netlify adapter baseline, typed provider-operation state, manual reconciliation stop state, HTTP-first verification baseline, lifecycle integration coverage baseline, and manual-only MVP rollback trigger policy now exist. Browser-level script checks, GSC handoff, future automatic rollback opt-in gates, and a few deeper API/DB/worker integration edges still need to land. The Mastra creative assembly lane is also not product-integrated yet; it is planned as the proposal layer for site strategy, copy, layout, and design, not as an execution bypass. Until browser/GSC depth and recovery paths are complete, deploy success and live health must not be treated as customer-safe production facts.
 
 ## Pattern Mining Checkpoint
 
