@@ -53,3 +53,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0009 - Deploy Provider Reconciliation And Operation State](0009-deploy-provider-reconciliation-and-operation-state.md)
 - [0010 - HTTP Verification And Release Status Projection](0010-http-verification-and-release-status-projection.md)
 - [0011 - Rollback Restore Execution Lifecycle](0011-rollback-restore-execution-lifecycle.md)
+- [0012 - Production Readiness Policy Batch](0012-production-readiness-policy-batch.md)
