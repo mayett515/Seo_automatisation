@@ -43,6 +43,12 @@ Rollback point preparation now has a database uniqueness guard for the same `(re
 
 Why: preflight was already written as "skip if a provider-backed point exists," but that check happened before insert. The database now owns the duplicate guard for the race shape that matters.
 
+### Deploy Worker Uses The Same Safe Rollback-Source Set As Preflight
+
+The deploy worker's final rollback-evidence guard now counts prior deployments with the same safe source statuses as API preflight: `provider_succeeded`, `live_healthy`, and `live_with_warnings`. Prior `rollback_recommended`, `verifying`, and `failed` deployments do not force rollback evidence that preflight could not prepare safely. Deploy replay also treats already-recorded `rollback_recommended`, `verifying`, or `rolled_back` rows as no-op provider replays instead of projecting the release back to `live`.
+
+Why: API preflight and worker execution must agree about when rollback evidence is required. A known-bad or unknown-health prior deployment cannot be a rollback-to source, and a stale deploy retry must not turn observed bad health back into a live projection.
+
 ## Accepted For Future Hardening
 
 ### Release Plan Status Should Eventually Split By Ownership
@@ -95,6 +101,6 @@ The first post-Milestone-4 follow-up wired DB-only rollback point preparation in
 - source selection prefers verified-good deployments and excludes known-bad or unknown-health deployments,
 - duplicate preparation for the same release/source is suppressed by a database uniqueness/conflict guard,
 - placeholder rollback point rows without `providerDeployId` no longer satisfy API preflight,
-- the deploy worker's final safety check also counts only provider-backed rollback points as usable rollback evidence.
+- the deploy worker's final safety check also counts only provider-backed rollback points as usable rollback evidence and uses the same safe prior-deployment status set as API preflight.
 
 Why this was done before the broader status-column refactor: rollback execution was otherwise waiting on inputs that only tests created. Preparing rollback points closes that functional loop without changing provider mutation ownership, while the larger release-status split remains a separate lifecycle-truth design task.

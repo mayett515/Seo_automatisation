@@ -200,6 +200,32 @@ void describe("executeDeploy", () => {
     assert.equal(repository.releaseLiveCount, 1);
   });
 
+  void it("does not project rollback-recommended deployments live during replay", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        existingDeployment: deploymentRow({
+          status: "rollback_recommended",
+          verificationStatus: "rollback_recommended",
+          providerDeployId: "provider-deploy-1"
+        })
+      })
+    );
+
+    const result = await executeDeploy({
+      data,
+      jobId: data.deploymentKey,
+      objectStorage: createObjectStorage(),
+      repository,
+      siteHosting: createSiteHosting(new Error("provider should not be called"))
+    });
+
+    assert.equal(result.status, "already_deployed");
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.releaseLiveCount, 0);
+  });
+
   void it("marks manual reconciliation when a previous provider mutation was in flight without a provider id", async () => {
     const data = deployJobData();
     const repository = createRepository(
@@ -562,6 +588,30 @@ void describe("executeDeploy", () => {
     assert.equal(repository.started.length, 1);
     assert.equal(repository.providerSucceeded.length, 0);
     assert.equal(repository.releaseLiveCount, 1);
+  });
+
+  void it("does not project rollback-recommended start conflicts live", async () => {
+    const data = deployJobData();
+    const repository = createRepository(deployContext(), {
+      startDeploymentResult: deploymentRow({
+        status: "rollback_recommended",
+        verificationStatus: "rollback_recommended",
+        providerDeployId: "provider-deploy-1"
+      })
+    });
+
+    const result = await executeDeploy({
+      data,
+      jobId: data.deploymentKey,
+      objectStorage: createObjectStorage(),
+      repository,
+      siteHosting: createSiteHosting(new Error("provider should not be called"))
+    });
+
+    assert.equal(result.status, "already_deployed");
+    assert.equal(repository.started.length, 1);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.releaseLiveCount, 0);
   });
 
   void it("does not continue when start returns a manual reconciliation row", async () => {

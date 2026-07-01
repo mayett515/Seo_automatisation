@@ -124,14 +124,15 @@ File:
 Implemented tests:
 
 1. Full deploy execution persists provider success while leaving `verificationStatus = not_started`.
-2. Retry cannot overwrite `manual_reconciliation_required`.
-3. `in_flight` without a provider deploy id escalates to manual reconciliation.
-4. Retry/reconcile resumes upload from persisted provider resume evidence without starting another provider deploy.
-5. The pending-deploy reconciler skips manual rows even when they have `providerDeployId`.
-6. `markFailed` cannot overwrite `manual_reconciliation_required`.
-7. Pending provider deploys remain reconcilable instead of being mislabeled failed.
+2. Deploy execution is allowed without rollback point evidence when the only prior deployments are unsafe rollback sources (`rollback_recommended` or `verifying`), matching API preflight's safe-source definition.
+3. Retry cannot overwrite `manual_reconciliation_required`.
+4. `in_flight` without a provider deploy id escalates to manual reconciliation.
+5. Retry/reconcile resumes upload from persisted provider resume evidence without starting another provider deploy.
+6. The pending-deploy reconciler skips manual rows even when they have `providerDeployId`.
+7. `markFailed` cannot overwrite `manual_reconciliation_required`.
+8. Pending provider deploys remain reconcilable instead of being mislabeled failed.
 
-This file contributes 7 deploy-worker tests to the worker integration command.
+This file contributes 8 deploy-worker tests to the worker integration command.
 
 ### Rollback Worker
 
@@ -172,7 +173,7 @@ Verified local worker integration run:
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 18 | pass 18 | fail 0
+tests 19 | pass 19 | fail 0
 ```
 
 ### Queue And Job Audit

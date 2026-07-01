@@ -10,7 +10,7 @@ import type {
   SiteHostingPort,
   UploadDeployFilesResult
 } from "@localseo/adapters";
-import type { DeployJobData } from "@localseo/contracts";
+import type { DeploymentStatus, DeployJobData, ReleaseVerificationStatus } from "@localseo/contracts";
 import {
   approvals,
   customers,
@@ -96,6 +96,38 @@ void describe(
 
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "live");
+    });
+
+    void it("allows deploys without rollback evidence when prior deployments are unsafe rollback sources", async () => {
+      const fixture = await createDeployFixture(db);
+      await insertPriorDeployment(db, fixture, {
+        status: "rollback_recommended",
+        verificationStatus: "rollback_recommended",
+        providerDeployId: "prior-bad-provider"
+      });
+      await insertPriorDeployment(db, fixture, {
+        status: "verifying",
+        verificationStatus: "running",
+        providerDeployId: "prior-verifying-provider"
+      });
+      const hosting = new StatefulSiteHosting({
+        snapshots: [providerSnapshot("provider-deploy-1", "ready")]
+      });
+
+      const result = await executeDeploy({
+        data: fixture.data,
+        jobId: fixture.deploymentKey,
+        objectStorage: new MemoryObjectStorage(),
+        repository: createDrizzleDeployRepository(db),
+        siteHosting: hosting
+      });
+
+      assert.equal(result.status, "provider_succeeded");
+      assert.equal(hosting.beginCalls.length, 1);
+      assert.equal(hosting.uploadCalls.length, 1);
+
+      const deployment = await selectDeployment(db, fixture.deploymentKey);
+      assert.equal(deployment?.status, "provider_succeeded");
     });
 
     void it("does not overwrite manual reconciliation rows on retry", async () => {
@@ -373,7 +405,8 @@ async function insertDeployment(
   input: {
     providerDeployId: string | null;
     providerOperationStatus: "not_started" | "in_flight" | "recorded" | "failed" | "manual_reconciliation_required";
-    status: "pending" | "deploying" | "provider_succeeded" | "failed";
+    status: DeploymentStatus;
+    verificationStatus?: ReleaseVerificationStatus;
     evidenceJson?: Record<string, unknown>;
   }
 ): Promise<void> {
@@ -385,7 +418,44 @@ async function insertDeployment(
     providerDeployId: input.providerDeployId,
     providerOperationStatus: input.providerOperationStatus,
     status: input.status,
+    verificationStatus: input.verificationStatus,
     evidenceJson: input.evidenceJson ?? { source: "integration_fixture" }
+  });
+}
+
+async function insertPriorDeployment(
+  db: DatabaseClient,
+  fixture: DeployFixture,
+  input: {
+    providerDeployId: string;
+    status: DeploymentStatus;
+    verificationStatus: ReleaseVerificationStatus;
+  }
+): Promise<void> {
+  const [priorReleasePlan] = await db
+    .insert(releasePlans)
+    .values({
+      projectId: fixture.projectId,
+      status: "failed",
+      summary: "Prior release plan.",
+      riskLevel: "low",
+      blockerCount: 0,
+      warningCount: 0
+    })
+    .returning();
+  assert.ok(priorReleasePlan);
+
+  await db.insert(deployments).values({
+    projectId: fixture.projectId,
+    releasePlanId: priorReleasePlan.id,
+    deploymentKey: buildReleaseDeploymentKey(priorReleasePlan.id),
+    provider: "netlify",
+    providerDeployId: input.providerDeployId,
+    providerOperationStatus: "recorded",
+    liveUrl: "https://customer.example/",
+    status: input.status,
+    verificationStatus: input.verificationStatus,
+    evidenceJson: { source: "prior_deployment_fixture" }
   });
 }
 
