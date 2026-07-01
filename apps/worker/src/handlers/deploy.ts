@@ -100,14 +100,23 @@ export type PendingDeploymentReconcileResult = {
   failed: number;
 };
 
-const successfulDeploymentStatusValues = [
+const rollbackSourceDeploymentStatusValues = [
   "provider_succeeded",
-  "verifying",
   "live_healthy",
-  "live_with_warnings",
-  "rollback_recommended"
+  "live_with_warnings"
 ] as const satisfies DeploymentStatus[];
-const successfulDeploymentStatuses = new Set<DeploymentStatus>(successfulDeploymentStatusValues);
+const releaseLiveProjectableDeploymentStatusValues = rollbackSourceDeploymentStatusValues;
+const replayableProviderDeploymentStatusValues = [
+  ...releaseLiveProjectableDeploymentStatusValues,
+  "verifying",
+  "rollback_recommended",
+  "rolled_back"
+] as const satisfies DeploymentStatus[];
+const deployFailureProtectedDeploymentStatusValues = replayableProviderDeploymentStatusValues;
+const replayableProviderDeploymentStatuses = new Set<DeploymentStatus>(replayableProviderDeploymentStatusValues);
+const releaseLiveProjectableDeploymentStatuses = new Set<DeploymentStatus>(
+  releaseLiveProjectableDeploymentStatusValues
+);
 
 const defaultSiteHosting = new NotConfiguredSiteHostingAdapter();
 
@@ -164,17 +173,8 @@ export async function executeDeploy(input: {
 
     const existingDeployment = context.existingDeployment;
 
-    if (existingDeployment && isSuccessfulDeployment(existingDeployment)) {
-      await input.repository.markReleaseLive(input.data);
-      return {
-        jobId: input.jobId,
-        projectId: input.data.projectId,
-        releasePlanId: input.data.releasePlanId,
-        deploymentId: existingDeployment.id,
-        deploymentKey: existingDeployment.deploymentKey,
-        providerDeployId: existingDeployment.providerDeployId ?? undefined,
-        status: "already_deployed"
-      };
+    if (existingDeployment && isReplayableProviderDeployment(existingDeployment)) {
+      return replayProviderDeployment(input, existingDeployment);
     }
 
     if (existingDeployment && requiresManualReconciliation(existingDeployment)) {
@@ -232,17 +232,8 @@ export async function executeDeploy(input: {
       evidence
     });
 
-    if (isSuccessfulDeployment(deployment)) {
-      await input.repository.markReleaseLive(input.data);
-      return {
-        jobId: input.jobId,
-        projectId: input.data.projectId,
-        releasePlanId: input.data.releasePlanId,
-        deploymentId: deployment.id,
-        deploymentKey: deployment.deploymentKey,
-        providerDeployId: deployment.providerDeployId ?? undefined,
-        status: "already_deployed"
-      };
+    if (isReplayableProviderDeployment(deployment)) {
+      return replayProviderDeployment(input, deployment);
     }
 
     if (deployment.providerDeployId) {
@@ -496,7 +487,7 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
           and(
             eq(deployments.projectId, data.projectId),
             not(eq(deployments.releasePlanId, data.releasePlanId)),
-            inArray(deployments.status, successfulDeploymentStatusValues)
+            inArray(deployments.status, rollbackSourceDeploymentStatusValues)
           )
         );
       const [website] = await db
@@ -910,7 +901,7 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
           .where(
             and(
               eq(deployments.deploymentKey, data.deploymentKey),
-              not(inArray(deployments.status, successfulDeploymentStatusValues)),
+              not(inArray(deployments.status, deployFailureProtectedDeploymentStatusValues)),
               not(eq(deployments.providerOperationStatus, "manual_reconciliation_required"))
             )
           )
@@ -1211,8 +1202,31 @@ function toReleaseRiskLevel(riskLevel: string): ReleasePlan["riskLevel"] {
   throw new Error(`Unknown release risk level from database: ${riskLevel}`);
 }
 
-function isSuccessfulDeployment(deployment: DeploymentRow): boolean {
-  return successfulDeploymentStatuses.has(deployment.status);
+async function replayProviderDeployment(
+  input: Pick<Parameters<typeof executeDeploy>[0], "data" | "jobId" | "repository">,
+  deployment: DeploymentRow
+): Promise<Record<string, unknown>> {
+  if (isReleaseLiveProjectableDeployment(deployment)) {
+    await input.repository.markReleaseLive(input.data);
+  }
+
+  return {
+    jobId: input.jobId,
+    projectId: input.data.projectId,
+    releasePlanId: input.data.releasePlanId,
+    deploymentId: deployment.id,
+    deploymentKey: deployment.deploymentKey,
+    providerDeployId: deployment.providerDeployId ?? undefined,
+    status: "already_deployed"
+  };
+}
+
+function isReplayableProviderDeployment(deployment: DeploymentRow): boolean {
+  return replayableProviderDeploymentStatuses.has(deployment.status);
+}
+
+function isReleaseLiveProjectableDeployment(deployment: DeploymentRow): boolean {
+  return releaseLiveProjectableDeploymentStatuses.has(deployment.status);
 }
 
 function hasRollbackEvidence(
