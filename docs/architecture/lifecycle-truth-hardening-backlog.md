@@ -25,6 +25,12 @@ The HTTP verifier now follows redirects manually and rejects redirect hops that 
 
 Why: initial target URL validation is not enough if deployed content can redirect the verifier to an internal or off-host URL.
 
+### HTTP Verifier Uses Bounded Deterministic Source Checks
+
+The HTTP verifier now bounds concurrent live-route fetches and records additional source-level SEO evidence for title/meta description, primary H1, and local SEO JSON-LD schema types. These checks are warning-level deterministic evidence; they do not create rollback recommendations by themselves.
+
+Why: before adding browser execution, the HTTP verifier should exhaust cheap and stable source checks. Bounded fetch concurrency also prevents large release plans from creating unbounded network pressure.
+
 ### GSC Sync Has DB-Backed Mutation Coverage
 
 The GSC sync worker now has real Postgres integration coverage for successful Search Analytics import, empty-result cleanup, and Search Console query failure persistence. The tests use a fake Search Console port and fake token decryptor, but the `gsc_sync_runs`, `gsc_search_analytics_rows`, `gsc_opportunity_signals`, and `gsc_connections` mutations run through the real schema.
@@ -119,17 +125,6 @@ Follow-up direction:
 - Do not weaken the guarded success transaction; the durable rollback truth is already protected.
 
 Why: the state remains truthful, but audit rows should not imply a failed rollback job when another worker already completed the same operation.
-
-### Verification Fetch Fan-Out Should Be Bounded Later
-
-The HTTP verifier currently fans out route checks concurrently. This is fine for small release plans, but large release plans should use a bounded concurrency pool.
-
-Follow-up direction:
-
-- Add bounded verification concurrency before supporting large multi-page releases.
-- Keep per-route evidence intact; this is a resource-control change, not a verification semantics change.
-
-Why: unbounded fan-out is an operational scaling edge. It does not affect current lifecycle truth, but it should be fixed before large route batches.
 
 ## Deferred Or Rejected
 

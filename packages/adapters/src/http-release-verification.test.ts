@@ -10,10 +10,12 @@ void describe("HttpReleaseVerificationAdapter", () => {
         "https://example.test/dachreinigung-muenchen/": htmlResponse(`<!doctype html>
 <html>
 <head>
+  <title>Dachreinigung Muenchen</title>
+  <meta name="description" content="Lokale Dachreinigung in Muenchen.">
   <link rel="canonical" href="https://example.test/dachreinigung-muenchen/">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"LocalBusiness"}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"https://schema.org/LocalBusiness"}</script>
 </head>
-<body><script src="/track" data-localseo="project"></script></body>
+<body><h1>Dachreinigung in Muenchen</h1><script src="/track" data-localseo="project"></script></body>
 </html>`),
         "https://example.test/sitemap.xml": textResponse(
           "<urlset><url><loc>https://example.test/dachreinigung-muenchen/</loc></url></urlset>"
@@ -87,6 +89,91 @@ void describe("HttpReleaseVerificationAdapter", () => {
     assert.equal(result.checks.find((check) => check.checkKey === "schema_parse_check")?.result, "failed");
   });
 
+  void it("keeps missing source metadata and H1 as warnings instead of rollback blockers", async () => {
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch({
+        "https://example.test/dachreinigung-muenchen/": htmlResponse(`<!doctype html>
+<html>
+<head>
+  <link rel="canonical" href="https://example.test/dachreinigung-muenchen/">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"LocalBusiness"}</script>
+</head>
+<body></body>
+</html>`),
+        "https://example.test/sitemap.xml": textResponse(
+          "<urlset><url><loc>https://example.test/dachreinigung-muenchen/</loc></url></urlset>"
+        )
+      })
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung-muenchen/"]
+    });
+
+    assert.equal(result.verificationStatus, "live_with_warnings");
+    assert.equal(result.checks.find((check) => check.checkKey === "html_metadata_check")?.result, "failed");
+    assert.equal(result.checks.find((check) => check.checkKey === "primary_heading_check")?.result, "failed");
+    assert.equal(result.checks.find((check) => check.checkKey === "canonical_trailing_slash_check")?.result, "passed");
+  });
+
+  void it("keeps parseable JSON-LD without local SEO schema types as a warning", async () => {
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch({
+        "https://example.test/dachreinigung-muenchen/": htmlResponse(
+          healthyPageHtml("https://example.test/dachreinigung-muenchen/", {
+            jsonLd: '{"@context":"https://schema.org","@type":"Thing"}'
+          })
+        ),
+        "https://example.test/sitemap.xml": textResponse(
+          "<urlset><url><loc>https://example.test/dachreinigung-muenchen/</loc></url></urlset>"
+        )
+      })
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung-muenchen/"]
+    });
+
+    assert.equal(result.verificationStatus, "live_with_warnings");
+    assert.equal(result.checks.find((check) => check.checkKey === "schema_parse_check")?.result, "passed");
+    assert.equal(result.checks.find((check) => check.checkKey === "schema_type_check")?.result, "failed");
+  });
+
+  void it("bounds concurrent live route fetches", async () => {
+    const liveUrls = [
+      "https://example.test/page-a/",
+      "https://example.test/page-b/",
+      "https://example.test/page-c/",
+      "https://example.test/page-d/"
+    ];
+    const fetchProbe = createConcurrentFetchProbe(
+      Object.fromEntries(
+        liveUrls.map((liveUrl) => [
+          liveUrl,
+          () => htmlResponse(healthyPageHtml(liveUrl, { body: `<h1>${liveUrl}</h1>` }))
+        ])
+      ),
+      {
+        "https://example.test/sitemap.xml": () =>
+          textResponse(`<urlset>${liveUrls.map((liveUrl) => `<url><loc>${liveUrl}</loc></url>`).join("")}</urlset>`)
+      }
+    );
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: fetchProbe.fetchImpl,
+      maxConcurrentPageFetches: 2
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls
+    });
+
+    assert.equal(result.verificationStatus, "live_healthy");
+    assert.equal(fetchProbe.maxActive, 2);
+  });
+
   void it("follows same-origin redirects during live route verification", async () => {
     const requestedUrls: string[] = [];
     const adapter = new HttpReleaseVerificationAdapter({
@@ -96,10 +183,12 @@ void describe("HttpReleaseVerificationAdapter", () => {
           "https://example.test/dachreinigung/": htmlResponse(`<!doctype html>
 <html>
 <head>
+  <title>Dachreinigung</title>
+  <meta name="description" content="Lokale Dachreinigung.">
   <link rel="canonical" href="https://example.test/dachreinigung/">
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"LocalBusiness"}</script>
 </head>
-<body></body>
+<body><h1>Dachreinigung</h1></body>
 </html>`),
           "https://example.test/sitemap.xml": textResponse(
             "<urlset><url><loc>https://example.test/dachreinigung/</loc></url></urlset>"
@@ -261,6 +350,52 @@ function createFetch(responses: Record<string, Response>, requestedUrls: string[
   };
 
   return fetchImpl;
+}
+
+function createConcurrentFetchProbe(
+  pageResponses: Record<string, () => Response>,
+  otherResponses: Record<string, () => Response> = {}
+): { fetchImpl: typeof fetch; maxActive: number } {
+  let active = 0;
+  const probe = {
+    maxActive: 0,
+    fetchImpl: (async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      const responseFactory = pageResponses[url] ?? otherResponses[url];
+      active += 1;
+      probe.maxActive = Math.max(probe.maxActive, active);
+
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return responseFactory ? responseFactory() : new Response("not found", { status: 404 });
+      } finally {
+        active -= 1;
+      }
+    }) satisfies typeof fetch
+  };
+
+  return probe;
+}
+
+function healthyPageHtml(
+  canonicalUrl: string,
+  options: {
+    jsonLd?: string;
+    body?: string;
+  } = {}
+): string {
+  const jsonLd = options.jsonLd ?? '{"@context":"https://schema.org","@type":"LocalBusiness"}';
+
+  return `<!doctype html>
+<html>
+<head>
+  <title>Dachreinigung</title>
+  <meta name="description" content="Lokale Dachreinigung.">
+  <link rel="canonical" href="${canonicalUrl}">
+  <script type="application/ld+json">${jsonLd}</script>
+</head>
+<body>${options.body ?? "<h1>Dachreinigung</h1>"}</body>
+</html>`;
 }
 
 function htmlResponse(body: string): Response {
