@@ -1,7 +1,9 @@
 import {
   FileSystemObjectStorageAdapter,
+  HttpWebsiteCrawlerAdapter,
   NetlifySiteHostingAdapter,
   NotConfiguredSiteHostingAdapter,
+  type CrawlerPort,
   S3ObjectStorageAdapter,
   type ObjectStoragePort,
   type SiteHostingPort
@@ -26,6 +28,11 @@ import {
   RollbackProviderFailedError
 } from "./handlers/rollback.js";
 import {
+  handleWebsiteImportJob,
+  WebsiteImportConfigurationError,
+  WebsiteImportEvidenceError
+} from "./handlers/website-import.js";
+import {
   isFinalJobAttempt,
   markJobRunCompleted,
   markJobRunFailed,
@@ -37,6 +44,7 @@ const env = parseAppEnv(process.env);
 const sharedDbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
 const sharedObjectStorage = createObjectStorageAdapter();
 const sharedSiteHosting = createSiteHostingAdapter(env.NETLIFY_AUTH_TOKEN, sharedObjectStorage);
+const sharedCrawler = createCrawlerAdapter(sharedObjectStorage);
 
 export async function handleJob(job: Job): Promise<Record<string, unknown>> {
   await markJobRunRunning(sharedDbHandle?.db, job);
@@ -104,6 +112,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     return handleRollbackJob(job, sharedDbHandle, sharedSiteHosting);
   }
 
+  if (job.queueName === "website-import" || job.name === "website_import") {
+    return handleWebsiteImportJob(job, sharedDbHandle, sharedCrawler);
+  }
+
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
@@ -112,6 +124,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 }
 
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
+export { parseWebsiteImportJobData } from "./handlers/website-import.js";
 
 export function isTerminalWorkerError(error: unknown): boolean {
   return (
@@ -122,6 +135,8 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof RollbackEvidenceError ||
     error instanceof RollbackProviderFailedError ||
     error instanceof ManualReconciliationRequiredError ||
+    error instanceof WebsiteImportConfigurationError ||
+    error instanceof WebsiteImportEvidenceError ||
     isTerminalGscSyncFailure(error)
   );
 }
@@ -159,4 +174,8 @@ function createObjectStorageAdapter(): ObjectStoragePort {
   }
 
   return new FileSystemObjectStorageAdapter(env.LOCAL_OBJECT_STORAGE_DIR);
+}
+
+function createCrawlerAdapter(objectStorage: ObjectStoragePort): CrawlerPort {
+  return new HttpWebsiteCrawlerAdapter(objectStorage);
 }

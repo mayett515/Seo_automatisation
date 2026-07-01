@@ -16,10 +16,30 @@ Analytics MVP: own anonymous tracking events
 
 1. Lead capture and pre-audit.
 2. Project setup and website import.
-3. Preview, notes, and approval.
-4. Deployment Agent release plan.
-5. Netlify deploy, sitemap, tracking injector, verification.
-6. GSC OAuth/API sync, then customer-safe reports.
+3. Potential Searcher / Opportunity Explorer.
+4. Page brief or page proposal from a service-location opportunity.
+5. Preview, notes, and approval.
+6. Deployment Agent release plan.
+7. Netlify deploy, sitemap, tracking injector, verification.
+8. GSC OAuth/API sync, then customer-safe reports and next opportunity.
+
+## MVP Product Loop
+
+```text
+website import / GSC / tracking / site evidence
+-> Potential Searcher
+-> Opportunity Explorer
+-> page brief / proposal
+-> preview and notes
+-> approval
+-> release preflight
+-> deploy and verify
+-> report and next opportunity
+```
+
+The MVP should make local SEO opportunity discovery visible before automation feels magical. The customer/operator should see nearby places, service-location gaps, evidence tiers, warnings, and the next controlled action.
+
+Website import and rebuild preview is the evidence-gathering entry point for new projects. It imports the customer's own site, extracts brand/service/area/design facts, creates a noindex preview from controlled components, and feeds the Potential Searcher with route and service-area context.
 
 ## Full Platform Modules
 
@@ -38,6 +58,23 @@ Gamification
 Notification
 Billing
 ```
+
+## Frontend Product Shape
+
+```text
+Control-panel UI:
+  @localseo/ui owns reusable app-shell, status, evidence, workflow, data-display,
+  map-frame, timeline, preview-control, and form components.
+
+Customer-page registry:
+  a future schema-first page component registry owns deployable customer-site
+  sections such as Hero, ServiceDescription, ServiceGrid, FAQ, ContactCTA,
+  AreaMap, and Footer.
+```
+
+Reference: [Frontend UI And Page Registry Architecture](frontend-ui-and-page-registry.md).
+
+Reference: [Website Import And Rebuild Preview Architecture](website-import-rebuild-preview.md).
 
 ## Architecture Direction
 
@@ -78,9 +115,12 @@ RollbackPort           -> rollback prepare/execute adapter
 - AI suggests, customer approves, deterministic workers execute.
 - Frontend never calls workers directly.
 - Agents never deploy production directly.
+- Website import is read-only evidence gathering; rebuild output is a controlled preview, not arbitrary cloning.
+- Potential Searcher output creates briefs, proposals, monitoring, or approval tasks; it does not publish by itself.
 - Zod owns external input and output contracts.
 - Drizzle owns persistence contracts.
 - Ports are named by purpose; vendor names live in adapters, provider records, and deployment configuration.
+- Control-panel UI components and deployable customer-page components stay separate.
 - Each shared enum, event, and payload type has exactly one declared source of truth.
 - Customer reports do not use GSC impressions, CTR, average position, or weak opportunity signals as success proof.
 - Automated GSC OAuth/API sync is the only product path for Search Console data; if GSC is not connected, GSC-dependent workflows wait for connection.

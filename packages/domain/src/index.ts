@@ -3,7 +3,8 @@ import type {
   ApprovedReleaseArtifactPage,
   ReleaseCheck,
   ReleasePlan,
-  ReleaseVerificationStatus
+  ReleaseVerificationStatus,
+  WebsiteImportRun
 } from "@localseo/contracts";
 
 export type DeployDecision =
@@ -217,4 +218,247 @@ export function classifyRankingProof(input: {
   }
 
   return "internal_radar";
+}
+
+export type WebsiteImportFacts = NonNullable<WebsiteImportRun["facts"]>;
+
+export type WebsiteImportEvidencePageInput = {
+  route: string;
+  title?: string;
+  metaDescription?: string;
+  h1?: string;
+  schemaTypes?: readonly string[];
+  visibleTextSummary?: string;
+};
+
+export type WebsiteImportEvidenceInput = {
+  sourceUrl: string;
+  pages: readonly WebsiteImportEvidencePageInput[];
+};
+
+type ImportFactAccumulator = {
+  value: string;
+  sourceRoutes: Set<string>;
+  routeEvidence: boolean;
+  textEvidence: boolean;
+};
+
+const knownServiceTerms = [
+  { label: "Dachreinigung", tokens: ["dachreinigung"] },
+  { label: "Dachrinnenreinigung", tokens: ["dachrinnenreinigung"] },
+  { label: "Flachdachsanierung", tokens: ["flachdachsanierung"] },
+  { label: "Gebaeudereinigung", tokens: ["gebaeudereinigung", "gebaudereinigung"] },
+  { label: "Hausmeisterservice", tokens: ["hausmeisterservice"] },
+  { label: "Entruempelung", tokens: ["entruempelung", "entrumpelung"] },
+  { label: "Winterdienst", tokens: ["winterdienst"] },
+  { label: "Fensterreinigung", tokens: ["fensterreinigung"] },
+  { label: "Treppenhausreinigung", tokens: ["treppenhausreinigung"] },
+  { label: "Gartenpflege", tokens: ["gartenpflege"] },
+  { label: "Renovierung", tokens: ["renovierung"] },
+  { label: "Reinigung", tokens: ["reinigung"] }
+] as const;
+
+const areaStopWords = new Set([
+  "dach",
+  "dachreinigung",
+  "dachrinnenreinigung",
+  "flachdachsanierung",
+  "gebaeudereinigung",
+  "gebaudereinigung",
+  "hausmeisterservice",
+  "entruempelung",
+  "entrumpelung",
+  "winterdienst",
+  "fensterreinigung",
+  "treppenhausreinigung",
+  "gartenpflege",
+  "renovierung",
+  "reinigung",
+  "service",
+  "leistungen",
+  "kontakt",
+  "ueber",
+  "uber"
+]);
+
+export function deriveWebsiteImportFacts(input: WebsiteImportEvidenceInput): WebsiteImportFacts {
+  const brand = deriveBrandFact(input);
+  const services = deriveServiceFacts(input.pages);
+  const areas = deriveAreaFacts(input.pages);
+
+  return {
+    ...(brand ? { brand } : {}),
+    services,
+    areas
+  };
+}
+
+function deriveBrandFact(input: WebsiteImportEvidenceInput): WebsiteImportFacts["brand"] {
+  const homepage = input.pages.find((page) => page.route === "/" || page.route === "") ?? input.pages[0];
+
+  if (!homepage) {
+    return undefined;
+  }
+
+  const candidate = brandCandidateFromPage(homepage);
+
+  if (!candidate) {
+    return undefined;
+  }
+
+  return {
+    name: candidate,
+    confidence: homepage.route === "/" || homepage.route === "" ? "medium" : "low",
+    sourceRoutes: [homepage.route]
+  };
+}
+
+function deriveServiceFacts(pages: readonly WebsiteImportEvidencePageInput[]): WebsiteImportFacts["services"] {
+  const facts = new Map<string, ImportFactAccumulator>();
+
+  for (const page of pages) {
+    const routeText = normalizeEvidenceText(page.route);
+    const pageText = normalizeEvidenceText(
+      [page.title, page.metaDescription, page.h1, page.visibleTextSummary].join(" ")
+    );
+
+    for (const service of knownServiceTerms) {
+      const routeEvidence = service.tokens.some((token) => routeText.includes(token));
+      const textEvidence = service.tokens.some((token) => pageText.includes(token));
+
+      if (routeEvidence || textEvidence) {
+        recordImportFact(facts, service.label, page.route, {
+          routeEvidence,
+          textEvidence
+        });
+      }
+    }
+  }
+
+  return importFactsFromMap(facts, 6);
+}
+
+function deriveAreaFacts(pages: readonly WebsiteImportEvidencePageInput[]): WebsiteImportFacts["areas"] {
+  const facts = new Map<string, ImportFactAccumulator>();
+
+  for (const page of pages) {
+    for (const area of areasFromRoute(page.route)) {
+      recordImportFact(facts, area, page.route, {
+        routeEvidence: true,
+        textEvidence: false
+      });
+    }
+
+    for (const area of areasFromText([page.title, page.metaDescription, page.h1].join(" "))) {
+      recordImportFact(facts, area, page.route, {
+        routeEvidence: false,
+        textEvidence: true
+      });
+    }
+  }
+
+  return importFactsFromMap(facts, 8);
+}
+
+function brandCandidateFromPage(page: WebsiteImportEvidencePageInput): string | undefined {
+  const value = page.title ?? page.h1;
+
+  if (!value) {
+    return undefined;
+  }
+
+  const [candidate] = value.split(/\s+[|-]\s+/u);
+  const normalized = candidate?.trim();
+  return normalized && normalized.length >= 2 ? normalized.slice(0, 80) : undefined;
+}
+
+function areasFromRoute(route: string): string[] {
+  const routeWords = normalizeEvidenceText(route)
+    .split(/[^a-z0-9]+/u)
+    .filter(Boolean);
+  const candidates = routeWords.filter((word) => word.length >= 3 && !areaStopWords.has(word));
+  return candidates.map(titleCaseSlug).filter((candidate) => candidate.length >= 3);
+}
+
+function areasFromText(text: string): string[] {
+  const candidates = new Set<string>();
+  const pattern = /\b(?:in|bei|um|fuer|fur)\s+([A-Z][\p{L}-]{2,}(?:\s+[A-Z][\p{L}-]{2,})?)/gu;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text))) {
+    const candidate = match[1]?.trim();
+
+    if (candidate && !areaStopWords.has(normalizeEvidenceText(candidate))) {
+      candidates.add(candidate.slice(0, 80));
+    }
+  }
+
+  return [...candidates];
+}
+
+function recordImportFact(
+  facts: Map<string, ImportFactAccumulator>,
+  value: string,
+  sourceRoute: string,
+  evidence: { routeEvidence: boolean; textEvidence: boolean }
+): void {
+  const key = normalizeEvidenceText(value);
+  const existing =
+    facts.get(key) ??
+    ({
+      value,
+      sourceRoutes: new Set<string>(),
+      routeEvidence: false,
+      textEvidence: false
+    } satisfies ImportFactAccumulator);
+
+  existing.sourceRoutes.add(sourceRoute);
+  existing.routeEvidence = existing.routeEvidence || evidence.routeEvidence;
+  existing.textEvidence = existing.textEvidence || evidence.textEvidence;
+  facts.set(key, existing);
+}
+
+function importFactsFromMap(
+  facts: Map<string, ImportFactAccumulator>,
+  limit: number
+): Array<{ value: string; confidence: "low" | "medium" | "high"; sourceRoutes: string[] }> {
+  return [...facts.values()]
+    .sort((left, right) => right.sourceRoutes.size - left.sourceRoutes.size || left.value.localeCompare(right.value))
+    .slice(0, limit)
+    .map((fact) => ({
+      value: fact.value,
+      confidence: confidenceForFact(fact),
+      sourceRoutes: [...fact.sourceRoutes].sort()
+    }));
+}
+
+function confidenceForFact(fact: ImportFactAccumulator): "low" | "medium" | "high" {
+  if (fact.routeEvidence && fact.textEvidence) {
+    return "high";
+  }
+
+  if (fact.sourceRoutes.size > 1 || fact.routeEvidence || fact.textEvidence) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function normalizeEvidenceText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replaceAll("ä", "ae")
+    .replaceAll("ö", "oe")
+    .replaceAll("ü", "ue")
+    .replaceAll("ß", "ss")
+    .toLowerCase();
+}
+
+function titleCaseSlug(value: string): string {
+  return value
+    .split(/[-_\s]+/u)
+    .filter(Boolean)
+    .map((segment) => `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`)
+    .join(" ");
 }

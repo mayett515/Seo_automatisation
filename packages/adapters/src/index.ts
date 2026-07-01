@@ -13,6 +13,7 @@ import type {
 
 export * from "./google-search-console.js";
 export * from "./file-system-object-storage.js";
+export * from "./http-website-crawler.js";
 export * from "./http-release-verification.js";
 export * from "./playwright-browser-verification.js";
 export * from "./provider-errors.js";
@@ -127,11 +128,39 @@ export type RollbackDeployResult = {
   evidence?: Record<string, unknown>;
 };
 
+export type CrawledWebsiteImage = {
+  src: string;
+  alt?: string;
+};
+
+export type CrawledWebsitePage = {
+  url: string;
+  route: string;
+  status: number;
+  title?: string;
+  metaDescription?: string;
+  h1?: string;
+  canonical?: string;
+  robots?: string;
+  internalLinks: string[];
+  images: CrawledWebsiteImage[];
+  schemaTypes: string[];
+  visibleTextSummary?: string;
+};
+
+export type CrawledWebsiteSkippedUrl = {
+  url: string;
+  reason: string;
+};
+
 export type CrawledWebsiteSnapshot = {
   projectId: string;
   sourceUrl: string;
   artifactKey: string;
+  crawledAt: string;
   discoveredRoutes: string[];
+  pages: CrawledWebsitePage[];
+  skippedUrls: CrawledWebsiteSkippedUrl[];
 };
 
 export type AnalyticsSnapshot = {
@@ -236,7 +265,7 @@ export type SearchConsoleAuthorizationRequest = {
 };
 
 export interface CrawlerPort {
-  crawlWebsite(input: { projectId: string; sourceUrl: string }): Promise<CrawledWebsiteSnapshot>;
+  crawlWebsite(input: { projectId: string; sourceUrl: string; importRunId?: string }): Promise<CrawledWebsiteSnapshot>;
 }
 
 export interface AnalyticsPort {

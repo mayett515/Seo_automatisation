@@ -16,6 +16,7 @@ import { LoginScreen } from "./screens/login";
 import { MissionControlPage } from "./screens/mission-control";
 import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
+import { ProjectDashboardScreen } from "./screens/project-dashboard";
 import { TrackingKeysScreen } from "./screens/tracking-keys";
 
 function RootLayout() {
@@ -151,7 +152,7 @@ const auditReportRoute = createRoute({
 const projectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectId",
-  component: () => <PlaceholderScreen title="Project Dashboard" />
+  component: ProjectDashboardScreen
 });
 
 const projectChildRoutes = [

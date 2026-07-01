@@ -121,6 +121,8 @@ export const gscConnectionStatuses = ["connection_required", "connected", "error
 
 export const gscSyncStatuses = ["queued", "running", "completed", "failed", "cancelled"] as const;
 
+export const websiteImportStatuses = ["queued", "running", "completed", "failed"] as const;
+
 export const gscOpportunitySignalTypes = [
   "impressions_no_clicks",
   "positions_11_100",
@@ -150,6 +152,7 @@ export const ProviderOperationStatusSchema = z.enum(providerOperationStatuses);
 export const ReleaseVerificationStatusSchema = z.enum(releaseVerificationStatuses);
 export const GscConnectionStatusSchema = z.enum(gscConnectionStatuses);
 export const GscSyncStatusSchema = z.enum(gscSyncStatuses);
+export const WebsiteImportStatusSchema = z.enum(websiteImportStatuses);
 export const GscOpportunitySignalTypeSchema = z.enum(gscOpportunitySignalTypes);
 export const GscOpportunitySignalStatusSchema = z.enum(gscOpportunitySignalStatuses);
 export const ApprovalStatusSchema = z.enum(approvalStatuses);
@@ -204,6 +207,18 @@ export const MainPreviewSchema = z.object({
   robots: z.enum(["noindex", "index"])
 });
 
+export const WebsiteImportSourceUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  }, "Website import source URLs must use http or https.");
+
+export const CreateWebsiteImportRequestSchema = z.object({
+  sourceUrl: WebsiteImportSourceUrlSchema
+});
+
 export const QueueJobSchema = z.object({
   jobId: z.string().min(1),
   projectId: ProjectIdSchema.optional(),
@@ -232,6 +247,16 @@ export const RollbackJobDataSchema = z.object({
   releasePlanId: z.string().min(1),
   deploymentId: z.string().min(1),
   rollbackPointId: z.string().min(1),
+  maxAttempts: z.number().int().positive().optional(),
+  jobRunId: z.string().min(1).optional(),
+  triggeredByUserId: z.string().min(1).nullable().optional(),
+  triggerSource: z.string().min(1).optional()
+});
+
+export const WebsiteImportJobDataSchema = z.object({
+  projectId: ProjectIdSchema,
+  importRunId: z.string().min(1),
+  sourceUrl: WebsiteImportSourceUrlSchema,
   maxAttempts: z.number().int().positive().optional(),
   jobRunId: z.string().min(1).optional(),
   triggeredByUserId: z.string().min(1).nullable().optional(),
@@ -374,6 +399,54 @@ export const GscSyncRunSchema = z.object({
   message: z.string().min(1).optional()
 });
 
+export const WebsiteImportRunSchema = z.object({
+  importRunId: z.string().min(1),
+  projectId: ProjectIdSchema,
+  sourceUrl: WebsiteImportSourceUrlSchema,
+  status: WebsiteImportStatusSchema,
+  artifactKey: z.string().min(1).optional(),
+  pageCount: z.number().int().nonnegative().default(0),
+  discoveredRoutes: z.array(z.string().min(1)).default([]),
+  facts: z
+    .object({
+      brand: z
+        .object({
+          name: z.string().min(1),
+          confidence: z.enum(["low", "medium", "high"]),
+          sourceRoutes: z.array(z.string().min(1)).default([])
+        })
+        .optional(),
+      services: z
+        .array(
+          z.object({
+            value: z.string().min(1),
+            confidence: z.enum(["low", "medium", "high"]),
+            sourceRoutes: z.array(z.string().min(1)).default([])
+          })
+        )
+        .default([]),
+      areas: z
+        .array(
+          z.object({
+            value: z.string().min(1),
+            confidence: z.enum(["low", "medium", "high"]),
+            sourceRoutes: z.array(z.string().min(1)).default([])
+          })
+        )
+        .default([])
+    })
+    .optional(),
+  message: z.string().min(1).optional(),
+  createdAt: z.string().datetime(),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional()
+});
+
+export const LatestWebsiteImportResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  importRun: WebsiteImportRunSchema.optional()
+});
+
 export const GscSearchAnalyticsRowSchema = z.object({
   syncRunId: z.string().min(1).optional(),
   projectId: ProjectIdSchema,
@@ -502,6 +575,10 @@ export const HealthProbeResponseSchema = HealthResponseSchema.extend({
 });
 
 export const GscSyncQueueResponseSchema = z.union([QueueJobSchema, GscConnectionSchema]);
+export const WebsiteImportQueueResponseSchema = QueueJobSchema.extend({
+  importRunId: z.string().min(1).optional(),
+  sourceUrl: WebsiteImportSourceUrlSchema.optional()
+});
 
 export type CreateLeadInput = z.output<typeof CreateLeadSchema>;
 export type Lead = z.output<typeof LeadSchema>;
@@ -511,6 +588,7 @@ export type MainPreview = z.output<typeof MainPreviewSchema>;
 export type QueueJob = z.output<typeof QueueJobSchema>;
 export type DeployJobData = z.output<typeof DeployJobDataSchema>;
 export type RollbackJobData = z.output<typeof RollbackJobDataSchema>;
+export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
@@ -528,6 +606,8 @@ export type GscProperty = z.output<typeof GscPropertySchema>;
 export type GscPropertyList = z.output<typeof GscPropertyListSchema>;
 export type GscSyncRequest = z.output<typeof GscSyncRequestSchema>;
 export type GscSyncRun = z.output<typeof GscSyncRunSchema>;
+export type WebsiteImportRun = z.output<typeof WebsiteImportRunSchema>;
+export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportResponseSchema>;
 export type GscSearchAnalyticsRow = z.output<typeof GscSearchAnalyticsRowSchema>;
 export type GscOpportunitySignal = z.output<typeof GscOpportunitySignalSchema>;
 export type GscPerformanceSummary = z.output<typeof GscPerformanceSummarySchema>;
@@ -544,6 +624,7 @@ export type ExecuteRollbackRequest = z.output<typeof ExecuteRollbackRequestSchem
 export type HealthResponse = z.output<typeof HealthResponseSchema>;
 export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
+export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
 export type JobStatus = z.output<typeof JobStatusSchema>;
 export type JobType = z.output<typeof JobTypeSchema>;
 export type DomainEventName = z.output<typeof DomainEventNameSchema>;
@@ -553,6 +634,7 @@ export type ProviderOperationStatus = z.output<typeof ProviderOperationStatusSch
 export type ReleaseVerificationStatus = z.output<typeof ReleaseVerificationStatusSchema>;
 export type GscConnectionStatus = z.output<typeof GscConnectionStatusSchema>;
 export type GscSyncStatus = z.output<typeof GscSyncStatusSchema>;
+export type WebsiteImportStatus = z.output<typeof WebsiteImportStatusSchema>;
 export type GscOpportunitySignalType = z.output<typeof GscOpportunitySignalTypeSchema>;
 export type GscOpportunitySignalStatus = z.output<typeof GscOpportunitySignalStatusSchema>;
 export type ApprovalStatus = z.output<typeof ApprovalStatusSchema>;

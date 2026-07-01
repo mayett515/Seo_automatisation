@@ -234,6 +234,45 @@ a {
   gap: 12px;
 }
 
+.fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.fact-panel {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid #d9ddd5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.fact-panel h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-row span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid #c7cec4;
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: #27413b;
+  background: #f7f8f5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .data-table {
   display: grid;
   overflow: hidden;

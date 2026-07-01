@@ -5,6 +5,7 @@ import {
   buildReleaseDeploymentKey,
   canDeployRelease,
   classifyRollbackReconciliation,
+  deriveWebsiteImportFacts,
   decideReleaseReadiness,
   decideReleaseVerificationStatus,
   renderApprovedReleaseArtifact
@@ -122,6 +123,54 @@ void describe("classifyRollbackReconciliation", () => {
         publishedStatus: "ready"
       }),
       { kind: "manual_required", reason: "published_identity_mismatch" }
+    );
+  });
+});
+
+void describe("deriveWebsiteImportFacts", () => {
+  void it("extracts conservative brand, service, and area candidates from crawl evidence", () => {
+    const facts = deriveWebsiteImportFacts({
+      sourceUrl: "https://example.test/",
+      pages: [
+        {
+          route: "/",
+          title: "Gebaeudeservice Mueller | Muenchen",
+          h1: "Gebaeudeservice in Muenchen",
+          metaDescription: "Dachreinigung und Hausmeisterservice in Muenchen."
+        },
+        {
+          route: "/dachreinigung-muenchen/",
+          title: "Dachreinigung Muenchen",
+          h1: "Dachreinigung in Muenchen"
+        }
+      ]
+    });
+
+    assert.equal(facts.brand?.name, "Gebaeudeservice Mueller");
+    assert.equal(
+      facts.services.some((service) => service.value === "Dachreinigung"),
+      true
+    );
+    assert.equal(
+      facts.services.some((service) => service.value === "Hausmeisterservice"),
+      true
+    );
+    assert.equal(
+      facts.areas.some((area) => area.value === "Muenchen"),
+      true
+    );
+  });
+
+  void it("keeps empty facts possible when imported evidence is too weak", () => {
+    assert.deepEqual(
+      deriveWebsiteImportFacts({
+        sourceUrl: "https://example.test/",
+        pages: []
+      }),
+      {
+        services: [],
+        areas: []
+      }
     );
   });
 });

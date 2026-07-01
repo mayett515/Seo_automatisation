@@ -13,7 +13,8 @@ import {
   releaseCheckSeverities,
   releaseNoteAudiences,
   releasePlanStatuses,
-  releaseVerificationStatuses
+  releaseVerificationStatuses,
+  websiteImportStatuses
 } from "@localseo/contracts";
 import {
   boolean,
@@ -36,6 +37,7 @@ export const providerOperationStatusEnum = pgEnum("provider_operation_status", p
 export const releaseVerificationStatusEnum = pgEnum("release_verification_status", releaseVerificationStatuses);
 export const gscConnectionStatusEnum = pgEnum("gsc_connection_status", gscConnectionStatuses);
 export const gscSyncStatusEnum = pgEnum("gsc_sync_status", gscSyncStatuses);
+export const websiteImportStatusEnum = pgEnum("website_import_status", websiteImportStatuses);
 export const gscOpportunitySignalTypeEnum = pgEnum("gsc_opportunity_signal_type", gscOpportunitySignalTypes);
 export const gscOpportunitySignalStatusEnum = pgEnum("gsc_opportunity_signal_status", gscOpportunitySignalStatuses);
 export const releaseNoteAudienceEnum = pgEnum("release_note_audience", releaseNoteAudiences);
@@ -185,6 +187,29 @@ export const mainWebsites = pgTable("main_websites", {
   hostingSiteId: text("hosting_site_id"),
   ...timestamps
 });
+
+export const websiteImportRuns = pgTable(
+  "website_import_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    mainWebsiteId: uuid("main_website_id").references(() => mainWebsites.id),
+    sourceUrl: text("source_url").notNull(),
+    status: websiteImportStatusEnum("status").notNull().default("queued"),
+    artifactKey: text("artifact_key"),
+    summaryJson: jsonb("summary_json").$type<Record<string, unknown>>(),
+    failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    index("website_import_runs_project_status_idx").on(table.projectId, table.status, table.createdAt),
+    index("website_import_runs_main_website_idx").on(table.mainWebsiteId)
+  ]
+);
 
 export const domains = pgTable("domains", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -576,8 +601,19 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   gscConnections: many(gscConnections),
   gscSyncRuns: many(gscSyncRuns),
   gscOpportunitySignals: many(gscOpportunitySignals),
+  websiteImportRuns: many(websiteImportRuns),
   trackingKeys: many(projectTrackingKeys),
   reports: many(reports)
+}));
+
+export const mainWebsiteRelations = relations(mainWebsites, ({ many, one }) => ({
+  project: one(projects, { fields: [mainWebsites.projectId], references: [projects.id] }),
+  importRuns: many(websiteImportRuns)
+}));
+
+export const websiteImportRunRelations = relations(websiteImportRuns, ({ one }) => ({
+  project: one(projects, { fields: [websiteImportRuns.projectId], references: [projects.id] }),
+  mainWebsite: one(mainWebsites, { fields: [websiteImportRuns.mainWebsiteId], references: [mainWebsites.id] })
 }));
 
 export const userRelations = relations(users, ({ many }) => ({
