@@ -78,6 +78,19 @@ Follow-up direction:
 
 Why: avoid overloading one column with several meanings and reduce the chance that UI/reporting treats provider success as verified health.
 
+### Search Console OAuth Start Should Be A Port-Owned Operation
+
+`GscService` currently depends on the concrete `GoogleSearchConsoleAdapter` because the API needs more than a redirect URL when starting OAuth. It must persist the provider, nonce, project/user/session binding, redirect target, expiry, and PKCE code verifier in `GscOAuthStateStore`. The adapter already owns the OAuth mechanics through `createAuthorizationRequest(...)`, but `SearchConsolePort` only exposes the narrower redirect-intent shape.
+
+Follow-up direction:
+
+- When next touching GSC OAuth, promote `createAuthorizationRequest(...)` and its return shape into `SearchConsolePort`.
+- Type the API dependency as `SearchConsolePort | undefined`, not `GoogleSearchConsoleAdapter | undefined`.
+- Keep PKCE/state signing in the adapter and keep Redis/state persistence in the API-owned `GscOAuthStateStore`.
+- Do not create a generic `BaseOAuthAdapter` or inheritance layer; one honest port method is enough.
+
+Why: the API use case is "start Search Console OAuth and return redirect intent plus state/code verifier to persist." The purpose-named port should describe that full boundary so tests/fakes and the API module do not couple to the concrete Google adapter.
+
 ## Deferred Or Rejected
 
 ### Deploy State Machine Rewrite
