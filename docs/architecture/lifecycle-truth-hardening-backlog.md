@@ -19,11 +19,23 @@ Release-plan item target routes are now validated as relative paths when release
 
 Why: both security and evidence truth. Post-deploy verification must observe the release's own live URLs, not an arbitrary host.
 
+### HTTP Verifier Redirects Must Stay On The Deployment Host
+
+The HTTP verifier now follows redirects manually and rejects redirect hops that leave the original deployment origin. This applies to both live page fetches and sitemap fetches.
+
+Why: initial target URL validation is not enough if deployed content can redirect the verifier to an internal or off-host URL.
+
 ### GSC Sync Has DB-Backed Mutation Coverage
 
 The GSC sync worker now has real Postgres integration coverage for successful Search Analytics import, empty-result cleanup, and Search Console query failure persistence. The tests use a fake Search Console port and fake token decryptor, but the `gsc_sync_runs`, `gsc_search_analytics_rows`, `gsc_opportunity_signals`, and `gsc_connections` mutations run through the real schema.
 
 Why: GSC sync is a production mutation path with delete+insert analytics behavior and opportunity-signal derivation. Unit tests already covered parsing and signal classification; DB-backed tests now prove the operator-visible sync truth.
+
+### Rollback Point Preparation Uses Safe Source Selection
+
+Release preflight prepares rollback points from verified-good prior deployments first (`live_healthy`, `live_with_warnings`) and falls back to `provider_succeeded` only when no verified-good source exists. It does not prepare rollback points from `rollback_recommended`, `verifying`, or `failed` deployments.
+
+Why: rollback-to sources and rollback-from targets have opposite health requirements. A known-bad deployment can be a rollback target, but it must not be the source that gets restored.
 
 ## Accepted For Future Hardening
 
@@ -67,14 +79,17 @@ The original Milestone 4 hardening commit landed rollback-executor-specific chan
 - provider-neutral pending/failed rollback evidence,
 - successful rollback evidence that records the provider deploy id rolled back from.
 
-The first two broader verification hardening items have since landed as follow-up patches. The release-status split remains future work.
+The broader verification hardening items have since landed as follow-up patches. The release-status split remains future work.
 
 ## Rollback Point Preparation Follow-Up
 
 The first post-Milestone-4 follow-up wired DB-only rollback point preparation into release preflight:
 
-- preflight prepares a rollback point for the new release from the latest provider-backed prior deployment when no usable rollback point exists,
+- preflight prepares a rollback point for the new release from a safe provider-backed prior deployment when no usable rollback point exists,
+- source selection prefers verified-good deployments and excludes known-bad or unknown-health deployments,
 - placeholder rollback point rows without `providerDeployId` no longer satisfy API preflight,
 - the deploy worker's final safety check also counts only provider-backed rollback points as usable rollback evidence.
 
 Why this was done before the broader status-column refactor: rollback execution was otherwise waiting on inputs that only tests created. Preparing rollback points closes that functional loop without changing provider mutation ownership, while the larger release-status split remains a separate lifecycle-truth design task.
+
+Remaining follow-up: rollback point preparation is still check-then-insert under concurrent preflight calls. Add a database uniqueness/idempotency guard before automated preflight traffic or repeated operator workflows make duplicate rollback points likely.

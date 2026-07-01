@@ -394,7 +394,7 @@ void describe(
       assert.equal(queue.addCalls.length, 0);
     });
 
-    void it("preflight prepares a provider-backed rollback point from the latest restorable deployment", async () => {
+    void it("preflight prepares a provider-backed rollback point from the latest verified-good source", async () => {
       const fixture = await createPreflightRollbackFixture(db);
 
       const result = await service.preflight(fixture.projectId, fixture.releasePlanId);

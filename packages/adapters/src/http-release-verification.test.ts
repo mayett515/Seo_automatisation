@@ -87,6 +87,96 @@ void describe("HttpReleaseVerificationAdapter", () => {
     assert.equal(result.checks.find((check) => check.checkKey === "schema_parse_check")?.result, "failed");
   });
 
+  void it("follows same-origin redirects during live route verification", async () => {
+    const requestedUrls: string[] = [];
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch(
+        {
+          "https://example.test/dachreinigung": redirectResponse("/dachreinigung/"),
+          "https://example.test/dachreinigung/": htmlResponse(`<!doctype html>
+<html>
+<head>
+  <link rel="canonical" href="https://example.test/dachreinigung/">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"LocalBusiness"}</script>
+</head>
+<body></body>
+</html>`),
+          "https://example.test/sitemap.xml": textResponse(
+            "<urlset><url><loc>https://example.test/dachreinigung/</loc></url></urlset>"
+          )
+        },
+        requestedUrls
+      )
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung"]
+    });
+
+    assert.equal(result.verificationStatus, "live_healthy");
+    assert.deepEqual(requestedUrls.slice(0, 2), [
+      "https://example.test/dachreinigung",
+      "https://example.test/dachreinigung/"
+    ]);
+  });
+
+  void it("blocks live route redirects that leave the deployment origin", async () => {
+    const requestedUrls: string[] = [];
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch(
+        {
+          "https://example.test/dachreinigung/": redirectResponse("http://169.254.169.254/latest/meta-data"),
+          "https://example.test/sitemap.xml": textResponse(
+            "<urlset><url><loc>https://example.test/dachreinigung/</loc></url></urlset>"
+          )
+        },
+        requestedUrls
+      )
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung/"]
+    });
+
+    const httpCheck = result.checks.find((check) => check.checkKey === "http_status_check");
+    assert.equal(result.verificationStatus, "rollback_recommended");
+    assert.equal(httpCheck?.result, "failed");
+    assert.equal(httpCheck?.message, "Verification redirect left the deployment origin.");
+    assert.equal(requestedUrls.includes("http://169.254.169.254/latest/meta-data"), false);
+  });
+
+  void it("blocks sitemap redirects that leave the deployment origin", async () => {
+    const requestedUrls: string[] = [];
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch(
+        {
+          "https://example.test/dachreinigung/": htmlResponse(`<!doctype html>
+<html>
+<head>
+  <link rel="canonical" href="https://example.test/dachreinigung/">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"LocalBusiness"}</script>
+</head>
+<body></body>
+</html>`),
+          "https://example.test/sitemap.xml": redirectResponse("http://169.254.169.254/latest/meta-data")
+        },
+        requestedUrls
+      )
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung/"]
+    });
+
+    const sitemapCheck = result.checks.find((check) => check.checkKey === "sitemap_readiness_check");
+    assert.equal(result.verificationStatus, "live_with_warnings");
+    assert.equal(sitemapCheck?.result, "failed");
+    assert.equal(requestedUrls.includes("http://169.254.169.254/latest/meta-data"), false);
+  });
+
   void it("accepts HTML produced by the approved release artifact renderer", async () => {
     const site = renderApprovedReleaseArtifact({
       projectId: "project-1",
@@ -162,9 +252,10 @@ void describe("HttpReleaseVerificationAdapter", () => {
   });
 });
 
-function createFetch(responses: Record<string, Response>): typeof fetch {
+function createFetch(responses: Record<string, Response>, requestedUrls: string[] = []): typeof fetch {
   const fetchImpl: typeof fetch = (input: RequestInfo | URL) => {
     const url = input instanceof Request ? input.url : input.toString();
+    requestedUrls.push(url);
     const response = responses[url] ?? new Response("not found", { status: 404 });
     return Promise.resolve(response);
   };
@@ -182,5 +273,12 @@ function textResponse(body: string, contentType = "application/xml; charset=utf-
     headers: {
       "content-type": contentType
     }
+  });
+}
+
+function redirectResponse(location: string): Response {
+  return new Response("", {
+    status: 302,
+    headers: { location }
   });
 }
