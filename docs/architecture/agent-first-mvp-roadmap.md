@@ -180,7 +180,8 @@ Build one useful backend workflow, not a broad agent platform:
 
 ```text
 opportunity_scout job
--> create agent_runs row before the model call
+-> API/enqueuer creates agent_runs row as queued and uses runId as BullMQ jobId
+-> worker loads run and flips queued/failed -> running
 -> load deterministic project evidence
 -> write redacted evidence packet through ObjectStoragePort as input_ref
 -> call AiReasoningPort.runStructured once
@@ -195,15 +196,30 @@ Worker invariant:
 ```text
 Opportunities linked to agent run R may exist only when R.status = succeeded.
 A succeeded run with zero briefs is legal.
+Succeeded runs are immutable.
+Opportunities are inserted only inside the transaction that flips running -> succeeded.
+```
+
+Run state machine:
+
+```text
+queued    -> running      start
+running   -> succeeded    success transaction only, WHERE status = running
+running   -> failed       adapter/schema/QA failure
+failed    -> running      BullMQ retry redo
+succeeded -> terminal     no transition out
 ```
 
 Retry/concurrency rules:
 
 ```text
-same runId already succeeded      -> no-op, no duplicate opportunities
-same runId running after crash    -> safe redo
-concurrent same-run delivery      -> one conditional status flip wins; loser no-ops
-QA/schema/provider failure        -> failed run, zero opportunities
+runId is agent_runs.id and BullMQ jobId
+one agent_runs row spans all attempts for that runId
+same runId already succeeded         -> no-op, no duplicate opportunities
+same runId failed on prior attempt   -> retry flips failed -> running
+same runId running after crash       -> safe redo
+concurrent same-run delivery         -> one conditional status flip wins; loser no-ops
+QA/schema/provider failure           -> failed run, zero opportunities
 ```
 
 The workflow output is an opportunity/proposal, not a page version and not a deploy.

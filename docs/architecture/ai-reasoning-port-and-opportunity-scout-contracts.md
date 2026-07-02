@@ -181,6 +181,20 @@ Rules:
 - `runId` is caller-generated; retrying with the same `runId` must not double-persist opportunities.
 - The mock adapter must cover both adapter failures and `ok: true` with schema-invalid JSON so the worker can exercise `output_schema_mismatch` without a real provider.
 
+Failure artifact policy:
+
+```text
+diagnostics_json
+  Always stored on failure, redacted and capped. Include latencyMs, attempt number,
+  failureCode, and for QA failures gateId / briefIndex / message.
+
+output_json
+  Store only when useful and safe:
+    output_schema_mismatch -> redacted size-capped raw model JSON
+    qa_rejected            -> parsed but rejected output
+    adapter failures       -> no output_json
+```
+
 ## Opportunity Scout Contracts
 
 All schemas live in `packages/contracts`, parsed with strict Zod (unknown keys rejected). Shapes below are the contract intent; field-level Zod is the implementation.
@@ -351,7 +365,8 @@ Why `agent_runs` now and not later: a failed run produces zero opportunity rows.
 
 ```text
 apps/worker opportunity-scout handler:
-  create agent_runs row before the provider/model call (queued -> running)
+  API/enqueuer creates agent_runs row as queued and uses runId as BullMQ jobId
+  worker loads run and flips queued/failed -> running
   load website import facts + GSC signals + tracking summary (+ optional SERP/competitor snapshots)
   build redacted evidence packet, persist via ObjectStoragePort, keep input_ref
   build prompt (packages/ai pure builder)
@@ -366,9 +381,56 @@ Worker invariants:
 ```text
 Opportunities linked to run R may exist only when agent_runs.status = succeeded.
 A succeeded run with zero briefs is legal.
+Succeeded runs are immutable; no transition out of succeeded is allowed.
 Existing succeeded runId means no-op; do not upsert over prior product rows.
-Concurrent same-run delivery uses a conditional status transition (WHERE status = running);
-the loser treats zero rows updated as a lost race and writes nothing.
+Opportunities are inserted only inside the transaction that performs running -> succeeded.
+Concurrent same-run delivery uses conditional status transitions; the loser writes nothing.
+One agent_runs row spans all attempts of the same runId; job_runs remains queue telemetry.
+```
+
+Run state machine:
+
+```text
+queued    -> running      start
+running   -> succeeded    success transaction only, WHERE status = running
+running   -> failed       adapter/schema/QA failure
+failed    -> running      BullMQ retry redo
+succeeded -> terminal     no transition out
+```
+
+Repository shape:
+
+```text
+OpportunityScoutJobDataSchema
+  projectId
+  runId
+  maxBriefs?
+
+handleOpportunityScoutJob(job, dbHandle, reasoning, storage)
+  parse job data
+  create repository
+  executeOpportunityScout(...)
+
+createDrizzleOpportunityScoutRepository(db)
+  loadRun(projectId, runId)
+  markRunning(projectId, runId, attempt)
+  loadEvidence(projectId)
+  storePacket(projectId, runId, packet)
+  persistSuccess(projectId, runId, opportunities)
+  markFailed(projectId, runId, failure)
+```
+
+`persistSuccess` owns the transaction. It inserts opportunities and conditionally flips the run to `succeeded`; if the status update affects zero rows, it treats that as a lost race/stale attempt and inserts nothing.
+
+Evidence loading is where project scoping is enforced:
+
+```text
+website import facts
+GSC signals / rows
+tracking summary
+existing routes
+existing open opportunity keys
+manual ranking evidence later
 ```
 
 Manual evidence bridge:
@@ -392,9 +454,12 @@ adapter timeout/error/output_not_json marks run failed and persists zero opportu
 ok:true with schema-invalid JSON -> output_schema_mismatch, redacted output, zero opportunities
 cross-project evidence sourceId fails evidence_resolution
 zero-brief success marks run succeeded with zero opportunities
-concurrent same-run delivery has one winner and no duplicate inserts
+transient provider failure then retry can flip failed -> running -> succeeded
+conditional success race has one winner and no duplicate inserts
 redelivery of a running run after crash is safe and does not duplicate
 existing routes and open opportunities are loaded from DB and can trigger QA gates
+persisted opportunity classification/score columns match evidenceJson
+same project state produces a stable redacted evidence packet
 manual ranking evidence resolves as project-owned proof when present
 ```
 
