@@ -132,6 +132,74 @@ export const gscOpportunitySignalTypes = [
 
 export const gscOpportunitySignalStatuses = ["internal_radar", "near_term_target", "rejected", "promoted"] as const;
 
+export const reasoningTasks = [
+  "opportunity_scout",
+  "page_brief_draft",
+  "section_text_generation",
+  "report_narrative"
+] as const;
+
+export const agentRunStatuses = ["queued", "running", "succeeded", "failed"] as const;
+
+export const aiReasoningAdapterFailureCodes = [
+  "provider_timeout",
+  "provider_error",
+  "provider_overloaded",
+  "output_not_json",
+  "budget_exceeded",
+  "policy_violation"
+] as const;
+
+export const aiReasoningWorkflowFailureCodes = ["output_schema_mismatch", "qa_rejected"] as const;
+
+export const opportunityClassifications = ["proven_win", "near_term_target", "internal_radar", "rejected"] as const;
+
+export const opportunityRecommendedActions = [
+  "monitor",
+  "create_brief",
+  "create_page_proposal",
+  "hold",
+  "reject"
+] as const;
+
+export const opportunitySuggestedPageTypes = ["normal_page", "subdomain", "backlog", "monitor_only"] as const;
+
+export const evidenceSourceTypes = [
+  "website_import",
+  "gsc_signal",
+  "gsc_row",
+  "serp_snapshot",
+  "competitor_snapshot",
+  "tracking",
+  "field_evidence",
+  "manual_note",
+  "existing_page",
+  "ranking_proof",
+  "customer_memory"
+] as const;
+
+export const evidenceStrengths = ["weak", "medium", "strong"] as const;
+export const evidenceProofTiers = ["internal_signal", "supporting_context", "customer_safe_proof"] as const;
+export const nearbyPlaceKinds = ["city", "district", "village", "municipality", "service_area"] as const;
+export const nearbyPlaceAdjacencyReasons = [
+  "near_existing_win",
+  "same_corridor",
+  "service_radius",
+  "competitor_gap",
+  "gsc_testing_signal",
+  "manual_seed"
+] as const;
+export const clusterStrengths = ["none", "weak", "medium", "strong"] as const;
+export const hubSpokeRoles = ["hub", "spoke", "standalone"] as const;
+export const cannibalizationRiskLevels = ["none", "low", "medium", "high"] as const;
+export const opportunityGroupSources = [
+  "gsc_query_cluster",
+  "gsc_page_cluster",
+  "corridor_cluster",
+  "agent_suggested",
+  "user_defined"
+] as const;
+
 export const approvalStatuses = ["pending", "approved", "rejected", "held"] as const;
 export const releaseCheckSeverities = ["info", "warning", "blocker"] as const;
 export const releaseCheckResults = ["passed", "failed", "skipped"] as const;
@@ -155,6 +223,22 @@ export const GscSyncStatusSchema = z.enum(gscSyncStatuses);
 export const WebsiteImportStatusSchema = z.enum(websiteImportStatuses);
 export const GscOpportunitySignalTypeSchema = z.enum(gscOpportunitySignalTypes);
 export const GscOpportunitySignalStatusSchema = z.enum(gscOpportunitySignalStatuses);
+export const ReasoningTaskSchema = z.enum(reasoningTasks);
+export const AgentRunStatusSchema = z.enum(agentRunStatuses);
+export const AiReasoningAdapterFailureCodeSchema = z.enum(aiReasoningAdapterFailureCodes);
+export const AiReasoningWorkflowFailureCodeSchema = z.enum(aiReasoningWorkflowFailureCodes);
+export const OpportunityClassificationSchema = z.enum(opportunityClassifications);
+export const OpportunityRecommendedActionSchema = z.enum(opportunityRecommendedActions);
+export const OpportunitySuggestedPageTypeSchema = z.enum(opportunitySuggestedPageTypes);
+export const EvidenceSourceTypeSchema = z.enum(evidenceSourceTypes);
+export const EvidenceStrengthSchema = z.enum(evidenceStrengths);
+export const EvidenceProofTierSchema = z.enum(evidenceProofTiers);
+export const NearbyPlaceKindSchema = z.enum(nearbyPlaceKinds);
+export const NearbyPlaceAdjacencyReasonSchema = z.enum(nearbyPlaceAdjacencyReasons);
+export const ClusterStrengthSchema = z.enum(clusterStrengths);
+export const HubSpokeRoleSchema = z.enum(hubSpokeRoles);
+export const CannibalizationRiskLevelSchema = z.enum(cannibalizationRiskLevels);
+export const OpportunityGroupSourceSchema = z.enum(opportunityGroupSources);
 export const ApprovalStatusSchema = z.enum(approvalStatuses);
 export const CustomerMembershipRoleSchema = z.enum(customerMembershipRoles);
 
@@ -470,6 +554,127 @@ export const GscOpportunitySignalSchema = z.object({
   evidence: z.record(z.string(), z.unknown()).optional()
 });
 
+export const EvidenceLocatorSchema = z
+  .object({
+    url: z.string().url().optional(),
+    route: z.string().min(1).optional(),
+    query: z.string().min(1).optional(),
+    pageUrl: z.string().url().optional(),
+    sectionId: z.string().min(1).optional()
+  })
+  .strict();
+
+export const EvidenceObservedMetricSchema = z
+  .object({
+    name: z.string().min(1),
+    value: z.union([z.string().min(1), z.number()]),
+    unit: z.string().min(1).optional()
+  })
+  .strict();
+
+export const EvidenceRefSchema = z
+  .object({
+    sourceType: EvidenceSourceTypeSchema,
+    sourceId: z.string().min(1).optional(),
+    locator: EvidenceLocatorSchema.optional(),
+    dateRange: DateRangeSchema.optional(),
+    summary: z.string().min(1).max(1_000),
+    excerpt: z.string().min(1).max(500).optional(),
+    observedMetric: EvidenceObservedMetricSchema.optional(),
+    strength: EvidenceStrengthSchema,
+    proofTier: EvidenceProofTierSchema
+  })
+  .strict();
+
+export const OpportunityGroupHintSchema = z
+  .object({
+    key: z.string().min(1).max(128),
+    label: z.string().min(1).max(160),
+    source: OpportunityGroupSourceSchema,
+    description: z.string().min(1).max(700).optional(),
+    evidence: z.array(EvidenceRefSchema).default([])
+  })
+  .strict();
+
+export const NearbyPlaceCandidateSchema = z
+  .object({
+    name: z.string().min(1).max(160),
+    kind: NearbyPlaceKindSchema,
+    geo: z
+      .object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180)
+      })
+      .strict()
+      .optional(),
+    distanceKm: z.number().nonnegative().optional(),
+    travelTimeMinutes: z.number().nonnegative().optional(),
+    adjacencyReason: NearbyPlaceAdjacencyReasonSchema,
+    existingClusterStrength: ClusterStrengthSchema,
+    competitorWeakness: z.string().min(1).max(700).optional(),
+    mapGroupKey: z.string().min(1).max(128).optional(),
+    evidence: z.array(EvidenceRefSchema).default([])
+  })
+  .strict();
+
+export const CorridorClusterSchema = z
+  .object({
+    name: z.string().min(1).max(160),
+    hubPlace: z.string().min(1).max(160),
+    places: z.array(z.string().min(1).max(160)).min(1),
+    rationale: z.string().min(1).max(1_200),
+    clusterStrength: ClusterStrengthSchema,
+    recommendedSequence: z.array(z.string().min(1).max(160)).default([])
+  })
+  .strict();
+
+export const CannibalizationRiskSchema = z
+  .object({
+    level: CannibalizationRiskLevelSchema,
+    conflictingRoutes: z.array(z.string().min(1)).default([])
+  })
+  .strict();
+
+export const CompetitorObservationSchema = z
+  .object({
+    url: z.string().url(),
+    observation: z.string().min(1).max(1_000),
+    gap: z.string().min(1).max(700).optional()
+  })
+  .strict();
+
+export const OpportunityBriefSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    classification: OpportunityClassificationSchema,
+    service: z.string().min(1).max(160),
+    location: NearbyPlaceCandidateSchema,
+    primaryKeyword: z.string().min(1).max(200),
+    secondaryKeywords: z.array(z.string().min(1).max(200)).default([]),
+    suggestedRoute: z.string().min(1).optional(),
+    suggestedPageType: OpportunitySuggestedPageTypeSchema,
+    evidence: z.array(EvidenceRefSchema).min(1),
+    competitorObservations: z.array(CompetitorObservationSchema).default([]),
+    corridorCluster: CorridorClusterSchema.optional(),
+    groupHints: z.array(OpportunityGroupHintSchema).default([]),
+    hubSpokeRole: HubSpokeRoleSchema.optional(),
+    uniquenessRationale: z.string().min(1).max(1_500).optional(),
+    cannibalizationRisk: CannibalizationRiskSchema,
+    missingEvidence: z.array(z.string().min(1).max(500)).default([]),
+    confidence: z.number().min(0).max(1),
+    rejectionReason: z.string().min(1).max(700).optional(),
+    recommendedAction: OpportunityRecommendedActionSchema
+  })
+  .strict();
+
+export const OpportunityScoutOutputSchema = z
+  .object({
+    briefs: z.array(OpportunityBriefSchema).max(12),
+    groups: z.array(OpportunityGroupHintSchema).default([]),
+    runNotes: z.string().min(1).max(2_000).optional()
+  })
+  .strict();
+
 export const GscPerformanceSummarySchema = z.object({
   projectId: ProjectIdSchema,
   connection: GscConnectionSchema,
@@ -610,6 +815,12 @@ export type WebsiteImportRun = z.output<typeof WebsiteImportRunSchema>;
 export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportResponseSchema>;
 export type GscSearchAnalyticsRow = z.output<typeof GscSearchAnalyticsRowSchema>;
 export type GscOpportunitySignal = z.output<typeof GscOpportunitySignalSchema>;
+export type EvidenceRef = z.output<typeof EvidenceRefSchema>;
+export type OpportunityGroupHint = z.output<typeof OpportunityGroupHintSchema>;
+export type NearbyPlaceCandidate = z.output<typeof NearbyPlaceCandidateSchema>;
+export type CorridorCluster = z.output<typeof CorridorClusterSchema>;
+export type OpportunityBrief = z.output<typeof OpportunityBriefSchema>;
+export type OpportunityScoutOutput = z.output<typeof OpportunityScoutOutputSchema>;
 export type GscPerformanceSummary = z.output<typeof GscPerformanceSummarySchema>;
 export type GscUrlInspectionResult = z.output<typeof GscUrlInspectionResultSchema>;
 export type GscSitemapSubmission = z.output<typeof GscSitemapSubmissionSchema>;
@@ -637,5 +848,16 @@ export type GscSyncStatus = z.output<typeof GscSyncStatusSchema>;
 export type WebsiteImportStatus = z.output<typeof WebsiteImportStatusSchema>;
 export type GscOpportunitySignalType = z.output<typeof GscOpportunitySignalTypeSchema>;
 export type GscOpportunitySignalStatus = z.output<typeof GscOpportunitySignalStatusSchema>;
+export type ReasoningTask = z.output<typeof ReasoningTaskSchema>;
+export type AgentRunStatus = z.output<typeof AgentRunStatusSchema>;
+export type AiReasoningAdapterFailureCode = z.output<typeof AiReasoningAdapterFailureCodeSchema>;
+export type AiReasoningWorkflowFailureCode = z.output<typeof AiReasoningWorkflowFailureCodeSchema>;
+export type OpportunityClassification = z.output<typeof OpportunityClassificationSchema>;
+export type OpportunityRecommendedAction = z.output<typeof OpportunityRecommendedActionSchema>;
+export type OpportunitySuggestedPageType = z.output<typeof OpportunitySuggestedPageTypeSchema>;
+export type EvidenceSourceType = z.output<typeof EvidenceSourceTypeSchema>;
+export type EvidenceStrength = z.output<typeof EvidenceStrengthSchema>;
+export type EvidenceProofTier = z.output<typeof EvidenceProofTierSchema>;
+export type OpportunityGroupSource = z.output<typeof OpportunityGroupSourceSchema>;
 export type ApprovalStatus = z.output<typeof ApprovalStatusSchema>;
 export type CustomerMembershipRole = z.output<typeof CustomerMembershipRoleSchema>;

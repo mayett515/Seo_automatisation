@@ -1,10 +1,12 @@
 import type {
   DomainEventName,
+  AiReasoningAdapterFailureCode,
   GscOAuthIntent,
   GscPropertyList,
   GscSearchAnalyticsRow,
   GscSitemapSubmission,
   GscUrlInspectionResult,
+  ReasoningTask,
   ReleaseVerification,
   ReleaseVerificationCheck,
   RollbackPoint,
@@ -170,11 +172,53 @@ export type AnalyticsSnapshot = {
   metrics: Record<string, number>;
 };
 
-export type AiReasoningResult = {
-  workflowId: string;
-  status: "completed" | "blocked" | "failed";
-  output: unknown;
+export type AiReasoningToolCategory = "read_evidence" | "analyze" | "draft_content";
+
+export type AiReasoningRunPolicy = {
+  canMutateProduction: false;
+  allowedToolCategories: AiReasoningToolCategory[];
+  maxCostCents?: number;
 };
+
+export type AiReasoningRunInput = {
+  task: ReasoningTask;
+  projectId: string;
+  runId: string;
+  prompt: string;
+  inputJson: unknown;
+  outputSchemaName: string;
+  timeoutMs: number;
+  policy: AiReasoningRunPolicy;
+};
+
+export type AiReasoningUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  costCents?: number;
+};
+
+export type AiReasoningDiagnostics = {
+  latencyMs: number;
+  finishReason?: string;
+  detail?: string;
+};
+
+export type AiReasoningRunResult =
+  | {
+      ok: true;
+      provider: string;
+      model: string;
+      outputJson: unknown;
+      usage?: AiReasoningUsage;
+      diagnostics: AiReasoningDiagnostics;
+    }
+  | {
+      ok: false;
+      failureCode: AiReasoningAdapterFailureCode;
+      provider: string;
+      model?: string;
+      diagnostics: AiReasoningDiagnostics;
+    };
 
 export type DomainEvent = {
   name: DomainEventName;
@@ -273,7 +317,7 @@ export interface AnalyticsPort {
 }
 
 export interface AiReasoningPort {
-  runWorkflow(input: { workflowId: string; projectId: string; input: unknown }): Promise<AiReasoningResult>;
+  runStructured(input: AiReasoningRunInput): Promise<AiReasoningRunResult>;
 }
 
 export interface ObjectStoragePort {

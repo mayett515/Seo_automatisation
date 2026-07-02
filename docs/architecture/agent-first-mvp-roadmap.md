@@ -84,7 +84,7 @@ Deterministic code owns production truth. AI output is external input at the bou
 
 ### 0. Website Import Evidence Baseline
 
-Status: current implementation slice.
+Status: implemented baseline.
 
 Purpose:
 
@@ -98,6 +98,8 @@ customer own-site URL
 This creates evidence for the agent lane. It is not a complete cloning or rebuild engine by itself.
 
 ### 1. AI Reasoning Port
+
+Status: implementation started.
 
 Define the application boundary for model/Mastra calls.
 
@@ -115,6 +117,8 @@ AiReasoningPort
 This should look like a provider adapter boundary, not controller-level model code.
 
 ### 2. Opportunity Scout Contracts
+
+Status: implementation started.
 
 Add structured contracts before building broad agent behavior.
 
