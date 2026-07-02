@@ -43,64 +43,41 @@ Agents never approve, deploy, roll back, mutate providers, publish sitemaps, or 
 
 ## Architecture At A Glance
 
+The architecture is easiest to read as a set of runtime lanes. The frontend never talks to workers or providers directly; the API owns request validation and authorization; workers own long-running effects; shared packages own contracts, domain decisions, and provider boundaries.
+
 ```mermaid
-flowchart LR
-  subgraph Frontend["React + TanStack Frontend"]
-    UI["Mission Control UI"]
-    Studio["Constrained Page Studio"]
-  end
+flowchart TD
+  Browser["React + TanStack mission-control UI"]
+  API["NestJS API on Fastify"]
+  Auth["Better Auth, CSRF, project guards, RBAC"]
+  Queue["BullMQ queue contracts"]
+  Worker["Deterministic worker host"]
+  Packages["Shared packages: contracts, domain, ai, adapters, db"]
+  Data["PostgreSQL, Redis, object storage"]
+  Providers["Netlify, GSC, crawler, tracking, reasoning providers"]
 
-  subgraph API["NestJS API on Fastify"]
-    Auth["Better Auth + Project Guards"]
-    Modules["Projects / Releases / GSC / Tracking"]
-    QueueProducer["Queue Producer"]
-  end
-
-  subgraph Workers["BullMQ Worker Host"]
-    ImportWorker["Website Import Worker"]
-    DeployWorker["Deploy Worker"]
-    VerifyWorker["Verification Worker"]
-    RollbackWorker["Rollback Reconciler"]
-    ScoutWorker["Opportunity Scout Worker"]
-  end
-
-  subgraph Core["Shared Packages"]
-    Contracts["Zod Contracts"]
-    Domain["Domain Decisions"]
-    AI["AI QA + Prompt Builders"]
-    Adapters["Purpose-Named Ports"]
-    DB["Drizzle Schema"]
-  end
-
-  subgraph Infra["External Systems"]
-    Postgres["PostgreSQL"]
-    Redis["Redis / BullMQ"]
-    Storage["Object Storage"]
-    Netlify["Netlify"]
-    GSC["Google Search Console"]
-    Reasoning["Mastra / OpenCode Go / Models"]
-  end
-
-  UI --> Auth
-  Studio --> Auth
-  Auth --> Modules
-  Modules --> QueueProducer
-  QueueProducer --> Redis
-  Redis --> Workers
-  Workers --> Contracts
-  Workers --> Domain
-  Workers --> AI
-  Workers --> Adapters
-  Modules --> DB
-  Workers --> DB
-  DB --> Postgres
-  Adapters --> Netlify
-  Adapters --> GSC
-  Adapters --> Storage
-  Adapters --> Reasoning
+  Browser --> API
+  API --> Auth
+  Auth --> Queue
+  Queue --> Worker
+  API --> Packages
+  Worker --> Packages
+  Packages --> Data
+  Packages --> Providers
 ```
 
 The codebase is a modular monolith: one API process, one worker host, and shared typed packages. Boundaries are kept explicit so the system can grow without prematurely splitting into microservices.
+
+| Runtime lane         | Responsibility                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| `apps/web`           | Operator/customer workflow UI, TanStack data loading, forms, tables, preview surfaces     |
+| `apps/api`           | HTTP contracts, auth, tenant guards, queue-producing application services                 |
+| `apps/worker`        | BullMQ jobs, retries, provider mutations, reconciliations, evidence-producing workflows   |
+| `packages/contracts` | Shared Zod request, response, job, model-output, and product artifact contracts           |
+| `packages/domain`    | Pure release, rollback, verification, report-safety, and website-import decisions         |
+| `packages/ai`        | Prompt/task builders, deterministic Opportunity Scout QA gates, scoring, redaction policy |
+| `packages/adapters`  | Purpose-named ports and provider adapters for Netlify, GSC, crawler, storage, reasoning   |
+| `packages/db`        | Drizzle schema, migrations, persistence source of truth                                   |
 
 ## Stack
 
@@ -175,31 +152,33 @@ Netlify deploy success is not treated as customer-safe release success. The syst
 The AI lane is designed as a provider adapter, not as product truth:
 
 ```mermaid
-sequenceDiagram
-  participant API as API / Operator Trigger
-  participant Worker as BullMQ Opportunity Scout Worker
-  participant Runs as agent_runs
-  participant Evidence as Evidence Loader
-  participant Port as AiReasoningPort
-  participant Model as Mastra / OpenCode / Model Adapter
-  participant QA as Zod + Deterministic QA
-  participant DB as opportunities
+flowchart TD
+  Trigger["Operator or API trigger"]
+  RunQueued["agent_runs row queued"]
+  WorkerRunning["Worker marks run running"]
+  EvidencePacket["Project-scoped evidence packet"]
+  PortCall["AiReasoningPort.runStructured"]
+  Adapter["Mastra or model adapter"]
+  RawJson["Raw untrusted JSON"]
+  Parse["Zod schema parse"]
+  QA["Deterministic QA and scoring"]
+  Decision{"Accepted?"}
+  Persist["Insert scored opportunities"]
+  Succeeded["agent_runs succeeded"]
+  Failed["agent_runs failed with redacted diagnostics"]
 
-  API->>Runs: create queued run
-  API->>Worker: enqueue runId
-  Worker->>Runs: queued/failed -> running
-  Worker->>Evidence: load project-scoped evidence packet
-  Worker->>Port: runStructured(task, inputJson, schema, policy)
-  Port->>Model: provider-specific reasoning call
-  Model-->>Port: raw untrusted JSON
-  Port-->>Worker: provider/model metadata + outputJson
-  Worker->>QA: parse schema and run gates
-  alt QA accepted
-    Worker->>DB: insert scored opportunities
-    Worker->>Runs: running -> succeeded
-  else adapter/schema/QA failure
-    Worker->>Runs: failed with redacted diagnostics
-  end
+  Trigger --> RunQueued
+  RunQueued --> WorkerRunning
+  WorkerRunning --> EvidencePacket
+  EvidencePacket --> PortCall
+  PortCall --> Adapter
+  Adapter --> RawJson
+  RawJson --> Parse
+  Parse --> QA
+  QA --> Decision
+  Decision -->|yes| Persist
+  Persist --> Succeeded
+  Decision -->|no| Failed
 ```
 
 Important invariant:
@@ -371,17 +350,39 @@ docs/
 CI runs the same gates expected locally:
 
 ```mermaid
-flowchart LR
-  Install["pnpm install"] --> Format["format check"]
-  Format --> Text["text health"]
-  Text --> Whitespace["git diff --check"]
-  Whitespace --> Lint["eslint"]
-  Lint --> Types["typecheck"]
-  Types --> DB["migration drift check"]
-  DB --> Build["build"]
-  Build --> Unit["unit tests"]
-  Unit --> Integration["Postgres integration tests"]
-  Integration --> Browser["Playwright browser smoke"]
+flowchart TD
+  subgraph Validate["Validate job"]
+    Install["Install dependencies"]
+    Format["Prettier format check"]
+    Text["Critical text health"]
+    Whitespace["Whitespace check"]
+    Lint["ESLint"]
+    Types["TypeScript typecheck"]
+    Drift["Drizzle migration drift"]
+    Build["Workspace build"]
+    Unit["Unit tests"]
+
+    Install --> Format
+    Format --> Text
+    Text --> Whitespace
+    Whitespace --> Lint
+    Lint --> Types
+    Types --> Drift
+    Drift --> Build
+    Build --> Unit
+  end
+
+  subgraph Integration["Integration job"]
+    Pg["PostgreSQL service"]
+    IntegrationTests["Integration tests"]
+    Pg --> IntegrationTests
+  end
+
+  subgraph Browser["Browser smoke job"]
+    Playwright["Install Playwright Chromium"]
+    Smoke["Browser smoke tests"]
+    Playwright --> Smoke
+  end
 ```
 
 Local commands:
