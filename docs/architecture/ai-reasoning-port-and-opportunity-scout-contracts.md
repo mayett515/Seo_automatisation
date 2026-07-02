@@ -179,6 +179,7 @@ Rules:
 - Provider names, model ids, and OpenCode Go config never leak past the adapter into contracts or UI truth. `provider`/`model` are opaque strings stored as run metadata only.
 - On `output_schema_mismatch`, the raw `outputJson` is kept (redacted) in `agent_runs` for diagnosis, and no product row is written.
 - `runId` is caller-generated; retrying with the same `runId` must not double-persist opportunities.
+- The mock adapter must cover both adapter failures and `ok: true` with schema-invalid JSON so the worker can exercise `output_schema_mismatch` without a real provider.
 
 ## Opportunity Scout Contracts
 
@@ -350,14 +351,51 @@ Why `agent_runs` now and not later: a failed run produces zero opportunity rows.
 
 ```text
 apps/worker opportunity-scout handler:
-  create agent_runs row (queued -> running)
+  create agent_runs row before the provider/model call (queued -> running)
   load website import facts + GSC signals + tracking summary (+ optional SERP/competitor snapshots)
-  build evidence packet, persist via ObjectStoragePort, keep input_ref
+  build redacted evidence packet, persist via ObjectStoragePort, keep input_ref
   build prompt (packages/ai pure builder)
   call AiReasoningPort.runStructured
   Zod parse -> QA gates -> deterministic scoring
-  on success: upsert opportunities (idempotent on runId), mark run succeeded
+  on success: insert opportunities and mark run succeeded in one transaction
   on failure: mark run failed with failure_code, persist diagnostics, write nothing to opportunities
+```
+
+Worker invariants:
+
+```text
+Opportunities linked to run R may exist only when agent_runs.status = succeeded.
+A succeeded run with zero briefs is legal.
+Existing succeeded runId means no-op; do not upsert over prior product rows.
+Concurrent same-run delivery uses a conditional status transition (WHERE status = running);
+the loser treats zero rows updated as a lost race and writes nothing.
+```
+
+Manual evidence bridge:
+
+```text
+ranking_proof, serp_snapshot, field_evidence, and manual_note are contract vocabulary now,
+but only sources backed by project-owned rows/artifacts can pass evidence_resolution.
+Before automated SERP snapshots exist, Opportunity Explorer should add a small manual
+ranking-evidence entry path: query, page URL, observed rank, checked-at date,
+optional screenshot artifact key, and notes.
+```
+
+That bridge makes `proven_win` reachable and testable before search automation. It mirrors the manual SERP-check part of the Martines workflow and lets automated SERP snapshots later replace an operator action rather than invent a new proof model.
+
+Worker vertical acceptance tests:
+
+```text
+same runId retry creates no duplicate opportunities or run rows
+QA rejection marks run failed and persists zero opportunities
+adapter timeout/error/output_not_json marks run failed and persists zero opportunities
+ok:true with schema-invalid JSON -> output_schema_mismatch, redacted output, zero opportunities
+cross-project evidence sourceId fails evidence_resolution
+zero-brief success marks run succeeded with zero opportunities
+concurrent same-run delivery has one winner and no duplicate inserts
+redelivery of a running run after crash is safe and does not duplicate
+existing routes and open opportunities are loaded from DB and can trigger QA gates
+manual ranking evidence resolves as project-owned proof when present
 ```
 
 ## Answers To The Handoff Review Questions

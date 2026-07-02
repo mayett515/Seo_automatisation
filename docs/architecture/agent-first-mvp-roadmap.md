@@ -1,6 +1,6 @@
 # Agent-First MVP Roadmap
 
-Status: Accepted roadmap correction
+Status: Accepted roadmap correction, refined after opportunity boundary review
 
 This document corrects the MVP roadmap after reviewing the local product pack and the `C:\big eater` Mastra/frontend findings. The product is not a deterministic "service-area gap finder" with AI added later. The product value is an AI-assisted local SEO workflow where agents scout, compare, reason, draft, and explain, while the platform validates, previews, approves, deploys, verifies, and reports through deterministic boundaries.
 
@@ -97,11 +97,11 @@ customer own-site URL
 
 This creates evidence for the agent lane. It is not a complete cloning or rebuild engine by itself.
 
-### 1. AI Reasoning Port
+### 1. AI Reasoning And Opportunity Boundary
 
-Status: implementation started.
+Status: implemented baseline.
 
-Define the application boundary for model/Mastra calls.
+Define the application boundary for model/Mastra calls and the first product artifact contract.
 
 Required shape:
 
@@ -112,123 +112,186 @@ AiReasoningPort
   redacted diagnostics
   cost/latency/run metadata
   no production mutation tools
+
+Opportunity Scout contracts
+  EvidenceRef
+  NearbyPlaceCandidate
+  CorridorCluster
+  OpportunityGroupHint
+  OpportunityBrief
+  OpportunityScoutOutput
+
+Minimal run ledger
+  agent_runs
+  opportunities.classification
+  opportunities.agent_run_id
 ```
 
-This should look like a provider adapter boundary, not controller-level model code.
+This should look like a provider adapter boundary, not controller-level model code. Mastra/OpenCode/GLM remain adapter details.
 
-### 2. Opportunity Scout Contracts
+### 2. Opportunity QA Hardening
 
-Status: implementation started.
+Status: implemented.
 
-Add structured contracts before building broad agent behavior.
-
-Initial outputs:
+Before persistence exists, the pure QA boundary must be hard to bypass:
 
 ```text
-OpportunityClassification
-  proven_win | near_term_target | internal_radar | rejected
+proven_win proof
+  Requires customer-safe ranking proof in brief.evidence only.
+  output.groups, brief.groupHints, and location evidence may support context,
+  resolution, and containment, but cannot prove the specific opportunity.
 
-OpportunityBrief
-  service
-  location
-  keywords
-  suggestedRoute
-  suggestedPageType
-  evidence
-  competitorUrls
-  confidence
-  risks
-  recommendedAction
-
-AgentRunEvent
-  agent/tool/evidence/opportunity/quality/proposal/approval/worker events
+deterministic score
+  Model confidence is not a score input.
+  Score comes from classification, proof tier, evidence strength, cluster strength,
+  and cannibalization penalty.
 ```
 
-Classification meaning:
+Why:
 
 ```text
-proven_win
-  Ranking proof exists. Customer report may mention it.
-
-near_term_target
-  Strong enough for roadmap or page proposal, not yet report proof.
-
-internal_radar
-  Interesting signal, but weak or incomplete.
-
-rejected
-  Unsupported, weak intent, cannibalizing, duplicate, outside service area, or poor fit.
+The worker will persist opportunities only after these pure functions accept model output.
+The gates need to be trustworthy before they become production write criteria.
 ```
 
-### 3. Read-Only Agent Tools
+### 3. MockReasoningAdapter
 
-First agent tools should read evidence and summarize it, not mutate state.
+Build the first `AiReasoningPort` implementation as a deterministic test adapter, not a real provider:
 
 ```text
-websiteImportEvidenceTool
-gscPerformanceTool
-trackingSummaryTool
-competitorSnapshotTool
-rankingEvidenceTool
-localSeoRulesTool
-customerMemoryTool
+MockReasoningAdapter
+  canned successful OpportunityScoutOutput
+  provider_timeout
+  provider_error
+  output_not_json
+  ok:true with schema-invalid JSON
 ```
 
-The competitor tool is evidence-only. It can record competitor URLs, page structures, positioning, and gaps. It must not copy competitor content or import competitor sites as rebuild sources.
-
-### 4. Opportunity Scout Workflow
-
-Build one useful vertical slice, not a broad agent platform:
+Why:
 
 ```text
-load evidence snapshot
--> Research Agent reviews SERP/competitor/context
--> SEO Strategy Agent classifies opportunities
--> deterministic local SEO quality checks
--> save opportunity briefs and missing-evidence notes
--> show cards in Opportunity Explorer
+The worker vertical must prove persistence, idempotency, failures, and QA behavior
+without provider flakiness or Mastra orchestration.
 ```
 
-The workflow output is a proposal/opportunity, not a page version and not a deploy.
+### 4. Opportunity Scout Worker Vertical
 
-### 5. Opportunity Explorer
+Build one useful backend workflow, not a broad agent platform:
+
+```text
+opportunity_scout job
+-> create agent_runs row before the model call
+-> load deterministic project evidence
+-> write redacted evidence packet through ObjectStoragePort as input_ref
+-> call AiReasoningPort.runStructured once
+-> parse OpportunityScoutOutput through Zod
+-> run QA/scoring
+-> insert opportunities and mark run succeeded in one transaction
+-> failures mark run failed and persist no opportunities
+```
+
+Worker invariant:
+
+```text
+Opportunities linked to agent run R may exist only when R.status = succeeded.
+A succeeded run with zero briefs is legal.
+```
+
+Retry/concurrency rules:
+
+```text
+same runId already succeeded      -> no-op, no duplicate opportunities
+same runId running after crash    -> safe redo
+concurrent same-run delivery      -> one conditional status flip wins; loser no-ops
+QA/schema/provider failure        -> failed run, zero opportunities
+```
+
+The workflow output is an opportunity/proposal, not a page version and not a deploy.
+
+### 5. Real Reasoning Adapter
+
+After the mock worker loop is green, add the real provider behind the same port:
+
+```text
+OpenCodeGoReasoningAdapter or MastraReasoningAdapter
+  provider/model config through environment
+  timeout and failure-code mapping
+  redacted diagnostics
+  opaque provider/model metadata only
+```
+
+No Mastra/OpenCode types in contracts, DB schema, UI, controllers, or product truth.
+
+### 6. Opportunity Explorer And Manual Evidence Entry
 
 The first product UI should be workflow-first, not chat-first.
 
-```text
-Project Mission Control
-  opportunity table/list
-  selected opportunity evidence panel
-  nearby-place/service-location surface
-  competitor observations
-  confidence/risk labels
-  create page brief/proposal action
-  hold/reject controls
-  agent run timeline
-```
-
-Use TanStack Query for server state, TanStack Table for opportunity lists, TanStack Form for actions/notes, TanStack Store only for local UI state, and add MapLibre only when real map interaction is needed.
-
-### 6. Page Proposal Workflow
-
-Turn an accepted opportunity into a structured page proposal:
+Smallest useful Explorer:
 
 ```text
-opportunity brief
--> Content Agent drafts page brief/copy/meta/FAQ/CTA
--> Template/Layout Agent chooses controlled components
--> component prop schemas validate output
--> SEO QA checks uniqueness, hub/spoke role, cannibalization, proof, schema readiness
--> preview decision card
+opportunity table/list
+  classification, service, Ort, score, recommended action
+
+detail/evidence panel
+  evidence stack, proof tiers, competitor observations, missing evidence,
+  cannibalization risk, corridor/group context
+
+agent run list
+  status, failure code, provider/model/cost/latency metadata
+
+lifecycle action form
+  hold, reject, monitor
 ```
 
-The page proposal must be structured page JSON, not arbitrary HTML, React code, or a freeform website builder output.
+Manual evidence entry is added here as the bridge before automated SERP snapshots:
 
-### 7. Page Registry And Preview
+```text
+manual_ranking_evidence / manual_evidence
+  operator records query, page URL, observed rank, checked-at date,
+  optional screenshot artifact key, and notes
+```
+
+Why:
+
+```text
+The current contracts include ranking_proof, serp_snapshot, field_evidence, and manual_note,
+but the DB has no backing source rows for those evidence types yet.
+Without a manual evidence bridge, proven_win is structurally unreachable until SERP automation.
+Manual evidence mirrors the real Martines workflow and dogfoods EvidenceRef resolution
+before automating SERP checks.
+```
+
+Use TanStack Query for server state, TanStack Table for opportunity lists, TanStack Form for actions/evidence entry, TanStack Store only for local UI state. Corridors render as grouped lists first; MapLibre waits until real map interaction is needed.
+
+### 7. SERP And Competitor Snapshots
+
+Add automated search/competitor evidence only after the first scout loop works:
+
+```text
+SerpScoutPort
+SerpSnapshot
+SearchResult
+SerpFeature
+competitor snapshot artifacts
+cache by query + locale + device + engine
+```
+
+Rules:
+
+```text
+read-only only
+snapshot rows/artifacts first
+model cites snapshot sourceIds later
+proof freshness policy required
+```
+
+Customer-safe ranking proof expires by policy; a stale rank must not remain customer proof forever.
+
+### 8. Page Registry And Preview
 
 Implement the minimal customer-site component registry needed by page proposals and Page Studio.
 
-MVP registry can start with a small subset, but Page Studio's target taxonomy must support richer section families:
+MVP registry can start with a small subset, but the target taxonomy must support richer section families:
 
 ```text
 Hero
@@ -256,7 +319,22 @@ Each component needs a prop schema, variants, allowed tokens, preview renderer, 
 
 Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
-### 8. Page Studio, Notes, Approval, And Versioning
+### 9. Page Proposal Workflow
+
+Turn an accepted opportunity into a structured page proposal:
+
+```text
+opportunity brief
+-> Content Agent drafts page brief/copy/meta/FAQ/CTA
+-> Template/Layout Agent chooses controlled components
+-> component prop schemas validate output
+-> SEO QA checks uniqueness, hub/spoke role, cannibalization, proof, schema readiness
+-> preview decision card
+```
+
+The page proposal must be structured page JSON, not arbitrary HTML, React code, or a freeform website builder output. This slice depends on the page registry.
+
+### 10. Page Studio, Notes, Approval, And Versioning
 
 Page Studio is the "WordPress but easier" surface for subpages and local pages. It is a constrained layout-zone editor, not a freeform builder:
 
@@ -292,7 +370,7 @@ customer notes attach to preview/component anchors
 approval freezes the deployable version
 ```
 
-### 9. Release Handoff
+### 11. Release Handoff
 
 Approved page versions enter the release spine that already exists:
 
@@ -307,7 +385,7 @@ approval
 
 Agents may explain readiness or blockers. Workers own production mutation.
 
-### 10. Report And Next Action
+### 12. Report And Next Action
 
 Reports should explain customer-safe truth and guide the next opportunity.
 
@@ -327,6 +405,31 @@ GSC impressions/CTR/average position as success proof
 ranking guarantees
 weak internal radar signals as customer-visible wins
 claims that AI "found proof" without evidence
+```
+
+### 13. RAG / Knowledge Retrieval
+
+RAG stays deferred. The direct evidence packet is the first implementation path.
+
+Build retrieval only when one of these is true:
+
+```text
+evidence packets are too large
+Page Brief drafting needs reusable project memory
+Report Narrative needs retrieval across many proof/release artifacts
+operators need "why did the agent use this evidence?" UI
+repeated runs waste tokens loading the same stable context
+```
+
+First retrieval shape:
+
+```text
+project-owned source rows/artifacts
+-> chunk/index with source metadata and proof tier
+-> retrieve with project/source/proof filters before similarity
+-> return RetrievedEvidenceCandidate
+-> map to EvidenceRef
+-> deterministic QA still decides product truth
 ```
 
 ## MVP Non-Goals
@@ -361,7 +464,8 @@ MapLibre / graph dependencies
   When Opportunity Explorer needs real geospatial/relationship interaction.
 
 Mastra memory / RAG
-  After the first opportunity workflow proves the evidence/proposal boundary.
+  After the direct evidence-packet workflow proves the evidence/proposal boundary
+  and one of the slice 13 retrieval triggers becomes real.
 ```
 
 ## Source Map
@@ -371,8 +475,13 @@ This roadmap is grounded in:
 ```text
 C:\big eater\mastra-agent-flow-ideas.md
 C:\big eater\frontend-ui-component-registry-stealer-findings-2026-07-01.md
+C:\big eater\ai-reasoning-opportunity-scout-stealer-findings-2026-07-02.md
+C:\big eater\mastra-docs-for-local-seo-project-2026-07-02.md
+C:\big eater\rag-stealer-findings-2026-07-02.md
+C:\big eater\agentic-evidence-web-ui-stealer-findings-2026-07-02.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/05-template-component-preview-system.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/07-subdomains-local-pages.md
+.ai-project-rules/13-seo-opportunity-planning.md
 .ai-project-rules/09-local-landing-page-generation.md
 ```
