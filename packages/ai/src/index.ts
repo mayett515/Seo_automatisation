@@ -152,7 +152,7 @@ export function evaluateOpportunityScoutOutput(input: EvaluateOpportunityScoutIn
       return fail("evidence_resolution", evidenceFailure, briefIndex);
     }
 
-    const proofFailure = validateProofGate(brief, evidenceRefs);
+    const proofFailure = validateProofGate(brief);
     if (proofFailure) {
       return fail("proof_gate", proofFailure, briefIndex);
     }
@@ -209,16 +209,10 @@ export function scoreOpportunityBrief(brief: OpportunityBrief): number {
   const clusterBonus = clusterStrengthScore(
     brief.corridorCluster?.clusterStrength ?? brief.location.existingClusterStrength
   );
-  const confidenceBonus = Math.round(brief.confidence * 15);
   const cannibalizationPenalty = cannibalizationPenaltyScore(brief.cannibalizationRisk.level);
 
   return clampScore(
-    classificationBase[brief.classification] +
-      proofTierBonus +
-      strengthBonus +
-      clusterBonus +
-      confidenceBonus -
-      cannibalizationPenalty
+    classificationBase[brief.classification] + proofTierBonus + strengthBonus + clusterBonus - cannibalizationPenalty
   );
 }
 
@@ -251,7 +245,7 @@ function validateEvidenceResolution(
   return undefined;
 }
 
-function validateProofGate(brief: OpportunityBrief, evidenceRefs: readonly EvidenceRef[]): string | undefined {
+function validateProofGate(brief: OpportunityBrief): string | undefined {
   if (brief.classification !== "proven_win") {
     return undefined;
   }
@@ -260,7 +254,7 @@ function validateProofGate(brief: OpportunityBrief, evidenceRefs: readonly Evide
     return "proven_win briefs are report/monitoring facts and cannot request page creation.";
   }
 
-  if (!evidenceRefs.some(isCustomerSafeRankingProof)) {
+  if (!brief.evidence.some(isCustomerSafeRankingProof)) {
     return "proven_win requires customer-safe ranking proof with an explicit Top 10 rank.";
   }
 
