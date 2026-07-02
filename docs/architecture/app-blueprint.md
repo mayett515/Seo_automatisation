@@ -79,6 +79,8 @@ Reference: [Frontend UI And Page Registry Architecture](frontend-ui-and-page-reg
 
 Reference: [Website Import And Rebuild Preview Architecture](website-import-rebuild-preview.md).
 
+Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
+
 ## Architecture Direction
 
 ```text

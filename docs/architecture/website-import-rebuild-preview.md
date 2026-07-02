@@ -2,7 +2,7 @@
 
 Status: Accepted MVP direction
 
-This document defines the MVP-safe shape for importing a customer's existing website and rebuilding it as a controlled preview. It complements [Frontend UI And Page Registry Architecture](frontend-ui-and-page-registry.md).
+This document defines the MVP-safe shape for importing a customer's existing website and rebuilding it as a controlled preview. It complements [Frontend UI And Page Registry Architecture](frontend-ui-and-page-registry.md) and [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ## Product Framing
 

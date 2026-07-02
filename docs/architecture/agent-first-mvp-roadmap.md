@@ -222,24 +222,60 @@ The page proposal must be structured page JSON, not arbitrary HTML, React code, 
 
 ### 7. Page Registry And Preview
 
-Implement the minimal customer-site component registry needed by page proposals.
+Implement the minimal customer-site component registry needed by page proposals and Page Studio.
 
-MVP registry:
+MVP registry can start with a small subset, but Page Studio's target taxonomy must support richer section families:
 
 ```text
 Hero
+ServiceIntro
 ServiceDescription
 ServiceGrid
+BenefitsGrid
+BulletList
+ImageText
+Gallery
+Slideshow
+Carousel
+BeforeAfter
 TrustReviews
+References
 FAQ
 ContactCTA
 AreaMap
+NearbyPlaces
+ServiceAreaList
 Footer
 ```
 
-Each component needs a prop schema, variants, allowed tokens, preview renderer, validation errors, and customer note anchors.
+Each component needs a prop schema, variants, allowed tokens, preview renderer, validation errors, customer note anchors, layout zone metadata, and legal movement rules.
 
-### 8. Notes, Approval, And Versioning
+Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
+
+### 8. Page Studio, Notes, Approval, And Versioning
+
+Page Studio is the "WordPress but easier" surface for subpages and local pages. It is a constrained layout-zone editor, not a freeform builder:
+
+```text
+section type selector
+left/right variant arrows
+legal up/down movement arrows
+Generate Text / Generate FAQ / Generate CTA actions
+structured Edit and Media controls
+customer notes on sections
+approval for one concrete version
+```
+
+Movement is realistic:
+
+```text
+Header and footer are locked.
+Hero is locked first after the header.
+Final CTA is locked late for MVP.
+Body sections can move only inside allowed zones.
+FAQ, AreaMap, and service-area sections usually stay in late-body zones.
+The UI only shows arrows/actions that are legal for that section.
+```
 
 The customer/operator approves a concrete page version.
 

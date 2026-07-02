@@ -22,6 +22,8 @@ The customer-facing value is not "AI generated a page." The value is that the ap
 
 Roadmap reference: [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md).
 
+Page Studio reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
+
 ## Two Component Systems
 
 There are two separate component systems.
@@ -133,6 +135,7 @@ packages/ui/src/
     ComponentOutline
     SectionSelector
     VariantSwitcher
+    LegalMoveControls
     CustomerNotePin
     PreviewToolbar
     VersionDiffControl
@@ -166,16 +169,27 @@ apps/web/src/features/
 
 The customer-page registry is a future package for deployable page sections. It should be schema-first and controlled.
 
-Initial registry candidates:
+Initial registry candidates and Page Studio target section families:
 
 ```text
 Hero
+ServiceIntro
 ServiceDescription
 ServiceGrid
+BenefitsGrid
+BulletList
+ImageText
+Gallery
+Slideshow
+Carousel
+BeforeAfter
 TrustReviews
+References
 FAQ
 ContactCTA
 AreaMap
+NearbyPlaces
+ServiceAreaList
 Footer
 ```
 
@@ -188,6 +202,8 @@ prop schema
 content slots
 SEO metadata requirements
 allowed style/theme tokens
+layout zone
+legal movement rules
 preview renderer
 validation errors
 customer note anchors
@@ -217,7 +233,47 @@ packages/page-registry/src/
     Footer/
 ```
 
-The registry should produce controlled page JSON. It must not accept arbitrary agent-generated HTML, unvalidated props, or silent mutation of an approved page version.
+The registry should produce controlled page JSON. It must not accept arbitrary agent-generated HTML, unvalidated props, illegal movement, or silent mutation of an approved page version.
+
+## Page Studio MVP
+
+Page Studio is the constrained editor for generated customer pages and subpages. It should feel much easier than WordPress because the user chooses from legal component sections, variants, generated text, and structured edits instead of assembling a page from scratch.
+
+The core decision:
+
+```text
+Page Studio is a constrained layout-zone editor.
+It is not a free drag-and-drop builder.
+```
+
+Page outline controls:
+
+```text
+[Header]               Locked top     < Variant 1 / 3 >
+[Hero]                 Locked first   < Variant 2 / 5 >   Generate Text   Edit
+[Service Intro]        Up/Down        < Variant 1 / 4 >   Generate Text   Edit
+[Benefits Grid]        Up/Down        < Variant 2 / 6 >   Generate Text   Edit
+[Image/Text]           Up/Down        < Variant 3 / 5 >   Media/Text      Edit
+[Gallery]              Up/Down        < Variant 1 / 4 >   Media           Edit
+[Trust Reviews]        Up/Down        < Variant 1 / 3 >   Select Proof    Edit
+[FAQ]                  Legal Up only  < Variant 2 / 4 >   Generate FAQ    Edit
+[Area Map]             Up/Down        < Variant 2 / 3 >   Edit Area       Edit
+[Final CTA]            Locked late    < Variant 1 / 4 >   Generate CTA    Edit
+[Footer]               Locked bottom  < Variant 1 / 2 >
+```
+
+The UI must only expose legal actions:
+
+```text
+Header/footer do not get up/down controls.
+Hero stays first after header.
+Final CTA stays late/bottom for MVP.
+FAQ and map sections can move only in legal late-body zones.
+Variant arrows switch variants, not section types.
+Section replacement is separate and must validate against the zone rules.
+```
+
+LLM-generated page proposals must validate against the same section schemas and movement rules before preview.
 
 ## Opportunity Explorer MVP
 
