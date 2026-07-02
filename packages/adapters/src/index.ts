@@ -1,10 +1,12 @@
 import type {
   DomainEventName,
+  AiReasoningAdapterFailureCode,
   GscOAuthIntent,
   GscPropertyList,
   GscSearchAnalyticsRow,
   GscSitemapSubmission,
   GscUrlInspectionResult,
+  ReasoningTask,
   ReleaseVerification,
   ReleaseVerificationCheck,
   RollbackPoint,
@@ -13,6 +15,7 @@ import type {
 
 export * from "./google-search-console.js";
 export * from "./file-system-object-storage.js";
+export * from "./http-website-crawler.js";
 export * from "./http-release-verification.js";
 export * from "./playwright-browser-verification.js";
 export * from "./provider-errors.js";
@@ -127,11 +130,39 @@ export type RollbackDeployResult = {
   evidence?: Record<string, unknown>;
 };
 
+export type CrawledWebsiteImage = {
+  src: string;
+  alt?: string;
+};
+
+export type CrawledWebsitePage = {
+  url: string;
+  route: string;
+  status: number;
+  title?: string;
+  metaDescription?: string;
+  h1?: string;
+  canonical?: string;
+  robots?: string;
+  internalLinks: string[];
+  images: CrawledWebsiteImage[];
+  schemaTypes: string[];
+  visibleTextSummary?: string;
+};
+
+export type CrawledWebsiteSkippedUrl = {
+  url: string;
+  reason: string;
+};
+
 export type CrawledWebsiteSnapshot = {
   projectId: string;
   sourceUrl: string;
   artifactKey: string;
+  crawledAt: string;
   discoveredRoutes: string[];
+  pages: CrawledWebsitePage[];
+  skippedUrls: CrawledWebsiteSkippedUrl[];
 };
 
 export type AnalyticsSnapshot = {
@@ -141,11 +172,53 @@ export type AnalyticsSnapshot = {
   metrics: Record<string, number>;
 };
 
-export type AiReasoningResult = {
-  workflowId: string;
-  status: "completed" | "blocked" | "failed";
-  output: unknown;
+export type AiReasoningToolCategory = "read_evidence" | "analyze" | "draft_content";
+
+export type AiReasoningRunPolicy = {
+  canMutateProduction: false;
+  allowedToolCategories: AiReasoningToolCategory[];
+  maxCostCents?: number;
 };
+
+export type AiReasoningRunInput = {
+  task: ReasoningTask;
+  projectId: string;
+  runId: string;
+  prompt: string;
+  inputJson: unknown;
+  outputSchemaName: string;
+  timeoutMs: number;
+  policy: AiReasoningRunPolicy;
+};
+
+export type AiReasoningUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  costCents?: number;
+};
+
+export type AiReasoningDiagnostics = {
+  latencyMs: number;
+  finishReason?: string;
+  detail?: string;
+};
+
+export type AiReasoningRunResult =
+  | {
+      ok: true;
+      provider: string;
+      model: string;
+      outputJson: unknown;
+      usage?: AiReasoningUsage;
+      diagnostics: AiReasoningDiagnostics;
+    }
+  | {
+      ok: false;
+      failureCode: AiReasoningAdapterFailureCode;
+      provider: string;
+      model?: string;
+      diagnostics: AiReasoningDiagnostics;
+    };
 
 export type DomainEvent = {
   name: DomainEventName;
@@ -236,7 +309,7 @@ export type SearchConsoleAuthorizationRequest = {
 };
 
 export interface CrawlerPort {
-  crawlWebsite(input: { projectId: string; sourceUrl: string }): Promise<CrawledWebsiteSnapshot>;
+  crawlWebsite(input: { projectId: string; sourceUrl: string; importRunId?: string }): Promise<CrawledWebsiteSnapshot>;
 }
 
 export interface AnalyticsPort {
@@ -244,7 +317,7 @@ export interface AnalyticsPort {
 }
 
 export interface AiReasoningPort {
-  runWorkflow(input: { workflowId: string; projectId: string; input: unknown }): Promise<AiReasoningResult>;
+  runStructured(input: AiReasoningRunInput): Promise<AiReasoningRunResult>;
 }
 
 export interface ObjectStoragePort {

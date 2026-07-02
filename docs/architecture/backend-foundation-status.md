@@ -223,18 +223,24 @@ How to read this: Mastra proposes strategy, content, layout, and design choices.
 
 ### Mastra Lane Status
 
-| Slice                             | Status  | Purpose                                                                                                                           |
-| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| AI reasoning port                 | Planned | Define the application interface for invoking Mastra without leaking agent/provider details into controllers or core packages.    |
-| Website understanding workflow    | Planned | Convert imported website evidence into structured business, service, area, tone, color, layout, and CTA facts.                    |
-| Component registry                | Planned | Define which frontend/site components Mastra may choose, including prop schemas and allowed style/theme tokens.                   |
-| Page proposal workflow            | Planned | Produce route, page purpose, sections, component props, draft copy, metadata, schema, FAQ, CTA, and internal-link suggestions.    |
-| Validation pipeline               | Planned | Validate every Mastra output with Zod, component prop schemas, local SEO QA, duplicate/cannibalization checks, and policy guards. |
-| Preview and approval UI           | Planned | Render structured proposals for editing, notes, and persisted approval before release.                                            |
-| Release/report narrative workflow | Planned | Draft release notes and customer-safe report language; deterministic guards block forbidden proof claims.                         |
+The corrected MVP roadmap is agent-first: website import, GSC, tracking, SERP, competitor, and field evidence feed an AI Opportunity Scout, then the platform validates and previews controlled proposals. See [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md) and [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
+
+| Slice                             | Status  | Purpose                                                                                                                                              |
+| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AI reasoning port                 | Planned | Define the application interface for invoking Mastra without leaking agent/provider details into controllers or core packages.                       |
+| Website understanding workflow    | Planned | Convert imported website evidence into structured business, service, area, tone, color, layout, and CTA facts.                                       |
+| Opportunity scout workflow        | Planned | Use website, GSC, tracking, SERP, competitor, and field evidence to classify opportunities and draft page briefs.                                    |
+| Component registry                | Planned | Define which frontend/site components Mastra may choose, including prop schemas, allowed style/theme tokens, layout zones, and legal movement rules. |
+| Page proposal workflow            | Planned | Produce route, page purpose, sections, component props, draft copy, metadata, schema, FAQ, CTA, and internal-link suggestions.                       |
+| Page Studio                       | Planned | Provide the constrained layout-zone editor for variant switching, legal section movement, text/media edits, notes, and approval.                     |
+| Validation pipeline               | Planned | Validate every Mastra output with Zod, component prop schemas, local SEO QA, duplicate/cannibalization checks, and policy guards.                    |
+| Preview and approval UI           | Planned | Render structured proposals for editing, notes, and persisted approval before release.                                                               |
+| Release/report narrative workflow | Planned | Draft release notes and customer-safe report language; deterministic guards block forbidden proof claims.                                            |
 
 ### Mastra Can Suggest
 
+- competitor observations and SERP positioning,
+- opportunity classifications and page brief candidates,
 - main-domain and subdomain/local-page structure,
 - service/area page strategy,
 - page hierarchy and internal links,

@@ -49,6 +49,10 @@ export class QueueProducerService implements OnModuleDestroy {
       : {};
   }
 
+  isQueueConfigured(queueName: ApiQueueName): boolean {
+    return Boolean(this.queues[queueName]);
+  }
+
   async enqueue(input: EnqueueInput): Promise<boolean> {
     const queue = this.queues[input.queueName];
     const attempts = typeof input.options?.attempts === "number" ? input.options.attempts : 3;

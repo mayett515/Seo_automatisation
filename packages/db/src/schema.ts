@@ -3,17 +3,21 @@ import {
   approvalStatuses,
   customerMembershipRoles,
   deploymentStatuses,
+  agentRunStatuses,
+  opportunityClassifications,
   gscConnectionStatuses,
   gscOpportunitySignalStatuses,
   gscOpportunitySignalTypes,
   gscSyncStatuses,
   jobStatuses,
   providerOperationStatuses,
+  reasoningTasks,
   releaseCheckResults,
   releaseCheckSeverities,
   releaseNoteAudiences,
   releasePlanStatuses,
-  releaseVerificationStatuses
+  releaseVerificationStatuses,
+  websiteImportStatuses
 } from "@localseo/contracts";
 import {
   boolean,
@@ -30,12 +34,16 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const jobStatusEnum = pgEnum("job_status", jobStatuses);
+export const agentTaskEnum = pgEnum("agent_task", reasoningTasks);
+export const agentRunStatusEnum = pgEnum("agent_run_status", agentRunStatuses);
+export const opportunityClassificationEnum = pgEnum("opportunity_classification", opportunityClassifications);
 export const releaseStatusEnum = pgEnum("release_status", releasePlanStatuses);
 export const deploymentStatusEnum = pgEnum("deployment_status", deploymentStatuses);
 export const providerOperationStatusEnum = pgEnum("provider_operation_status", providerOperationStatuses);
 export const releaseVerificationStatusEnum = pgEnum("release_verification_status", releaseVerificationStatuses);
 export const gscConnectionStatusEnum = pgEnum("gsc_connection_status", gscConnectionStatuses);
 export const gscSyncStatusEnum = pgEnum("gsc_sync_status", gscSyncStatuses);
+export const websiteImportStatusEnum = pgEnum("website_import_status", websiteImportStatuses);
 export const gscOpportunitySignalTypeEnum = pgEnum("gsc_opportunity_signal_type", gscOpportunitySignalTypes);
 export const gscOpportunitySignalStatusEnum = pgEnum("gsc_opportunity_signal_status", gscOpportunitySignalStatuses);
 export const releaseNoteAudienceEnum = pgEnum("release_note_audience", releaseNoteAudiences);
@@ -186,6 +194,29 @@ export const mainWebsites = pgTable("main_websites", {
   ...timestamps
 });
 
+export const websiteImportRuns = pgTable(
+  "website_import_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    mainWebsiteId: uuid("main_website_id").references(() => mainWebsites.id),
+    sourceUrl: text("source_url").notNull(),
+    status: websiteImportStatusEnum("status").notNull().default("queued"),
+    artifactKey: text("artifact_key"),
+    summaryJson: jsonb("summary_json").$type<Record<string, unknown>>(),
+    failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    index("website_import_runs_project_status_idx").on(table.projectId, table.status, table.createdAt),
+    index("website_import_runs_main_website_idx").on(table.mainWebsiteId)
+  ]
+);
+
 export const domains = pgTable("domains", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")
@@ -215,13 +246,41 @@ export const services = pgTable("services", {
   ...timestamps
 });
 
+export const agentRuns = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    task: agentTaskEnum("task").notNull(),
+    status: agentRunStatusEnum("status").notNull().default("queued"),
+    failureCode: text("failure_code"),
+    provider: text("provider"),
+    model: text("model"),
+    inputRef: text("input_ref"),
+    outputJson: jsonb("output_json").$type<Record<string, unknown>>(),
+    usageJson: jsonb("usage_json").$type<Record<string, unknown>>(),
+    diagnosticsJson: jsonb("diagnostics_json").$type<Record<string, unknown>>(),
+    latencyMs: integer("latency_ms"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    index("agent_runs_project_task_status_idx").on(table.projectId, table.task, table.status, table.createdAt)
+  ]
+);
+
 export const opportunities = pgTable("opportunities", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")
     .notNull()
     .references(() => projects.id),
+  agentRunId: uuid("agent_run_id").references(() => agentRuns.id),
   areaId: uuid("area_id").references(() => areas.id),
   serviceId: uuid("service_id").references(() => services.id),
+  classification: opportunityClassificationEnum("classification").notNull().default("internal_radar"),
   primaryKeyword: text("primary_keyword").notNull(),
   score: integer("score").default(0).notNull(),
   status: text("status").default("new").notNull(),
@@ -576,8 +635,20 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   gscConnections: many(gscConnections),
   gscSyncRuns: many(gscSyncRuns),
   gscOpportunitySignals: many(gscOpportunitySignals),
+  websiteImportRuns: many(websiteImportRuns),
+  agentRuns: many(agentRuns),
   trackingKeys: many(projectTrackingKeys),
   reports: many(reports)
+}));
+
+export const mainWebsiteRelations = relations(mainWebsites, ({ many, one }) => ({
+  project: one(projects, { fields: [mainWebsites.projectId], references: [projects.id] }),
+  importRuns: many(websiteImportRuns)
+}));
+
+export const websiteImportRunRelations = relations(websiteImportRuns, ({ one }) => ({
+  project: one(projects, { fields: [websiteImportRuns.projectId], references: [projects.id] }),
+  mainWebsite: one(mainWebsites, { fields: [websiteImportRuns.mainWebsiteId], references: [mainWebsites.id] })
 }));
 
 export const userRelations = relations(users, ({ many }) => ({
@@ -609,6 +680,17 @@ export const customerMembershipRelations = relations(customerMemberships, ({ one
 export const pageProposalRelations = relations(pageProposals, ({ many, one }) => ({
   project: one(projects, { fields: [pageProposals.projectId], references: [projects.id] }),
   versions: many(pageVersions)
+}));
+
+export const agentRunRelations = relations(agentRuns, ({ many, one }) => ({
+  project: one(projects, { fields: [agentRuns.projectId], references: [projects.id] }),
+  opportunities: many(opportunities)
+}));
+
+export const opportunityRelations = relations(opportunities, ({ many, one }) => ({
+  project: one(projects, { fields: [opportunities.projectId], references: [projects.id] }),
+  agentRun: one(agentRuns, { fields: [opportunities.agentRunId], references: [agentRuns.id] }),
+  pageProposals: many(pageProposals)
 }));
 
 export const releasePlanRelations = relations(releasePlans, ({ many, one }) => ({
