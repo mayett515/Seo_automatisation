@@ -5,6 +5,7 @@ import { DatabaseModule } from "./database/database.module.js";
 import { HealthController } from "./health.controller.js";
 import { GscModule } from "./modules/gsc.module.js";
 import { LeadsModule } from "./modules/leads.module.js";
+import { OpportunitiesModule } from "./modules/opportunities.module.js";
 import { ProjectsModule } from "./modules/projects.module.js";
 import { QueueProducerModule } from "./queue-producer.js";
 import { RedisModule } from "./redis/redis.module.js";
@@ -22,6 +23,7 @@ import { TrackingModule } from "./modules/tracking.module.js";
     QueueProducerModule,
     GscModule,
     LeadsModule,
+    OpportunitiesModule,
     ProjectsModule,
     ReleasesModule,
     TrackingModule

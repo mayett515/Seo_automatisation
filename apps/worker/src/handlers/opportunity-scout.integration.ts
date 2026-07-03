@@ -10,6 +10,7 @@ import {
   gscSyncRuns,
   opportunities,
   projects,
+  rankingProofs,
   trackingEvents,
   websiteImportRuns,
   type DatabaseClient
@@ -33,6 +34,7 @@ type ScoutFixture = {
   runId: string;
   rowId: string;
   signalId: string;
+  proofId: string;
 };
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -126,6 +128,74 @@ void describe(
 
       const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
       assert.equal(run?.status, "succeeded");
+      const rows = await db.select().from(opportunities).where(eq(opportunities.agentRunId, fixture.runId));
+      assert.equal(rows.length, 0);
+    });
+
+    void it("accepts proven wins that cite project-owned ranking proof", async () => {
+      const fixture = await createScoutFixture(db);
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-opportunity-scout",
+        outputJson: validOpportunityScoutOutput(fixture, {
+          classification: "proven_win",
+          recommendedAction: "monitor",
+          suggestedPageType: "monitor_only",
+          evidence: [rankingProofEvidence(fixture)],
+          missingEvidence: []
+        }),
+        diagnostics: { latencyMs: 9 }
+      });
+
+      const result = await executeOpportunityScout({
+        data: { projectId: fixture.projectId, runId: fixture.runId },
+        repository: createDrizzleOpportunityScoutRepository(db),
+        reasoning,
+        objectStorage: new MemoryObjectStorage()
+      });
+
+      assert.equal(result.status, "succeeded");
+      const packet = recordFromUnknown(reasoning.calls[0]?.inputJson);
+      assert.deepEqual(
+        arrayFromUnknown(packet.rankingProofs).map((proof) => recordFromUnknown(proof).sourceId),
+        [fixture.proofId]
+      );
+
+      const rows = await db.select().from(opportunities).where(eq(opportunities.agentRunId, fixture.runId));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.classification, "proven_win");
+      assert.equal(rows[0]?.status, "monitoring");
+    });
+
+    void it("rejects proven wins when model-claimed rank differs from the proof row", async () => {
+      const fixture = await createScoutFixture(db);
+
+      await assert.rejects(
+        executeOpportunityScout({
+          data: { projectId: fixture.projectId, runId: fixture.runId },
+          repository: createDrizzleOpportunityScoutRepository(db),
+          reasoning: new MockReasoningAdapter({
+            ok: true,
+            provider: "mock",
+            model: "mock-opportunity-scout",
+            outputJson: validOpportunityScoutOutput(fixture, {
+              classification: "proven_win",
+              recommendedAction: "monitor",
+              suggestedPageType: "monitor_only",
+              evidence: [rankingProofEvidence(fixture, { observedMetric: { name: "rank", value: 3 } })],
+              missingEvidence: []
+            }),
+            diagnostics: { latencyMs: 9 }
+          }),
+          objectStorage: new MemoryObjectStorage()
+        }),
+        (error) => error instanceof OpportunityScoutWorkflowError && /qa_rejected:proof_gate/u.test(error.message)
+      );
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "failed");
+      assert.equal(recordFromUnknown(run?.diagnosticsJson).gateId, "proof_gate");
       const rows = await db.select().from(opportunities).where(eq(opportunities.agentRunId, fixture.runId));
       assert.equal(rows.length, 0);
     });
@@ -376,11 +446,27 @@ async function createScoutFixture(db: DatabaseClient, input: { name?: string } =
     occurredAt: new Date()
   });
 
+  const [proof] = await db
+    .insert(rankingProofs)
+    .values({
+      projectId: project.id,
+      query: "entruempelung dachau",
+      pageUrl: "https://customer.example/entruempelung-dachau/",
+      rank: 4,
+      capturedAt: new Date("2026-07-03T10:00:00.000Z"),
+      searchEngine: "google",
+      device: "desktop",
+      evidenceJson: { entrySource: "manual_operator_entry" }
+    })
+    .returning();
+  assert.ok(proof);
+
   return {
     projectId: project.id,
     runId: run.id,
     rowId: row.id,
-    signalId: signal.id
+    signalId: signal.id,
+    proofId: proof.id
   };
 }
 
@@ -452,6 +538,25 @@ function validOpportunityScoutOutput(
   };
 }
 
+function rankingProofEvidence(
+  fixture: Pick<ScoutFixture, "proofId">,
+  overrides: Partial<OpportunityScoutOutput["briefs"][number]["evidence"][number]> = {}
+): OpportunityScoutOutput["briefs"][number]["evidence"][number] {
+  return {
+    sourceType: "ranking_proof",
+    sourceId: fixture.proofId,
+    locator: {
+      query: "entruempelung dachau",
+      pageUrl: "https://customer.example/entruempelung-dachau/"
+    },
+    summary: "Manual SERP proof shows the Dachau page in the Top 10.",
+    observedMetric: { name: "rank", value: 4 },
+    strength: "strong",
+    proofTier: "customer_safe_proof",
+    ...overrides
+  };
+}
+
 class MemoryObjectStorage implements ObjectStoragePort {
   readonly writes: Array<{ key: string; value: unknown }> = [];
 
@@ -467,4 +572,8 @@ class MemoryObjectStorage implements ObjectStoragePort {
 
 function recordFromUnknown(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function arrayFromUnknown(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }

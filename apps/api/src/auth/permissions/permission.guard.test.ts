@@ -31,6 +31,12 @@ void describe("PermissionGuard", () => {
     assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
   });
 
+  void it("allows editors to enter opportunity evidence", () => {
+    const guard = new PermissionGuard(new TestReflector(["opportunity:evidence"]));
+
+    assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
+  });
+
   void it("rejects viewers on privileged project actions", () => {
     const guard = new PermissionGuard(new TestReflector(["release:approve"]));
 

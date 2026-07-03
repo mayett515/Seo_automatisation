@@ -288,6 +288,32 @@ export const opportunities = pgTable("opportunities", {
   ...timestamps
 });
 
+export const rankingProofs = pgTable(
+  "ranking_proofs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    query: text("query").notNull(),
+    pageUrl: text("page_url").notNull(),
+    rank: integer("rank").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    searchEngine: text("search_engine").notNull().default("google"),
+    device: text("device").notNull().default("desktop"),
+    locale: text("locale"),
+    screenshotArtifactKey: text("screenshot_artifact_key"),
+    notes: text("notes"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+    ...timestamps
+  },
+  (table) => [
+    index("ranking_proofs_project_captured_idx").on(table.projectId, table.capturedAt),
+    index("ranking_proofs_project_query_idx").on(table.projectId, table.query)
+  ]
+);
+
 export const pageProposals = pgTable("page_proposals", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")
@@ -637,6 +663,7 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   gscOpportunitySignals: many(gscOpportunitySignals),
   websiteImportRuns: many(websiteImportRuns),
   agentRuns: many(agentRuns),
+  rankingProofs: many(rankingProofs),
   trackingKeys: many(projectTrackingKeys),
   reports: many(reports)
 }));
@@ -691,6 +718,11 @@ export const opportunityRelations = relations(opportunities, ({ many, one }) => 
   project: one(projects, { fields: [opportunities.projectId], references: [projects.id] }),
   agentRun: one(agentRuns, { fields: [opportunities.agentRunId], references: [agentRuns.id] }),
   pageProposals: many(pageProposals)
+}));
+
+export const rankingProofRelations = relations(rankingProofs, ({ one }) => ({
+  project: one(projects, { fields: [rankingProofs.projectId], references: [projects.id] }),
+  createdBy: one(users, { fields: [rankingProofs.createdByUserId], references: [users.id] })
 }));
 
 export const releasePlanRelations = relations(releasePlans, ({ many, one }) => ({

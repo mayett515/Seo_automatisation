@@ -183,6 +183,7 @@ export const evidenceSourceTypes = [
 
 export const evidenceStrengths = ["weak", "medium", "strong"] as const;
 export const evidenceProofTiers = ["internal_signal", "supporting_context", "customer_safe_proof"] as const;
+export const rankingProofDevices = ["desktop", "mobile"] as const;
 export const nearbyPlaceKinds = ["city", "district", "village", "municipality", "service_area"] as const;
 export const nearbyPlaceAdjacencyReasons = [
   "near_existing_win",
@@ -236,6 +237,7 @@ export const OpportunitySuggestedPageTypeSchema = z.enum(opportunitySuggestedPag
 export const EvidenceSourceTypeSchema = z.enum(evidenceSourceTypes);
 export const EvidenceStrengthSchema = z.enum(evidenceStrengths);
 export const EvidenceProofTierSchema = z.enum(evidenceProofTiers);
+export const RankingProofDeviceSchema = z.enum(rankingProofDevices);
 export const NearbyPlaceKindSchema = z.enum(nearbyPlaceKinds);
 export const NearbyPlaceAdjacencyReasonSchema = z.enum(nearbyPlaceAdjacencyReasons);
 export const ClusterStrengthSchema = z.enum(clusterStrengths);
@@ -309,6 +311,28 @@ export const CreateWebsiteImportRequestSchema = z.object({
 export const CreateOpportunityScoutRunRequestSchema = z.object({
   maxBriefs: z.number().int().positive().max(12).optional()
 });
+
+export const HttpUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  }, "Expected an http(s) URL.");
+
+export const CreateRankingProofRequestSchema = z
+  .object({
+    query: z.string().trim().min(1).max(200),
+    pageUrl: HttpUrlSchema,
+    rank: z.number().int().positive().max(100),
+    capturedAt: z.string().datetime().optional(),
+    searchEngine: z.string().trim().min(1).max(60).default("google"),
+    device: RankingProofDeviceSchema.default("desktop"),
+    locale: z.string().trim().min(1).max(100).optional(),
+    screenshotArtifactKey: z.string().trim().min(1).max(500).optional(),
+    notes: z.string().trim().min(1).max(2_000).optional()
+  })
+  .strict();
 
 export const QueueJobSchema = z.object({
   jobId: z.string().min(1),
@@ -805,6 +829,27 @@ export const OpportunityScoutQueueResponseSchema = QueueJobSchema.extend({
   runId: z.string().min(1).optional()
 });
 
+export const RankingProofSchema = z.object({
+  id: z.string().min(1),
+  projectId: ProjectIdSchema,
+  query: z.string().min(1),
+  pageUrl: HttpUrlSchema,
+  rank: z.number().int().positive(),
+  capturedAt: z.string().datetime(),
+  searchEngine: z.string().min(1),
+  device: RankingProofDeviceSchema,
+  locale: z.string().min(1).optional(),
+  screenshotArtifactKey: z.string().min(1).optional(),
+  notes: z.string().min(1).optional(),
+  createdByUserId: z.string().min(1).optional(),
+  createdAt: z.string().datetime()
+});
+
+export const RankingProofListResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  proofs: z.array(RankingProofSchema)
+});
+
 export type CreateLeadInput = z.output<typeof CreateLeadSchema>;
 export type Lead = z.output<typeof LeadSchema>;
 export type PotentialReport = z.output<typeof PotentialReportSchema>;
@@ -835,6 +880,7 @@ export type GscSyncRun = z.output<typeof GscSyncRunSchema>;
 export type WebsiteImportRun = z.output<typeof WebsiteImportRunSchema>;
 export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportResponseSchema>;
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
+export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;
 export type GscSearchAnalyticsRow = z.output<typeof GscSearchAnalyticsRowSchema>;
 export type GscOpportunitySignal = z.output<typeof GscOpportunitySignalSchema>;
 export type EvidenceRef = z.output<typeof EvidenceRefSchema>;
@@ -859,6 +905,8 @@ export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
 export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
+export type RankingProof = z.output<typeof RankingProofSchema>;
+export type RankingProofListResponse = z.output<typeof RankingProofListResponseSchema>;
 export type JobStatus = z.output<typeof JobStatusSchema>;
 export type JobType = z.output<typeof JobTypeSchema>;
 export type DomainEventName = z.output<typeof DomainEventNameSchema>;
@@ -881,6 +929,7 @@ export type OpportunitySuggestedPageType = z.output<typeof OpportunitySuggestedP
 export type EvidenceSourceType = z.output<typeof EvidenceSourceTypeSchema>;
 export type EvidenceStrength = z.output<typeof EvidenceStrengthSchema>;
 export type EvidenceProofTier = z.output<typeof EvidenceProofTierSchema>;
+export type RankingProofDevice = z.output<typeof RankingProofDeviceSchema>;
 export type OpportunityGroupSource = z.output<typeof OpportunityGroupSourceSchema>;
 export type ApprovalStatus = z.output<typeof ApprovalStatusSchema>;
 export type CustomerMembershipRole = z.output<typeof CustomerMembershipRoleSchema>;

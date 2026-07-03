@@ -20,6 +20,7 @@ import {
   gscSearchAnalyticsRows,
   opportunities,
   pageProposals,
+  rankingProofs,
   trackingEvents,
   websiteImportRuns
 } from "@localseo/db";
@@ -387,6 +388,13 @@ async function loadOpportunityScoutEvidence(db: WorkerDb, projectId: string): Pr
     .orderBy(desc(trackingEvents.occurredAt))
     .limit(50);
 
+  const proofRows = await db
+    .select()
+    .from(rankingProofs)
+    .where(eq(rankingProofs.projectId, projectId))
+    .orderBy(desc(rankingProofs.capturedAt))
+    .limit(50);
+
   const proposals = await db
     .select({ route: pageProposals.route })
     .from(pageProposals)
@@ -410,7 +418,14 @@ async function loadOpportunityScoutEvidence(db: WorkerDb, projectId: string): Pr
     ...(latestImport ? [{ sourceType: "website_import" as const, sourceId: latestImport.id }] : []),
     ...rows.map((row) => ({ sourceType: "gsc_row" as const, sourceId: row.id })),
     ...signals.map((signal) => ({ sourceType: "gsc_signal" as const, sourceId: signal.id })),
-    ...recentTracking.map((event) => ({ sourceType: "tracking" as const, sourceId: event.id }))
+    ...recentTracking.map((event) => ({ sourceType: "tracking" as const, sourceId: event.id })),
+    ...proofRows.map((proof) => ({
+      sourceType: "ranking_proof" as const,
+      sourceId: proof.id,
+      rank: proof.rank,
+      query: proof.query,
+      pageUrl: proof.pageUrl
+    }))
   ];
 
   const packet = buildOpportunityScoutEvidencePacket({
@@ -457,6 +472,19 @@ async function loadOpportunityScoutEvidence(db: WorkerDb, projectId: string): Pr
         occurredAt: event.occurredAt.toISOString()
       }))
     },
+    rankingProofs: proofRows.map((proof) => ({
+      sourceType: "ranking_proof",
+      sourceId: proof.id,
+      query: proof.query,
+      pageUrl: proof.pageUrl,
+      rank: proof.rank,
+      capturedAt: proof.capturedAt.toISOString(),
+      searchEngine: proof.searchEngine,
+      device: proof.device,
+      locale: proof.locale,
+      screenshotArtifactKey: proof.screenshotArtifactKey,
+      notes: proof.notes
+    })),
     existingRoutes,
     existingOpportunityKeys
   });

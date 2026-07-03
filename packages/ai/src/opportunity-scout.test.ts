@@ -56,13 +56,61 @@ void test("accepts proven_win only when the brief carries customer-safe ranking 
   const result = evaluateOpportunityScoutOutput({
     projectId,
     output,
-    resolvableEvidence: [
-      { sourceType: "gsc_row", sourceId: "gsc-row-1" },
-      { sourceType: "ranking_proof", sourceId: "rank-1" }
-    ]
+    resolvableEvidence: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }, rankingProofResolvable()]
   });
 
   assert.equal(result.ok, true);
+});
+
+void test("rejects proven_win when claimed rank differs from the cited proof row", () => {
+  const output = validOutput({
+    classification: "proven_win",
+    recommendedAction: "monitor",
+    evidence: [rankingProofEvidence({ observedMetric: { name: "rank", value: 3 } })]
+  });
+
+  const result = evaluateOpportunityScoutOutput({
+    projectId,
+    output,
+    resolvableEvidence: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }, rankingProofResolvable({ rank: 45 })]
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.failure.gateId, "proof_gate");
+  assert.match(result.failure.message, /rank must match/u);
+});
+
+void test("rejects proven_win when proof locator differs from the cited proof row", () => {
+  const output = validOutput({
+    classification: "proven_win",
+    recommendedAction: "monitor",
+    evidence: [
+      rankingProofEvidence({
+        locator: {
+          query: "entruempelung petershausen",
+          pageUrl: "https://customer.example/entruempelung-dachau/"
+        }
+      })
+    ]
+  });
+
+  const result = evaluateOpportunityScoutOutput({
+    projectId,
+    output,
+    resolvableEvidence: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }, rankingProofResolvable()]
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.failure.gateId, "proof_gate");
+  assert.match(result.failure.message, /query must match/u);
 });
 
 void test("does not let output-level group evidence satisfy proven_win proof gate", () => {
@@ -392,6 +440,10 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
         { occurredAt: "2026-07-03T00:00:01.000Z", eventName: "page_view", route: "/a" }
       ]
     },
+    rankingProofs: [
+      { sourceId: "rank-2", query: "b", pageUrl: "https://example.test/b", capturedAt: "2026-07-03T00:00:02.000Z" },
+      { sourceId: "rank-1", query: "a", pageUrl: "https://example.test/a", capturedAt: "2026-07-03T00:00:01.000Z" }
+    ],
     existingRoutes: ["/b", "/a"],
     existingOpportunityKeys: ["b", "a"]
   });
@@ -406,6 +458,7 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
     tracking: {
       recentEvents: [...first.tracking.recentEvents].reverse()
     },
+    rankingProofs: [...first.rankingProofs].reverse(),
     existingRoutes: [...first.existingRoutes].reverse(),
     existingOpportunityKeys: [...first.existingOpportunityKeys].reverse()
   });
@@ -413,7 +466,9 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
   assert.deepEqual(second, first);
 });
 
-function rankingProofEvidence(): OpportunityScoutOutput["briefs"][number]["evidence"][number] {
+function rankingProofEvidence(
+  overrides: Partial<OpportunityScoutOutput["briefs"][number]["evidence"][number]> = {}
+): OpportunityScoutOutput["briefs"][number]["evidence"][number] {
   return {
     sourceType: "ranking_proof",
     sourceId: "rank-1",
@@ -424,7 +479,19 @@ function rankingProofEvidence(): OpportunityScoutOutput["briefs"][number]["evide
     summary: "Manual SERP proof shows the Dachau page in the Top 10.",
     observedMetric: { name: "rank", value: 4 },
     strength: "strong",
-    proofTier: "customer_safe_proof"
+    proofTier: "customer_safe_proof",
+    ...overrides
+  };
+}
+
+function rankingProofResolvable(overrides: { rank?: number; query?: string; pageUrl?: string } = {}) {
+  return {
+    sourceType: "ranking_proof" as const,
+    sourceId: "rank-1",
+    rank: 4,
+    query: "entruempelung dachau",
+    pageUrl: "https://customer.example/entruempelung-dachau/",
+    ...overrides
   };
 }
 

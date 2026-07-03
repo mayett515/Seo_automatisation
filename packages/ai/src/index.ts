@@ -115,6 +115,9 @@ export type OpportunityScoutQaResult =
 export type ResolvableEvidenceRef = {
   sourceType: EvidenceSourceType;
   sourceId: string;
+  rank?: number;
+  query?: string;
+  pageUrl?: string;
 };
 
 export type EvaluateOpportunityScoutInput = {
@@ -137,6 +140,7 @@ export type OpportunityScoutEvidencePacket = {
   tracking: {
     recentEvents: Record<string, unknown>[];
   };
+  rankingProofs: Record<string, unknown>[];
   existingRoutes: string[];
   existingOpportunityKeys: string[];
 };
@@ -165,6 +169,7 @@ export function buildOpportunityScoutEvidencePacket(
     tracking: {
       recentEvents: sortRecords(input.tracking.recentEvents, ["occurredAt", "eventName", "route"])
     },
+    rankingProofs: sortRecords(input.rankingProofs, ["sourceId", "query", "pageUrl", "capturedAt"]),
     existingRoutes: [...input.existingRoutes].sort(),
     existingOpportunityKeys: [...input.existingOpportunityKeys].sort()
   };
@@ -196,7 +201,7 @@ export function evaluateOpportunityScoutOutput(input: EvaluateOpportunityScoutIn
       return fail("evidence_resolution", evidenceFailure, briefIndex);
     }
 
-    const proofFailure = validateProofGate(brief);
+    const proofFailure = validateProofGate(brief, input.resolvableEvidence);
     if (proofFailure) {
       return fail("proof_gate", proofFailure, briefIndex);
     }
@@ -289,7 +294,10 @@ function validateEvidenceResolution(
   return undefined;
 }
 
-function validateProofGate(brief: OpportunityBrief): string | undefined {
+function validateProofGate(
+  brief: OpportunityBrief,
+  resolvableEvidence: readonly ResolvableEvidenceRef[]
+): string | undefined {
   if (brief.classification !== "proven_win") {
     return undefined;
   }
@@ -298,8 +306,56 @@ function validateProofGate(brief: OpportunityBrief): string | undefined {
     return "proven_win briefs are report/monitoring facts and cannot request page creation.";
   }
 
-  if (!brief.evidence.some(isCustomerSafeRankingProof)) {
+  const rankingProof = brief.evidence.find(isCustomerSafeRankingProof);
+
+  if (!rankingProof) {
     return "proven_win requires customer-safe ranking proof with an explicit Top 10 rank.";
+  }
+
+  const attributionFailure = validateRankingProofAttribution(rankingProof, resolvableEvidence);
+  if (attributionFailure) {
+    return attributionFailure;
+  }
+
+  return undefined;
+}
+
+function validateRankingProofAttribution(
+  evidence: EvidenceRef,
+  resolvableEvidence: readonly ResolvableEvidenceRef[]
+): string | undefined {
+  const sourceId = evidence.sourceId;
+  if (!sourceId) {
+    return "proven_win ranking proof requires a sourceId.";
+  }
+
+  const resolved = resolvableEvidence.find(
+    (candidate) => candidate.sourceType === evidence.sourceType && candidate.sourceId === sourceId
+  );
+
+  if (!resolved) {
+    return "proven_win ranking proof does not resolve to project-owned proof evidence.";
+  }
+
+  const claimedRank = rankFromEvidence(evidence);
+  if (customerSafeProofSources.has(evidence.sourceType) && typeof resolved.rank !== "number") {
+    return "proven_win ranking proof requires row-backed rank evidence.";
+  }
+
+  if (typeof resolved.rank === "number" && claimedRank !== resolved.rank) {
+    return "proven_win ranking proof rank must match the cited proof row.";
+  }
+
+  if (typeof resolved.rank === "number" && (resolved.rank < 1 || resolved.rank > 10)) {
+    return "proven_win requires a cited proof row with an explicit Top 10 rank.";
+  }
+
+  if (resolved.query && normalizeKey(evidence.locator?.query ?? "") !== normalizeKey(resolved.query)) {
+    return "proven_win ranking proof query must match the cited proof row.";
+  }
+
+  if (resolved.pageUrl && normalizeUrl(evidence.locator?.pageUrl) !== normalizeUrl(resolved.pageUrl)) {
+    return "proven_win ranking proof pageUrl must match the cited proof row.";
   }
 
   return undefined;
@@ -408,6 +464,21 @@ function isCustomerSafeRankingProof(evidence: EvidenceRef): boolean {
   return metricValue >= 1 && metricValue <= 10;
 }
 
+function rankFromEvidence(evidence: EvidenceRef): number | undefined {
+  const metricName = evidence.observedMetric?.name.toLowerCase();
+  const metricValue = evidence.observedMetric?.value;
+
+  if (!metricName || typeof metricValue !== "number") {
+    return undefined;
+  }
+
+  if (!["rank", "serp_rank", "position", "organic_position"].includes(metricName)) {
+    return undefined;
+  }
+
+  return metricValue;
+}
+
 function collectEvidenceRefs(brief: OpportunityBrief, outputGroups: readonly OpportunityGroupHint[]): EvidenceRef[] {
   return [
     ...brief.evidence,
@@ -470,6 +541,20 @@ function normalizeOpportunityKey(service: string, locationName: string): string 
 
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/gu, " ");
+}
+
+function normalizeUrl(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString().replace(/\/$/u, "").toLowerCase();
+  } catch {
+    return value.trim().replace(/\/$/u, "").toLowerCase();
+  }
 }
 
 function normalizeRoute(route: string): string {
