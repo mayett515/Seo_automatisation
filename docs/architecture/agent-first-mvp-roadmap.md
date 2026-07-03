@@ -264,6 +264,28 @@ OpenCodeGoReasoningAdapter or MastraReasoningAdapter
 
 No Mastra/OpenCode types in contracts, DB schema, UI, controllers, or product truth.
 
+Adapter preflight already satisfied by the worker baseline:
+
+```text
+failed -> running clears stale outputJson/provider/model/usage/latency fields
+qa_rejected stores compacted output_json, not uncapped model output
+OpportunityScoutOutput arrays are capped before QA and persistence
+```
+
+Acceptance criteria for this slice:
+
+```text
+mock adapter remains the default/test adapter
+real adapter is selected only by explicit environment configuration
+missing provider config fails as configuration-required, not as successful reasoning
+timeouts map to provider_timeout
+transport/auth/provider failures map to provider_error or provider_overloaded
+non-JSON model output maps to output_not_json
+provider/model/cost/latency are recorded as run metadata only
+raw prompts, secrets, OAuth tokens, full competitor text, and provider blobs are never stored
+no provider-specific types leak into contracts, DB, UI, controllers, or product truth
+```
+
 ### 6. Opportunity Explorer And Manual Evidence Entry
 
 The first product UI should be workflow-first, not chat-first.
@@ -283,6 +305,19 @@ agent run list
 
 lifecycle action form
   hold, reject, monitor
+```
+
+Explorer/run UX must also close two API-slice follow-ups:
+
+```text
+active scout guard
+  if a project already has a queued/running opportunity_scout run, return or display
+  that active run instead of letting double-submit create duplicate opportunity rows
+
+enqueue failure-code vocabulary
+  queue_enqueue_failed and queue_not_configured are enqueue-boundary failure codes.
+  Add them to a small shared vocabulary before the run timeline renders failure
+  explanations.
 ```
 
 Manual evidence entry is added here as the bridge before automated SERP snapshots:
