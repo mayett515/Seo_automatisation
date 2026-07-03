@@ -3,6 +3,7 @@ import type { CustomerMembershipRole } from "@localseo/contracts";
 export const projectPermissions = [
   "project:read",
   "website:import",
+  "opportunity:run",
   "gsc:connect",
   "gsc:sync",
   "tracking:manage",
@@ -22,6 +23,7 @@ const rolePermissions = {
   editor: new Set<ProjectPermission>([
     "project:read",
     "website:import",
+    "opportunity:run",
     "gsc:sync",
     "release:plan",
     "release:preflight",

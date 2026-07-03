@@ -12,18 +12,23 @@ import {
   UseGuards
 } from "@nestjs/common";
 import {
+  CreateOpportunityScoutRunRequestSchema,
   CreateWebsiteImportRequestSchema,
   LatestWebsiteImportResponseSchema,
   MainPreviewSchema,
+  OpportunityScoutJobDataSchema,
+  OpportunityScoutQueueResponseSchema,
   ProjectSummarySchema,
   WebsiteImportRunSchema,
   WebsiteImportQueueResponseSchema,
+  type CreateOpportunityScoutRunRequest,
   type LatestWebsiteImportResponse,
   type MainPreview,
+  type OpportunityScoutQueueResponse,
   type ProjectSummary,
   type WebsiteImportQueueResponse
 } from "@localseo/contracts";
-import { mainWebsites, websiteImportRuns, type DatabaseClient } from "@localseo/db";
+import { agentRuns, mainWebsites, websiteImportRuns, type DatabaseClient } from "@localseo/db";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -35,7 +40,7 @@ import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 import { desc, eq } from "drizzle-orm";
 
 @Injectable()
-class ProjectsService {
+export class ProjectsService {
   constructor(
     private readonly queues: QueueProducerService,
     private readonly database: DatabaseService
@@ -184,6 +189,135 @@ class ProjectsService {
     });
   }
 
+  async queueOpportunityScout(
+    projectId: string,
+    input: CreateOpportunityScoutRunRequest = {},
+    userId?: string
+  ): Promise<OpportunityScoutQueueResponse> {
+    if (!this.database.isConfigured()) {
+      return OpportunityScoutQueueResponseSchema.parse({
+        jobId: randomUUID(),
+        projectId,
+        type: "opportunity_scout",
+        status: "dry_run",
+        createdBy: userId,
+        message: "Database is not configured. Opportunity scout persistence is in explicit dry-run mode.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!this.queues.isQueueConfigured("opportunity-scout")) {
+      const jobId = randomUUID();
+      const jobData = OpportunityScoutJobDataSchema.parse({
+        projectId,
+        runId: jobId,
+        maxBriefs: input.maxBriefs,
+        triggeredByUserId: userId ?? null,
+        triggerSource: "user_action"
+      });
+
+      await this.queues.enqueue({
+        queueName: "opportunity-scout",
+        jobName: "opportunity_scout",
+        jobId,
+        data: jobData,
+        audit: {
+          projectId,
+          type: "opportunity_scout",
+          inputRef: jobId,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
+        }
+      });
+
+      return OpportunityScoutQueueResponseSchema.parse({
+        jobId,
+        projectId,
+        type: "opportunity_scout",
+        status: "dry_run",
+        inputRef: jobId,
+        createdBy: userId,
+        message: "Opportunity scout queue is not configured. This is an explicit dry-run response.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const db = this.database.requireDb();
+    const runId = randomUUID();
+    const jobId = runId;
+
+    await db.insert(agentRuns).values({
+      id: runId,
+      projectId,
+      task: "opportunity_scout",
+      status: "queued"
+    });
+
+    let enqueued: boolean;
+
+    try {
+      enqueued = await this.queues.enqueue({
+        queueName: "opportunity-scout",
+        jobName: "opportunity_scout",
+        jobId,
+        data: OpportunityScoutJobDataSchema.parse({
+          projectId,
+          runId,
+          maxBriefs: input.maxBriefs,
+          triggeredByUserId: userId ?? null,
+          triggerSource: "user_action"
+        }),
+        options: {
+          attempts: 3,
+          backoff: {
+            type: "exponential",
+            delay: 5000
+          }
+        },
+        audit: {
+          projectId,
+          type: "opportunity_scout",
+          inputRef: runId,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
+        }
+      });
+    } catch (error) {
+      await markOpportunityScoutQueueFailure(
+        db,
+        runId,
+        "queue_enqueue_failed",
+        normalizeOpportunityScoutQueueFailure(error)
+      );
+      throw error;
+    }
+
+    if (!enqueued) {
+      await markOpportunityScoutQueueFailure(
+        db,
+        runId,
+        "queue_not_configured",
+        "Opportunity scout queue was not configured after run creation."
+      );
+    }
+
+    return OpportunityScoutQueueResponseSchema.parse({
+      jobId,
+      projectId,
+      runId,
+      type: "opportunity_scout",
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: runId,
+      createdBy: userId,
+      message: enqueued
+        ? undefined
+        : "Opportunity scout queue is not configured. This is an explicit dry-run response.",
+      createdAt: new Date().toISOString()
+    });
+  }
+
   getMainPreview(projectId: string): MainPreview {
     return MainPreviewSchema.parse({
       projectId,
@@ -219,6 +353,20 @@ class ProjectsController {
   @RequireProjectPermission("website:import")
   getLatestWebsiteImport(@Param("id") projectId: string) {
     return this.projects.getLatestWebsiteImport(projectId);
+  }
+
+  @Post(":id/opportunity-scout/runs")
+  @RequireProjectPermission("opportunity:run")
+  runOpportunityScout(@Param("id") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
+    const parsed = CreateOpportunityScoutRunRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException(
+        "Opportunity scout requires maxBriefs to be a positive integer no greater than 12."
+      );
+    }
+
+    return this.projects.queueOpportunityScout(projectId, parsed.data, request.auth?.user.id);
   }
 
   @Get(":id/main-preview")
@@ -281,8 +429,33 @@ async function markWebsiteImportQueueFailure(db: DatabaseClient, importRunId: st
     .where(eq(websiteImportRuns.id, importRunId));
 }
 
+async function markOpportunityScoutQueueFailure(
+  db: DatabaseClient,
+  runId: string,
+  failureCode: string,
+  message: string
+): Promise<void> {
+  await db
+    .update(agentRuns)
+    .set({
+      status: "failed",
+      failureCode,
+      diagnosticsJson: {
+        message
+      },
+      completedAt: new Date(),
+      updatedAt: new Date()
+    })
+    .where(eq(agentRuns.id, runId));
+}
+
 function normalizeWebsiteImportQueueFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : "website_import_queue_failed";
+  return message.slice(0, 500);
+}
+
+function normalizeOpportunityScoutQueueFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : "opportunity_scout_queue_failed";
   return message.slice(0, 500);
 }
 
