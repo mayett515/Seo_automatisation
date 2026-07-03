@@ -172,6 +172,10 @@ adapter layer (AdapterFailureCode):
 workflow layer (packages/ai, after the adapter returns ok):
   output_schema_mismatch  Zod parse of outputJson failed
   qa_rejected             deterministic QA gate failed (gate id in failure detail)
+
+enqueue boundary (API, before worker execution):
+  queue_enqueue_failed    agent_runs was created but BullMQ add failed
+  queue_not_configured    queue infrastructure was unavailable after run creation
 ```
 
 Rules:
@@ -179,6 +183,7 @@ Rules:
 - Provider names, model ids, and OpenCode Go config never leak past the adapter into contracts or UI truth. `provider`/`model` are opaque strings stored as run metadata only.
 - On `output_schema_mismatch`, the raw `outputJson` is kept (redacted) in `agent_runs` for diagnosis, and no product row is written.
 - `runId` is caller-generated; retrying with the same `runId` must not double-persist opportunities.
+- Before Opportunity Explorer renders failure explanations, the enqueue-boundary codes should be promoted to a small shared contract vocabulary next to the adapter/workflow failure code arrays.
 - The mock adapter must cover both adapter failures and `ok: true` with schema-invalid JSON so the worker can exercise `output_schema_mismatch` without a real provider.
 
 Failure artifact policy:
@@ -484,6 +489,8 @@ deferred to the next slices
   real provider adapter
   manual ranking evidence source rows
   Opportunity Explorer UI
+  per-project active opportunity-scout guard
+  shared enqueue failure-code vocabulary for run timeline rendering
 ```
 
 ## Answers To The Handoff Review Questions
