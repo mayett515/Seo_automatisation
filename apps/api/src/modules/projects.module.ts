@@ -12,6 +12,7 @@ import {
   UseGuards
 } from "@nestjs/common";
 import {
+  type AiReasoningEnqueueFailureCode,
   CreateOpportunityScoutRunRequestSchema,
   CreateWebsiteImportRequestSchema,
   LatestWebsiteImportResponseSchema,
@@ -37,7 +38,7 @@ import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 @Injectable()
 export class ProjectsService {
@@ -244,15 +245,31 @@ export class ProjectsService {
     }
 
     const db = this.database.requireDb();
+    const activeRun = await findActiveOpportunityScoutRun(db, projectId);
+    if (activeRun) {
+      return activeOpportunityScoutResponse(activeRun);
+    }
+
     const runId = randomUUID();
     const jobId = runId;
 
-    await db.insert(agentRuns).values({
-      id: runId,
-      projectId,
-      task: "opportunity_scout",
-      status: "queued"
-    });
+    try {
+      await db.insert(agentRuns).values({
+        id: runId,
+        projectId,
+        task: "opportunity_scout",
+        status: "queued"
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const conflictingRun = await findActiveOpportunityScoutRun(db, projectId);
+        if (conflictingRun) {
+          return activeOpportunityScoutResponse(conflictingRun);
+        }
+      }
+
+      throw error;
+    }
 
     let enqueued: boolean;
 
@@ -432,7 +449,7 @@ async function markWebsiteImportQueueFailure(db: DatabaseClient, importRunId: st
 async function markOpportunityScoutQueueFailure(
   db: DatabaseClient,
   runId: string,
-  failureCode: string,
+  failureCode: AiReasoningEnqueueFailureCode,
   message: string
 ): Promise<void> {
   await db
@@ -457,6 +474,42 @@ function normalizeWebsiteImportQueueFailure(error: unknown): string {
 function normalizeOpportunityScoutQueueFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : "opportunity_scout_queue_failed";
   return message.slice(0, 500);
+}
+
+async function findActiveOpportunityScoutRun(db: DatabaseClient, projectId: string) {
+  const [run] = await db
+    .select()
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.projectId, projectId),
+        eq(agentRuns.task, "opportunity_scout"),
+        inArray(agentRuns.status, ["queued", "running"])
+      )
+    )
+    .orderBy(desc(agentRuns.createdAt))
+    .limit(1);
+
+  return run;
+}
+
+function activeOpportunityScoutResponse(run: typeof agentRuns.$inferSelect): OpportunityScoutQueueResponse {
+  return OpportunityScoutQueueResponseSchema.parse({
+    jobId: run.id,
+    projectId: run.projectId,
+    runId: run.id,
+    type: "opportunity_scout",
+    status: "already_active",
+    inputRef: run.inputRef ?? run.id,
+    message: "An opportunity scout run is already queued or running for this project.",
+    createdAt: run.createdAt.toISOString()
+  });
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error !== null && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "23505"
+  );
 }
 
 function websiteImportRunToResponse(row: typeof websiteImportRuns.$inferSelect) {

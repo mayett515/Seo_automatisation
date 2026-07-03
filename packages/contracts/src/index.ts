@@ -154,8 +154,10 @@ export const aiReasoningAdapterFailureCodes = [
 ] as const;
 
 export const aiReasoningWorkflowFailureCodes = ["output_schema_mismatch", "qa_rejected"] as const;
+export const aiReasoningEnqueueFailureCodes = ["queue_enqueue_failed", "queue_not_configured"] as const;
 
 export const opportunityClassifications = ["proven_win", "near_term_target", "internal_radar", "rejected"] as const;
+export const opportunityScoutQueueStatuses = [...jobStatuses, "already_active"] as const;
 
 export const opportunityRecommendedActions = [
   "monitor",
@@ -231,7 +233,9 @@ export const ReasoningTaskSchema = z.enum(reasoningTasks);
 export const AgentRunStatusSchema = z.enum(agentRunStatuses);
 export const AiReasoningAdapterFailureCodeSchema = z.enum(aiReasoningAdapterFailureCodes);
 export const AiReasoningWorkflowFailureCodeSchema = z.enum(aiReasoningWorkflowFailureCodes);
+export const AiReasoningEnqueueFailureCodeSchema = z.enum(aiReasoningEnqueueFailureCodes);
 export const OpportunityClassificationSchema = z.enum(opportunityClassifications);
+export const OpportunityScoutQueueStatusSchema = z.enum(opportunityScoutQueueStatuses);
 export const OpportunityRecommendedActionSchema = z.enum(opportunityRecommendedActions);
 export const OpportunitySuggestedPageTypeSchema = z.enum(opportunitySuggestedPageTypes);
 export const EvidenceSourceTypeSchema = z.enum(evidenceSourceTypes);
@@ -826,6 +830,7 @@ export const WebsiteImportQueueResponseSchema = QueueJobSchema.extend({
   sourceUrl: WebsiteImportSourceUrlSchema.optional()
 });
 export const OpportunityScoutQueueResponseSchema = QueueJobSchema.extend({
+  status: OpportunityScoutQueueStatusSchema,
   runId: z.string().min(1).optional()
 });
 
@@ -848,6 +853,58 @@ export const RankingProofSchema = z.object({
 export const RankingProofListResponseSchema = z.object({
   projectId: ProjectIdSchema,
   proofs: z.array(RankingProofSchema)
+});
+
+export const AgentRunFailureCodeSchema = z.union([
+  AiReasoningAdapterFailureCodeSchema,
+  AiReasoningWorkflowFailureCodeSchema,
+  AiReasoningEnqueueFailureCodeSchema
+]);
+
+export const OpportunityExplorerOpportunitySchema = z.object({
+  id: z.string().min(1),
+  projectId: ProjectIdSchema,
+  agentRunId: z.string().min(1).optional(),
+  classification: OpportunityClassificationSchema,
+  primaryKeyword: z.string().min(1),
+  score: z.number().int(),
+  status: z.string().min(1),
+  evidenceJson: OpportunityBriefSchema.nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export const OpportunityExplorerListResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  opportunities: z.array(OpportunityExplorerOpportunitySchema)
+});
+
+export const AgentRunFailureSummarySchema = z.object({
+  code: AgentRunFailureCodeSchema,
+  gateId: z.string().min(1).optional(),
+  message: z.string().min(1).optional()
+});
+
+export const AgentRunSummarySchema = z.object({
+  id: z.string().min(1),
+  projectId: ProjectIdSchema,
+  task: ReasoningTaskSchema,
+  status: AgentRunStatusSchema,
+  failureCode: AgentRunFailureCodeSchema.optional(),
+  failure: AgentRunFailureSummarySchema.optional(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  latencyMs: z.number().int().nonnegative().optional(),
+  opportunityCount: z.number().int().nonnegative(),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export const AgentRunListResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  runs: z.array(AgentRunSummarySchema)
 });
 
 export type CreateLeadInput = z.output<typeof CreateLeadSchema>;
@@ -907,6 +964,14 @@ export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueRespo
 export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
 export type RankingProof = z.output<typeof RankingProofSchema>;
 export type RankingProofListResponse = z.output<typeof RankingProofListResponseSchema>;
+export type AiReasoningEnqueueFailureCode = z.output<typeof AiReasoningEnqueueFailureCodeSchema>;
+export type AgentRunFailureCode = z.output<typeof AgentRunFailureCodeSchema>;
+export type OpportunityScoutQueueStatus = z.output<typeof OpportunityScoutQueueStatusSchema>;
+export type OpportunityExplorerOpportunity = z.output<typeof OpportunityExplorerOpportunitySchema>;
+export type OpportunityExplorerListResponse = z.output<typeof OpportunityExplorerListResponseSchema>;
+export type AgentRunFailureSummary = z.output<typeof AgentRunFailureSummarySchema>;
+export type AgentRunSummary = z.output<typeof AgentRunSummarySchema>;
+export type AgentRunListResponse = z.output<typeof AgentRunListResponseSchema>;
 export type JobStatus = z.output<typeof JobStatusSchema>;
 export type JobType = z.output<typeof JobTypeSchema>;
 export type DomainEventName = z.output<typeof DomainEventNameSchema>;

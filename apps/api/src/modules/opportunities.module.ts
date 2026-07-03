@@ -7,19 +7,27 @@ import {
   Module,
   Param,
   Post,
+  Query,
   Req,
   UseGuards
 } from "@nestjs/common";
 import {
+  AgentRunFailureCodeSchema,
+  AgentRunListResponseSchema,
   CreateRankingProofRequestSchema,
+  OpportunityExplorerListResponseSchema,
+  OpportunityBriefSchema,
   RankingProofListResponseSchema,
   RankingProofSchema,
+  ReasoningTaskSchema,
+  type AgentRunListResponse,
   type CreateRankingProofRequest,
+  type OpportunityExplorerListResponse,
   type RankingProof,
   type RankingProofListResponse
 } from "@localseo/contracts";
-import { rankingProofs } from "@localseo/db";
-import { desc, eq } from "drizzle-orm";
+import { agentRuns, opportunities, rankingProofs } from "@localseo/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
@@ -31,6 +39,49 @@ import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 @Injectable()
 export class OpportunitiesService {
   constructor(private readonly database: DatabaseService) {}
+
+  async listOpportunities(projectId: string): Promise<OpportunityExplorerListResponse> {
+    const db = this.database.requireDb();
+    const rows = await db
+      .select()
+      .from(opportunities)
+      .where(eq(opportunities.projectId, projectId))
+      .orderBy(desc(opportunities.score), desc(opportunities.createdAt))
+      .limit(100);
+
+    return OpportunityExplorerListResponseSchema.parse({
+      projectId,
+      opportunities: rows.map((row) => opportunityToResponse(row))
+    });
+  }
+
+  async listAgentRuns(projectId: string, task?: string): Promise<AgentRunListResponse> {
+    const parsedTask = task ? ReasoningTaskSchema.safeParse(task) : undefined;
+    if (parsedTask && !parsedTask.success) {
+      throw new BadRequestException("Agent run task filter is not supported.");
+    }
+
+    const db = this.database.requireDb();
+    const taskFilter = parsedTask?.data;
+    const rows = await db
+      .select()
+      .from(agentRuns)
+      .where(
+        taskFilter
+          ? and(eq(agentRuns.projectId, projectId), eq(agentRuns.task, taskFilter))
+          : eq(agentRuns.projectId, projectId)
+      )
+      .orderBy(desc(agentRuns.createdAt))
+      .limit(100);
+
+    const runIds = rows.map((row) => row.id);
+    const counts = await countOpportunitiesByRun(db, projectId, runIds);
+
+    return AgentRunListResponseSchema.parse({
+      projectId,
+      runs: rows.map((row) => agentRunToResponse(row, counts.get(row.id) ?? 0))
+    });
+  }
 
   async listRankingProofs(projectId: string): Promise<RankingProofListResponse> {
     const db = this.database.requireDb();
@@ -118,11 +169,104 @@ class RankingProofsController {
   }
 }
 
+@Controller("projects/:projectId/opportunities")
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
+@RequireProjectPermission("project:read")
+class OpportunitiesController {
+  constructor(private readonly opportunities: OpportunitiesService) {}
+
+  @Get()
+  list(@Param("projectId") projectId: string) {
+    return this.opportunities.listOpportunities(projectId);
+  }
+}
+
+@Controller("projects/:projectId/agent-runs")
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
+@RequireProjectPermission("project:read")
+class AgentRunsController {
+  constructor(private readonly opportunities: OpportunitiesService) {}
+
+  @Get()
+  list(@Param("projectId") projectId: string, @Query("task") task?: string) {
+    return this.opportunities.listAgentRuns(projectId, task);
+  }
+}
+
 @Module({
-  controllers: [RankingProofsController],
+  controllers: [RankingProofsController, OpportunitiesController, AgentRunsController],
   providers: [OpportunitiesService]
 })
 export class OpportunitiesModule {}
+
+async function countOpportunitiesByRun(
+  db: ReturnType<DatabaseService["requireDb"]>,
+  projectId: string,
+  runIds: string[]
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+
+  if (runIds.length === 0) {
+    return counts;
+  }
+
+  const rows = await db
+    .select({ agentRunId: opportunities.agentRunId })
+    .from(opportunities)
+    .where(and(eq(opportunities.projectId, projectId), inArray(opportunities.agentRunId, runIds)));
+
+  for (const row of rows) {
+    if (row.agentRunId) {
+      counts.set(row.agentRunId, (counts.get(row.agentRunId) ?? 0) + 1);
+    }
+  }
+
+  return counts;
+}
+
+function opportunityToResponse(row: typeof opportunities.$inferSelect) {
+  const parsedBrief = OpportunityBriefSchema.safeParse(row.evidenceJson);
+
+  return OpportunityExplorerListResponseSchema.shape.opportunities.element.parse({
+    id: row.id,
+    projectId: row.projectId,
+    agentRunId: row.agentRunId ?? undefined,
+    classification: row.classification,
+    primaryKeyword: row.primaryKeyword,
+    score: row.score,
+    status: row.status,
+    evidenceJson: parsedBrief.success ? parsedBrief.data : null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  });
+}
+
+function agentRunToResponse(row: typeof agentRuns.$inferSelect, opportunityCount: number) {
+  const failureCode = parseFailureCode(row.failureCode);
+  const diagnostics = recordFromUnknown(row.diagnosticsJson);
+  const gateId = stringFromUnknown(diagnostics.gateId);
+  const message =
+    failureCode === "qa_rejected" && gateId === "dedupe_gate"
+      ? "No new opportunities; the run only found duplicates of existing open opportunities."
+      : stringFromUnknown(diagnostics.message);
+
+  return AgentRunListResponseSchema.shape.runs.element.parse({
+    id: row.id,
+    projectId: row.projectId,
+    task: row.task,
+    status: row.status,
+    failureCode,
+    failure: failureCode ? { code: failureCode, gateId, message } : undefined,
+    provider: row.provider ?? undefined,
+    model: row.model ?? undefined,
+    latencyMs: row.latencyMs ?? undefined,
+    opportunityCount,
+    startedAt: row.startedAt?.toISOString(),
+    completedAt: row.completedAt?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  });
+}
 
 function rankingProofToResponse(row: typeof rankingProofs.$inferSelect): RankingProof {
   return RankingProofSchema.parse({
@@ -140,4 +284,21 @@ function rankingProofToResponse(row: typeof rankingProofs.$inferSelect): Ranking
     createdByUserId: row.createdByUserId ?? undefined,
     createdAt: row.createdAt.toISOString()
   });
+}
+
+function parseFailureCode(value: string | null): ReturnType<typeof AgentRunFailureCodeSchema.parse> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = AgentRunFailureCodeSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }

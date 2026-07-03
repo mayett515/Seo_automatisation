@@ -317,6 +317,8 @@ cost budget enforcement beyond recording usage metadata
 
 ### 6. Opportunity Explorer And Manual Evidence Entry
 
+Status: backend read API baseline implemented; UI still next.
+
 The first product UI should be workflow-first, not chat-first.
 
 Smallest useful Explorer:
@@ -340,13 +342,27 @@ Explorer/run UX must also close two API-slice follow-ups:
 
 ```text
 active scout guard
-  if a project already has a queued/running opportunity_scout run, return or display
-  that active run instead of letting double-submit create duplicate opportunity rows
+  implemented at the DB/API boundary with a partial unique index on queued/running
+  agent_runs per project/task. The enqueue endpoint returns already_active with the
+  existing run instead of creating duplicate opportunity rows.
 
 enqueue failure-code vocabulary
-  queue_enqueue_failed and queue_not_configured are enqueue-boundary failure codes.
-  Add them to a small shared vocabulary before the run timeline renders failure
-  explanations.
+  implemented in contracts as queue_enqueue_failed and queue_not_configured so the
+  run timeline can render adapter, workflow, and enqueue failures consistently.
+```
+
+Backend Explorer baseline now exposes:
+
+```text
+GET /projects/:projectId/opportunities
+  project-scoped opportunity list for the Explorer table and evidence panel.
+  Returns queryable columns plus the validated OpportunityBrief from evidenceJson
+  when it still parses; invalid legacy JSON is returned as null, not raw unknown data.
+
+GET /projects/:projectId/agent-runs?task=opportunity_scout
+  project-scoped run list for the run timeline.
+  Returns status, typed failure code, selected QA gate/message, provider/model/latency,
+  timestamps, and opportunity count. It does not expose raw output_json or diagnostics_json.
 ```
 
 Manual evidence entry is added here as the bridge before automated SERP snapshots. The backend bridge is now the

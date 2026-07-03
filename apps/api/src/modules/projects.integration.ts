@@ -124,6 +124,34 @@ void describe(
       assert.equal(jobRows.length, 1);
       assert.equal(jobRows[0]?.status, "failed");
     });
+
+    void it("returns the active opportunity scout run instead of enqueueing a duplicate", async () => {
+      const fixture = await createProjectFixture(db);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setOpportunityScoutQueue(queueService, queue);
+      const service = new ProjectsService(queueService, testDatabaseService(db));
+
+      await db.insert(agentRuns).values({
+        id: "33333333-3333-4333-8333-333333333333",
+        projectId: fixture.projectId,
+        task: "opportunity_scout",
+        status: "running",
+        inputRef: "agent-runs/input.json"
+      });
+
+      const result = await service.queueOpportunityScout(fixture.projectId, { maxBriefs: 3 }, fixture.userId);
+
+      assert.equal(result.status, "already_active");
+      assert.equal(result.runId, "33333333-3333-4333-8333-333333333333");
+      assert.equal(result.jobId, result.runId);
+      assert.equal(result.inputRef, "agent-runs/input.json");
+      assert.match(result.message ?? "", /already queued or running/u);
+      assert.equal(queue.addCalls.length, 0);
+
+      const rows = await db.select().from(agentRuns).where(eq(agentRuns.projectId, fixture.projectId));
+      assert.equal(rows.length, 1);
+    });
   }
 );
 

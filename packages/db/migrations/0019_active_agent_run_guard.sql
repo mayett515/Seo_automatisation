@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "agent_runs_active_per_project_task_idx" ON "agent_runs" USING btree ("project_id","task") WHERE "agent_runs"."status" in ('queued', 'running');
