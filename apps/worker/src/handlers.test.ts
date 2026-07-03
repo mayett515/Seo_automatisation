@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MockReasoningAdapter, OpenCodeGoReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
+import {
+  MockReasoningAdapter,
+  NotConfiguredReasoningAdapter,
+  OpenCodeGoReasoningAdapter,
+  type ObjectStoragePort
+} from "@localseo/adapters";
 import {
   OpportunityScoutOutputSchema,
   type GscSearchAnalyticsRow,
@@ -257,17 +262,15 @@ void describe("createReasoningAdapter", () => {
     assert.ok(adapter instanceof MockReasoningAdapter);
   });
 
-  void it("requires an OpenCode Go API key when the real provider is selected", () => {
-    assert.throws(
-      () =>
-        createReasoningAdapter({
-          AI_REASONING_PROVIDER: "opencode_go",
-          AI_REASONING_MODEL: "glm-5.2",
-          AI_REASONING_OPENCODE_GO_API_KEY: undefined,
-          AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
-        }),
-      /AI_REASONING_OPENCODE_GO_API_KEY/u
-    );
+  void it("degrades to a not-configured adapter when the real provider key is missing", () => {
+    const adapter = createReasoningAdapter({
+      AI_REASONING_PROVIDER: "opencode_go",
+      AI_REASONING_MODEL: "glm-5.2",
+      AI_REASONING_OPENCODE_GO_API_KEY: undefined,
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
+    });
+
+    assert.ok(adapter instanceof NotConfiguredReasoningAdapter);
   });
 
   void it("creates the OpenCode Go adapter only with explicit provider config", () => {
@@ -452,6 +455,24 @@ void describe("executeOpportunityScout", () => {
     );
 
     assert.equal(repository.failed?.failureCode, "provider_timeout");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
+  void it("marks missing reasoning provider config as a terminal run failure", async () => {
+    const repository = new FakeOpportunityScoutRepository();
+
+    await assert.rejects(
+      executeOpportunityScout({
+        data: { projectId: "project-1", runId: "run-1" },
+        repository,
+        reasoning: new NotConfiguredReasoningAdapter(),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      OpportunityScoutConfigurationError
+    );
+
+    assert.equal(repository.failed?.failureCode, "provider_not_configured");
+    assert.equal(repository.failed?.diagnostics.detail, "ai_reasoning_provider_not_configured");
     assert.equal(repository.persistedOutput, undefined);
   });
 

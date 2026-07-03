@@ -21,6 +21,7 @@ export * from "./playwright-browser-verification.js";
 export * from "./provider-errors.js";
 export * from "./redis-connection.js";
 export * from "./netlify-site-hosting.js";
+export * from "./not-configured-ai-reasoning.js";
 export * from "./s3-object-storage.js";
 export * from "./token-cipher.js";
 export * from "./mock-ai-reasoning.js";

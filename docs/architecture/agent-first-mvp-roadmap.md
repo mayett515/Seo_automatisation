@@ -277,7 +277,8 @@ implemented now
   AI_REASONING_OPENCODE_GO_API_KEY required only when provider = opencode_go
   AI_REASONING_OPENCODE_GO_ENDPOINT override, defaulting to the Go chat endpoint
   AI_REASONING_TIMEOUT_MS passed into runStructured
-  provider_timeout / provider_error / provider_overloaded / output_not_json mapping
+  provider_not_configured / provider_timeout / provider_error / provider_overloaded / output_not_json mapping
+  NotConfiguredReasoningAdapter prevents scout-lane misconfig from crashing the shared worker host
   redacted diagnostics and bounded provider reason codes
   mock remains the default worker adapter
 ```
@@ -295,7 +296,7 @@ Acceptance criteria for this slice:
 ```text
 mock adapter remains the default/test adapter
 real adapter is selected only by explicit environment configuration
-missing provider config fails as configuration-required, not as successful reasoning
+missing provider config records provider_not_configured on the scout run, without stopping unrelated worker queues
 timeouts map to provider_timeout
 transport/auth/provider failures map to provider_error or provider_overloaded
 non-JSON model output maps to output_not_json

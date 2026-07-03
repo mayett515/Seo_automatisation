@@ -157,7 +157,7 @@ export class OpenCodeGoReasoningAdapter implements AiReasoningPort {
         model: this.options.model,
         diagnostics: {
           latencyMs: elapsedMs(startedAt),
-          detail: "request_failed"
+          detail: requestFailureDetail(error)
         }
       };
     }
@@ -252,8 +252,26 @@ function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function requestFailureDetail(error: unknown): string {
+  const record = recordFromUnknown(error);
+  const code = stringFromUnknown(record.code);
+  if (code) {
+    return providerReasonCodeFromResponseText(JSON.stringify({ error: code })) ?? "request_failed";
+  }
+
+  if (error instanceof Error && error.name.length > 0) {
+    return providerReasonCodeFromResponseText(JSON.stringify({ error: error.name })) ?? "request_failed";
+  }
+
+  return "request_failed";
+}
+
 function recordFromUnknown(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function elapsedMs(startedAt: number): number {

@@ -128,6 +128,24 @@ void test("OpenCodeGoReasoningAdapter maps non-JSON assistant content to output_
   }
 });
 
+void test("OpenCodeGoReasoningAdapter maps network errors to sanitized provider diagnostics", async () => {
+  const apiKey = "secret-opencode-go-api-key";
+  const adapter = new OpenCodeGoReasoningAdapter({
+    apiKey,
+    model: "glm-5.2",
+    fetchImpl: () => Promise.reject(Object.assign(new Error(`connect failed ${apiKey}`), { code: "ECONNREFUSED" }))
+  });
+
+  const result = await adapter.runStructured(baseInput());
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.failureCode, "provider_error");
+    assert.equal(result.diagnostics.detail, "ECONNREFUSED");
+    assert.equal(JSON.stringify(result).includes(apiKey), false);
+  }
+});
+
 void test("OpenCodeGoReasoningAdapter maps aborted requests to provider_timeout", async () => {
   const adapter = new OpenCodeGoReasoningAdapter({
     apiKey: "test-api-key",
@@ -148,6 +166,34 @@ void test("OpenCodeGoReasoningAdapter maps aborted requests to provider_timeout"
   if (!result.ok) {
     assert.equal(result.failureCode, "provider_timeout");
     assert.equal(result.diagnostics.detail, "timeout");
+  }
+});
+
+void test("OpenCodeGoReasoningAdapter never includes the API key in failure results", async () => {
+  const apiKey = "secret-opencode-go-api-key";
+  const adapters = [
+    new OpenCodeGoReasoningAdapter({
+      apiKey,
+      model: "glm-5.2",
+      fetchImpl: () => Promise.resolve(new Response(JSON.stringify({ error: "invalid_api_key" }), { status: 401 }))
+    }),
+    new OpenCodeGoReasoningAdapter({
+      apiKey,
+      model: "glm-5.2",
+      fetchImpl: () => Promise.resolve(new Response("not-json", { status: 200 }))
+    }),
+    new OpenCodeGoReasoningAdapter({
+      apiKey,
+      model: "glm-5.2",
+      fetchImpl: () => Promise.resolve(jsonResponse({ choices: [{ message: { content: "plain text" } }] }))
+    })
+  ];
+
+  for (const adapter of adapters) {
+    const result = await adapter.runStructured(baseInput());
+
+    assert.equal(result.ok, false);
+    assert.equal(JSON.stringify(result).includes(apiKey), false);
   }
 });
 

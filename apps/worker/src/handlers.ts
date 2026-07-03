@@ -3,6 +3,7 @@ import {
   HttpWebsiteCrawlerAdapter,
   MockReasoningAdapter,
   NetlifySiteHostingAdapter,
+  NotConfiguredReasoningAdapter,
   NotConfiguredSiteHostingAdapter,
   OpenCodeGoReasoningAdapter,
   type CrawlerPort,
@@ -209,17 +210,17 @@ export function createReasoningAdapter(
     | "AI_REASONING_OPENCODE_GO_ENDPOINT"
   >
 ): AiReasoningPort {
-  if (input.AI_REASONING_PROVIDER === "mock") {
-    return new MockReasoningAdapter();
+  switch (input.AI_REASONING_PROVIDER) {
+    case "mock":
+      return new MockReasoningAdapter();
+    case "opencode_go":
+      if (!input.AI_REASONING_OPENCODE_GO_API_KEY) {
+        return new NotConfiguredReasoningAdapter("AI_REASONING_OPENCODE_GO_API_KEY is required.");
+      }
+      return new OpenCodeGoReasoningAdapter({
+        apiKey: input.AI_REASONING_OPENCODE_GO_API_KEY,
+        model: input.AI_REASONING_MODEL,
+        endpoint: input.AI_REASONING_OPENCODE_GO_ENDPOINT
+      });
   }
-
-  if (!input.AI_REASONING_OPENCODE_GO_API_KEY) {
-    throw new Error("AI_REASONING_OPENCODE_GO_API_KEY is required when AI_REASONING_PROVIDER=opencode_go.");
-  }
-
-  return new OpenCodeGoReasoningAdapter({
-    apiKey: input.AI_REASONING_OPENCODE_GO_API_KEY,
-    model: input.AI_REASONING_MODEL,
-    endpoint: input.AI_REASONING_OPENCODE_GO_ENDPOINT
-  });
 }

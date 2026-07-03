@@ -155,6 +155,9 @@ export async function executeOpportunityScout(input: {
       diagnostics: compactDiagnostics(reasoningResult.diagnostics),
       latencyMs: reasoningResult.diagnostics.latencyMs
     });
+    if (reasoningResult.failureCode === "provider_not_configured") {
+      throw new OpportunityScoutConfigurationError(reasoningResult.failureCode);
+    }
     throw new OpportunityScoutProviderError(reasoningResult.failureCode);
   }
 

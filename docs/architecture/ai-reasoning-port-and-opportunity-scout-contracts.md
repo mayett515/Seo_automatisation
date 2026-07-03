@@ -164,6 +164,7 @@ Two layers, recorded distinctly in `agent_runs.failure_code`:
 adapter layer (AdapterFailureCode):
   provider_timeout        timeoutMs exceeded
   provider_error          transport/5xx/auth failure
+  provider_not_configured real provider selected without required config
   provider_overloaded     rate limit / capacity
   output_not_json         response is not parseable JSON at all
   budget_exceeded         maxCostCents would be exceeded
@@ -212,6 +213,7 @@ The adapter maps provider behavior into the existing failure taxonomy:
 
 ```text
 Abort/timeout                    -> provider_timeout
+Missing required provider config  -> provider_not_configured
 HTTP 429 / 503                   -> provider_overloaded
 other non-2xx provider response  -> provider_error
 invalid completion envelope      -> output_not_json
@@ -219,6 +221,8 @@ assistant content not JSON       -> output_not_json
 ```
 
 Provider response bodies are not persisted. Diagnostics keep only latency, finish reason, and a bounded safe reason code. The worker remains responsible for Zod parsing, deterministic QA, evidence resolution, scoring, and persistence.
+
+If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected scout run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
 
 Deferred provider work:
 
