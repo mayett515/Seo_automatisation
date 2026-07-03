@@ -1,6 +1,14 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { agentRuns, customers, jobRuns, projects, users, type DatabaseClient } from "@localseo/db";
+import {
+  agentRuns,
+  customers,
+  isDatabaseUniqueViolation,
+  jobRuns,
+  projects,
+  users,
+  type DatabaseClient
+} from "@localseo/db";
 import { eq } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { DatabaseService } from "../database/database.service.js";
@@ -151,6 +159,25 @@ void describe(
 
       const rows = await db.select().from(agentRuns).where(eq(agentRuns.projectId, fixture.projectId));
       assert.equal(rows.length, 1);
+    });
+
+    void it("recognizes active scout unique-index conflicts from the database driver", async () => {
+      const fixture = await createProjectFixture(db);
+
+      await db.insert(agentRuns).values({
+        projectId: fixture.projectId,
+        task: "opportunity_scout",
+        status: "running"
+      });
+
+      await assert.rejects(
+        db.insert(agentRuns).values({
+          projectId: fixture.projectId,
+          task: "opportunity_scout",
+          status: "queued"
+        }),
+        (error) => isDatabaseUniqueViolation(error)
+      );
     });
   }
 );

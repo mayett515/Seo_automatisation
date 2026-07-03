@@ -21,6 +21,7 @@ import {
   truncateIntegrationTables
 } from "../../../../packages/db/test-support/integration-database.js";
 import {
+  OpportunityScoutEvidenceError,
   OpportunityScoutProviderError,
   OpportunityScoutWorkflowError,
   createDrizzleOpportunityScoutRepository,
@@ -264,6 +265,41 @@ void describe(
         .from(opportunities)
         .where(eq(opportunities.agentRunId, fixture.runId));
       assert.equal(rowsAfterDuplicate.length, 1);
+    });
+
+    void it("stops cleanly when a failed run retry collides with another active run", async () => {
+      const fixture = await createScoutFixture(db);
+      await db
+        .update(agentRuns)
+        .set({ status: "failed", failureCode: "provider_timeout" })
+        .where(eq(agentRuns.id, fixture.runId));
+      await db.insert(agentRuns).values({
+        projectId: fixture.projectId,
+        task: "opportunity_scout",
+        status: "running"
+      });
+
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-opportunity-scout",
+        outputJson: validOpportunityScoutOutput(fixture),
+        diagnostics: { latencyMs: 10 }
+      });
+
+      await assert.rejects(
+        executeOpportunityScout({
+          data: { projectId: fixture.projectId, runId: fixture.runId },
+          repository: createDrizzleOpportunityScoutRepository(db),
+          reasoning,
+          objectStorage: new MemoryObjectStorage()
+        }),
+        (error) => error instanceof OpportunityScoutEvidenceError && /could not be marked running/u.test(error.message)
+      );
+
+      assert.equal(reasoning.calls.length, 0);
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "failed");
     });
 
     void it("clears stale model output when retrying a failed run", async () => {
