@@ -19,6 +19,30 @@ void describe("AppEnvSchema", () => {
     assert.equal(env.BETTER_AUTH_SECRET, "12345678901234567890123456789012");
   });
 
+  void it("defaults AI reasoning to the mock provider", () => {
+    const env = parseAppEnv({});
+
+    assert.equal(env.AI_REASONING_PROVIDER, "mock");
+    assert.equal(env.AI_REASONING_MODEL, "glm-5.2");
+    assert.equal(env.AI_REASONING_OPENCODE_GO_ENDPOINT, "https://opencode.ai/zen/go/v1/chat/completions");
+    assert.equal(env.AI_REASONING_TIMEOUT_MS, 120_000);
+  });
+
+  void it("accepts explicit OpenCode Go reasoning configuration", () => {
+    const env = parseAppEnv({
+      AI_REASONING_PROVIDER: "opencode_go",
+      AI_REASONING_MODEL: "deepseek-v4-flash",
+      AI_REASONING_OPENCODE_GO_API_KEY: "opencode-go-key",
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
+      AI_REASONING_TIMEOUT_MS: "45000"
+    });
+
+    assert.equal(env.AI_REASONING_PROVIDER, "opencode_go");
+    assert.equal(env.AI_REASONING_MODEL, "deepseek-v4-flash");
+    assert.equal(env.AI_REASONING_OPENCODE_GO_API_KEY, "opencode-go-key");
+    assert.equal(env.AI_REASONING_TIMEOUT_MS, 45_000);
+  });
+
   void it("strips obsolete global tracking ingest token config", () => {
     const env = parseAppEnv({
       TRACKING_INGEST_TOKEN: "12345678901234567890123456789012"

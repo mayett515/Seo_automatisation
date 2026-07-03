@@ -252,10 +252,12 @@ still next
 
 ### 5. Real Reasoning Adapter
 
+Status: OpenCode Go adapter baseline implemented.
+
 After the mock worker loop is green, add the real provider behind the same port:
 
 ```text
-OpenCodeGoReasoningAdapter or MastraReasoningAdapter
+OpenCodeGoReasoningAdapter
   provider/model config through environment
   timeout and failure-code mapping
   redacted diagnostics
@@ -263,6 +265,22 @@ OpenCodeGoReasoningAdapter or MastraReasoningAdapter
 ```
 
 No Mastra/OpenCode types in contracts, DB schema, UI, controllers, or product truth.
+
+Implementation checkpoint:
+
+```text
+implemented now
+  OpenCodeGoReasoningAdapter in packages/adapters
+  OpenAI-compatible OpenCode Go chat-completions endpoint support
+  AI_REASONING_PROVIDER = mock | opencode_go
+  AI_REASONING_MODEL default glm-5.2
+  AI_REASONING_OPENCODE_GO_API_KEY required only when provider = opencode_go
+  AI_REASONING_OPENCODE_GO_ENDPOINT override, defaulting to the Go chat endpoint
+  AI_REASONING_TIMEOUT_MS passed into runStructured
+  provider_timeout / provider_error / provider_overloaded / output_not_json mapping
+  redacted diagnostics and bounded provider reason codes
+  mock remains the default worker adapter
+```
 
 Adapter preflight already satisfied by the worker baseline:
 
@@ -284,6 +302,16 @@ non-JSON model output maps to output_not_json
 provider/model/cost/latency are recorded as run metadata only
 raw prompts, secrets, OAuth tokens, full competitor text, and provider blobs are never stored
 no provider-specific types leak into contracts, DB, UI, controllers, or product truth
+```
+
+Still deferred:
+
+```text
+Mastra multi-agent orchestration
+Anthropic-style OpenCode Go /messages endpoint support for MiniMax/Qwen models
+real-provider smoke run with a project API key
+model-specific prompt tuning from observed failed runs
+cost budget enforcement beyond recording usage metadata
 ```
 
 ### 6. Opportunity Explorer And Manual Evidence Entry

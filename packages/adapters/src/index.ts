@@ -24,6 +24,7 @@ export * from "./netlify-site-hosting.js";
 export * from "./s3-object-storage.js";
 export * from "./token-cipher.js";
 export * from "./mock-ai-reasoning.js";
+export * from "./opencode-go-reasoning.js";
 
 export type DeployReleaseInput = {
   releasePlanId: string;
