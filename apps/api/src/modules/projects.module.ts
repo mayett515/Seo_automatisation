@@ -29,7 +29,13 @@ import {
   type ProjectSummary,
   type WebsiteImportQueueResponse
 } from "@localseo/contracts";
-import { agentRuns, mainWebsites, websiteImportRuns, type DatabaseClient } from "@localseo/db";
+import {
+  agentRuns,
+  isDatabaseUniqueViolation,
+  mainWebsites,
+  websiteImportRuns,
+  type DatabaseClient
+} from "@localseo/db";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -261,7 +267,7 @@ export class ProjectsService {
         status: "queued"
       });
     } catch (error) {
-      if (isUniqueViolation(error)) {
+      if (isDatabaseUniqueViolation(error)) {
         const conflictingRun = await findActiveOpportunityScoutRun(db, projectId);
         if (conflictingRun) {
           return activeOpportunityScoutResponse(conflictingRun);
@@ -504,12 +510,6 @@ function activeOpportunityScoutResponse(run: typeof agentRuns.$inferSelect): Opp
     message: "An opportunity scout run is already queued or running for this project.",
     createdAt: run.createdAt.toISOString()
   });
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    error !== null && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "23505"
-  );
 }
 
 function websiteImportRunToResponse(row: typeof websiteImportRuns.$inferSelect) {

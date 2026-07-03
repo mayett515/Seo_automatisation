@@ -18,6 +18,7 @@ import {
   agentRuns,
   gscOpportunitySignals,
   gscSearchAnalyticsRows,
+  isDatabaseUniqueViolation,
   opportunities,
   pageProposals,
   rankingProofs,
@@ -235,31 +236,39 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
     },
 
     async markRunning(data) {
-      const updated = await db
-        .update(agentRuns)
-        .set({
-          status: "running",
-          failureCode: null,
-          provider: null,
-          model: null,
-          outputJson: null,
-          usageJson: null,
-          latencyMs: null,
-          startedAt: new Date(),
-          completedAt: null,
-          diagnosticsJson: null,
-          updatedAt: new Date()
-        })
-        .where(
-          and(
-            eq(agentRuns.id, data.runId),
-            eq(agentRuns.projectId, data.projectId),
-            inArray(agentRuns.status, ["queued", "failed"])
+      try {
+        const updated = await db
+          .update(agentRuns)
+          .set({
+            status: "running",
+            failureCode: null,
+            provider: null,
+            model: null,
+            outputJson: null,
+            usageJson: null,
+            latencyMs: null,
+            startedAt: new Date(),
+            completedAt: null,
+            diagnosticsJson: null,
+            updatedAt: new Date()
+          })
+          .where(
+            and(
+              eq(agentRuns.id, data.runId),
+              eq(agentRuns.projectId, data.projectId),
+              inArray(agentRuns.status, ["queued", "failed"])
+            )
           )
-        )
-        .returning({ id: agentRuns.id });
+          .returning({ id: agentRuns.id });
 
-      return updated.length > 0;
+        return updated.length > 0;
+      } catch (error) {
+        if (isDatabaseUniqueViolation(error)) {
+          return false;
+        }
+
+        throw error;
+      }
     },
 
     async recordInputRef(input) {

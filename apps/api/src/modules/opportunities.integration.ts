@@ -167,6 +167,32 @@ void describe(
       assert.equal(list.opportunities[0]?.evidenceJson?.projectId, first.projectId);
     });
 
+    void it("returns null brief evidence for invalid legacy opportunity JSON", async () => {
+      const fixture = await createProjectFixture(db, "Invalid Brief");
+      const service = new OpportunitiesService(testDatabaseService(db));
+
+      await db.insert(opportunities).values({
+        projectId: fixture.projectId,
+        classification: "internal_radar",
+        primaryKeyword: "legacy invalid brief",
+        score: 12,
+        status: "new",
+        evidenceJson: { legacy: true }
+      });
+
+      const list = await service.listOpportunities(fixture.projectId);
+
+      assert.equal(list.opportunities.length, 1);
+      assert.equal(list.opportunities[0]?.evidenceJson, null);
+    });
+
+    void it("rejects unsupported agent-run task filters", async () => {
+      const fixture = await createProjectFixture(db, "Invalid Task");
+      const service = new OpportunitiesService(testDatabaseService(db));
+
+      await assert.rejects(() => service.listAgentRuns(fixture.projectId, "not_a_real_task"), /task filter/u);
+    });
+
     void it("lists agent runs without exposing raw diagnostics or output JSON", async () => {
       const first = await createProjectFixture(db, "Agent Run First");
       const second = await createProjectFixture(db, "Agent Run Second");
