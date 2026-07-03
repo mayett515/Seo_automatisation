@@ -361,6 +361,8 @@ Run in order after Zod parse; first failure rejects the run with `qa_rejected` +
 ```text
 1. evidence_resolution      every required sourceId resolves to a project-owned row
 2. proof_gate               proven_win requires >=1 customer_safe_proof ranking evidence;
+                            row-backed ranking_proof must match the cited row's rank,
+                            query, and pageUrl;
                             otherwise QA downgrades is NOT allowed — the run fails
                             (silent downgrade would hide a lying model)
 3. gsc_containment          no gsc-sourced evidence marked customer_safe_proof
@@ -482,16 +484,19 @@ GSC signals / rows
 tracking summary
 existing routes
 existing open opportunity keys
-manual ranking evidence later
+ranking_proofs manual ranking evidence
 ```
 
 Manual evidence bridge:
 
 ```text
-ranking_proof, serp_snapshot, field_evidence, and manual_note are contract vocabulary now,
-but only sources backed by project-owned rows/artifacts can pass evidence_resolution.
-Before automated SERP snapshots exist, Opportunity Explorer should add a small manual
-ranking-evidence entry path: query, page URL, observed rank, checked-at date,
+ranking_proof is now backed by project-owned ranking_proofs rows.
+serp_snapshot, field_evidence, and manual_note remain contract vocabulary until
+their own project-owned rows/artifacts exist.
+The model cannot improve a proof row by claim: proven_win requires the brief's
+ranking_proof observed rank, query, and pageUrl to match the cited row.
+Before automated SERP snapshots exist, Opportunity Explorer should render the
+manual ranking-evidence entry path: query, page URL, observed rank, checked-at date,
 optional screenshot artifact key, and notes.
 ```
 

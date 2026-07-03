@@ -349,20 +349,24 @@ enqueue failure-code vocabulary
   explanations.
 ```
 
-Manual evidence entry is added here as the bridge before automated SERP snapshots:
+Manual evidence entry is added here as the bridge before automated SERP snapshots. The backend bridge is now the
+`ranking_proofs` table plus project-scoped API endpoints; the Explorer UI still needs the form and evidence panel.
 
 ```text
-manual_ranking_evidence / manual_evidence
+ranking_proofs
   operator records query, page URL, observed rank, checked-at date,
   optional screenshot artifact key, and notes
+  worker exposes those rows to Opportunity Scout as sourceType = ranking_proof
+  proven_win can pass only when the brief cites project-owned customer_safe_proof
+  claimed rank, query, and pageUrl must match the cited ranking_proofs row
 ```
 
 Why:
 
 ```text
-The current contracts include ranking_proof, serp_snapshot, field_evidence, and manual_note,
-but the DB has no backing source rows for those evidence types yet.
-Without a manual evidence bridge, proven_win is structurally unreachable until SERP automation.
+The current contracts include ranking_proof, serp_snapshot, field_evidence, and manual_note.
+`ranking_proofs` is the first backing source row for customer-safe proof.
+Without this bridge, proven_win would be structurally unreachable until SERP automation.
 Manual evidence mirrors the real Martines workflow and dogfoods EvidenceRef resolution
 before automating SERP checks.
 ```
