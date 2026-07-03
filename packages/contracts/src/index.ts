@@ -15,6 +15,7 @@ export const jobStatuses = [
 export const jobTypes = [
   "pre_audit",
   "website_import",
+  "opportunity_scout",
   "local_analysis",
   "page_generation",
   "seo_qa",
@@ -30,6 +31,7 @@ export const jobTypes = [
 export const queueNames = [
   "pre-audit",
   "website-import",
+  "opportunity-scout",
   "local-analysis",
   "page-generation",
   "seo-qa",
@@ -347,6 +349,16 @@ export const WebsiteImportJobDataSchema = z.object({
   triggerSource: z.string().min(1).optional()
 });
 
+export const OpportunityScoutJobDataSchema = z.object({
+  projectId: ProjectIdSchema,
+  runId: z.string().min(1),
+  maxBriefs: z.number().int().positive().max(12).optional(),
+  maxAttempts: z.number().int().positive().optional(),
+  jobRunId: z.string().min(1).optional(),
+  triggeredByUserId: z.string().min(1).nullable().optional(),
+  triggerSource: z.string().min(1).optional()
+});
+
 export const ApprovedReleaseArtifactPageSchema = z.object({
   releasePlanItemId: z.string().min(1),
   pageVersionId: z.string().min(1).nullable(),
@@ -592,7 +604,7 @@ export const OpportunityGroupHintSchema = z
     label: z.string().min(1).max(160),
     source: OpportunityGroupSourceSchema,
     description: z.string().min(1).max(700).optional(),
-    evidence: z.array(EvidenceRefSchema).default([])
+    evidence: z.array(EvidenceRefSchema).max(25).default([])
   })
   .strict();
 
@@ -613,7 +625,7 @@ export const NearbyPlaceCandidateSchema = z
     existingClusterStrength: ClusterStrengthSchema,
     competitorWeakness: z.string().min(1).max(700).optional(),
     mapGroupKey: z.string().min(1).max(128).optional(),
-    evidence: z.array(EvidenceRefSchema).default([])
+    evidence: z.array(EvidenceRefSchema).max(25).default([])
   })
   .strict();
 
@@ -621,17 +633,17 @@ export const CorridorClusterSchema = z
   .object({
     name: z.string().min(1).max(160),
     hubPlace: z.string().min(1).max(160),
-    places: z.array(z.string().min(1).max(160)).min(1),
+    places: z.array(z.string().min(1).max(160)).min(1).max(25),
     rationale: z.string().min(1).max(1_200),
     clusterStrength: ClusterStrengthSchema,
-    recommendedSequence: z.array(z.string().min(1).max(160)).default([])
+    recommendedSequence: z.array(z.string().min(1).max(160)).max(25).default([])
   })
   .strict();
 
 export const CannibalizationRiskSchema = z
   .object({
     level: CannibalizationRiskLevelSchema,
-    conflictingRoutes: z.array(z.string().min(1)).default([])
+    conflictingRoutes: z.array(z.string().min(1)).max(25).default([])
   })
   .strict();
 
@@ -650,17 +662,17 @@ export const OpportunityBriefSchema = z
     service: z.string().min(1).max(160),
     location: NearbyPlaceCandidateSchema,
     primaryKeyword: z.string().min(1).max(200),
-    secondaryKeywords: z.array(z.string().min(1).max(200)).default([]),
+    secondaryKeywords: z.array(z.string().min(1).max(200)).max(15).default([]),
     suggestedRoute: z.string().min(1).optional(),
     suggestedPageType: OpportunitySuggestedPageTypeSchema,
-    evidence: z.array(EvidenceRefSchema).min(1),
-    competitorObservations: z.array(CompetitorObservationSchema).default([]),
+    evidence: z.array(EvidenceRefSchema).min(1).max(25),
+    competitorObservations: z.array(CompetitorObservationSchema).max(12).default([]),
     corridorCluster: CorridorClusterSchema.optional(),
-    groupHints: z.array(OpportunityGroupHintSchema).default([]),
+    groupHints: z.array(OpportunityGroupHintSchema).max(12).default([]),
     hubSpokeRole: HubSpokeRoleSchema.optional(),
     uniquenessRationale: z.string().min(1).max(1_500).optional(),
     cannibalizationRisk: CannibalizationRiskSchema,
-    missingEvidence: z.array(z.string().min(1).max(500)).default([]),
+    missingEvidence: z.array(z.string().min(1).max(500)).max(20).default([]),
     confidence: z.number().min(0).max(1),
     rejectionReason: z.string().min(1).max(700).optional(),
     recommendedAction: OpportunityRecommendedActionSchema
@@ -670,7 +682,7 @@ export const OpportunityBriefSchema = z
 export const OpportunityScoutOutputSchema = z
   .object({
     briefs: z.array(OpportunityBriefSchema).max(12),
-    groups: z.array(OpportunityGroupHintSchema).default([]),
+    groups: z.array(OpportunityGroupHintSchema).max(12).default([]),
     runNotes: z.string().min(1).max(2_000).optional()
   })
   .strict();
@@ -784,6 +796,9 @@ export const WebsiteImportQueueResponseSchema = QueueJobSchema.extend({
   importRunId: z.string().min(1).optional(),
   sourceUrl: WebsiteImportSourceUrlSchema.optional()
 });
+export const OpportunityScoutQueueResponseSchema = QueueJobSchema.extend({
+  runId: z.string().min(1).optional()
+});
 
 export type CreateLeadInput = z.output<typeof CreateLeadSchema>;
 export type Lead = z.output<typeof LeadSchema>;
@@ -794,6 +809,7 @@ export type QueueJob = z.output<typeof QueueJobSchema>;
 export type DeployJobData = z.output<typeof DeployJobDataSchema>;
 export type RollbackJobData = z.output<typeof RollbackJobDataSchema>;
 export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
+export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
@@ -836,6 +852,7 @@ export type HealthResponse = z.output<typeof HealthResponseSchema>;
 export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
+export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
 export type JobStatus = z.output<typeof JobStatusSchema>;
 export type JobType = z.output<typeof JobTypeSchema>;
 export type DomainEventName = z.output<typeof DomainEventNameSchema>;

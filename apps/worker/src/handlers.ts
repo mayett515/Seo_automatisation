@@ -1,9 +1,11 @@
 import {
   FileSystemObjectStorageAdapter,
   HttpWebsiteCrawlerAdapter,
+  MockReasoningAdapter,
   NetlifySiteHostingAdapter,
   NotConfiguredSiteHostingAdapter,
   type CrawlerPort,
+  type AiReasoningPort,
   S3ObjectStorageAdapter,
   type ObjectStoragePort,
   type SiteHostingPort
@@ -20,6 +22,12 @@ import {
   reconcilePendingDeployments
 } from "./handlers/deploy.js";
 import { handleGscSyncJob, isTerminalGscSyncFailure } from "./handlers/gsc-sync.js";
+import {
+  handleOpportunityScoutJob,
+  OpportunityScoutConfigurationError,
+  OpportunityScoutEvidenceError,
+  OpportunityScoutWorkflowError
+} from "./handlers/opportunity-scout.js";
 import {
   handleRollbackJob,
   reconcilePendingRollbacks,
@@ -45,6 +53,7 @@ const sharedDbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL)
 const sharedObjectStorage = createObjectStorageAdapter();
 const sharedSiteHosting = createSiteHostingAdapter(env.NETLIFY_AUTH_TOKEN, sharedObjectStorage);
 const sharedCrawler = createCrawlerAdapter(sharedObjectStorage);
+const sharedReasoning = createReasoningAdapter();
 
 export async function handleJob(job: Job): Promise<Record<string, unknown>> {
   await markJobRunRunning(sharedDbHandle?.db, job);
@@ -116,6 +125,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     return handleWebsiteImportJob(job, sharedDbHandle, sharedCrawler);
   }
 
+  if (job.queueName === "opportunity-scout" || job.name === "opportunity_scout") {
+    return handleOpportunityScoutJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage);
+  }
+
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
@@ -124,6 +137,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 }
 
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
+export { parseOpportunityScoutJobData } from "./handlers/opportunity-scout.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
 
 export function isTerminalWorkerError(error: unknown): boolean {
@@ -137,6 +151,9 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof ManualReconciliationRequiredError ||
     error instanceof WebsiteImportConfigurationError ||
     error instanceof WebsiteImportEvidenceError ||
+    error instanceof OpportunityScoutConfigurationError ||
+    error instanceof OpportunityScoutEvidenceError ||
+    error instanceof OpportunityScoutWorkflowError ||
     isTerminalGscSyncFailure(error)
   );
 }
@@ -178,4 +195,8 @@ function createObjectStorageAdapter(): ObjectStoragePort {
 
 function createCrawlerAdapter(objectStorage: ObjectStoragePort): CrawlerPort {
   return new HttpWebsiteCrawlerAdapter(objectStorage);
+}
+
+function createReasoningAdapter(): AiReasoningPort {
+  return new MockReasoningAdapter();
 }

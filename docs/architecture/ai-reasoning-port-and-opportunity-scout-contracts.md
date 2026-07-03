@@ -463,6 +463,26 @@ same project state produces a stable redacted evidence packet
 manual ranking evidence resolves as project-owned proof when present
 ```
 
+Implementation checkpoint:
+
+```text
+implemented in the worker baseline
+  opportunity_scout job data contract and queue name
+  MockReasoningAdapter
+  stable evidence packet builder
+  worker handler/repository with failed -> running retry support
+  ObjectStoragePort input_ref write
+  Zod parse, QA/scoring, and success transaction
+  succeeded run replay as no-op
+  unit tests plus DB-backed integration tests
+
+deferred to the next slices
+  API/operator enqueue endpoint that creates agent_runs and BullMQ jobs
+  real provider adapter
+  manual ranking evidence source rows
+  Opportunity Explorer UI
+```
+
 ## Answers To The Handoff Review Questions
 
 **Is AiReasoningPort too generic or too task-specific?** Right altitude. The closed `ReasoningTask` union prevents a generic "run anything" escape hatch; `outputSchemaName` + external parsing keeps it from becoming task-coupled. Do not add per-task methods to the port.

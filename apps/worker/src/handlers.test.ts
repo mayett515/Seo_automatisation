@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { GscSearchAnalyticsRow } from "@localseo/contracts";
+import { MockReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
+import {
+  OpportunityScoutOutputSchema,
+  type GscSearchAnalyticsRow,
+  type OpportunityScoutOutput
+} from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
 import {
   DeployConfigurationError,
@@ -9,6 +14,15 @@ import {
   ProviderDeployTerminalStatusError
 } from "./handlers/deploy.js";
 import { GscSyncFailureError } from "./handlers/gsc-sync.js";
+import {
+  executeOpportunityScout,
+  OpportunityScoutConfigurationError,
+  OpportunityScoutEvidenceError,
+  OpportunityScoutProviderError,
+  OpportunityScoutWorkflowError,
+  parseOpportunityScoutJobData,
+  type OpportunityScoutRepository
+} from "./handlers/opportunity-scout.js";
 import { RollbackConfigurationError, RollbackEvidenceError, RollbackProviderFailedError } from "./handlers/rollback.js";
 import {
   executeWebsiteImport,
@@ -94,6 +108,33 @@ void describe("parseWebsiteImportJobData", () => {
   });
 });
 
+void describe("parseOpportunityScoutJobData", () => {
+  void it("accepts valid opportunity scout job data", () => {
+    assert.deepEqual(
+      parseOpportunityScoutJobData({
+        projectId: "project-1",
+        runId: "run-1",
+        maxBriefs: 6,
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }),
+      {
+        projectId: "project-1",
+        runId: "run-1",
+        maxBriefs: 6,
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }
+    );
+  });
+
+  void it("rejects missing opportunity scout identifiers", () => {
+    assert.throws(() => parseOpportunityScoutJobData({ projectId: "project-1" }), /require projectId and runId/u);
+  });
+});
+
 void describe("classifyOpportunitySignals", () => {
   void it("flags impression/no-click and page-two opportunity signals", () => {
     assert.deepEqual(
@@ -175,6 +216,21 @@ void describe("routeJob", () => {
     );
   });
 
+  void it("routes opportunity scout jobs to the scout handler instead of returning success metadata", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "opportunity-scout-job-1",
+        queueName: "opportunity-scout",
+        name: "opportunity_scout",
+        data: {
+          projectId: "project-1",
+          runId: "run-1"
+        }
+      } as Job),
+      /DATABASE_URL is required for opportunity scout jobs/u
+    );
+  });
+
   void it("fails unknown jobs honestly instead of returning success metadata", async () => {
     await assert.rejects(
       routeJob({
@@ -199,6 +255,10 @@ void describe("isTerminalWorkerError", () => {
     assert.equal(isTerminalWorkerError(new RollbackProviderFailedError("provider failed")), true);
     assert.equal(isTerminalWorkerError(new WebsiteImportConfigurationError("missing database")), true);
     assert.equal(isTerminalWorkerError(new WebsiteImportEvidenceError("missing import run")), true);
+    assert.equal(isTerminalWorkerError(new OpportunityScoutConfigurationError("missing database")), true);
+    assert.equal(isTerminalWorkerError(new OpportunityScoutEvidenceError("missing run")), true);
+    assert.equal(isTerminalWorkerError(new OpportunityScoutWorkflowError("qa_rejected")), true);
+    assert.equal(isTerminalWorkerError(new OpportunityScoutProviderError("provider_timeout")), false);
     assert.equal(
       isTerminalWorkerError(new GscSyncFailureError("google_refresh_token_invalid", { reconnectRequired: true })),
       true
@@ -219,7 +279,12 @@ void describe("isTerminalWorkerError", () => {
     );
     assert.ok(toWorkerRethrowError(new ProviderDeployTerminalStatusError("rolled_back")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new WebsiteImportEvidenceError("missing import run")) instanceof UnrecoverableError);
+    assert.ok(toWorkerRethrowError(new OpportunityScoutWorkflowError("qa_rejected")) instanceof UnrecoverableError);
     assert.equal(toWorkerRethrowError(new Error("provider timeout")) instanceof UnrecoverableError, false);
+    assert.equal(
+      toWorkerRethrowError(new OpportunityScoutProviderError("provider_timeout")) instanceof UnrecoverableError,
+      false
+    );
   });
 });
 
@@ -300,6 +365,107 @@ void describe("executeWebsiteImport", () => {
   });
 });
 
+void describe("executeOpportunityScout", () => {
+  void it("persists accepted opportunities and succeeds the run", async () => {
+    const repository = new FakeOpportunityScoutRepository();
+    const reasoning = new MockReasoningAdapter({
+      ok: true,
+      provider: "mock",
+      model: "mock-opportunity-scout",
+      outputJson: validOpportunityScoutOutput(),
+      diagnostics: { latencyMs: 12, finishReason: "stop" }
+    });
+    const storage = new MemoryObjectStorage();
+
+    const result = await executeOpportunityScout({
+      data: { projectId: "project-1", runId: "run-1" },
+      repository,
+      reasoning,
+      objectStorage: storage
+    });
+
+    assert.equal(result.status, "succeeded");
+    assert.equal(result.opportunityCount, 1);
+    assert.equal(repository.run.status, "succeeded");
+    assert.equal(repository.persistedOutput?.briefs.length, 1);
+    assert.equal(repository.failed, undefined);
+    assert.equal(reasoning.calls[0]?.policy.canMutateProduction, false);
+    assert.equal(storage.values.size, 1);
+  });
+
+  void it("marks adapter failures failed but retryable", async () => {
+    const repository = new FakeOpportunityScoutRepository();
+
+    await assert.rejects(
+      executeOpportunityScout({
+        data: { projectId: "project-1", runId: "run-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: false,
+          provider: "mock",
+          failureCode: "provider_timeout",
+          diagnostics: { latencyMs: 120_000, detail: "timeout" }
+        }),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      /provider_timeout/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "provider_timeout");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
+  void it("marks schema mismatches failed without persisting opportunities", async () => {
+    const repository = new FakeOpportunityScoutRepository();
+
+    await assert.rejects(
+      executeOpportunityScout({
+        data: { projectId: "project-1", runId: "run-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: true,
+          provider: "mock",
+          model: "mock-opportunity-scout",
+          outputJson: { not: "the schema" },
+          diagnostics: { latencyMs: 5 }
+        }),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      /output_schema_mismatch/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "output_schema_mismatch");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
+  void it("marks QA rejection failed without persisting opportunities", async () => {
+    const repository = new FakeOpportunityScoutRepository();
+
+    await assert.rejects(
+      executeOpportunityScout({
+        data: { projectId: "project-1", runId: "run-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: true,
+          provider: "mock",
+          model: "mock-opportunity-scout",
+          outputJson: validOpportunityScoutOutput({
+            classification: "proven_win",
+            recommendedAction: "monitor"
+          }),
+          diagnostics: { latencyMs: 5 }
+        }),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      /qa_rejected:proof_gate/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "qa_rejected");
+    assert.ok(recordFromUnknown(repository.failed?.outputJson).raw);
+    assert.equal(repository.persistedOutput, undefined);
+  });
+});
+
 function row(input: Partial<GscSearchAnalyticsRow>): GscSearchAnalyticsRow {
   return {
     projectId: "project-1",
@@ -312,4 +478,135 @@ function row(input: Partial<GscSearchAnalyticsRow>): GscSearchAnalyticsRow {
     position: 1,
     ...input
   };
+}
+
+type FakeAgentRun = NonNullable<Awaited<ReturnType<OpportunityScoutRepository["loadRun"]>>>;
+
+class FakeOpportunityScoutRepository implements OpportunityScoutRepository {
+  run: FakeAgentRun = {
+    id: "run-1",
+    projectId: "project-1",
+    task: "opportunity_scout",
+    status: "queued",
+    failureCode: null,
+    provider: null,
+    model: null,
+    inputRef: null,
+    outputJson: null,
+    usageJson: null,
+    diagnosticsJson: null,
+    latencyMs: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+
+  persistedOutput: Parameters<OpportunityScoutRepository["persistSuccess"]>[0]["output"] | undefined;
+  failed: Parameters<OpportunityScoutRepository["markFailed"]>[0] | undefined;
+
+  loadRun(): Promise<FakeAgentRun> {
+    return Promise.resolve(this.run);
+  }
+
+  markRunning(): Promise<boolean> {
+    this.run.status = "running";
+    return Promise.resolve(true);
+  }
+
+  recordInputRef(input: { inputRef: string }): Promise<void> {
+    this.run.inputRef = input.inputRef;
+    return Promise.resolve();
+  }
+
+  loadEvidence(): ReturnType<OpportunityScoutRepository["loadEvidence"]> {
+    return Promise.resolve({
+      packet: {
+        projectId: "project-1",
+        generatedAt: "2026-07-03T00:00:00.000Z",
+        gsc: { rows: [], signals: [] },
+        tracking: { recentEvents: [] },
+        existingRoutes: [],
+        existingOpportunityKeys: []
+      },
+      resolvableEvidence: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }],
+      existingRoutes: [],
+      existingOpportunityKeys: []
+    });
+  }
+
+  persistSuccess(
+    input: Parameters<OpportunityScoutRepository["persistSuccess"]>[0]
+  ): Promise<{ opportunityCount: number }> {
+    this.persistedOutput = input.output;
+    this.run.status = "succeeded";
+    return Promise.resolve({ opportunityCount: input.output.briefs.length });
+  }
+
+  markFailed(input: Parameters<OpportunityScoutRepository["markFailed"]>[0]): Promise<void> {
+    this.failed = input;
+    this.run.status = "failed";
+    return Promise.resolve();
+  }
+}
+
+class MemoryObjectStorage implements ObjectStoragePort {
+  readonly values = new Map<string, unknown>();
+
+  putJson(input: { key: string; value: unknown }): Promise<{ key: string }> {
+    this.values.set(input.key, input.value);
+    return Promise.resolve({ key: input.key });
+  }
+
+  getJson(input: { key: string }): Promise<unknown> {
+    return Promise.resolve(this.values.get(input.key));
+  }
+}
+
+function validOpportunityScoutOutput(
+  overrides: Partial<OpportunityScoutOutput["briefs"][number]> = {}
+): OpportunityScoutOutput {
+  return OpportunityScoutOutputSchema.parse({
+    briefs: [
+      {
+        projectId: "project-1",
+        classification: "near_term_target",
+        service: "Entruempelung",
+        location: {
+          name: "Dachau",
+          kind: "city",
+          adjacencyReason: "gsc_testing_signal",
+          existingClusterStrength: "weak",
+          evidence: []
+        },
+        primaryKeyword: "entruempelung dachau",
+        secondaryKeywords: [],
+        suggestedRoute: "/entruempelung-dachau/",
+        suggestedPageType: "normal_page",
+        evidence: [
+          {
+            sourceType: "gsc_row",
+            sourceId: "gsc-row-1",
+            summary: "GSC shows impressions for Dachau intent.",
+            strength: "medium",
+            proofTier: "internal_signal"
+          }
+        ],
+        competitorObservations: [],
+        groupHints: [],
+        hubSpokeRole: "spoke",
+        uniquenessRationale: "Dachau has distinct local intent and a wrong-page signal.",
+        cannibalizationRisk: { level: "low", conflictingRoutes: [] },
+        missingEvidence: ["Manual SERP proof"],
+        confidence: 0.72,
+        recommendedAction: "create_brief",
+        ...overrides
+      }
+    ],
+    groups: []
+  });
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

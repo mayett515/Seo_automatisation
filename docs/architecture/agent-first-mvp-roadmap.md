@@ -156,6 +156,8 @@ The gates need to be trustworthy before they become production write criteria.
 
 ### 3. MockReasoningAdapter
 
+Status: implemented baseline.
+
 Build the first `AiReasoningPort` implementation as a deterministic test adapter, not a real provider:
 
 ```text
@@ -175,6 +177,8 @@ without provider flakiness or Mastra orchestration.
 ```
 
 ### 4. Opportunity Scout Worker Vertical
+
+Status: worker baseline implemented; API enqueue endpoint still next.
 
 Build one useful backend workflow, not a broad agent platform:
 
@@ -223,6 +227,25 @@ QA/schema/provider failure           -> failed run, zero opportunities
 ```
 
 The workflow output is an opportunity/proposal, not a page version and not a deploy.
+
+Implementation checkpoint:
+
+```text
+implemented now
+  opportunity_scout queue/job contract
+  MockReasoningAdapter
+  stable evidence packet builder and prompt
+  worker route and repository
+  Zod parse -> QA/scoring -> transactional persistence
+  failed -> running retry support
+  succeeded no-op replay
+  unit tests plus DB-backed integration tests
+
+still next
+  API/operator enqueue endpoint that creates agent_runs as queued
+  real reasoning adapter
+  Opportunity Explorer read-only UI
+```
 
 ### 5. Real Reasoning Adapter
 

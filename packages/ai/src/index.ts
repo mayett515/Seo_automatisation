@@ -126,6 +126,50 @@ export type EvaluateOpportunityScoutInput = {
   maxBriefs?: number;
 };
 
+export type OpportunityScoutEvidencePacket = {
+  projectId: string;
+  generatedAt: string;
+  websiteImport?: Record<string, unknown>;
+  gsc: {
+    rows: Record<string, unknown>[];
+    signals: Record<string, unknown>[];
+  };
+  tracking: {
+    recentEvents: Record<string, unknown>[];
+  };
+  existingRoutes: string[];
+  existingOpportunityKeys: string[];
+};
+
+export function buildOpportunityScoutPrompt(): string {
+  return [
+    "You are the Local SEO Opportunity Scout.",
+    "Return only JSON matching OpportunityScoutOutput.",
+    "Use evidence refs; do not invent proof.",
+    "GSC is internal radar, not customer-safe proof.",
+    "Customer-safe proven_win requires ranking_proof or serp_snapshot evidence with an explicit Top 10 rank.",
+    "Nearby Orte and corridor suggestions need service fit, unique local reason, and cannibalization awareness.",
+    "AI proposes opportunities only; it never approves, deploys, rolls back, mutates providers, or reports guaranteed results."
+  ].join("\n");
+}
+
+export function buildOpportunityScoutEvidencePacket(
+  input: OpportunityScoutEvidencePacket
+): OpportunityScoutEvidencePacket {
+  return {
+    ...input,
+    gsc: {
+      rows: sortRecords(input.gsc.rows, ["sourceId", "query", "pageUrl"]),
+      signals: sortRecords(input.gsc.signals, ["sourceId", "query", "pageUrl", "signalType"])
+    },
+    tracking: {
+      recentEvents: sortRecords(input.tracking.recentEvents, ["occurredAt", "eventName", "route"])
+    },
+    existingRoutes: [...input.existingRoutes].sort(),
+    existingOpportunityKeys: [...input.existingOpportunityKeys].sort()
+  };
+}
+
 const gscEvidenceSources = new Set<EvidenceSourceType>(["gsc_signal", "gsc_row"]);
 const customerSafeProofSources = new Set<EvidenceSourceType>(["ranking_proof", "serp_snapshot"]);
 
@@ -442,6 +486,26 @@ function normalizeCopyText(value: string): string {
 
 function clampScore(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function sortRecords(records: readonly Record<string, unknown>[], keys: readonly string[]): Record<string, unknown>[] {
+  return [...records].sort((left, right) => {
+    const leftKey = keys.map((key) => stableString(left[key])).join("\u0000");
+    const rightKey = keys.map((key) => stableString(right[key])).join("\u0000");
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function stableString(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return "";
 }
 
 function fail(gateId: OpportunityScoutQaGateId, message: string, briefIndex?: number): OpportunityScoutQaResult {
