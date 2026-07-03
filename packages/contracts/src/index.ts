@@ -15,6 +15,7 @@ export const jobStatuses = [
 export const jobTypes = [
   "pre_audit",
   "website_import",
+  "opportunity_scout",
   "local_analysis",
   "page_generation",
   "seo_qa",
@@ -30,6 +31,7 @@ export const jobTypes = [
 export const queueNames = [
   "pre-audit",
   "website-import",
+  "opportunity-scout",
   "local-analysis",
   "page-generation",
   "seo-qa",
@@ -341,6 +343,16 @@ export const WebsiteImportJobDataSchema = z.object({
   projectId: ProjectIdSchema,
   importRunId: z.string().min(1),
   sourceUrl: WebsiteImportSourceUrlSchema,
+  maxAttempts: z.number().int().positive().optional(),
+  jobRunId: z.string().min(1).optional(),
+  triggeredByUserId: z.string().min(1).nullable().optional(),
+  triggerSource: z.string().min(1).optional()
+});
+
+export const OpportunityScoutJobDataSchema = z.object({
+  projectId: ProjectIdSchema,
+  runId: z.string().min(1),
+  maxBriefs: z.number().int().positive().max(12).optional(),
   maxAttempts: z.number().int().positive().optional(),
   jobRunId: z.string().min(1).optional(),
   triggeredByUserId: z.string().min(1).nullable().optional(),
@@ -784,6 +796,9 @@ export const WebsiteImportQueueResponseSchema = QueueJobSchema.extend({
   importRunId: z.string().min(1).optional(),
   sourceUrl: WebsiteImportSourceUrlSchema.optional()
 });
+export const OpportunityScoutQueueResponseSchema = QueueJobSchema.extend({
+  runId: z.string().min(1).optional()
+});
 
 export type CreateLeadInput = z.output<typeof CreateLeadSchema>;
 export type Lead = z.output<typeof LeadSchema>;
@@ -794,6 +809,7 @@ export type QueueJob = z.output<typeof QueueJobSchema>;
 export type DeployJobData = z.output<typeof DeployJobDataSchema>;
 export type RollbackJobData = z.output<typeof RollbackJobDataSchema>;
 export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
+export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
@@ -836,6 +852,7 @@ export type HealthResponse = z.output<typeof HealthResponseSchema>;
 export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
+export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
 export type JobStatus = z.output<typeof JobStatusSchema>;
 export type JobType = z.output<typeof JobTypeSchema>;
 export type DomainEventName = z.output<typeof DomainEventNameSchema>;

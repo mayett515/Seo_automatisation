@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OpportunityScoutOutputSchema, type OpportunityScoutOutput } from "@localseo/contracts";
-import { evaluateOpportunityScoutOutput, scoreOpportunityBrief } from "./index.js";
+import { buildOpportunityScoutEvidencePacket, evaluateOpportunityScoutOutput, scoreOpportunityBrief } from "./index.js";
 
 const projectId = "project-1";
 
@@ -357,6 +357,47 @@ void test("lowers deterministic score for higher cannibalization risk", () => {
         baseBrief({ cannibalizationRisk: { level: "high", conflictingRoutes: ["/entruempelung/"] } })
       )
   );
+});
+
+void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit artifacts", () => {
+  const first = buildOpportunityScoutEvidencePacket({
+    projectId,
+    generatedAt: "2026-07-03T00:00:00.000Z",
+    gsc: {
+      rows: [
+        { sourceId: "row-2", query: "b", pageUrl: "https://example.test/b" },
+        { sourceId: "row-1", query: "a", pageUrl: "https://example.test/a" }
+      ],
+      signals: [
+        { sourceId: "signal-2", signalType: "positions_11_100", query: "b" },
+        { sourceId: "signal-1", signalType: "impressions_no_clicks", query: "a" }
+      ]
+    },
+    tracking: {
+      recentEvents: [
+        { occurredAt: "2026-07-03T00:00:02.000Z", eventName: "cta_click", route: "/b" },
+        { occurredAt: "2026-07-03T00:00:01.000Z", eventName: "page_view", route: "/a" }
+      ]
+    },
+    existingRoutes: ["/b", "/a"],
+    existingOpportunityKeys: ["b", "a"]
+  });
+
+  const second = buildOpportunityScoutEvidencePacket({
+    projectId,
+    generatedAt: "2026-07-03T00:00:00.000Z",
+    gsc: {
+      rows: [...first.gsc.rows].reverse(),
+      signals: [...first.gsc.signals].reverse()
+    },
+    tracking: {
+      recentEvents: [...first.tracking.recentEvents].reverse()
+    },
+    existingRoutes: [...first.existingRoutes].reverse(),
+    existingOpportunityKeys: [...first.existingOpportunityKeys].reverse()
+  });
+
+  assert.deepEqual(second, first);
 });
 
 function rankingProofEvidence(): OpportunityScoutOutput["briefs"][number]["evidence"][number] {
