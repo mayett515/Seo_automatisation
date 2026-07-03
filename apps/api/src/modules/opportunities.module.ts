@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Injectable,
   Module,
   Param,
@@ -38,7 +39,7 @@ import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 @Injectable()
 export class OpportunitiesService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async listOpportunities(projectId: string): Promise<OpportunityExplorerListResponse> {
     const db = this.database.requireDb();
@@ -147,7 +148,7 @@ export class OpportunitiesService {
 @UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 @RequireProjectPermission("project:read")
 class RankingProofsController {
-  constructor(private readonly opportunities: OpportunitiesService) {}
+  constructor(@Inject(OpportunitiesService) private readonly opportunities: OpportunitiesService) {}
 
   @Get()
   list(@Param("projectId") projectId: string) {
@@ -173,7 +174,7 @@ class RankingProofsController {
 @UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 @RequireProjectPermission("project:read")
 class OpportunitiesController {
-  constructor(private readonly opportunities: OpportunitiesService) {}
+  constructor(@Inject(OpportunitiesService) private readonly opportunities: OpportunitiesService) {}
 
   @Get()
   list(@Param("projectId") projectId: string) {
@@ -185,7 +186,7 @@ class OpportunitiesController {
 @UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 @RequireProjectPermission("project:read")
 class AgentRunsController {
-  constructor(private readonly opportunities: OpportunitiesService) {}
+  constructor(@Inject(OpportunitiesService) private readonly opportunities: OpportunitiesService) {}
 
   @Get()
   list(@Param("projectId") projectId: string, @Query("task") task?: string) {

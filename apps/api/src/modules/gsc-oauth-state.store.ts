@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { RedisService } from "../redis/redis.service.js";
 
 const keyPrefix = "oauth:gsc:state:";
@@ -24,7 +24,7 @@ type RedisLike = {
 export class GscOAuthStateStore {
   private readonly redis: RedisLike | undefined;
 
-  constructor(redisService?: RedisService) {
+  constructor(@Inject(RedisService) redisService: RedisService) {
     this.redis = redisService?.client;
   }
 

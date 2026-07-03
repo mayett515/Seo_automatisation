@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, Optional, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { allowsLocalScaffoldAuth, parseAppEnv } from "@localseo/config";
 import type { FastifyRequest } from "fastify";
 import { ProjectMembershipService } from "./project-membership.service.js";
@@ -11,7 +11,7 @@ type ProjectScopedParams = {
 
 @Injectable()
 export class ProjectAccessGuard implements CanActivate {
-  constructor(@Optional() private readonly memberships?: ProjectMembershipService) {}
+  constructor(@Inject(ProjectMembershipService) private readonly memberships: ProjectMembershipService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
@@ -45,7 +45,7 @@ export class ProjectAccessGuard implements CanActivate {
         throw new UnauthorizedException("Authenticated user context is malformed.");
       }
 
-      if (!this.memberships?.isDatabaseBacked()) {
+      if (!this.memberships.isDatabaseBacked()) {
         throw new UnauthorizedException("Persisted project access requires database-backed membership checks.");
       }
 

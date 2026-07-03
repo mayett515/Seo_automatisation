@@ -1,6 +1,6 @@
 import { connect, type Socket } from "node:net";
 import { connect as connectTls } from "node:tls";
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Inject } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import { HealthProbeResponseSchema, HealthResponseSchema, type HealthProbeResponse } from "@localseo/contracts";
@@ -10,7 +10,7 @@ const env = parseAppEnv(process.env);
 
 @Controller("health")
 export class HealthController {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   @Get()
   getHealth() {

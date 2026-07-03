@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { accounts, sessions, users, verifications, type DatabaseClient } from "@localseo/db";
 import { betterAuth } from "better-auth/minimal";
@@ -37,7 +37,7 @@ type BetterAuthSecondaryStorage = {
 export class BetterAuthService {
   readonly auth: LocalSeoAuth | undefined;
 
-  constructor(database: DatabaseService, redis: RedisService) {
+  constructor(@Inject(DatabaseService) database: DatabaseService, @Inject(RedisService) redis: RedisService) {
     this.auth = database.db
       ? createLocalSeoAuth(database.db, env, createBetterAuthRedisStorage(redis.client))
       : undefined;

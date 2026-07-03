@@ -119,9 +119,13 @@ class GscService implements OnModuleDestroy {
     @Inject(GSC_SEARCH_CONSOLE) private readonly searchConsole: OptionalSearchConsole,
     @Inject(GSC_TOKEN_CIPHER) private readonly tokenCipher: OptionalTokenCipher,
     @Inject(GSC_QUEUE) private readonly gscQueue: OptionalQueue,
+    @Inject(DatabaseService)
     private readonly database: DatabaseService,
+    @Inject(GscOAuthStateStore)
     private readonly oauthStateStore: GscOAuthStateStore,
+    @Inject(BetterAuthService)
     private readonly betterAuth: BetterAuthService,
+    @Inject(ProjectMembershipService)
     private readonly memberships: ProjectMembershipService
   ) {}
 
@@ -493,7 +497,7 @@ class GscService implements OnModuleDestroy {
 @Controller("projects/:projectId/gsc")
 @UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 class GscController {
-  constructor(private readonly gsc: GscService) {}
+  constructor(@Inject(GscService) private readonly gsc: GscService) {}
 
   @Get("connection")
   getConnection(@Param("projectId") projectId: string) {
@@ -524,7 +528,7 @@ class GscController {
 
 @Controller("gsc")
 class GscOAuthController {
-  constructor(private readonly gsc: GscService) {}
+  constructor(@Inject(GscService) private readonly gsc: GscService) {}
 
   @Get("callback")
   async callback(@Query() query: unknown, @Req() request: FastifyRequest, @Res() reply: FastifyReply) {
