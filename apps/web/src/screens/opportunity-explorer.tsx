@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable, type Row } from "@tanstack/react-table";
@@ -30,6 +30,7 @@ const opportunityColumn = createColumnHelper<OpportunityExplorerOpportunity>();
 export function OpportunityExplorerScreen() {
   const projectId = useProjectId();
   const queryClient = useQueryClient();
+  const previousActiveRun = useRef(false);
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | undefined>();
   const [maxBriefs, setMaxBriefs] = useState("8");
   const [proofForm, setProofForm] = useState<RankingProofFormState>({
@@ -101,6 +102,17 @@ export function OpportunityExplorerScreen() {
   const hasActiveRun = runs.data?.runs.some((run) => run.status === "queued" || run.status === "running") ?? false;
   const table = useOpportunityTable(opportunityRows);
 
+  useEffect(() => {
+    if (previousActiveRun.current && !hasActiveRun) {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["ranking-proofs", projectId] })
+      ]);
+    }
+
+    previousActiveRun.current = hasActiveRun;
+  }, [hasActiveRun, projectId, queryClient]);
+
   return (
     <section className="screen-grid">
       <header className="screen-header">
@@ -140,8 +152,16 @@ export function OpportunityExplorerScreen() {
           Ranking proof recorded: {latestProof.query}, rank {latestProof.rank}
         </div>
       ) : null}
-      {runScout.isError ? <div className="notice notice--danger">Opportunity scout could not be queued.</div> : null}
-      {createProof.isError ? <div className="notice notice--danger">Ranking proof could not be recorded.</div> : null}
+      {runScout.isError ? (
+        <div className="notice notice--danger">
+          {errorMessage(runScout.error, "Opportunity scout could not be queued.")}
+        </div>
+      ) : null}
+      {createProof.isError ? (
+        <div className="notice notice--danger">
+          {errorMessage(createProof.error, "Ranking proof could not be recorded.")}
+        </div>
+      ) : null}
 
       <section className="explorer-layout">
         <OpportunityTable
@@ -284,7 +304,7 @@ function OpportunityDetail(props: { opportunity?: OpportunityExplorerOpportunity
       <header className="panel-heading">
         <div>
           <h2>{brief.primaryKeyword}</h2>
-          <p>{`${brief.service} · ${brief.location.name}`}</p>
+          <p>{`${brief.service} / ${brief.location.name}`}</p>
         </div>
         <StatusPill tone={proofTierTone(maxProofTier(brief))}>{label(maxProofTier(brief))}</StatusPill>
       </header>
@@ -296,8 +316,11 @@ function OpportunityDetail(props: { opportunity?: OpportunityExplorerOpportunity
       </div>
 
       <DetailSection title="Evidence stack">
-        {brief.evidence.map((evidence) => (
-          <EvidenceItem evidence={evidence} key={`${evidence.sourceType}-${evidence.sourceId ?? evidence.summary}`} />
+        {brief.evidence.map((evidence, index) => (
+          <EvidenceItem
+            evidence={evidence}
+            key={`${evidence.sourceType}-${evidence.sourceId ?? evidence.summary}-${index}`}
+          />
         ))}
       </DetailSection>
 
@@ -568,7 +591,15 @@ function label(value: string): string {
 
 function numberFromForm(value: string, fallback: number): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return `${fallback} ${error.message}`;
+  }
+
+  return fallback;
 }
 
 function safeUrlLabel(url: string): string {
