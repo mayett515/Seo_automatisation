@@ -184,7 +184,7 @@ Rules:
 - Provider names, model ids, and OpenCode Go config never leak past the adapter into contracts or UI truth. `provider`/`model` are opaque strings stored as run metadata only.
 - On `output_schema_mismatch`, the raw `outputJson` is kept (redacted) in `agent_runs` for diagnosis, and no product row is written.
 - `runId` is caller-generated; retrying with the same `runId` must not double-persist opportunities.
-- Before Opportunity Explorer renders failure explanations, the enqueue-boundary codes should be promoted to a small shared contract vocabulary next to the adapter/workflow failure code arrays.
+- Enqueue-boundary codes live in contracts next to adapter/workflow failures so the Explorer run timeline can render all three layers consistently.
 - The mock adapter must cover both adapter failures and `ok: true` with schema-invalid JSON so the worker can exercise `output_schema_mismatch` without a real provider.
 
 ### OpenCode Go adapter baseline
@@ -440,6 +440,7 @@ Existing succeeded runId means no-op; do not upsert over prior product rows.
 Opportunities are inserted only inside the transaction that performs running -> succeeded.
 Concurrent same-run delivery uses conditional status transitions; the loser writes nothing.
 One agent_runs row spans all attempts of the same runId; job_runs remains queue telemetry.
+Only one queued/running opportunity_scout run may exist per project; the DB enforces this with a partial unique index.
 ```
 
 Run state machine:
@@ -526,10 +527,14 @@ Implementation checkpoint:
 implemented in the worker baseline
   opportunity_scout job data contract and queue name
   MockReasoningAdapter
+  OpenCodeGoReasoningAdapter behind explicit env config
   stable evidence packet builder
   worker handler/repository with failed -> running retry support
   API/operator enqueue endpoint
   opportunity:run project permission
+  manual ranking_proofs source rows and API bridge
+  active-run DB/API guard for queued/running scout runs
+  Explorer read APIs for opportunities and agent run summaries
   agent_runs queued row creation before enqueue
   BullMQ jobId = runId
   ObjectStoragePort input_ref write
@@ -538,11 +543,21 @@ implemented in the worker baseline
   unit tests plus DB-backed integration tests
 
 deferred to the next slices
-  real provider adapter
-  manual ranking evidence source rows
   Opportunity Explorer UI
-  per-project active opportunity-scout guard
-  shared enqueue failure-code vocabulary for run timeline rendering
+  lifecycle action mutations from the Explorer
+  automated SERP/competitor snapshot source rows
+```
+
+Explorer backend read baseline:
+
+```text
+GET /projects/:projectId/opportunities
+  returns project-scoped opportunity rows plus validated OpportunityBrief evidenceJson
+  for the table/detail panel.
+
+GET /projects/:projectId/agent-runs?task=opportunity_scout
+  returns project-scoped run summaries with typed failure code, selected gate/message,
+  provider/model/latency metadata, timestamps, and opportunity counts.
 ```
 
 ## Answers To The Handoff Review Questions

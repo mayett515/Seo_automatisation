@@ -1,6 +1,7 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { customers, projects, rankingProofs, users, type DatabaseClient } from "@localseo/db";
+import { agentRuns, customers, opportunities, projects, rankingProofs, users, type DatabaseClient } from "@localseo/db";
+import { OpportunityBriefSchema } from "@localseo/contracts";
 import { eq } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
 import { OpportunitiesService } from "./opportunities.module.js";
@@ -115,6 +116,114 @@ void describe(
         ["dachdecker indersdorf", "dachdecker dachau"]
       );
     });
+
+    void it("lists explorer opportunities only for the requested project", async () => {
+      const first = await createProjectFixture(db, "Explorer First");
+      const second = await createProjectFixture(db, "Explorer Second");
+      const service = new OpportunitiesService(testDatabaseService(db));
+
+      await db.insert(opportunities).values({
+        projectId: first.projectId,
+        classification: "near_term_target",
+        primaryKeyword: "entruempelung dachau",
+        score: 72,
+        status: "new",
+        evidenceJson: validBrief(first.projectId, {
+          service: "Entruempelung",
+          primaryKeyword: "entruempelung dachau",
+          location: {
+            name: "Dachau",
+            kind: "city",
+            adjacencyReason: "manual_seed",
+            existingClusterStrength: "weak"
+          }
+        })
+      });
+      await db.insert(opportunities).values({
+        projectId: second.projectId,
+        classification: "near_term_target",
+        primaryKeyword: "dachdecker karlsfeld",
+        score: 81,
+        status: "new",
+        evidenceJson: validBrief(second.projectId, {
+          service: "Dachdecker",
+          primaryKeyword: "dachdecker karlsfeld",
+          location: {
+            name: "Karlsfeld",
+            kind: "municipality",
+            adjacencyReason: "manual_seed",
+            existingClusterStrength: "medium"
+          }
+        })
+      });
+
+      const list = await service.listOpportunities(first.projectId);
+
+      assert.equal(list.projectId, first.projectId);
+      assert.deepEqual(
+        list.opportunities.map((opportunity) => opportunity.primaryKeyword),
+        ["entruempelung dachau"]
+      );
+      assert.equal(list.opportunities[0]?.evidenceJson?.projectId, first.projectId);
+    });
+
+    void it("lists agent runs without exposing raw diagnostics or output JSON", async () => {
+      const first = await createProjectFixture(db, "Agent Run First");
+      const second = await createProjectFixture(db, "Agent Run Second");
+      const service = new OpportunitiesService(testDatabaseService(db));
+
+      const [firstRun] = await db
+        .insert(agentRuns)
+        .values({
+          projectId: first.projectId,
+          task: "opportunity_scout",
+          status: "failed",
+          failureCode: "qa_rejected",
+          provider: "mock",
+          model: "mock-opportunity-scout",
+          outputJson: { hidden: "raw model output" },
+          diagnosticsJson: {
+            gateId: "dedupe_gate",
+            message: "Duplicate opportunity."
+          },
+          latencyMs: 123,
+          completedAt: new Date("2026-07-03T10:00:00.000Z")
+        })
+        .returning();
+      assert.ok(firstRun);
+
+      await db.insert(agentRuns).values({
+        projectId: second.projectId,
+        task: "opportunity_scout",
+        status: "failed",
+        failureCode: "provider_timeout",
+        diagnosticsJson: { message: "Timeout" }
+      });
+      await db.insert(opportunities).values({
+        projectId: first.projectId,
+        agentRunId: firstRun.id,
+        classification: "internal_radar",
+        primaryKeyword: "hausmeisterservice dachau",
+        score: 44,
+        status: "new",
+        evidenceJson: validBrief(first.projectId, {
+          service: "Hausmeisterservice",
+          primaryKeyword: "hausmeisterservice dachau"
+        })
+      });
+
+      const list = await service.listAgentRuns(first.projectId, "opportunity_scout");
+
+      assert.equal(list.projectId, first.projectId);
+      assert.equal(list.runs.length, 1);
+      assert.equal(list.runs[0]?.id, firstRun.id);
+      assert.equal(list.runs[0]?.opportunityCount, 1);
+      assert.equal(list.runs[0]?.failureCode, "qa_rejected");
+      assert.equal(list.runs[0]?.failure?.gateId, "dedupe_gate");
+      assert.match(list.runs[0]?.failure?.message ?? "", /No new opportunities/u);
+      assert.equal("outputJson" in (list.runs[0] as Record<string, unknown>), false);
+      assert.equal("diagnosticsJson" in (list.runs[0] as Record<string, unknown>), false);
+    });
   }
 );
 
@@ -156,4 +265,42 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
     ping: () => Promise.resolve("up"),
     onModuleDestroy: () => Promise.resolve()
   } as unknown as DatabaseService;
+}
+
+function validBrief(
+  projectId: string,
+  overrides: Partial<Parameters<typeof OpportunityBriefSchema.parse>[0]> = {}
+): ReturnType<typeof OpportunityBriefSchema.parse> {
+  return OpportunityBriefSchema.parse({
+    projectId,
+    classification: "near_term_target",
+    service: "Entruempelung",
+    location: {
+      name: "Dachau",
+      kind: "city",
+      adjacencyReason: "manual_seed",
+      existingClusterStrength: "weak"
+    },
+    primaryKeyword: "entruempelung dachau",
+    secondaryKeywords: [],
+    suggestedPageType: "normal_page",
+    evidence: [
+      {
+        sourceType: "manual_note",
+        sourceId: "manual-note-1",
+        summary: "Manual evidence for the opportunity.",
+        strength: "medium",
+        proofTier: "supporting_context"
+      }
+    ],
+    competitorObservations: [],
+    groupHints: [],
+    cannibalizationRisk: { level: "low", conflictingRoutes: [] },
+    missingEvidence: ["Customer-safe ranking proof"],
+    confidence: 0.7,
+    recommendedAction: "create_brief",
+    hubSpokeRole: "spoke",
+    uniquenessRationale: "The location has a specific service-area reason.",
+    ...overrides
+  });
 }

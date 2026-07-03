@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   approvalStatuses,
   customerMembershipRoles,
@@ -268,7 +268,10 @@ export const agentRuns = pgTable(
     ...timestamps
   },
   (table) => [
-    index("agent_runs_project_task_status_idx").on(table.projectId, table.task, table.status, table.createdAt)
+    index("agent_runs_project_task_status_idx").on(table.projectId, table.task, table.status, table.createdAt),
+    uniqueIndex("agent_runs_active_per_project_task_idx")
+      .on(table.projectId, table.task)
+      .where(sql`${table.status} in ('queued', 'running')`)
   ]
 );
 
