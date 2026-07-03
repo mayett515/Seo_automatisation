@@ -146,6 +146,7 @@ export const agentRunStatuses = ["queued", "running", "succeeded", "failed"] as 
 export const aiReasoningAdapterFailureCodes = [
   "provider_timeout",
   "provider_error",
+  "provider_not_configured",
   "provider_overloaded",
   "output_not_json",
   "budget_exceeded",

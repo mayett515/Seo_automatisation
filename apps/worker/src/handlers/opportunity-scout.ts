@@ -72,7 +72,8 @@ export async function handleOpportunityScoutJob(
   job: Job,
   dbHandle: WorkerDbHandle | undefined,
   reasoning: AiReasoningPort,
-  objectStorage: ObjectStoragePort
+  objectStorage: ObjectStoragePort,
+  options: { reasoningTimeoutMs?: number } = {}
 ): Promise<Record<string, unknown>> {
   const data = parseOpportunityScoutJobData(job.data);
 
@@ -84,7 +85,8 @@ export async function handleOpportunityScoutJob(
     data,
     repository: createDrizzleOpportunityScoutRepository(dbHandle.db),
     reasoning,
-    objectStorage
+    objectStorage,
+    reasoningTimeoutMs: options.reasoningTimeoutMs
   });
 }
 
@@ -93,6 +95,7 @@ export async function executeOpportunityScout(input: {
   repository: OpportunityScoutRepository;
   reasoning: AiReasoningPort;
   objectStorage: ObjectStoragePort;
+  reasoningTimeoutMs?: number;
 }): Promise<Record<string, unknown>> {
   const run = await input.repository.loadRun(input.data);
 
@@ -136,7 +139,7 @@ export async function executeOpportunityScout(input: {
     prompt: buildOpportunityScoutPrompt(),
     inputJson: evidence.packet,
     outputSchemaName: "OpportunityScoutOutput",
-    timeoutMs: 120_000,
+    timeoutMs: input.reasoningTimeoutMs ?? 120_000,
     policy: {
       canMutateProduction: false,
       allowedToolCategories: ["read_evidence", "analyze"]
@@ -152,6 +155,9 @@ export async function executeOpportunityScout(input: {
       diagnostics: compactDiagnostics(reasoningResult.diagnostics),
       latencyMs: reasoningResult.diagnostics.latencyMs
     });
+    if (reasoningResult.failureCode === "provider_not_configured") {
+      throw new OpportunityScoutConfigurationError(reasoningResult.failureCode);
+    }
     throw new OpportunityScoutProviderError(reasoningResult.failureCode);
   }
 

@@ -38,6 +38,10 @@ function testEnv(): AppEnv {
     AWS_REGION: "eu-central-1",
     LOCAL_OBJECT_STORAGE_DIR: ".local-object-storage",
     RELEASE_BROWSER_VERIFICATION_ENABLED: false,
-    RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS: 15_000
+    RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS: 15_000,
+    AI_REASONING_PROVIDER: "mock",
+    AI_REASONING_MODEL: "glm-5.2",
+    AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
+    AI_REASONING_TIMEOUT_MS: 120_000
   };
 }

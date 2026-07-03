@@ -1,4 +1,4 @@
-export type ProviderName = "netlify" | "google_search_console";
+export type ProviderName = "netlify" | "google_search_console" | "opencode_go";
 
 export type ProviderErrorReasonCode = "http_error" | "invalid_json_response" | "invalid_provider_response" | "timeout";
 

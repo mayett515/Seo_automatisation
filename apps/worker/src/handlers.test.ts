@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MockReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
+import {
+  MockReasoningAdapter,
+  NotConfiguredReasoningAdapter,
+  OpenCodeGoReasoningAdapter,
+  type ObjectStoragePort
+} from "@localseo/adapters";
 import {
   OpportunityScoutOutputSchema,
   type GscSearchAnalyticsRow,
@@ -32,6 +37,7 @@ import {
 } from "./handlers/website-import.js";
 import {
   classifyOpportunitySignals,
+  createReasoningAdapter,
   isTerminalWorkerError,
   parseGscSyncJobData,
   routeJob,
@@ -244,6 +250,41 @@ void describe("routeJob", () => {
   });
 });
 
+void describe("createReasoningAdapter", () => {
+  void it("uses the mock adapter unless a real provider is explicitly selected", () => {
+    const adapter = createReasoningAdapter({
+      AI_REASONING_PROVIDER: "mock",
+      AI_REASONING_MODEL: "glm-5.2",
+      AI_REASONING_OPENCODE_GO_API_KEY: undefined,
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
+    });
+
+    assert.ok(adapter instanceof MockReasoningAdapter);
+  });
+
+  void it("degrades to a not-configured adapter when the real provider key is missing", () => {
+    const adapter = createReasoningAdapter({
+      AI_REASONING_PROVIDER: "opencode_go",
+      AI_REASONING_MODEL: "glm-5.2",
+      AI_REASONING_OPENCODE_GO_API_KEY: undefined,
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
+    });
+
+    assert.ok(adapter instanceof NotConfiguredReasoningAdapter);
+  });
+
+  void it("creates the OpenCode Go adapter only with explicit provider config", () => {
+    const adapter = createReasoningAdapter({
+      AI_REASONING_PROVIDER: "opencode_go",
+      AI_REASONING_MODEL: "glm-5.2",
+      AI_REASONING_OPENCODE_GO_API_KEY: "test-key",
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
+    });
+
+    assert.ok(adapter instanceof OpenCodeGoReasoningAdapter);
+  });
+});
+
 void describe("isTerminalWorkerError", () => {
   void it("treats deploy configuration and evidence errors as terminal worker failures", () => {
     assert.equal(isTerminalWorkerError(new DeployConfigurationError("missing adapter")), true);
@@ -381,7 +422,8 @@ void describe("executeOpportunityScout", () => {
       data: { projectId: "project-1", runId: "run-1" },
       repository,
       reasoning,
-      objectStorage: storage
+      objectStorage: storage,
+      reasoningTimeoutMs: 45_000
     });
 
     assert.equal(result.status, "succeeded");
@@ -390,6 +432,7 @@ void describe("executeOpportunityScout", () => {
     assert.equal(repository.persistedOutput?.briefs.length, 1);
     assert.equal(repository.failed, undefined);
     assert.equal(reasoning.calls[0]?.policy.canMutateProduction, false);
+    assert.equal(reasoning.calls[0]?.timeoutMs, 45_000);
     assert.equal(storage.values.size, 1);
   });
 
@@ -412,6 +455,24 @@ void describe("executeOpportunityScout", () => {
     );
 
     assert.equal(repository.failed?.failureCode, "provider_timeout");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
+  void it("marks missing reasoning provider config as a terminal run failure", async () => {
+    const repository = new FakeOpportunityScoutRepository();
+
+    await assert.rejects(
+      executeOpportunityScout({
+        data: { projectId: "project-1", runId: "run-1" },
+        repository,
+        reasoning: new NotConfiguredReasoningAdapter(),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      OpportunityScoutConfigurationError
+    );
+
+    assert.equal(repository.failed?.failureCode, "provider_not_configured");
+    assert.equal(repository.failed?.diagnostics.detail, "ai_reasoning_provider_not_configured");
     assert.equal(repository.persistedOutput, undefined);
   });
 

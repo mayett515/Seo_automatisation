@@ -164,6 +164,7 @@ Two layers, recorded distinctly in `agent_runs.failure_code`:
 adapter layer (AdapterFailureCode):
   provider_timeout        timeoutMs exceeded
   provider_error          transport/5xx/auth failure
+  provider_not_configured real provider selected without required config
   provider_overloaded     rate limit / capacity
   output_not_json         response is not parseable JSON at all
   budget_exceeded         maxCostCents would be exceeded
@@ -185,6 +186,52 @@ Rules:
 - `runId` is caller-generated; retrying with the same `runId` must not double-persist opportunities.
 - Before Opportunity Explorer renders failure explanations, the enqueue-boundary codes should be promoted to a small shared contract vocabulary next to the adapter/workflow failure code arrays.
 - The mock adapter must cover both adapter failures and `ok: true` with schema-invalid JSON so the worker can exercise `output_schema_mismatch` without a real provider.
+
+### OpenCode Go adapter baseline
+
+```text
+OpenCodeGoReasoningAdapter
+  lives in packages/adapters
+  implements AiReasoningPort
+  calls the OpenCode Go OpenAI-compatible chat-completions endpoint
+  defaults to model glm-5.2 and endpoint https://opencode.ai/zen/go/v1/chat/completions
+  sends one JSON-only structured reasoning request
+  returns untrusted outputJson only after the provider response is parseable JSON
+```
+
+Runtime selection is explicit:
+
+```text
+AI_REASONING_PROVIDER=mock          default, local/test safe
+AI_REASONING_PROVIDER=opencode_go   requires AI_REASONING_OPENCODE_GO_API_KEY
+AI_REASONING_MODEL                  default glm-5.2
+AI_REASONING_OPENCODE_GO_ENDPOINT   default OpenCode Go chat-completions endpoint
+AI_REASONING_TIMEOUT_MS             passed to runStructured
+```
+
+The adapter maps provider behavior into the existing failure taxonomy:
+
+```text
+Abort/timeout                    -> provider_timeout
+Missing required provider config  -> provider_not_configured
+HTTP 429 / 503                   -> provider_overloaded
+other non-2xx provider response  -> provider_error
+invalid completion envelope      -> output_not_json
+assistant content not JSON       -> output_not_json
+```
+
+Provider response bodies are not persisted. Diagnostics keep only latency, finish reason, and a bounded safe reason code. The worker remains responsible for Zod parsing, deterministic QA, evidence resolution, scoring, and persistence.
+
+If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected scout run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
+
+Deferred provider work:
+
+```text
+Mastra internals behind the same port
+OpenCode Go /messages endpoint support for MiniMax/Qwen-family models
+real-provider smoke run and prompt tuning from observed run failures
+cost budget enforcement beyond recording usage metadata
+```
 
 Failure artifact policy:
 
