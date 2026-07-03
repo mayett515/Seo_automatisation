@@ -305,6 +305,10 @@ export const CreateWebsiteImportRequestSchema = z.object({
   sourceUrl: WebsiteImportSourceUrlSchema
 });
 
+export const CreateOpportunityScoutRunRequestSchema = z.object({
+  maxBriefs: z.number().int().positive().max(12).optional()
+});
+
 export const QueueJobSchema = z.object({
   jobId: z.string().min(1),
   projectId: ProjectIdSchema.optional(),
@@ -829,6 +833,7 @@ export type GscSyncRequest = z.output<typeof GscSyncRequestSchema>;
 export type GscSyncRun = z.output<typeof GscSyncRunSchema>;
 export type WebsiteImportRun = z.output<typeof WebsiteImportRunSchema>;
 export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportResponseSchema>;
+export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
 export type GscSearchAnalyticsRow = z.output<typeof GscSearchAnalyticsRowSchema>;
 export type GscOpportunitySignal = z.output<typeof GscOpportunitySignalSchema>;
 export type EvidenceRef = z.output<typeof EvidenceRefSchema>;

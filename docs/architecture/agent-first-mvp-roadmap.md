@@ -178,7 +178,7 @@ without provider flakiness or Mastra orchestration.
 
 ### 4. Opportunity Scout Worker Vertical
 
-Status: worker baseline implemented; API enqueue endpoint still next.
+Status: worker baseline and API enqueue endpoint implemented.
 
 Build one useful backend workflow, not a broad agent platform:
 
@@ -236,13 +236,16 @@ implemented now
   MockReasoningAdapter
   stable evidence packet builder and prompt
   worker route and repository
+  API/operator enqueue endpoint
+  opportunity:run project permission
+  agent_runs queued row creation before enqueue
+  BullMQ jobId = runId
   Zod parse -> QA/scoring -> transactional persistence
   failed -> running retry support
   succeeded no-op replay
   unit tests plus DB-backed integration tests
 
 still next
-  API/operator enqueue endpoint that creates agent_runs as queued
   real reasoning adapter
   Opportunity Explorer read-only UI
 ```

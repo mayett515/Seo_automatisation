@@ -471,13 +471,16 @@ implemented in the worker baseline
   MockReasoningAdapter
   stable evidence packet builder
   worker handler/repository with failed -> running retry support
+  API/operator enqueue endpoint
+  opportunity:run project permission
+  agent_runs queued row creation before enqueue
+  BullMQ jobId = runId
   ObjectStoragePort input_ref write
   Zod parse, QA/scoring, and success transaction
   succeeded run replay as no-op
   unit tests plus DB-backed integration tests
 
 deferred to the next slices
-  API/operator enqueue endpoint that creates agent_runs and BullMQ jobs
   real provider adapter
   manual ranking evidence source rows
   Opportunity Explorer UI
