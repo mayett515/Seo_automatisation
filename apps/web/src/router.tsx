@@ -14,6 +14,7 @@ import { allowsLocalScaffoldUi } from "./lib/local-scaffold";
 import { GscConnectScreen } from "./screens/gsc-connect";
 import { LoginScreen } from "./screens/login";
 import { MissionControlPage } from "./screens/mission-control";
+import { OpportunityExplorerScreen } from "./screens/opportunity-explorer";
 import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
 import { ProjectDashboardScreen } from "./screens/project-dashboard";
@@ -84,6 +85,9 @@ function AuthenticatedShell(props: { userEmail: string; onSignOut?: () => Promis
           <Link to="/audit">Audit</Link>
           <Link to="/projects/$projectId" params={{ projectId: "demo-project" }}>
             Project
+          </Link>
+          <Link to="/projects/$projectId/opportunities" params={{ projectId: "demo-project" }}>
+            Opportunities
           </Link>
           <Link to="/projects/$projectId/releases" params={{ projectId: "demo-project" }}>
             Releases
@@ -169,7 +173,7 @@ const projectChildRoutes = [
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/opportunities",
-    component: () => <PlaceholderScreen title="Opportunities" />
+    component: OpportunityExplorerScreen
   }),
   createRoute({
     getParentRoute: () => rootRoute,

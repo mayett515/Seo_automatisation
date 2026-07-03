@@ -317,7 +317,7 @@ cost budget enforcement beyond recording usage metadata
 
 ### 6. Opportunity Explorer And Manual Evidence Entry
 
-Status: backend read API baseline implemented; UI still next.
+Status: backend read API baseline and first UI baseline implemented.
 
 The first product UI should be workflow-first, not chat-first.
 
@@ -336,6 +336,25 @@ agent run list
 
 lifecycle action form
   hold, reject, monitor
+```
+
+First UI baseline:
+
+```text
+implemented now
+  Opportunity Explorer route at /projects/:projectId/opportunities
+  TanStack Query loads opportunities, opportunity_scout agent runs, and ranking proofs
+  TanStack Table renders the opportunity table
+  selected opportunity detail panel renders the validated OpportunityBrief evidence stack
+  run list polls while a scout run is queued/running
+  scout run button renders already_active as in-progress state
+  manual ranking-proof form records query, page URL, observed rank, and notes
+
+still deferred
+  lifecycle mutations such as hold/reject/monitor
+  MapLibre/corridor map surface
+  agent_run_events streaming timeline
+  PageBrief/Page Studio handoff actions
 ```
 
 Explorer/run UX must also close two API-slice follow-ups:
