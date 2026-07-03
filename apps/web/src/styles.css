@@ -123,6 +123,101 @@ a {
   gap: 24px;
 }
 
+.opportunity-screen {
+  max-width: 1160px;
+}
+
+.opportunity-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.opportunity-hero__copy,
+.workflow-status-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d9ddd5;
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+}
+
+.opportunity-hero__copy h1 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.05;
+}
+
+.opportunity-hero__copy p,
+.workflow-status-card span,
+.command-card__copy p,
+.workflow-step p,
+.guided-empty-state span,
+.guided-empty-state li {
+  margin: 0;
+  color: #4f5f59;
+}
+
+.eyebrow {
+  color: #4f5f59;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.workflow-status-card {
+  align-content: start;
+}
+
+.workflow-status-card strong {
+  font-size: 17px;
+}
+
+.opportunity-summary-grid,
+.workflow-strip {
+  display: grid;
+  gap: 12px;
+}
+
+.opportunity-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.workflow-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workflow-step {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid #d9ddd5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.workflow-step > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #1d3f36;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.workflow-step strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
 .metric-row {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
@@ -178,8 +273,14 @@ a {
 }
 
 .notice {
+  display: grid;
+  gap: 4px;
   border-radius: 8px;
   padding: 12px;
+}
+
+.notice span {
+  color: #4f5f59;
 }
 
 .notice--neutral {
@@ -314,11 +415,11 @@ a {
 
 .data-table__row--opportunity {
   grid-template-columns:
-    minmax(130px, 1fr)
-    minmax(110px, 0.8fr)
-    minmax(120px, 0.8fr)
-    70px
-    minmax(110px, 0.8fr);
+    minmax(105px, 1fr)
+    minmax(80px, 0.75fr)
+    minmax(96px, 0.8fr)
+    52px
+    minmax(82px, 0.75fr);
 }
 
 .data-table__row--button {
@@ -340,14 +441,14 @@ a {
 
 .explorer-command-strip {
   display: grid;
-  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 0.75fr) minmax(360px, 1.25fr);
   gap: 12px;
-  align-items: end;
+  align-items: stretch;
 }
 
 .command-card {
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr) 120px;
   gap: 12px;
   align-items: end;
   border: 1px solid #d9ddd5;
@@ -357,7 +458,38 @@ a {
 }
 
 .command-card--wide {
-  grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.4fr) 80px minmax(140px, 1fr) max-content;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.command-card__copy {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.command-card__copy {
+  grid-column: 1 / -1;
+}
+
+.command-card__copy strong {
+  font-size: 17px;
+}
+
+.command-card--wide .form-field:nth-of-type(1),
+.command-card--wide .form-field:nth-of-type(2) {
+  grid-column: span 3;
+}
+
+.command-card--wide .form-field:nth-of-type(3) {
+  grid-column: span 2;
+}
+
+.command-card--wide .form-field:nth-of-type(4) {
+  grid-column: span 3;
+}
+
+.command-card--wide .button-secondary {
+  grid-column: span 1;
 }
 
 .form-field--small input {
@@ -384,6 +516,34 @@ a {
   border-radius: 8px;
   padding: 16px;
   background: #ffffff;
+}
+
+.guided-empty-state {
+  display: grid;
+  gap: 10px;
+  border: 1px dashed #b9c3b6;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  background: #fbfcfa;
+}
+
+.guided-empty-state--table {
+  padding: 18px;
+}
+
+.guided-empty-state--compact {
+  padding: 14px;
+}
+
+.guided-empty-state strong {
+  font-size: 17px;
+}
+
+.guided-empty-state ol {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding-left: 20px;
 }
 
 .panel-heading {
@@ -445,6 +605,17 @@ a {
   grid-template-columns: minmax(92px, max-content) minmax(0, 1fr) minmax(90px, max-content);
 }
 
+.run-item > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.run-item > div > span,
+.run-item > span {
+  overflow-wrap: anywhere;
+}
+
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -472,6 +643,9 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .opportunity-hero,
+  .opportunity-summary-grid,
+  .workflow-strip,
   .explorer-command-strip,
   .command-card,
   .command-card--wide,
@@ -480,6 +654,14 @@ a {
   .data-table__row--opportunity,
   .run-item {
     grid-template-columns: 1fr;
+  }
+
+  .command-card--wide .form-field:nth-of-type(1),
+  .command-card--wide .form-field:nth-of-type(2),
+  .command-card--wide .form-field:nth-of-type(3),
+  .command-card--wide .form-field:nth-of-type(4),
+  .command-card--wide .button-secondary {
+    grid-column: auto;
   }
 
   .inline-form,

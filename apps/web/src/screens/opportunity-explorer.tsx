@@ -97,9 +97,17 @@ export function OpportunityExplorerScreen() {
   });
 
   const opportunityRows = opportunities.data?.opportunities ?? [];
+  const proofRows = proofs.data?.proofs ?? [];
+  const runRows = runs.data?.runs ?? [];
   const selectedOpportunity =
     opportunityRows.find((opportunity) => opportunity.id === selectedOpportunityId) ?? opportunityRows[0];
-  const hasActiveRun = runs.data?.runs.some((run) => run.status === "queued" || run.status === "running") ?? false;
+  const hasActiveRun = runRows.some((run) => run.status === "queued" || run.status === "running");
+  const workflowState = getWorkflowState({
+    opportunityCount: opportunityRows.length,
+    proofCount: proofRows.length,
+    runCount: runRows.length,
+    hasActiveRun
+  });
   const table = useOpportunityTable(opportunityRows);
 
   useEffect(() => {
@@ -114,28 +122,53 @@ export function OpportunityExplorerScreen() {
   }, [hasActiveRun, projectId, queryClient]);
 
   return (
-    <section className="screen-grid">
-      <header className="screen-header">
-        <div>
+    <section className="screen-grid opportunity-screen">
+      <header className="opportunity-hero">
+        <div className="opportunity-hero__copy">
+          <span className="eyebrow">AI-assisted Local SEO mission control</span>
           <h1>Opportunity Explorer</h1>
-          <p>{projectId}</p>
+          <p>
+            Turn project evidence, manual ranking proof, and scout runs into reviewable service-location opportunities.
+          </p>
+          <div className="chip-row">
+            <span>{`Project ${shortId(projectId)}`}</span>
+            <span>GSC stays internal radar</span>
+            <span>Proof requires rank evidence</span>
+          </div>
         </div>
-        <StatusPill tone={hasActiveRun ? "warning" : opportunityRows.length > 0 ? "success" : "neutral"}>
-          {hasActiveRun ? "scout running" : `${opportunityRows.length} opportunities`}
-        </StatusPill>
+        <article className="workflow-status-card">
+          <StatusPill tone={workflowState.tone}>{workflowState.label}</StatusPill>
+          <strong>{workflowState.title}</strong>
+          <span>{workflowState.description}</span>
+        </article>
       </header>
+
+      <section className="opportunity-summary-grid" aria-label="Opportunity scout summary">
+        <Metric title="Opportunities" value={opportunityRows.length.toString()} />
+        <Metric title="Ranking proof" value={proofRows.length.toString()} />
+        <Metric title="Scout runs" value={runRows.length.toString()} />
+        <Metric title="Active work" value={hasActiveRun ? "Running" : "Idle"} />
+      </section>
+
+      <section className="workflow-strip" aria-label="Opportunity workflow">
+        <WorkflowStep index="1" title="Evidence" description="Record proof or load project-owned signals." />
+        <WorkflowStep index="2" title="Scout" description="AI proposes; contracts and QA decide what persists." />
+        <WorkflowStep index="3" title="Review" description="Inspect the brief, proof tier, risk, and next action." />
+      </section>
 
       <section className="explorer-command-strip">
         <ScoutRunForm
           maxBriefs={maxBriefs}
           isActive={hasActiveRun}
           isPending={runScout.isPending}
+          proofCount={proofRows.length}
           onMaxBriefsChange={setMaxBriefs}
           onSubmit={() => runScout.mutate()}
         />
         <RankingProofForm
           value={proofForm}
           isPending={createProof.isPending}
+          proofCount={proofRows.length}
           onChange={setProofForm}
           onSubmit={() => createProof.mutate()}
         />
@@ -143,8 +176,8 @@ export function OpportunityExplorerScreen() {
 
       {latestScoutResponse ? (
         <div className="notice notice--neutral">
-          Scout response: {latestScoutResponse.status.replaceAll("_", " ")}
-          {latestScoutResponse.runId ? ` (${latestScoutResponse.runId})` : ""}
+          <strong>{scoutResponseTitle(latestScoutResponse)}</strong>
+          <span>{scoutResponseDescription(latestScoutResponse)}</span>
         </div>
       ) : null}
       {latestProof ? (
@@ -168,16 +201,23 @@ export function OpportunityExplorerScreen() {
           table={table}
           isPending={opportunities.isPending}
           isError={opportunities.isError}
+          hasProof={proofRows.length > 0}
+          hasRuns={runRows.length > 0}
+          isScoutActive={hasActiveRun}
           rowCount={opportunityRows.length}
           selectedId={selectedOpportunity?.id}
           onSelect={setSelectedOpportunityId}
         />
-        <OpportunityDetail opportunity={selectedOpportunity} />
+        <OpportunityDetail
+          opportunity={selectedOpportunity}
+          hasProof={proofRows.length > 0}
+          hasRuns={runRows.length > 0}
+        />
       </section>
 
       <section className="explorer-lower-grid">
-        <AgentRunList runs={runs.data?.runs ?? []} isPending={runs.isPending} isError={runs.isError} />
-        <RankingProofList proofs={proofs.data?.proofs ?? []} isPending={proofs.isPending} isError={proofs.isError} />
+        <AgentRunList runs={runRows} isPending={runs.isPending} isError={runs.isError} />
+        <RankingProofList proofs={proofRows} isPending={proofs.isPending} isError={proofs.isError} />
       </section>
     </section>
   );
@@ -224,6 +264,9 @@ function OpportunityTable(props: {
   table: ReturnType<typeof useOpportunityTable>;
   isPending: boolean;
   isError: boolean;
+  hasProof: boolean;
+  hasRuns: boolean;
+  isScoutActive: boolean;
   selectedId?: string;
   onSelect: (id: string) => void;
   rowCount: number;
@@ -250,7 +293,13 @@ function OpportunityTable(props: {
         {props.table.getRowModel().rows.map((row) => (
           <OpportunityRow key={row.id} onSelect={props.onSelect} row={row} selectedId={props.selectedId} />
         ))}
-        {props.rowCount === 0 ? <div className="data-table__row">No opportunities yet.</div> : null}
+        {props.rowCount === 0 ? (
+          <OpportunityEmptyState
+            hasProof={props.hasProof}
+            hasRuns={props.hasRuns}
+            isScoutActive={props.isScoutActive}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -278,14 +327,21 @@ function OpportunityRow(props: {
   );
 }
 
-function OpportunityDetail(props: { opportunity?: OpportunityExplorerOpportunity }) {
+function OpportunityDetail(props: {
+  opportunity?: OpportunityExplorerOpportunity;
+  hasProof: boolean;
+  hasRuns: boolean;
+}) {
   const brief = props.opportunity?.evidenceJson;
 
   if (!props.opportunity) {
     return (
       <section className="detail-panel">
-        <h2>Evidence</h2>
-        <div className="notice notice--neutral">Select an opportunity to inspect the evidence stack.</div>
+        <h2>Review panel</h2>
+        <div className="guided-empty-state guided-empty-state--compact">
+          <strong>{emptyDetailTitle(props.hasProof, props.hasRuns)}</strong>
+          <span>{emptyDetailDescription(props.hasProof, props.hasRuns)}</span>
+        </div>
       </section>
     );
   }
@@ -354,6 +410,7 @@ function ScoutRunForm(props: {
   maxBriefs: string;
   isActive: boolean;
   isPending: boolean;
+  proofCount: number;
   onMaxBriefsChange: (value: string) => void;
   onSubmit: () => void;
 }) {
@@ -365,8 +422,19 @@ function ScoutRunForm(props: {
         props.onSubmit();
       }}
     >
+      <div className="command-card__copy">
+        <span className="eyebrow">Scout</span>
+        <strong>Run opportunity scout</strong>
+        <p>
+          Uses project evidence and ranking proof to create validated opportunity briefs. The worker cannot publish or
+          deploy anything.
+        </p>
+        <span className="muted-text">
+          {props.proofCount > 0 ? `${props.proofCount} proof rows available.` : "Optional: add manual proof first."}
+        </span>
+      </div>
       <label className="form-field">
-        <span>Scout briefs</span>
+        <span>Brief cap</span>
         <input
           min="1"
           max="12"
@@ -385,6 +453,7 @@ function ScoutRunForm(props: {
 function RankingProofForm(props: {
   value: RankingProofFormState;
   isPending: boolean;
+  proofCount: number;
   onChange: (value: RankingProofFormState) => void;
   onSubmit: () => void;
 }) {
@@ -396,6 +465,12 @@ function RankingProofForm(props: {
         props.onSubmit();
       }}
     >
+      <div className="command-card__copy">
+        <span className="eyebrow">Proof</span>
+        <strong>Record manual ranking proof</strong>
+        <p>Use this when you checked a real SERP result. GSC impressions alone never become customer-safe proof.</p>
+        <span className="muted-text">{`${props.proofCount} proof rows recorded.`}</span>
+      </div>
       <label className="form-field">
         <span>Query</span>
         <input
@@ -488,6 +563,32 @@ function RankingProofList(props: { proofs: RankingProof[]; isPending: boolean; i
   );
 }
 
+function OpportunityEmptyState(props: { hasProof: boolean; hasRuns: boolean; isScoutActive: boolean }) {
+  return (
+    <div className="guided-empty-state guided-empty-state--table">
+      <strong>{emptyTableTitle(props.hasProof, props.hasRuns, props.isScoutActive)}</strong>
+      <span>{emptyTableDescription(props.hasProof, props.hasRuns, props.isScoutActive)}</span>
+      <ol>
+        <li>Record proof when you have a real rank check.</li>
+        <li>Run the scout to generate structured opportunity briefs.</li>
+        <li>Review evidence, proof tier, cannibalization risk, and next action before deciding.</li>
+      </ol>
+    </div>
+  );
+}
+
+function WorkflowStep(props: { index: string; title: string; description: string }) {
+  return (
+    <article className="workflow-step">
+      <span>{props.index}</span>
+      <div>
+        <strong>{props.title}</strong>
+        <p>{props.description}</p>
+      </div>
+    </article>
+  );
+}
+
 function DetailSection(props: { title: string; children: React.ReactNode }) {
   return (
     <section className="detail-section">
@@ -531,6 +632,142 @@ function Metric(props: { title: string; value: string }) {
       <strong>{props.value}</strong>
     </article>
   );
+}
+
+function getWorkflowState(input: {
+  opportunityCount: number;
+  proofCount: number;
+  runCount: number;
+  hasActiveRun: boolean;
+}): { label: string; title: string; description: string; tone: "neutral" | "success" | "warning" | "danger" } {
+  if (input.hasActiveRun) {
+    return {
+      label: "Scout running",
+      title: "Worker is classifying evidence",
+      description: "The list refreshes when the run completes.",
+      tone: "warning"
+    };
+  }
+
+  if (input.opportunityCount > 0) {
+    return {
+      label: `${input.opportunityCount} opportunities`,
+      title: "Ready for operator review",
+      description: "Select a row to inspect proof, risk, and next action.",
+      tone: "success"
+    };
+  }
+
+  if (input.proofCount > 0) {
+    return {
+      label: "Proof ready",
+      title: "Evidence exists, scout has not produced cards",
+      description: "Run the scout to turn evidence into reviewable opportunities.",
+      tone: "neutral"
+    };
+  }
+
+  if (input.runCount > 0) {
+    return {
+      label: "No new cards",
+      title: "Scout ran, but nothing persisted",
+      description: "Check the run ledger below for failure details or duplicate signals.",
+      tone: "neutral"
+    };
+  }
+
+  return {
+    label: "Start with evidence",
+    title: "No scout work recorded yet",
+    description: "Add proof when available, then run the scout.",
+    tone: "neutral"
+  };
+}
+
+function scoutResponseTitle(response: OpportunityScoutQueueResponse): string {
+  if (response.status === "dry_run") {
+    return "Scout was not queued";
+  }
+
+  if (response.status === "already_active") {
+    return "Scout is already active";
+  }
+
+  return `Scout ${label(response.status)}`;
+}
+
+function scoutResponseDescription(response: OpportunityScoutQueueResponse): string {
+  if (response.status === "dry_run") {
+    return "The local queue is not configured, so no worker run was created. This is expected in scaffold mode.";
+  }
+
+  if (response.status === "already_active") {
+    return response.runId
+      ? `Run ${shortId(response.runId)} is already queued or running for this project.`
+      : "A scout run is already queued or running for this project.";
+  }
+
+  if (response.runId) {
+    return `Run ${shortId(response.runId)} was accepted. The run list will refresh while the worker processes it.`;
+  }
+
+  return "The request completed. Check the run list for the worker status.";
+}
+
+function emptyTableTitle(hasProof: boolean, hasRuns: boolean, isScoutActive: boolean): string {
+  if (isScoutActive) {
+    return "Scout is running";
+  }
+
+  if (hasProof) {
+    return "Proof is available, but no opportunities exist yet";
+  }
+
+  if (hasRuns) {
+    return "No persisted opportunities from the last scout";
+  }
+
+  return "No opportunities yet";
+}
+
+function emptyTableDescription(hasProof: boolean, hasRuns: boolean, isScoutActive: boolean): string {
+  if (isScoutActive) {
+    return "The table will refresh after the worker finishes and QA accepts the output.";
+  }
+
+  if (hasProof) {
+    return "Run the scout to classify that evidence into proven wins, near-term targets, or internal radar.";
+  }
+
+  if (hasRuns) {
+    return "The run history explains whether QA rejected output, the provider failed, or the scout found duplicates.";
+  }
+
+  return "This page starts empty by design. The app needs project-owned evidence before it can show opportunity cards.";
+}
+
+function emptyDetailTitle(hasProof: boolean, hasRuns: boolean): string {
+  if (hasProof) {
+    return "Run scout, then select a card";
+  }
+
+  if (hasRuns) {
+    return "Check the run ledger";
+  }
+
+  return "Evidence review appears here";
+}
+
+function emptyDetailDescription(hasProof: boolean, hasRuns: boolean): string {
+  if (hasProof) {
+    return "Recorded proof is listed below. The detail panel fills after a scout run creates a contract-valid brief.";
+  }
+
+  if (hasRuns) {
+    return "When a run produces no cards, use the run list to see whether this was a duplicate, QA rejection, or provider issue.";
+  }
+
+  return "Once opportunities exist, this panel shows the evidence stack, missing evidence, competitor observations, and corridor context.";
 }
 
 function maxProofTier(brief: OpportunityBrief): EvidenceRef["proofTier"] {
@@ -609,6 +846,14 @@ function safeUrlLabel(url: string): string {
   } catch {
     return url;
   }
+}
+
+function shortId(value: string): string {
+  if (value.length <= 12) {
+    return value;
+  }
+
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
 }
 
 function useProjectId(): string {
