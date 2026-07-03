@@ -343,6 +343,19 @@ void test("rejects duplicate service-location opportunities in one run", () => {
   assert.equal(result.failure.gateId, "dedupe_gate");
 });
 
+void test("bounds opportunity scout output arrays before QA", () => {
+  const result = OpportunityScoutOutputSchema.safeParse({
+    briefs: [
+      baseBrief({
+        secondaryKeywords: Array.from({ length: 16 }, (_, index) => `secondary keyword ${index}`)
+      })
+    ],
+    groups: []
+  });
+
+  assert.equal(result.success, false);
+});
+
 void test("does not let model confidence change deterministic score", () => {
   assert.equal(
     scoreOpportunityBrief(baseBrief({ confidence: 0 })),

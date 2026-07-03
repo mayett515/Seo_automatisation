@@ -604,7 +604,7 @@ export const OpportunityGroupHintSchema = z
     label: z.string().min(1).max(160),
     source: OpportunityGroupSourceSchema,
     description: z.string().min(1).max(700).optional(),
-    evidence: z.array(EvidenceRefSchema).default([])
+    evidence: z.array(EvidenceRefSchema).max(25).default([])
   })
   .strict();
 
@@ -625,7 +625,7 @@ export const NearbyPlaceCandidateSchema = z
     existingClusterStrength: ClusterStrengthSchema,
     competitorWeakness: z.string().min(1).max(700).optional(),
     mapGroupKey: z.string().min(1).max(128).optional(),
-    evidence: z.array(EvidenceRefSchema).default([])
+    evidence: z.array(EvidenceRefSchema).max(25).default([])
   })
   .strict();
 
@@ -633,17 +633,17 @@ export const CorridorClusterSchema = z
   .object({
     name: z.string().min(1).max(160),
     hubPlace: z.string().min(1).max(160),
-    places: z.array(z.string().min(1).max(160)).min(1),
+    places: z.array(z.string().min(1).max(160)).min(1).max(25),
     rationale: z.string().min(1).max(1_200),
     clusterStrength: ClusterStrengthSchema,
-    recommendedSequence: z.array(z.string().min(1).max(160)).default([])
+    recommendedSequence: z.array(z.string().min(1).max(160)).max(25).default([])
   })
   .strict();
 
 export const CannibalizationRiskSchema = z
   .object({
     level: CannibalizationRiskLevelSchema,
-    conflictingRoutes: z.array(z.string().min(1)).default([])
+    conflictingRoutes: z.array(z.string().min(1)).max(25).default([])
   })
   .strict();
 
@@ -662,17 +662,17 @@ export const OpportunityBriefSchema = z
     service: z.string().min(1).max(160),
     location: NearbyPlaceCandidateSchema,
     primaryKeyword: z.string().min(1).max(200),
-    secondaryKeywords: z.array(z.string().min(1).max(200)).default([]),
+    secondaryKeywords: z.array(z.string().min(1).max(200)).max(15).default([]),
     suggestedRoute: z.string().min(1).optional(),
     suggestedPageType: OpportunitySuggestedPageTypeSchema,
-    evidence: z.array(EvidenceRefSchema).min(1),
-    competitorObservations: z.array(CompetitorObservationSchema).default([]),
+    evidence: z.array(EvidenceRefSchema).min(1).max(25),
+    competitorObservations: z.array(CompetitorObservationSchema).max(12).default([]),
     corridorCluster: CorridorClusterSchema.optional(),
-    groupHints: z.array(OpportunityGroupHintSchema).default([]),
+    groupHints: z.array(OpportunityGroupHintSchema).max(12).default([]),
     hubSpokeRole: HubSpokeRoleSchema.optional(),
     uniquenessRationale: z.string().min(1).max(1_500).optional(),
     cannibalizationRisk: CannibalizationRiskSchema,
-    missingEvidence: z.array(z.string().min(1).max(500)).default([]),
+    missingEvidence: z.array(z.string().min(1).max(500)).max(20).default([]),
     confidence: z.number().min(0).max(1),
     rejectionReason: z.string().min(1).max(700).optional(),
     recommendedAction: OpportunityRecommendedActionSchema
@@ -682,7 +682,7 @@ export const OpportunityBriefSchema = z
 export const OpportunityScoutOutputSchema = z
   .object({
     briefs: z.array(OpportunityBriefSchema).max(12),
-    groups: z.array(OpportunityGroupHintSchema).default([]),
+    groups: z.array(OpportunityGroupHintSchema).max(12).default([]),
     runNotes: z.string().min(1).max(2_000).optional()
   })
   .strict();

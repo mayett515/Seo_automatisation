@@ -461,6 +461,7 @@ void describe("executeOpportunityScout", () => {
     );
 
     assert.equal(repository.failed?.failureCode, "qa_rejected");
+    assert.ok(recordFromUnknown(repository.failed?.outputJson).raw);
     assert.equal(repository.persistedOutput, undefined);
   });
 });
@@ -604,4 +605,8 @@ function validOpportunityScoutOutput(
     ],
     groups: []
   });
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

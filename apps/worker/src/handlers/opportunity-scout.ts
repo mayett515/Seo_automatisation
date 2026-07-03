@@ -181,7 +181,7 @@ export async function executeOpportunityScout(input: {
     await markWorkflowFailure(input.repository, input.data, reasoningResult, {
       failureCode: "qa_rejected",
       diagnostics: qaResult.failure,
-      outputJson: parsedOutput.data
+      outputJson: compactOutputJson(parsedOutput.data)
     });
     throw new OpportunityScoutWorkflowError(`qa_rejected:${qaResult.failure.gateId}`);
   }
@@ -233,6 +233,11 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
         .set({
           status: "running",
           failureCode: null,
+          provider: null,
+          model: null,
+          outputJson: null,
+          usageJson: null,
+          latencyMs: null,
           startedAt: new Date(),
           completedAt: null,
           diagnosticsJson: null,

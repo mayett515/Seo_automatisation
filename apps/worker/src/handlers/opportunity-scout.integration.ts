@@ -196,6 +196,55 @@ void describe(
       assert.equal(rowsAfterDuplicate.length, 1);
     });
 
+    void it("clears stale model output when retrying a failed run", async () => {
+      const fixture = await createScoutFixture(db);
+      const repository = createDrizzleOpportunityScoutRepository(db);
+
+      await assert.rejects(
+        executeOpportunityScout({
+          data: { projectId: fixture.projectId, runId: fixture.runId },
+          repository,
+          reasoning: new MockReasoningAdapter({
+            ok: true,
+            provider: "mock",
+            model: "mock-opportunity-scout",
+            outputJson: validOpportunityScoutOutput(fixture, {
+              classification: "proven_win",
+              recommendedAction: "monitor"
+            }),
+            diagnostics: { latencyMs: 10 }
+          }),
+          objectStorage: new MemoryObjectStorage()
+        }),
+        OpportunityScoutWorkflowError
+      );
+
+      const [qaFailedRun] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(qaFailedRun?.status, "failed");
+      assert.equal(qaFailedRun?.failureCode, "qa_rejected");
+      assert.ok(recordFromUnknown(qaFailedRun?.outputJson).raw);
+
+      await assert.rejects(
+        executeOpportunityScout({
+          data: { projectId: fixture.projectId, runId: fixture.runId },
+          repository,
+          reasoning: new MockReasoningAdapter({
+            ok: false,
+            provider: "mock",
+            failureCode: "provider_timeout",
+            diagnostics: { latencyMs: 120_000, detail: "timeout" }
+          }),
+          objectStorage: new MemoryObjectStorage()
+        }),
+        OpportunityScoutProviderError
+      );
+
+      const [providerFailedRun] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(providerFailedRun?.status, "failed");
+      assert.equal(providerFailedRun?.failureCode, "provider_timeout");
+      assert.equal(providerFailedRun?.outputJson, null);
+    });
+
     void it("rejects cross-project evidence before persisting opportunities", async () => {
       const fixture = await createScoutFixture(db);
       const otherFixture = await createScoutFixture(db, { name: "Other Scout Project" });
@@ -336,7 +385,8 @@ async function createScoutFixture(db: DatabaseClient, input: { name?: string } =
 }
 
 function validOpportunityScoutOutput(
-  fixture: Pick<ScoutFixture, "projectId" | "rowId" | "signalId">
+  fixture: Pick<ScoutFixture, "projectId" | "rowId" | "signalId">,
+  overrides: Partial<OpportunityScoutOutput["briefs"][number]> = {}
 ): OpportunityScoutOutput {
   return {
     briefs: [
@@ -394,7 +444,8 @@ function validOpportunityScoutOutput(
         cannibalizationRisk: { level: "low", conflictingRoutes: ["/entruempelung/"] },
         missingEvidence: ["Manual SERP check", "Customer project proof"],
         confidence: 0.67,
-        recommendedAction: "create_brief"
+        recommendedAction: "create_brief",
+        ...overrides
       }
     ],
     groups: []
