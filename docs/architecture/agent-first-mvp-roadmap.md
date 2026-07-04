@@ -283,6 +283,26 @@ implemented now
   mock remains the default worker adapter
 ```
 
+Model routing decision:
+
+```text
+current baseline
+  AI_REASONING_MODEL remains the single global model setting.
+  Default stays glm-5.2 because the current worker is a general reasoning /
+  opportunity-classification loop, not an automated SERP search tool.
+
+next model-routing refinement
+  Add task-specific model config before automated SERP/search agents:
+    opportunity / page / frontend reasoning -> glm-5.2
+    search / SERP / competitor snapshot tasks -> deepseek-v4-flash first
+    heavier search/SERP reasoning fallback -> deepseek-v4-pro
+
+rule
+  Model ids stay adapter/runtime configuration.
+  Contracts, DB schema, UI state, and product truth must not depend on a
+  specific model name.
+```
+
 Adapter preflight already satisfied by the worker baseline:
 
 ```text
@@ -420,6 +440,14 @@ SearchResult
 SerpFeature
 competitor snapshot artifacts
 cache by query + locale + device + engine
+```
+
+Model preference for this slice:
+
+```text
+search / SERP snapshot collection     deepseek-v4-flash first
+deeper SERP/competitor reasoning      deepseek-v4-pro if flash is too weak
+frontend/page/composition reasoning   glm-5.2, not DeepSeek
 ```
 
 Rules:

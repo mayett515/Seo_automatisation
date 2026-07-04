@@ -214,6 +214,30 @@ AI_REASONING_OPENCODE_GO_ENDPOINT   default OpenCode Go chat-completions endpoin
 AI_REASONING_TIMEOUT_MS             passed to runStructured
 ```
 
+Task-level model policy:
+
+```text
+glm-5.2
+  Default for general reasoning tasks: opportunity_scout, page_brief_draft,
+  section_text_generation, frontend/page composition, and report narrative
+  drafting. It is the current single-model smoke default.
+
+deepseek-v4-flash
+  Preferred first model for future search / SERP / competitor snapshot tasks
+  because those loops need cheaper high-volume evidence collection and ranking
+  observation work.
+
+deepseek-v4-pro
+  Fallback for search / SERP / competitor reasoning when flash output is too
+  weak for query expansion, competitor interpretation, or local-market
+  judgement.
+```
+
+This is a runtime-routing policy, not a product contract. The current
+`AI_REASONING_MODEL` setting is intentionally coarse; task-specific model env
+keys should be added before automated SERP/search workers land. Model ids still
+belong in adapter config and `agent_runs` metadata only.
+
 The adapter maps provider behavior into the existing failure taxonomy:
 
 ```text
@@ -233,6 +257,7 @@ Deferred provider work:
 
 ```text
 Mastra internals behind the same port
+task-specific model config for search/SERP versus page/frontend reasoning
 OpenCode Go /messages endpoint support for MiniMax/Qwen-family models
 real-provider smoke run and prompt tuning from observed run failures
 cost budget enforcement beyond recording usage metadata
@@ -633,4 +658,6 @@ timeoutMs default            120_000 for opportunity_scout
 briefs-per-run cap           12
 maxCostCents default         provider-config concern, start unenforced but recorded
 provider config              adapter env vars, never in contracts
+model routing                glm-5.2 for general/page/frontend reasoning;
+                             DeepSeek only for search/SERP/competitor tasks
 ```

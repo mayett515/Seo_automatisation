@@ -42,6 +42,11 @@ AI_REASONING_OPENCODE_GO_ENDPOINT=https://opencode.ai/zen/go/v1/chat/completions
 AI_REASONING_TIMEOUT_MS=120000
 ```
 
+`glm-5.2` is intentional for this smoke because the current task is general
+opportunity reasoning over already-loaded evidence. Future automated
+search/SERP/competitor snapshot workers should route to DeepSeek models through
+task-specific model configuration instead of changing this global smoke default.
+
 Do not commit this file, paste it into docs, or print the key in terminal logs.
 
 ## Seed The Fixture
