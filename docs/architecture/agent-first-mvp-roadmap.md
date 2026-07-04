@@ -294,7 +294,7 @@ current baseline
 next model-routing refinement
   Add task-specific model config before automated SERP/search agents:
     opportunity / page / frontend reasoning -> glm-5.2
-    search / SERP / competitor snapshot interpretation -> deepseek-v4-flash first
+    search / SERP research orchestration + interpretation -> deepseek-v4-flash first
     heavier search/SERP reasoning fallback -> deepseek-v4-pro
 
 rule
@@ -446,7 +446,8 @@ cache by query + locale + device + engine
 Model preference for this slice:
 
 ```text
-search / SERP snapshot interpretation  deepseek-v4-flash first
+search / SERP tool orchestration       deepseek-v4-flash first
+SERP/competitor interpretation         deepseek-v4-flash first
 deeper SERP/competitor reasoning       deepseek-v4-pro if flash is too weak
 frontend/page/composition reasoning    glm-5.2, not DeepSeek
 ```
@@ -455,6 +456,7 @@ Rules:
 
 ```text
 read-only only
+DeepSeek can drive the search workflow and call read-only SERP tools
 snapshot rows/artifacts first
 snapshot capture is deterministic, not a model call
 model cites snapshot sourceIds later

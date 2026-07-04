@@ -224,8 +224,8 @@ glm-5.2
 
 deepseek-v4-flash
   Preferred first model for future search / SERP / competitor snapshot tasks
-  because those loops need cheaper high-volume interpretation of stored search,
-  SERP, and competitor snapshot rows.
+  because those loops need cheaper high-volume query planning, read-only search
+  tool orchestration, and first-pass SERP/competitor interpretation.
 
 deepseek-v4-pro
   Fallback for search / SERP / competitor reasoning when flash output is too
@@ -238,10 +238,13 @@ This is a runtime-routing policy, not a product contract. The current
 keys should be added before automated SERP/search workers land. Model ids still
 belong in adapter config and `agent_runs` metadata only.
 
-DeepSeek tasks consume deterministic snapshot rows and emit interpretation. The
-snapshot capture itself is a deterministic adapter path (`SerpSnapshotPort` or
-equivalent) that writes project-owned rows/artifacts first; rank numbers never
-enter product truth because a model said so.
+DeepSeek can be the model behind the future SERP/search worker: it may plan
+queries, choose nearby Orte/service combinations to check, call read-only search
+or SERP snapshot tools, and interpret the results. The actual snapshot capture is
+still a deterministic adapter path (`SerpSnapshotPort` or equivalent) that writes
+project-owned rows/artifacts first; rank numbers never enter product truth
+because a model said so. In short: DeepSeek can drive the search workflow, but
+stored snapshot rows are the evidence boundary.
 
 The adapter maps provider behavior into the existing failure taxonomy:
 
