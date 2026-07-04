@@ -294,7 +294,7 @@ current baseline
 next model-routing refinement
   Add task-specific model config before automated SERP/search agents:
     opportunity / page / frontend reasoning -> glm-5.2
-    search / SERP / competitor snapshot tasks -> deepseek-v4-flash first
+    search / SERP / competitor snapshot interpretation -> deepseek-v4-flash first
     heavier search/SERP reasoning fallback -> deepseek-v4-pro
 
 rule
@@ -318,7 +318,8 @@ mock adapter remains the default/test adapter
 real adapter is selected only by explicit environment configuration
 missing provider config records provider_not_configured on the scout run, without stopping unrelated worker queues
 timeouts map to provider_timeout
-transport/auth/provider failures map to provider_error or provider_overloaded
+HTTP 401/403 auth or entitlement failures map to terminal provider_not_configured
+other transport/provider failures map to provider_error or provider_overloaded
 non-JSON model output maps to output_not_json
 provider/model/cost/latency are recorded as run metadata only
 raw prompts, secrets, OAuth tokens, full competitor text, and provider blobs are never stored
@@ -445,9 +446,9 @@ cache by query + locale + device + engine
 Model preference for this slice:
 
 ```text
-search / SERP snapshot collection     deepseek-v4-flash first
-deeper SERP/competitor reasoning      deepseek-v4-pro if flash is too weak
-frontend/page/composition reasoning   glm-5.2, not DeepSeek
+search / SERP snapshot interpretation  deepseek-v4-flash first
+deeper SERP/competitor reasoning       deepseek-v4-pro if flash is too weak
+frontend/page/composition reasoning    glm-5.2, not DeepSeek
 ```
 
 Rules:
@@ -455,6 +456,7 @@ Rules:
 ```text
 read-only only
 snapshot rows/artifacts first
+snapshot capture is deterministic, not a model call
 model cites snapshot sourceIds later
 proof freshness policy required
 ```

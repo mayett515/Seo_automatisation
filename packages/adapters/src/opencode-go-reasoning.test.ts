@@ -54,7 +54,7 @@ void test("OpenCodeGoReasoningAdapter calls the OpenAI-compatible endpoint and p
   assert.deepEqual(body.response_format, { type: "json_object" });
 });
 
-void test("OpenCodeGoReasoningAdapter maps provider HTTP failures without storing response bodies", async () => {
+void test("OpenCodeGoReasoningAdapter maps auth failures to terminal provider_not_configured without storing response bodies", async () => {
   const adapter = new OpenCodeGoReasoningAdapter({
     apiKey: "test-api-key",
     model: "glm-5.2",
@@ -70,9 +70,41 @@ void test("OpenCodeGoReasoningAdapter maps provider HTTP failures without storin
   if (result.ok) {
     return;
   }
-  assert.equal(result.failureCode, "provider_error");
+  assert.equal(result.failureCode, "provider_not_configured");
   assert.equal(result.diagnostics.detail, "invalid_api_key");
   assert.equal(JSON.stringify(result).includes("secret provider response"), false);
+});
+
+void test("OpenCodeGoReasoningAdapter maps forbidden provider responses to terminal provider_not_configured", async () => {
+  const adapter = new OpenCodeGoReasoningAdapter({
+    apiKey: "test-api-key",
+    model: "glm-5.2",
+    fetchImpl: () => Promise.resolve(new Response(JSON.stringify({ error: "missing_go_entitlement" }), { status: 403 }))
+  });
+
+  const result = await adapter.runStructured(baseInput());
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.failureCode, "provider_not_configured");
+    assert.equal(result.diagnostics.detail, "missing_go_entitlement");
+  }
+});
+
+void test("OpenCodeGoReasoningAdapter maps non-auth non-capacity HTTP failures to provider_error", async () => {
+  const adapter = new OpenCodeGoReasoningAdapter({
+    apiKey: "test-api-key",
+    model: "glm-5.2",
+    fetchImpl: () => Promise.resolve(new Response(JSON.stringify({ error: "upstream_failed" }), { status: 500 }))
+  });
+
+  const result = await adapter.runStructured(baseInput());
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.failureCode, "provider_error");
+    assert.equal(result.diagnostics.detail, "upstream_failed");
+  }
 });
 
 void test("OpenCodeGoReasoningAdapter maps rate limits and capacity failures to provider_overloaded", async () => {

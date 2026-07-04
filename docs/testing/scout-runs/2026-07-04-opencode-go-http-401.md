@@ -28,6 +28,10 @@ API enqueue
 The failure taxonomy was correct: the provider rejected the request before returning model output, so no opportunities were
 persisted and the run recorded a redacted provider-layer failure.
 
+Historical note: this run happened before HTTP 401/403 provider auth and entitlement failures were mapped to terminal
+`provider_not_configured`. The same provider response should now avoid BullMQ retries and fail the scout lane as unusable
+provider configuration.
+
 ## Follow-Up
 
 Prompt tuning is still blocked because this run did not capture an `ok: true` model response. The next attempt needs a valid

@@ -35,6 +35,8 @@ type ChatCompletionResponse = {
   usage?: unknown;
 };
 
+type OpenCodeGoFailureCode = Extract<AiReasoningRunResult, { ok: false }>["failureCode"];
+
 const defaultOpenCodeGoEndpoint = "https://opencode.ai/zen/go/v1/chat/completions";
 
 export class OpenCodeGoReasoningAdapter implements AiReasoningPort {
@@ -167,13 +169,25 @@ export class OpenCodeGoReasoningAdapter implements AiReasoningPort {
 function failureFromResponse(response: Response, startedAt: number, body: string): AiReasoningRunResult {
   return {
     ok: false,
-    failureCode: response.status === 429 || response.status === 503 ? "provider_overloaded" : "provider_error",
+    failureCode: failureCodeFromHttpStatus(response.status),
     provider: "opencode_go",
     diagnostics: {
       latencyMs: elapsedMs(startedAt),
       detail: providerReasonCodeFromResponseText(body) ?? `http_${response.status}`
     }
   };
+}
+
+function failureCodeFromHttpStatus(status: number): OpenCodeGoFailureCode {
+  if (status === 401 || status === 403) {
+    return "provider_not_configured";
+  }
+
+  if (status === 429 || status === 503) {
+    return "provider_overloaded";
+  }
+
+  return "provider_error";
 }
 
 async function parseCompletionResponse(

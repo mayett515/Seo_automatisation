@@ -147,7 +147,8 @@ qa_rejected              Contract parsed, deterministic QA rejected a gate.
 provider_timeout         Provider did not answer before timeout.
 provider_error           Provider/network failure.
 provider_overloaded      Rate limit or temporary capacity failure.
-provider_not_configured  Worker was not started with a usable provider key.
+provider_not_configured  Worker was not started with a usable provider key, or
+                         provider auth/entitlement failed with HTTP 401/403.
 ```
 
 ## Review Artifact

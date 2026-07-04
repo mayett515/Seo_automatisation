@@ -168,8 +168,8 @@ Two layers, recorded distinctly in `agent_runs.failure_code`:
 ```text
 adapter layer (AdapterFailureCode):
   provider_timeout        timeoutMs exceeded
-  provider_error          transport/5xx/auth failure
-  provider_not_configured real provider selected without required config
+  provider_error          transport/5xx or unexpected provider failure
+  provider_not_configured missing required config or HTTP 401/403 auth/entitlement failure
   provider_overloaded     rate limit / capacity
   output_not_json         response is not parseable JSON at all
   budget_exceeded         maxCostCents would be exceeded
@@ -224,8 +224,8 @@ glm-5.2
 
 deepseek-v4-flash
   Preferred first model for future search / SERP / competitor snapshot tasks
-  because those loops need cheaper high-volume evidence collection and ranking
-  observation work.
+  because those loops need cheaper high-volume interpretation of stored search,
+  SERP, and competitor snapshot rows.
 
 deepseek-v4-pro
   Fallback for search / SERP / competitor reasoning when flash output is too
@@ -238,11 +238,17 @@ This is a runtime-routing policy, not a product contract. The current
 keys should be added before automated SERP/search workers land. Model ids still
 belong in adapter config and `agent_runs` metadata only.
 
+DeepSeek tasks consume deterministic snapshot rows and emit interpretation. The
+snapshot capture itself is a deterministic adapter path (`SerpSnapshotPort` or
+equivalent) that writes project-owned rows/artifacts first; rank numbers never
+enter product truth because a model said so.
+
 The adapter maps provider behavior into the existing failure taxonomy:
 
 ```text
 Abort/timeout                    -> provider_timeout
 Missing required provider config  -> provider_not_configured
+HTTP 401 / 403 auth or entitlement -> provider_not_configured
 HTTP 429 / 503                   -> provider_overloaded
 other non-2xx provider response  -> provider_error
 invalid completion envelope      -> output_not_json
