@@ -166,7 +166,37 @@ void describe(
       const rows = await db.select().from(opportunities).where(eq(opportunities.agentRunId, fixture.runId));
       assert.equal(rows.length, 1);
       assert.equal(rows[0]?.classification, "proven_win");
-      assert.equal(rows[0]?.status, "monitoring");
+      assert.equal(rows[0]?.status, "new");
+    });
+
+    void it("persists AI rejection recommendations as undecided lifecycle rows", async () => {
+      const fixture = await createScoutFixture(db);
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-opportunity-scout",
+        outputJson: validOpportunityScoutOutput(fixture, {
+          classification: "rejected",
+          recommendedAction: "reject",
+          suggestedPageType: "backlog",
+          rejectionReason: "Service fit is not confirmed for this Ort."
+        }),
+        diagnostics: { latencyMs: 9 }
+      });
+
+      const result = await executeOpportunityScout({
+        data: { projectId: fixture.projectId, runId: fixture.runId },
+        repository: createDrizzleOpportunityScoutRepository(db),
+        reasoning,
+        objectStorage: new MemoryObjectStorage()
+      });
+
+      assert.equal(result.status, "succeeded");
+      const rows = await db.select().from(opportunities).where(eq(opportunities.agentRunId, fixture.runId));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.classification, "rejected");
+      assert.equal(rows[0]?.status, "new");
+      assert.equal(recordFromUnknown(rows[0]?.evidenceJson).recommendedAction, "reject");
     });
 
     void it("rejects proven wins when model-claimed rank differs from the proof row", async () => {

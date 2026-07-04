@@ -288,7 +288,7 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
     },
 
     async loadEvidence(data) {
-      return loadOpportunityScoutEvidence(db, data.projectId);
+      return loadOpportunityScoutEvidence(db, data.projectId, data.maxBriefs ?? 12);
     },
 
     async persistSuccess(input) {
@@ -330,7 +330,7 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
               classification: brief.classification,
               primaryKeyword: brief.primaryKeyword,
               score: brief.score,
-              status: opportunityLifecycleStatus(brief.recommendedAction),
+              status: "new" as const,
               evidenceJson: brief,
               createdAt: now,
               updatedAt: now
@@ -368,7 +368,11 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
   };
 }
 
-async function loadOpportunityScoutEvidence(db: WorkerDb, projectId: string): Promise<OpportunityScoutEvidence> {
+async function loadOpportunityScoutEvidence(
+  db: WorkerDb,
+  projectId: string,
+  maxBriefs: number
+): Promise<OpportunityScoutEvidence> {
   const [latestImport] = await db
     .select()
     .from(websiteImportRuns)
@@ -440,6 +444,7 @@ async function loadOpportunityScoutEvidence(db: WorkerDb, projectId: string): Pr
   const packet = buildOpportunityScoutEvidencePacket({
     projectId,
     generatedAt: new Date().toISOString(),
+    maxBriefs,
     websiteImport: latestImport
       ? {
           sourceId: latestImport.id,
@@ -539,19 +544,6 @@ async function markWorkflowFailure(
     },
     latencyMs: result.diagnostics.latencyMs
   });
-}
-
-function opportunityLifecycleStatus(action: string): string {
-  if (action === "reject") {
-    return "rejected";
-  }
-  if (action === "hold") {
-    return "held";
-  }
-  if (action === "monitor") {
-    return "monitoring";
-  }
-  return "new";
 }
 
 function compactDiagnostics(value: Record<string, unknown>): Record<string, unknown> {

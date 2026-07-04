@@ -349,9 +349,10 @@ implemented now
   run list polls while a scout run is queued/running
   scout run button renders already_active as in-progress state
   manual ranking-proof form records query, page URL, observed rank, and notes
+  lifecycle PATCH API records monitor/hold/reject decisions with reason/user provenance
 
 still deferred
-  lifecycle mutations such as hold/reject/monitor
+  lifecycle buttons in the web UI
   MapLibre/corridor map surface
   agent_run_events streaming timeline
   PageBrief/Page Studio handoff actions

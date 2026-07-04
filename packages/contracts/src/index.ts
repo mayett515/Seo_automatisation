@@ -157,6 +157,7 @@ export const aiReasoningWorkflowFailureCodes = ["output_schema_mismatch", "qa_re
 export const aiReasoningEnqueueFailureCodes = ["queue_enqueue_failed", "queue_not_configured"] as const;
 
 export const opportunityClassifications = ["proven_win", "near_term_target", "internal_radar", "rejected"] as const;
+export const opportunityLifecycleStatuses = ["new", "monitoring", "held", "rejected", "brief_created"] as const;
 export const opportunityScoutQueueStatuses = [...jobStatuses, "already_active"] as const;
 
 export const opportunityRecommendedActions = [
@@ -235,6 +236,7 @@ export const AiReasoningAdapterFailureCodeSchema = z.enum(aiReasoningAdapterFail
 export const AiReasoningWorkflowFailureCodeSchema = z.enum(aiReasoningWorkflowFailureCodes);
 export const AiReasoningEnqueueFailureCodeSchema = z.enum(aiReasoningEnqueueFailureCodes);
 export const OpportunityClassificationSchema = z.enum(opportunityClassifications);
+export const OpportunityLifecycleStatusSchema = z.enum(opportunityLifecycleStatuses);
 export const OpportunityScoutQueueStatusSchema = z.enum(opportunityScoutQueueStatuses);
 export const OpportunityRecommendedActionSchema = z.enum(opportunityRecommendedActions);
 export const OpportunitySuggestedPageTypeSchema = z.enum(opportunitySuggestedPageTypes);
@@ -337,6 +339,22 @@ export const CreateRankingProofRequestSchema = z
     notes: z.string().trim().min(1).max(2_000).optional()
   })
   .strict();
+
+export const UpdateOpportunityLifecycleRequestSchema = z
+  .object({
+    status: OpportunityLifecycleStatusSchema.exclude(["brief_created"]),
+    reason: z.string().trim().min(1).max(1_000).optional()
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.status === "rejected" && !value.reason) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "Rejecting an opportunity requires a reason."
+      });
+    }
+  });
 
 export const QueueJobSchema = z.object({
   jobId: z.string().min(1),
@@ -868,7 +886,9 @@ export const OpportunityExplorerOpportunitySchema = z.object({
   classification: OpportunityClassificationSchema,
   primaryKeyword: z.string().min(1),
   score: z.number().int(),
-  status: z.string().min(1),
+  status: OpportunityLifecycleStatusSchema,
+  statusReason: z.string().min(1).optional(),
+  decidedByUserId: z.string().min(1).optional(),
   evidenceJson: OpportunityBriefSchema.nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
@@ -938,6 +958,7 @@ export type WebsiteImportRun = z.output<typeof WebsiteImportRunSchema>;
 export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportResponseSchema>;
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
 export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;
+export type UpdateOpportunityLifecycleRequest = z.output<typeof UpdateOpportunityLifecycleRequestSchema>;
 export type GscSearchAnalyticsRow = z.output<typeof GscSearchAnalyticsRowSchema>;
 export type GscOpportunitySignal = z.output<typeof GscOpportunitySignalSchema>;
 export type EvidenceRef = z.output<typeof EvidenceRefSchema>;
@@ -966,6 +987,7 @@ export type RankingProof = z.output<typeof RankingProofSchema>;
 export type RankingProofListResponse = z.output<typeof RankingProofListResponseSchema>;
 export type AiReasoningEnqueueFailureCode = z.output<typeof AiReasoningEnqueueFailureCodeSchema>;
 export type AgentRunFailureCode = z.output<typeof AgentRunFailureCodeSchema>;
+export type OpportunityLifecycleStatus = z.output<typeof OpportunityLifecycleStatusSchema>;
 export type OpportunityScoutQueueStatus = z.output<typeof OpportunityScoutQueueStatusSchema>;
 export type OpportunityExplorerOpportunity = z.output<typeof OpportunityExplorerOpportunitySchema>;
 export type OpportunityExplorerListResponse = z.output<typeof OpportunityExplorerListResponseSchema>;

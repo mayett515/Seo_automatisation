@@ -5,6 +5,7 @@ import {
   deploymentStatuses,
   agentRunStatuses,
   opportunityClassifications,
+  opportunityLifecycleStatuses,
   gscConnectionStatuses,
   gscOpportunitySignalStatuses,
   gscOpportunitySignalTypes,
@@ -37,6 +38,7 @@ export const jobStatusEnum = pgEnum("job_status", jobStatuses);
 export const agentTaskEnum = pgEnum("agent_task", reasoningTasks);
 export const agentRunStatusEnum = pgEnum("agent_run_status", agentRunStatuses);
 export const opportunityClassificationEnum = pgEnum("opportunity_classification", opportunityClassifications);
+export const opportunityLifecycleStatusEnum = pgEnum("opportunity_lifecycle_status", opportunityLifecycleStatuses);
 export const releaseStatusEnum = pgEnum("release_status", releasePlanStatuses);
 export const deploymentStatusEnum = pgEnum("deployment_status", deploymentStatuses);
 export const providerOperationStatusEnum = pgEnum("provider_operation_status", providerOperationStatuses);
@@ -286,7 +288,9 @@ export const opportunities = pgTable("opportunities", {
   classification: opportunityClassificationEnum("classification").notNull().default("internal_radar"),
   primaryKeyword: text("primary_keyword").notNull(),
   score: integer("score").default(0).notNull(),
-  status: text("status").default("new").notNull(),
+  status: opportunityLifecycleStatusEnum("status").default("new").notNull(),
+  decidedByUserId: uuid("decided_by_user_id").references(() => users.id),
+  statusReason: text("status_reason"),
   evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
   ...timestamps
 });
@@ -720,6 +724,7 @@ export const agentRunRelations = relations(agentRuns, ({ many, one }) => ({
 export const opportunityRelations = relations(opportunities, ({ many, one }) => ({
   project: one(projects, { fields: [opportunities.projectId], references: [projects.id] }),
   agentRun: one(agentRuns, { fields: [opportunities.agentRunId], references: [agentRuns.id] }),
+  decidedBy: one(users, { fields: [opportunities.decidedByUserId], references: [users.id] }),
   pageProposals: many(pageProposals)
 }));
 

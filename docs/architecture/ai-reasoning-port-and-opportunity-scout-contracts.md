@@ -77,7 +77,7 @@ The deterministic scorer is code in `packages/ai`, testable without any provider
 
 ### 4. Classification is not lifecycle status
 
-`opportunities.status` is free text defaulting to `"new"`. Classification (`proven_win`...) and lifecycle (`new | monitoring | brief_created | held | rejected`) are different axes: a `near_term_target` can be `new` or `held`. Add a dedicated column and pg enum instead of overloading `status`:
+Classification (`proven_win`...) and lifecycle (`new | monitoring | brief_created | held | rejected`) are different axes: a `near_term_target` can be `new` or `held`. Keep them as separate typed columns:
 
 ```text
 opportunity_classification enum:
@@ -86,10 +86,15 @@ opportunity_classification enum:
 opportunities:
   + classification opportunity_classification not null
   + agent_run_id uuid null references agent_runs(id)   -- provenance
-  status stays lifecycle
+  status opportunity_lifecycle_status not null default new
+  decided_by_user_id uuid null references users(id)
+  status_reason text null
 ```
 
 `gscOpportunitySignals.status` already uses `internal_radar` as a default value, so the vocabulary is consistent with existing DB language.
+
+Worker rule: `recommendedAction` is model advice only. The worker persists every accepted scout brief with lifecycle
+`status = "new"`. Only the operator decision API may move status to `monitoring`, `held`, or `rejected`.
 
 ### 5. Nearby Orte must not spam the `areas` table
 
@@ -390,8 +395,22 @@ opportunities
   evidenceJson      = full validated OpportunityBrief (the UI reads this)
   score             = deterministic QA score
   status            = lifecycle only (new | monitoring | brief_created | held | rejected)
+  decided_by_user_id/status_reason = operator decision provenance
   areaId/serviceId  = null until operator acceptance materializes them
 ```
+
+Lifecycle decision API:
+
+```text
+PATCH /projects/:projectId/opportunities/:opportunityId/status
+  permission: opportunity:decide
+  status: new | monitoring | held | rejected
+  reason required when status = rejected
+  brief_created is reserved for the future create-brief side-effect slice
+```
+
+This is the first human decision surface. AI classification `rejected` and operator lifecycle `rejected` remain distinct:
+the former is the model's verdict inside the brief, the latter is the user's persisted decision.
 
 ### agent_runs (minimal audit, new table)
 
@@ -426,7 +445,7 @@ apps/worker opportunity-scout handler:
   build prompt (packages/ai pure builder)
   call AiReasoningPort.runStructured
   Zod parse -> QA gates -> deterministic scoring
-  on success: insert opportunities and mark run succeeded in one transaction
+  on success: insert opportunities with status new and mark run succeeded in one transaction
   on failure: mark run failed with failure_code, persist diagnostics, write nothing to opportunities
 ```
 
@@ -535,6 +554,7 @@ implemented in the worker baseline
   manual ranking_proofs source rows and API bridge
   active-run DB/API guard for queued/running scout runs
   Explorer read APIs for opportunities and agent run summaries
+  operator lifecycle decision API with reason/user provenance
   agent_runs queued row creation before enqueue
   BullMQ jobId = runId
   ObjectStoragePort input_ref write
@@ -543,8 +563,7 @@ implemented in the worker baseline
   unit tests plus DB-backed integration tests
 
 deferred to the next slices
-  Opportunity Explorer UI
-  lifecycle action mutations from the Explorer
+  Opportunity lifecycle buttons in the web UI
   automated SERP/competitor snapshot source rows
 ```
 

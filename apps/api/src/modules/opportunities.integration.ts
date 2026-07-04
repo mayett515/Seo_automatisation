@@ -1,7 +1,7 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { agentRuns, customers, opportunities, projects, rankingProofs, users, type DatabaseClient } from "@localseo/db";
-import { OpportunityBriefSchema } from "@localseo/contracts";
+import { OpportunityBriefSchema, UpdateOpportunityLifecycleRequestSchema } from "@localseo/contracts";
 import { eq } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
 import { OpportunitiesService } from "./opportunities.module.js";
@@ -184,6 +184,79 @@ void describe(
 
       assert.equal(list.opportunities.length, 1);
       assert.equal(list.opportunities[0]?.evidenceJson, null);
+    });
+
+    void it("records operator lifecycle decisions with reason and user provenance", async () => {
+      const fixture = await createProjectFixture(db, "Lifecycle Decision");
+      const service = new OpportunitiesService(testDatabaseService(db));
+      const [row] = await db
+        .insert(opportunities)
+        .values({
+          projectId: fixture.projectId,
+          classification: "near_term_target",
+          primaryKeyword: "entruempelung dachau",
+          score: 72,
+          status: "new",
+          evidenceJson: validBrief(fixture.projectId)
+        })
+        .returning();
+      assert.ok(row);
+
+      const rejected = await service.updateOpportunityLifecycle(
+        fixture.projectId,
+        row.id,
+        { status: "rejected", reason: "No service fit for this Ort yet." },
+        fixture.userId
+      );
+
+      assert.equal(rejected.status, "rejected");
+      assert.equal(rejected.statusReason, "No service fit for this Ort yet.");
+      assert.equal(rejected.decidedByUserId, fixture.userId);
+
+      const reopened = await service.updateOpportunityLifecycle(fixture.projectId, row.id, { status: "monitoring" });
+
+      assert.equal(reopened.status, "monitoring");
+      assert.equal(reopened.statusReason, undefined);
+      assert.equal(reopened.decidedByUserId, undefined);
+    });
+
+    void it("rejects lifecycle decision bodies that reject without a reason or use invalid status", () => {
+      assert.equal(UpdateOpportunityLifecycleRequestSchema.safeParse({ status: "rejected" }).success, false);
+      assert.equal(UpdateOpportunityLifecycleRequestSchema.safeParse({ status: "brief_created" }).success, false);
+      assert.equal(
+        UpdateOpportunityLifecycleRequestSchema.safeParse({ status: "not_real", reason: "No." }).success,
+        false
+      );
+    });
+
+    void it("does not update opportunities outside the requested project", async () => {
+      const first = await createProjectFixture(db, "Lifecycle First");
+      const second = await createProjectFixture(db, "Lifecycle Second");
+      const service = new OpportunitiesService(testDatabaseService(db));
+      const [row] = await db
+        .insert(opportunities)
+        .values({
+          projectId: second.projectId,
+          classification: "near_term_target",
+          primaryKeyword: "dachdecker karlsfeld",
+          score: 81,
+          status: "new",
+          evidenceJson: validBrief(second.projectId, {
+            service: "Dachdecker",
+            primaryKeyword: "dachdecker karlsfeld"
+          })
+        })
+        .returning();
+      assert.ok(row);
+
+      await assert.rejects(
+        () => service.updateOpportunityLifecycle(first.projectId, row.id, { status: "held", reason: "Later." }),
+        /not found/u
+      );
+
+      const [unchanged] = await db.select().from(opportunities).where(eq(opportunities.id, row.id));
+      assert.equal(unchanged?.status, "new");
+      assert.equal(unchanged?.statusReason, null);
     });
 
     void it("rejects unsupported agent-run task filters", async () => {
