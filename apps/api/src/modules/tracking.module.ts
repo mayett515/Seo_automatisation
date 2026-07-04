@@ -8,6 +8,7 @@ import {
   Headers,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   Module,
   NotFoundException,
@@ -77,7 +78,7 @@ export class TrackingRateLimiter {
   private readonly memoryLastUsedAtFlushes = new Map<string, number>();
   private lastMemoryEvictionAt = 0;
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(@Inject(RedisService) private readonly redis: RedisService) {}
 
   async enforcePreValidationRequest(input: { ip: string; projectId: string }): Promise<void> {
     const keys = trackingRateLimitKeys(input);
@@ -248,7 +249,9 @@ export class TrackingRateLimiter {
 @Injectable()
 export class TrackingService {
   constructor(
+    @Inject(DatabaseService)
     private readonly database: DatabaseService,
+    @Inject(TrackingRateLimiter)
     private readonly rateLimiter: TrackingRateLimiter
   ) {}
 
@@ -411,7 +414,7 @@ export class TrackingService {
 
 @Injectable()
 class TrackingRateLimitGuard implements CanActivate {
-  constructor(private readonly rateLimiter: TrackingRateLimiter) {}
+  constructor(@Inject(TrackingRateLimiter) private readonly rateLimiter: TrackingRateLimiter) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<FastifyRequest<{ Body: Partial<TrackingEvent> }>>();
@@ -424,7 +427,7 @@ class TrackingRateLimitGuard implements CanActivate {
 @Controller("track")
 @UseGuards(TrackingRateLimitGuard)
 class TrackingController {
-  constructor(private readonly tracking: TrackingService) {}
+  constructor(@Inject(TrackingService) private readonly tracking: TrackingService) {}
 
   @Post()
   track(
@@ -446,7 +449,7 @@ class TrackingController {
 @UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 @RequireProjectPermission("tracking:manage")
 class TrackingKeysController {
-  constructor(private readonly tracking: TrackingService) {}
+  constructor(@Inject(TrackingService) private readonly tracking: TrackingService) {}
 
   @Get()
   list(@Param("projectId") projectId: string) {

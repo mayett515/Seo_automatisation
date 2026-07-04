@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Global, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
+import { Global, Inject, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import type { QueueName } from "@localseo/contracts";
@@ -40,7 +40,7 @@ type EnqueueInput = {
 export class QueueProducerService implements OnModuleDestroy {
   private readonly queues: QueueRegistry;
 
-  constructor(private readonly database: DatabaseService) {
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {
     const redisConnection = env.REDIS_URL ? createRedisConnection(env.REDIS_URL) : undefined;
     this.queues = redisConnection
       ? {

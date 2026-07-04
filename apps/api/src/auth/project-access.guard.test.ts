@@ -14,7 +14,7 @@ type ProjectMembershipVerifier = Pick<ProjectMembershipService, "isDatabaseBacke
 void describe("ProjectAccessGuard", () => {
   void it("allows the demo project only when local scaffold auth is enabled", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
-      const guard = new ProjectAccessGuard();
+      const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
       assert.equal(await guard.canActivate(contextFor({ projectId: "demo-project" }, {})), true);
     });
@@ -22,7 +22,7 @@ void describe("ProjectAccessGuard", () => {
 
   void it("rejects the demo project when local scaffold auth is disabled", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: undefined }, async () => {
-      const guard = new ProjectAccessGuard();
+      const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
       await assert.rejects(
         guard.canActivate(contextFor({ projectId: "demo-project" }, {})),
@@ -33,7 +33,7 @@ void describe("ProjectAccessGuard", () => {
 
   void it("rejects demo project access in production", async () => {
     await withEnv({ NODE_ENV: "production", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
-      const guard = new ProjectAccessGuard();
+      const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
       await assert.rejects(
         guard.canActivate(contextFor({ projectId: "demo-project" }, {})),
@@ -43,7 +43,7 @@ void describe("ProjectAccessGuard", () => {
   });
 
   void it("rejects project access without user context", async () => {
-    const guard = new ProjectAccessGuard();
+    const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
     await assert.rejects(
       guard.canActivate(contextFor({ projectId: "project-1" }, {})),
@@ -53,7 +53,7 @@ void describe("ProjectAccessGuard", () => {
 
   void it("allows local scaffold project access when the authenticated project list contains the route project", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
-      const guard = new ProjectAccessGuard();
+      const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
       assert.equal(
         await guard.canActivate(
@@ -72,7 +72,7 @@ void describe("ProjectAccessGuard", () => {
 
   void it("rejects local scaffold project access when local scaffold auth is disabled", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: undefined }, async () => {
-      const guard = new ProjectAccessGuard();
+      const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
       await assert.rejects(
         guard.canActivate(
@@ -90,7 +90,7 @@ void describe("ProjectAccessGuard", () => {
   });
 
   void it("rejects guarded routes that do not expose a project context", async () => {
-    const guard = new ProjectAccessGuard();
+    const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
     await assert.rejects(
       guard.canActivate(
@@ -108,7 +108,7 @@ void describe("ProjectAccessGuard", () => {
 
   void it("treats id params as project ids for legacy project-scoped routes", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
-      const guard = new ProjectAccessGuard();
+      const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
       assert.equal(
         await guard.canActivate(
@@ -127,7 +127,7 @@ void describe("ProjectAccessGuard", () => {
 
   void it("rejects persisted UUID project access when no database-backed verifier is available", async () => {
     await withEnv({ NODE_ENV: "development", ALLOW_LOCAL_SCAFFOLD_AUTH: "true" }, async () => {
-      const guard = new ProjectAccessGuard();
+      const guard = new ProjectAccessGuard(noDatabaseVerifier() as ProjectMembershipService);
 
       await assert.rejects(
         guard.canActivate(
@@ -271,6 +271,13 @@ void describe("ProjectAccessGuard", () => {
     assert.deepEqual(request.projectAccess, access);
   });
 });
+
+function noDatabaseVerifier(): ProjectMembershipVerifier {
+  return {
+    isDatabaseBacked: () => false,
+    getProjectAccess: () => Promise.resolve(undefined)
+  };
+}
 
 function contextFor(
   params: Record<string, string>,

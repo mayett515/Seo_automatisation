@@ -110,7 +110,9 @@ export const RELEASE_VERIFICATION_PORT = Symbol("RELEASE_VERIFICATION_PORT");
 @Injectable()
 export class ReleasesService {
   constructor(
+    @Inject(QueueProducerService)
     private readonly queues: QueueProducerService,
+    @Inject(DatabaseService)
     private readonly database: DatabaseService,
     @Optional()
     @Inject(RELEASE_VERIFICATION_PORT)
@@ -631,7 +633,7 @@ export class ReleasesService {
 @Controller()
 @UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 class ReleasesController {
-  constructor(private readonly releases: ReleasesService) {}
+  constructor(@Inject(ReleasesService) private readonly releases: ReleasesService) {}
 
   @Post("projects/:projectId/releases/plan")
   @RequireProjectPermission("release:plan")

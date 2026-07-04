@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { allowsLocalScaffoldAuth, parseAppEnv } from "@localseo/config";
 import type { FastifyRequest } from "fastify";
 import { BetterAuthService } from "../better-auth/better-auth.service.js";
@@ -11,7 +11,7 @@ type ProjectScopedParams = {
 
 @Injectable()
 export class BetterAuthGuard implements CanActivate {
-  constructor(private readonly betterAuth: BetterAuthService) {}
+  constructor(@Inject(BetterAuthService) private readonly betterAuth: BetterAuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context

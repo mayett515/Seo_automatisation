@@ -4,6 +4,7 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Injectable,
   Module,
   Param,
@@ -49,7 +50,9 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 @Injectable()
 export class ProjectsService {
   constructor(
+    @Inject(QueueProducerService)
     private readonly queues: QueueProducerService,
+    @Inject(DatabaseService)
     private readonly database: DatabaseService
   ) {}
 
@@ -353,7 +356,7 @@ export class ProjectsService {
 @Controller("projects")
 @UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
 class ProjectsController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(@Inject(ProjectsService) private readonly projects: ProjectsService) {}
 
   @Get(":id")
   getProject(@Param("id") projectId: string) {

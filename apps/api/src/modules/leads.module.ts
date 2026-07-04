@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Body, Controller, Get, Injectable, Module, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Injectable, Module, Param, Post } from "@nestjs/common";
 import {
   CreateLeadSchema,
   LeadSchema,
@@ -14,7 +14,7 @@ import { QueueProducerService } from "../queue-producer.js";
 
 @Injectable()
 class LeadsService {
-  constructor(private readonly queues: QueueProducerService) {}
+  constructor(@Inject(QueueProducerService) private readonly queues: QueueProducerService) {}
 
   createLead(input: CreateLeadInput): Lead {
     return LeadSchema.parse({
@@ -57,7 +57,7 @@ class LeadsService {
 
 @Controller("leads")
 class LeadsController {
-  constructor(private readonly leads: LeadsService) {}
+  constructor(@Inject(LeadsService) private readonly leads: LeadsService) {}
 
   @Post()
   createLead(@Body() body: unknown) {

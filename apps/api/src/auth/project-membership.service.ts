@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { customerMemberships, customers, projects } from "@localseo/db";
 import { and, eq, ne, or } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
@@ -6,7 +6,7 @@ import type { ProjectAccessContext } from "./types/authenticated-request.js";
 
 @Injectable()
 export class ProjectMembershipService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   isDatabaseBacked(): boolean {
     return this.database.isConfigured();
