@@ -88,6 +88,12 @@ a {
   background: #ffffff;
 }
 
+.field-help {
+  color: #6d7a74;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .auth-submit,
 .auth-mode-toggle {
   width: 100%;

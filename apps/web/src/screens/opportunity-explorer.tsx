@@ -429,6 +429,10 @@ function ScoutRunForm(props: {
           Uses project evidence and ranking proof to create validated opportunity briefs. The worker cannot publish or
           deploy anything.
         </p>
+        <p>
+          This button does not search Google from the browser. A real run needs the API queue, worker, Redis, and AI
+          provider env configured.
+        </p>
         <span className="muted-text">
           {props.proofCount > 0 ? `${props.proofCount} proof rows available.` : "Optional: add manual proof first."}
         </span>
@@ -468,12 +472,17 @@ function RankingProofForm(props: {
       <div className="command-card__copy">
         <span className="eyebrow">Proof</span>
         <strong>Record manual ranking proof</strong>
-        <p>Use this when you checked a real SERP result. GSC impressions alone never become customer-safe proof.</p>
+        <p>
+          This form does not search Google. Use it after you manually checked a SERP and saw the project page ranking.
+          GSC impressions alone never become customer-safe proof.
+        </p>
         <span className="muted-text">{`${props.proofCount} proof rows recorded.`}</span>
       </div>
       <label className="form-field">
         <span>Query</span>
+        <small className="field-help">What you searched, for example "dachdecker dachau".</small>
         <input
+          placeholder="dachdecker dachau"
           value={props.value.query}
           onChange={(event) => props.onChange({ ...props.value, query: event.target.value })}
           required
@@ -481,7 +490,9 @@ function RankingProofForm(props: {
       </label>
       <label className="form-field">
         <span>Page URL</span>
+        <small className="field-help">The project/customer page that ranked. Not a competitor page.</small>
         <input
+          placeholder="https://example.com/dachdecker-dachau/"
           type="url"
           value={props.value.pageUrl}
           onChange={(event) => props.onChange({ ...props.value, pageUrl: event.target.value })}
@@ -490,7 +501,9 @@ function RankingProofForm(props: {
       </label>
       <label className="form-field form-field--small">
         <span>Rank</span>
+        <small className="field-help">The position you saw manually.</small>
         <input
+          placeholder="7"
           min="1"
           max="100"
           type="number"
@@ -501,7 +514,9 @@ function RankingProofForm(props: {
       </label>
       <label className="form-field">
         <span>Note</span>
+        <small className="field-help">Optional context, such as device, city, or manual check note.</small>
         <input
+          placeholder="manual desktop check"
           value={props.value.notes}
           onChange={(event) => props.onChange({ ...props.value, notes: event.target.value })}
         />
