@@ -51,7 +51,7 @@ async function main(): Promise<void> {
 }
 
 async function seedFixture(sql: SqlClient): Promise<void> {
-  const now = new Date();
+  const now = new Date().toISOString();
   const websiteSummary = {
     discoveredRoutes: ["/", "/dachdecker/", "/entruempelung/"],
     facts: {
@@ -160,7 +160,7 @@ async function seedFixture(sql: SqlClient): Promise<void> {
         'https://customer.example/',
         '2026-06-01',
         '2026-06-30',
-        array['query', 'page'],
+        ${JSON.stringify(["query", "page"])}::jsonb,
         'completed',
         1,
         ${now},
