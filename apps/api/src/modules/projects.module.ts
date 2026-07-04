@@ -204,6 +204,8 @@ export class ProjectsService {
     input: CreateOpportunityScoutRunRequest = {},
     userId?: string
   ): Promise<OpportunityScoutQueueResponse> {
+    const maxBriefs = input.maxBriefs ?? 6;
+
     if (!this.database.isConfigured()) {
       return OpportunityScoutQueueResponseSchema.parse({
         jobId: randomUUID(),
@@ -221,7 +223,7 @@ export class ProjectsService {
       const jobData = OpportunityScoutJobDataSchema.parse({
         projectId,
         runId: jobId,
-        maxBriefs: input.maxBriefs,
+        maxBriefs,
         triggeredByUserId: userId ?? null,
         triggerSource: "user_action"
       });
@@ -290,7 +292,7 @@ export class ProjectsService {
         data: OpportunityScoutJobDataSchema.parse({
           projectId,
           runId,
-          maxBriefs: input.maxBriefs,
+          maxBriefs,
           triggeredByUserId: userId ?? null,
           triggerSource: "user_action"
         }),

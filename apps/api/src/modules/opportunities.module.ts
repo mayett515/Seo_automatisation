@@ -6,7 +6,9 @@ import {
   Inject,
   Injectable,
   Module,
+  NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -21,11 +23,14 @@ import {
   RankingProofListResponseSchema,
   RankingProofSchema,
   ReasoningTaskSchema,
+  UpdateOpportunityLifecycleRequestSchema,
   type AgentRunListResponse,
   type CreateRankingProofRequest,
+  type OpportunityExplorerOpportunity,
   type OpportunityExplorerListResponse,
   type RankingProof,
-  type RankingProofListResponse
+  type RankingProofListResponse,
+  type UpdateOpportunityLifecycleRequest
 } from "@localseo/contracts";
 import { agentRuns, opportunities, rankingProofs } from "@localseo/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -142,6 +147,31 @@ export class OpportunitiesService {
 
     return rankingProofToResponse(row);
   }
+
+  async updateOpportunityLifecycle(
+    projectId: string,
+    opportunityId: string,
+    input: UpdateOpportunityLifecycleRequest,
+    decidedByUserId?: string
+  ): Promise<OpportunityExplorerOpportunity> {
+    const db = this.database.requireDb();
+    const [row] = await db
+      .update(opportunities)
+      .set({
+        status: input.status,
+        statusReason: input.reason ?? null,
+        decidedByUserId: decidedByUserId ?? null,
+        updatedAt: new Date()
+      })
+      .where(and(eq(opportunities.id, opportunityId), eq(opportunities.projectId, projectId)))
+      .returning();
+
+    if (!row) {
+      throw new NotFoundException("Opportunity was not found for this project.");
+    }
+
+    return opportunityToResponse(row);
+  }
 }
 
 @Controller("projects/:projectId/ranking-proofs")
@@ -179,6 +209,23 @@ class OpportunitiesController {
   @Get()
   list(@Param("projectId") projectId: string) {
     return this.opportunities.listOpportunities(projectId);
+  }
+
+  @Patch(":opportunityId/status")
+  @RequireProjectPermission("opportunity:decide")
+  updateStatus(
+    @Param("projectId") projectId: string,
+    @Param("opportunityId") opportunityId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    const parsed = UpdateOpportunityLifecycleRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Opportunity decisions require a valid status; rejection requires a reason.");
+    }
+
+    return this.opportunities.updateOpportunityLifecycle(projectId, opportunityId, parsed.data, request.auth?.user.id);
   }
 }
 
@@ -236,6 +283,8 @@ function opportunityToResponse(row: typeof opportunities.$inferSelect) {
     primaryKeyword: row.primaryKeyword,
     score: row.score,
     status: row.status,
+    statusReason: row.statusReason ?? undefined,
+    decidedByUserId: row.decidedByUserId ?? undefined,
     evidenceJson: parsedBrief.success ? parsedBrief.data : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()

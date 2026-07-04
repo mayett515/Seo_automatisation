@@ -1,9 +1,54 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OpportunityScoutOutputSchema, type OpportunityScoutOutput } from "@localseo/contracts";
-import { buildOpportunityScoutEvidencePacket, evaluateOpportunityScoutOutput, scoreOpportunityBrief } from "./index.js";
+import {
+  buildOpportunityScoutEvidencePacket,
+  buildOpportunityScoutPrompt,
+  evaluateOpportunityScoutOutput,
+  opportunityScoutPromptSections,
+  scoreOpportunityBrief
+} from "./index.js";
 
 const projectId = "project-1";
+
+void test("buildOpportunityScoutPrompt is sectioned around the product safety rules", () => {
+  const prompt = buildOpportunityScoutPrompt();
+
+  assert.deepEqual(
+    opportunityScoutPromptSections.map((section) => section.key),
+    [
+      "role",
+      "evidence_and_proof",
+      "classification",
+      "nearby_orte_corridors",
+      "competitor_containment",
+      "german_local_examples",
+      "output_format"
+    ]
+  );
+  assert.match(prompt, /## Evidence And Proof Rules/u);
+  assert.match(prompt, /GSC rows and GSC signals are internal radar only/u);
+  assert.match(prompt, /proven_win only for customer-report-safe ranking facts/u);
+  assert.match(prompt, /Entruempelung Dachau/u);
+  assert.match(prompt, /Dachdecker Markt Indersdorf/u);
+  assert.match(prompt, /Return only JSON matching OpportunityScoutOutput/u);
+  assert.match(prompt, /maxBriefs value from the input packet/u);
+});
+
+void test("accepts empty-evidence scout output as zero persisted briefs", () => {
+  const result = evaluateOpportunityScoutOutput({
+    projectId,
+    output: OpportunityScoutOutputSchema.parse({ briefs: [], groups: [] }),
+    resolvableEvidence: []
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) {
+    return;
+  }
+
+  assert.equal(result.output.briefs.length, 0);
+});
 
 void test("accepts a valid GSC-grouped near-term opportunity and computes score", () => {
   const result = evaluateOpportunityScoutOutput({
@@ -424,6 +469,7 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
   const first = buildOpportunityScoutEvidencePacket({
     projectId,
     generatedAt: "2026-07-03T00:00:00.000Z",
+    maxBriefs: 6,
     gsc: {
       rows: [
         { sourceId: "row-2", query: "b", pageUrl: "https://example.test/b" },
@@ -451,6 +497,7 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
   const second = buildOpportunityScoutEvidencePacket({
     projectId,
     generatedAt: "2026-07-03T00:00:00.000Z",
+    maxBriefs: 6,
     gsc: {
       rows: [...first.gsc.rows].reverse(),
       signals: [...first.gsc.signals].reverse()
@@ -464,6 +511,7 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
   });
 
   assert.deepEqual(second, first);
+  assert.equal(first.maxBriefs, 6);
 });
 
 function rankingProofEvidence(

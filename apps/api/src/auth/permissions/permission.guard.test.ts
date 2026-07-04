@@ -37,8 +37,20 @@ void describe("PermissionGuard", () => {
     assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
   });
 
+  void it("allows editors to decide opportunity lifecycle status", () => {
+    const guard = new PermissionGuard(new TestReflector(["opportunity:decide"]));
+
+    assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
+  });
+
   void it("rejects viewers on privileged project actions", () => {
     const guard = new PermissionGuard(new TestReflector(["release:approve"]));
+
+    assert.throws(() => guard.canActivate(contextFor({ role: "viewer" })), ForbiddenException);
+  });
+
+  void it("rejects viewers from opportunity decisions", () => {
+    const guard = new PermissionGuard(new TestReflector(["opportunity:decide"]));
 
     assert.throws(() => guard.canActivate(contextFor({ role: "viewer" })), ForbiddenException);
   });
