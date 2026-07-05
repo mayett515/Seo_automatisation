@@ -626,6 +626,8 @@ serp_snapshots
   Stores query, searchEngine, device, locale/region, cacheKey, capturedAt,
   status, provider, normalized results, SERP features, engine errors, and
   artifact refs.
+  A row is not customer-safe proof by existence. QA must also check status,
+  freshness, exact result attribution, provider, searchEngine, and result type.
 
 POST /projects/:id/serp-scout/runs
   enqueues a SERP capture job with jobId = snapshotId and job_runs audit.
@@ -633,6 +635,23 @@ POST /projects/:id/serp-scout/runs
   and proof freshness promotion remain later slices. Adapter output that does
   not parse as SerpSnapshot, or belongs to the wrong project/id, records
   adapter_invalid_snapshot as a failed snapshot and stops retrying.
+```
+
+SERP proof policy for the next evidence-wiring slice:
+
+```text
+serp_snapshot can support customer_safe_proof only when:
+  row status = captured
+  row belongs to the project
+  capturedAt is inside the proof freshness max-age
+  evidence locator query matches the snapshot query
+  evidence locator pageUrl resolves to one result inside results
+  observedMetric rank equals the matched result rank
+  matched result is Top 10
+  provider/searchEngine/resultType are allowed for Google-equivalent proof
+
+Brave/Tavily/model-search/generic discovery snapshots may become search_context
+or supporting_context evidence. They cannot support proven_win.
 ```
 
 Explorer backend read baseline:

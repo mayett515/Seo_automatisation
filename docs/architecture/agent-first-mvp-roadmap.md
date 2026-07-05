@@ -486,6 +486,8 @@ snapshot rows/artifacts first
 snapshot capture is deterministic, not a model call
 model cites snapshot sourceIds later
 proof freshness policy required
+not every serp_snapshot is proof-grade
+provider/searchEngine/resultType policy decides whether a snapshot can support proven_win
 ```
 
 Implemented baseline:
@@ -530,6 +532,33 @@ real SERP provider/browser adapter
 competitor page extraction artifacts
 proof freshness enforcement in reports
 automatic promotion from serp_snapshot rows into customer-safe ranking proof
+```
+
+Next SERP evidence wiring slice:
+
+```text
+F.1 wire captured serp_snapshots into Opportunity Scout evidence
+  captured snapshots only
+  failed snapshots excluded
+  exact result match by query + pageUrl + rank
+  proof freshness max-age
+  provider/searchEngine/resultType proof policy
+  generic search_context snapshots cannot support proven_win
+```
+
+Provider strategy for the later live adapter:
+
+```text
+If dedicated SEO APIs are acceptable:
+  Serper is the cheap POC candidate.
+  DataForSEO is the strongest proof-grade production candidate.
+  SerpApi is the mature fallback/reference.
+
+If dedicated SEO APIs are not acceptable:
+  manual ranking_proofs remain customer-safe proof.
+  Brave/Tavily/model search stays discovery/context only.
+  low-volume browser capture can be operator-reviewed evidence, not a default
+  scalable proof provider.
 ```
 
 ### 8. Page Registry And Preview
