@@ -24,13 +24,15 @@ import {
   RankingProofSchema,
   ReasoningTaskSchema,
   UpdateOpportunityLifecycleRequestSchema,
+  UpdateRankingProofStatusRequestSchema,
   type AgentRunListResponse,
   type CreateRankingProofRequest,
   type OpportunityExplorerOpportunity,
   type OpportunityExplorerListResponse,
   type RankingProof,
   type RankingProofListResponse,
-  type UpdateOpportunityLifecycleRequest
+  type UpdateOpportunityLifecycleRequest,
+  type UpdateRankingProofStatusRequest
 } from "@localseo/contracts";
 import { agentRuns, opportunities, rankingProofs } from "@localseo/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -148,6 +150,33 @@ export class OpportunitiesService {
     return rankingProofToResponse(row);
   }
 
+  async updateRankingProofStatus(
+    projectId: string,
+    proofId: string,
+    input: UpdateRankingProofStatusRequest,
+    userId?: string
+  ): Promise<RankingProof> {
+    const db = this.database.requireDb();
+    const invalidating = input.status === "invalidated";
+    const [row] = await db
+      .update(rankingProofs)
+      .set({
+        status: input.status,
+        invalidatedAt: invalidating ? new Date() : null,
+        invalidatedByUserId: invalidating ? (userId ?? null) : null,
+        invalidationReason: invalidating ? input.reason : null,
+        updatedAt: new Date()
+      })
+      .where(and(eq(rankingProofs.id, proofId), eq(rankingProofs.projectId, projectId)))
+      .returning();
+
+    if (!row) {
+      throw new NotFoundException("Ranking proof was not found for this project.");
+    }
+
+    return rankingProofToResponse(row);
+  }
+
   async updateOpportunityLifecycle(
     projectId: string,
     opportunityId: string,
@@ -197,6 +226,25 @@ class RankingProofsController {
     }
 
     return this.opportunities.createRankingProof(projectId, parsed.data, request.auth?.user.id);
+  }
+
+  @Patch(":proofId/status")
+  @RequireProjectPermission("opportunity:evidence")
+  updateStatus(
+    @Param("projectId") projectId: string,
+    @Param("proofId") proofId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    const parsed = UpdateRankingProofStatusRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException(
+        "Ranking proof status requires reviewed or invalidated; invalidation needs a reason."
+      );
+    }
+
+    return this.opportunities.updateRankingProofStatus(projectId, proofId, parsed.data, request.auth?.user.id);
   }
 }
 
@@ -331,6 +379,10 @@ function rankingProofToResponse(row: typeof rankingProofs.$inferSelect): Ranking
     locale: row.locale ?? undefined,
     screenshotArtifactKey: row.screenshotArtifactKey ?? undefined,
     notes: row.notes ?? undefined,
+    status: row.status,
+    invalidatedAt: row.invalidatedAt?.toISOString(),
+    invalidatedByUserId: row.invalidatedByUserId ?? undefined,
+    invalidationReason: row.invalidationReason ?? undefined,
     createdByUserId: row.createdByUserId ?? undefined,
     createdAt: row.createdAt.toISOString()
   });

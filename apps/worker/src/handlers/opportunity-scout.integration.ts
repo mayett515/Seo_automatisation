@@ -11,6 +11,9 @@ import {
   opportunities,
   projects,
   rankingProofs,
+  serpSnapshots,
+  technicalAuditFindings,
+  technicalAuditRuns,
   trackingEvents,
   websiteImportRuns,
   type DatabaseClient
@@ -167,6 +170,240 @@ void describe(
       assert.equal(rows.length, 1);
       assert.equal(rows[0]?.classification, "proven_win");
       assert.equal(rows[0]?.status, "new");
+    });
+
+    void it("loads captured SERP snapshots and technical audit findings as supporting evidence", async () => {
+      const fixture = await createScoutFixture(db);
+      const [capturedSnapshot] = await db
+        .insert(serpSnapshots)
+        .values({
+          projectId: fixture.projectId,
+          status: "captured",
+          query: "entruempelung dachau",
+          searchEngine: "google",
+          device: "desktop",
+          cacheKey: "google:desktop:default-locale:default-region:entruempelung dachau",
+          provider: "mock",
+          resultsJson: [
+            {
+              rank: 7,
+              type: "organic",
+              title: "Entruempelung Dachau",
+              url: "https://customer.example/entruempelung-dachau/",
+              domain: "customer.example"
+            }
+          ],
+          capturedAt: new Date()
+        })
+        .returning();
+      assert.ok(capturedSnapshot);
+      await db.insert(serpSnapshots).values({
+        projectId: fixture.projectId,
+        status: "failed",
+        query: "entruempelung dachau",
+        searchEngine: "google",
+        device: "desktop",
+        cacheKey: "failed",
+        provider: "mock",
+        engineErrorsJson: [{ code: "provider_error", message: "failed" }],
+        capturedAt: new Date("2026-07-04T11:00:00.000Z")
+      });
+      const [auditRun] = await db
+        .insert(technicalAuditRuns)
+        .values({
+          projectId: fixture.projectId,
+          sourceUrl: "https://customer.example/",
+          status: "completed",
+          artifactKey: "website-imports/audit.json",
+          completedAt: new Date("2026-07-04T12:00:00.000Z")
+        })
+        .returning();
+      assert.ok(auditRun);
+      const [finding] = await db
+        .insert(technicalAuditFindings)
+        .values({
+          projectId: fixture.projectId,
+          auditRunId: auditRun.id,
+          checkKey: "metadata.missing_description",
+          category: "metadata",
+          severity: "warning",
+          route: "/entruempelung/",
+          pageUrl: "https://customer.example/entruempelung/",
+          message: "Page is missing a meta description.",
+          evidenceJson: { route: "/entruempelung/" }
+        })
+        .returning();
+      assert.ok(finding);
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-opportunity-scout",
+        outputJson: validOpportunityScoutOutput(fixture, {
+          evidence: [
+            ...validOpportunityScoutOutput(fixture).briefs[0]!.evidence,
+            {
+              sourceType: "serp_snapshot",
+              sourceId: capturedSnapshot.id,
+              locator: { query: capturedSnapshot.query },
+              summary: "Snapshot gives context for current page-one competitors.",
+              strength: "medium",
+              proofTier: "supporting_context"
+            },
+            {
+              sourceType: "technical_audit",
+              sourceId: finding.id,
+              locator: { pageUrl: "https://customer.example/entruempelung/" },
+              summary: "Technical audit found missing description on the generic service page.",
+              strength: "medium",
+              proofTier: "supporting_context"
+            }
+          ]
+        }),
+        diagnostics: { latencyMs: 9 }
+      });
+
+      const result = await executeOpportunityScout({
+        data: { projectId: fixture.projectId, runId: fixture.runId },
+        repository: createDrizzleOpportunityScoutRepository(db),
+        reasoning,
+        objectStorage: new MemoryObjectStorage()
+      });
+
+      assert.equal(result.status, "succeeded");
+      const packet = recordFromUnknown(reasoning.calls[0]?.inputJson);
+      assert.deepEqual(
+        arrayFromUnknown(packet.serpSnapshots).map((snapshot) => recordFromUnknown(snapshot).sourceId),
+        [capturedSnapshot.id]
+      );
+      assert.deepEqual(
+        arrayFromUnknown(packet.technicalAuditFindings).map((auditFinding) => recordFromUnknown(auditFinding).sourceId),
+        [finding.id]
+      );
+    });
+
+    void it("loads technical audit findings only from the latest completed audit run", async () => {
+      const fixture = await createScoutFixture(db);
+      const [oldAuditRun] = await db
+        .insert(technicalAuditRuns)
+        .values({
+          projectId: fixture.projectId,
+          sourceUrl: "https://customer.example/",
+          status: "completed",
+          artifactKey: "website-imports/old-audit.json",
+          completedAt: new Date("2026-07-04T10:00:00.000Z")
+        })
+        .returning();
+      assert.ok(oldAuditRun);
+      await db.insert(technicalAuditFindings).values({
+        projectId: fixture.projectId,
+        auditRunId: oldAuditRun.id,
+        checkKey: "metadata.missing_title",
+        category: "metadata",
+        severity: "warning",
+        route: "/entruempelung/",
+        pageUrl: "https://customer.example/entruempelung/",
+        message: "Old audit finding should be superseded.",
+        evidenceJson: { route: "/entruempelung/" }
+      });
+      await db.insert(technicalAuditRuns).values({
+        projectId: fixture.projectId,
+        sourceUrl: "https://customer.example/",
+        status: "completed",
+        artifactKey: "website-imports/new-clean-audit.json",
+        completedAt: new Date("2026-07-05T10:00:00.000Z")
+      });
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-opportunity-scout",
+        outputJson: validOpportunityScoutOutput(fixture),
+        diagnostics: { latencyMs: 9 }
+      });
+
+      const result = await executeOpportunityScout({
+        data: { projectId: fixture.projectId, runId: fixture.runId },
+        repository: createDrizzleOpportunityScoutRepository(db),
+        reasoning,
+        objectStorage: new MemoryObjectStorage()
+      });
+
+      assert.equal(result.status, "succeeded");
+      const packet = recordFromUnknown(reasoning.calls[0]?.inputJson);
+      assert.deepEqual(arrayFromUnknown(packet.technicalAuditFindings), []);
+    });
+
+    void it("excludes invalidated ranking proof from customer-safe proof resolution", async () => {
+      const fixture = await createScoutFixture(db);
+      await db
+        .update(rankingProofs)
+        .set({
+          status: "invalidated",
+          invalidationReason: "Wrong result was recorded.",
+          invalidatedAt: new Date()
+        })
+        .where(eq(rankingProofs.id, fixture.proofId));
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-opportunity-scout",
+        outputJson: validOpportunityScoutOutput(fixture, {
+          classification: "proven_win",
+          recommendedAction: "monitor",
+          suggestedPageType: "monitor_only",
+          evidence: [rankingProofEvidence(fixture)],
+          missingEvidence: []
+        }),
+        diagnostics: { latencyMs: 9 }
+      });
+
+      await assert.rejects(
+        executeOpportunityScout({
+          data: { projectId: fixture.projectId, runId: fixture.runId },
+          repository: createDrizzleOpportunityScoutRepository(db),
+          reasoning,
+          objectStorage: new MemoryObjectStorage()
+        }),
+        (error) =>
+          error instanceof OpportunityScoutWorkflowError && /qa_rejected:evidence_resolution/u.test(error.message)
+      );
+
+      const packet = recordFromUnknown(reasoning.calls[0]?.inputJson);
+      assert.deepEqual(arrayFromUnknown(packet.rankingProofs), []);
+    });
+
+    void it("excludes stale ranking proof from customer-safe proof resolution", async () => {
+      const fixture = await createScoutFixture(db);
+      await db
+        .update(rankingProofs)
+        .set({ capturedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1_000) })
+        .where(eq(rankingProofs.id, fixture.proofId));
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-opportunity-scout",
+        outputJson: validOpportunityScoutOutput(fixture, {
+          classification: "proven_win",
+          recommendedAction: "monitor",
+          suggestedPageType: "monitor_only",
+          evidence: [rankingProofEvidence(fixture)],
+          missingEvidence: []
+        }),
+        diagnostics: { latencyMs: 9 }
+      });
+
+      await assert.rejects(
+        executeOpportunityScout({
+          data: { projectId: fixture.projectId, runId: fixture.runId },
+          repository: createDrizzleOpportunityScoutRepository(db),
+          reasoning,
+          objectStorage: new MemoryObjectStorage()
+        }),
+        (error) =>
+          error instanceof OpportunityScoutWorkflowError && /qa_rejected:evidence_resolution/u.test(error.message)
+      );
+
+      const packet = recordFromUnknown(reasoning.calls[0]?.inputJson);
+      assert.deepEqual(arrayFromUnknown(packet.rankingProofs), []);
     });
 
     void it("persists AI rejection recommendations as undecided lifecycle rows", async () => {
@@ -519,7 +756,7 @@ async function createScoutFixture(db: DatabaseClient, input: { name?: string } =
       query: "entruempelung dachau",
       pageUrl: "https://customer.example/entruempelung-dachau/",
       rank: 4,
-      capturedAt: new Date("2026-07-03T10:00:00.000Z"),
+      capturedAt: new Date(),
       searchEngine: "google",
       device: "desktop",
       evidenceJson: { entrySource: "manual_operator_entry" }

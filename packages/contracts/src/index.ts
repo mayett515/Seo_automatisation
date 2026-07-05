@@ -17,6 +17,7 @@ export const jobTypes = [
   "website_import",
   "opportunity_scout",
   "serp_scout",
+  "technical_audit",
   "local_analysis",
   "page_generation",
   "seo_qa",
@@ -34,6 +35,7 @@ export const queueNames = [
   "website-import",
   "opportunity-scout",
   "serp-scout",
+  "technical-audit",
   "local-analysis",
   "page-generation",
   "seo-qa",
@@ -126,6 +128,7 @@ export const gscConnectionStatuses = ["connection_required", "connected", "error
 export const gscSyncStatuses = ["queued", "running", "completed", "failed", "cancelled"] as const;
 
 export const websiteImportStatuses = ["queued", "running", "completed", "failed"] as const;
+export const technicalAuditStatuses = ["queued", "running", "completed", "failed"] as const;
 
 export const gscOpportunitySignalTypes = [
   "impressions_no_clicks",
@@ -177,6 +180,7 @@ export const evidenceSourceTypes = [
   "gsc_signal",
   "gsc_row",
   "serp_snapshot",
+  "technical_audit",
   "competitor_snapshot",
   "tracking",
   "field_evidence",
@@ -189,6 +193,18 @@ export const evidenceSourceTypes = [
 export const evidenceStrengths = ["weak", "medium", "strong"] as const;
 export const evidenceProofTiers = ["internal_signal", "supporting_context", "customer_safe_proof"] as const;
 export const rankingProofDevices = ["desktop", "mobile"] as const;
+export const rankingProofStatuses = ["reviewed", "invalidated"] as const;
+export const rankingProofMaxAgeDays = 30 as const;
+export const technicalAuditFindingSeverities = ["info", "warning", "blocker"] as const;
+export const technicalAuditFindingCategories = [
+  "http_status",
+  "indexability",
+  "canonical",
+  "metadata",
+  "schema",
+  "internal_links",
+  "crawl"
+] as const;
 export const nearbyPlaceKinds = ["city", "district", "village", "municipality", "service_area"] as const;
 export const nearbyPlaceAdjacencyReasons = [
   "near_existing_win",
@@ -266,6 +282,7 @@ export const ReleaseVerificationStatusSchema = z.enum(releaseVerificationStatuse
 export const GscConnectionStatusSchema = z.enum(gscConnectionStatuses);
 export const GscSyncStatusSchema = z.enum(gscSyncStatuses);
 export const WebsiteImportStatusSchema = z.enum(websiteImportStatuses);
+export const TechnicalAuditStatusSchema = z.enum(technicalAuditStatuses);
 export const GscOpportunitySignalTypeSchema = z.enum(gscOpportunitySignalTypes);
 export const GscOpportunitySignalStatusSchema = z.enum(gscOpportunitySignalStatuses);
 export const ReasoningTaskSchema = z.enum(reasoningTasks);
@@ -282,6 +299,9 @@ export const EvidenceSourceTypeSchema = z.enum(evidenceSourceTypes);
 export const EvidenceStrengthSchema = z.enum(evidenceStrengths);
 export const EvidenceProofTierSchema = z.enum(evidenceProofTiers);
 export const RankingProofDeviceSchema = z.enum(rankingProofDevices);
+export const RankingProofStatusSchema = z.enum(rankingProofStatuses);
+export const TechnicalAuditFindingSeveritySchema = z.enum(technicalAuditFindingSeverities);
+export const TechnicalAuditFindingCategorySchema = z.enum(technicalAuditFindingCategories);
 export const NearbyPlaceKindSchema = z.enum(nearbyPlaceKinds);
 export const NearbyPlaceAdjacencyReasonSchema = z.enum(nearbyPlaceAdjacencyReasons);
 export const ClusterStrengthSchema = z.enum(clusterStrengths);
@@ -382,6 +402,22 @@ export const CreateRankingProofRequestSchema = z
     notes: z.string().trim().min(1).max(2_000).optional()
   })
   .strict();
+
+export const UpdateRankingProofStatusRequestSchema = z
+  .object({
+    status: RankingProofStatusSchema,
+    reason: z.string().trim().min(1).max(2_000).optional()
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.status === "invalidated" && !value.reason) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "Invalidating ranking proof requires a reason."
+      });
+    }
+  });
 
 export const SerpScoutRequestSchema = z
   .object({
@@ -550,6 +586,24 @@ export const SerpScoutJobDataSchema = SerpScoutRequestSchema.extend({
 }).strict();
 
 export const CreateSerpScoutRunRequestSchema = SerpScoutRequestSchema.omit({ projectId: true }).strict();
+
+export const CreateTechnicalAuditRunRequestSchema = z
+  .object({
+    sourceUrl: WebsiteImportSourceUrlSchema.optional()
+  })
+  .strict();
+
+export const TechnicalAuditJobDataSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    auditRunId: z.string().min(1),
+    sourceUrl: WebsiteImportSourceUrlSchema,
+    maxAttempts: z.number().int().positive().optional(),
+    jobRunId: z.string().min(1).optional(),
+    triggeredByUserId: z.string().min(1).nullable().optional(),
+    triggerSource: z.string().min(1).optional()
+  })
+  .strict();
 
 export const ApprovedReleaseArtifactPageSchema = z.object({
   releasePlanItemId: z.string().min(1),
@@ -733,6 +787,39 @@ export const WebsiteImportRunSchema = z.object({
 export const LatestWebsiteImportResponseSchema = z.object({
   projectId: ProjectIdSchema,
   importRun: WebsiteImportRunSchema.optional()
+});
+
+export const TechnicalAuditFindingSchema = z.object({
+  id: z.string().min(1),
+  projectId: ProjectIdSchema,
+  auditRunId: z.string().min(1),
+  checkKey: z.string().trim().min(1).max(160),
+  category: TechnicalAuditFindingCategorySchema,
+  severity: TechnicalAuditFindingSeveritySchema,
+  route: z.string().min(1).optional(),
+  pageUrl: HttpUrlSchema.optional(),
+  message: z.string().trim().min(1).max(1_000),
+  evidence: z.record(z.string(), z.unknown()).default({}),
+  createdAt: z.string().datetime()
+});
+
+export const TechnicalAuditRunSchema = z.object({
+  auditRunId: z.string().min(1),
+  projectId: ProjectIdSchema,
+  sourceUrl: WebsiteImportSourceUrlSchema,
+  status: TechnicalAuditStatusSchema,
+  artifactKey: z.string().min(1).optional(),
+  summary: z.record(z.string(), z.unknown()).optional(),
+  failure: z.record(z.string(), z.unknown()).optional(),
+  findings: z.array(TechnicalAuditFindingSchema).default([]),
+  createdAt: z.string().datetime(),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional()
+});
+
+export const LatestTechnicalAuditResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  auditRun: TechnicalAuditRunSchema.optional()
 });
 
 export const GscSearchAnalyticsRowSchema = z.object({
@@ -996,6 +1083,10 @@ export const SerpScoutQueueResponseSchema = QueueJobSchema.extend({
   snapshotId: z.string().min(1).optional(),
   query: z.string().trim().min(1).max(200).optional()
 });
+export const TechnicalAuditQueueResponseSchema = QueueJobSchema.extend({
+  auditRunId: z.string().min(1).optional(),
+  sourceUrl: WebsiteImportSourceUrlSchema.optional()
+});
 
 export const RankingProofSchema = z.object({
   id: z.string().min(1),
@@ -1009,6 +1100,10 @@ export const RankingProofSchema = z.object({
   locale: z.string().min(1).optional(),
   screenshotArtifactKey: z.string().min(1).optional(),
   notes: z.string().min(1).optional(),
+  status: RankingProofStatusSchema,
+  invalidatedAt: z.string().datetime().optional(),
+  invalidatedByUserId: z.string().min(1).optional(),
+  invalidationReason: z.string().min(1).optional(),
   createdByUserId: z.string().min(1).optional(),
   createdAt: z.string().datetime()
 });
@@ -1082,6 +1177,7 @@ export type DeployJobData = z.output<typeof DeployJobDataSchema>;
 export type RollbackJobData = z.output<typeof RollbackJobDataSchema>;
 export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
 export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
+export type TechnicalAuditJobData = z.output<typeof TechnicalAuditJobDataSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
@@ -1101,11 +1197,16 @@ export type GscSyncRequest = z.output<typeof GscSyncRequestSchema>;
 export type GscSyncRun = z.output<typeof GscSyncRunSchema>;
 export type WebsiteImportRun = z.output<typeof WebsiteImportRunSchema>;
 export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportResponseSchema>;
+export type TechnicalAuditFinding = z.output<typeof TechnicalAuditFindingSchema>;
+export type TechnicalAuditRun = z.output<typeof TechnicalAuditRunSchema>;
+export type LatestTechnicalAuditResponse = z.output<typeof LatestTechnicalAuditResponseSchema>;
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
 export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;
+export type UpdateRankingProofStatusRequest = z.output<typeof UpdateRankingProofStatusRequestSchema>;
 export type SerpScoutRequest = z.output<typeof SerpScoutRequestSchema>;
 export type SerpScoutJobData = z.output<typeof SerpScoutJobDataSchema>;
 export type CreateSerpScoutRunRequest = z.output<typeof CreateSerpScoutRunRequestSchema>;
+export type CreateTechnicalAuditRunRequest = z.output<typeof CreateTechnicalAuditRunRequestSchema>;
 export type SerpSearchResult = z.output<typeof SerpSearchResultSchema>;
 export type SerpFeature = z.output<typeof SerpFeatureSchema>;
 export type SerpEngineError = z.output<typeof SerpEngineErrorSchema>;
@@ -1137,6 +1238,7 @@ export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
 export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
 export type SerpScoutQueueResponse = z.output<typeof SerpScoutQueueResponseSchema>;
+export type TechnicalAuditQueueResponse = z.output<typeof TechnicalAuditQueueResponseSchema>;
 export type RankingProof = z.output<typeof RankingProofSchema>;
 export type RankingProofListResponse = z.output<typeof RankingProofListResponseSchema>;
 export type AiReasoningEnqueueFailureCode = z.output<typeof AiReasoningEnqueueFailureCodeSchema>;
@@ -1158,6 +1260,7 @@ export type ReleaseVerificationStatus = z.output<typeof ReleaseVerificationStatu
 export type GscConnectionStatus = z.output<typeof GscConnectionStatusSchema>;
 export type GscSyncStatus = z.output<typeof GscSyncStatusSchema>;
 export type WebsiteImportStatus = z.output<typeof WebsiteImportStatusSchema>;
+export type TechnicalAuditStatus = z.output<typeof TechnicalAuditStatusSchema>;
 export type GscOpportunitySignalType = z.output<typeof GscOpportunitySignalTypeSchema>;
 export type GscOpportunitySignalStatus = z.output<typeof GscOpportunitySignalStatusSchema>;
 export type ReasoningTask = z.output<typeof ReasoningTaskSchema>;
@@ -1171,6 +1274,9 @@ export type EvidenceSourceType = z.output<typeof EvidenceSourceTypeSchema>;
 export type EvidenceStrength = z.output<typeof EvidenceStrengthSchema>;
 export type EvidenceProofTier = z.output<typeof EvidenceProofTierSchema>;
 export type RankingProofDevice = z.output<typeof RankingProofDeviceSchema>;
+export type RankingProofStatus = z.output<typeof RankingProofStatusSchema>;
+export type TechnicalAuditFindingSeverity = z.output<typeof TechnicalAuditFindingSeveritySchema>;
+export type TechnicalAuditFindingCategory = z.output<typeof TechnicalAuditFindingCategorySchema>;
 export type OpportunityGroupSource = z.output<typeof OpportunityGroupSourceSchema>;
 export type SerpSnapshotStatus = z.output<typeof SerpSnapshotStatusSchema>;
 export type SerpResultType = z.output<typeof SerpResultTypeSchema>;

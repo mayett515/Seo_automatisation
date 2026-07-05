@@ -1,7 +1,11 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { agentRuns, customers, opportunities, projects, rankingProofs, users, type DatabaseClient } from "@localseo/db";
-import { OpportunityBriefSchema, UpdateOpportunityLifecycleRequestSchema } from "@localseo/contracts";
+import {
+  OpportunityBriefSchema,
+  UpdateOpportunityLifecycleRequestSchema,
+  UpdateRankingProofStatusRequestSchema
+} from "@localseo/contracts";
 import { eq } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
 import { OpportunitiesService } from "./opportunities.module.js";
@@ -115,6 +119,42 @@ void describe(
         list.proofs.map((proof) => proof.query),
         ["dachdecker indersdorf", "dachdecker dachau"]
       );
+    });
+
+    void it("invalidates and re-reviews ranking proof with user provenance", async () => {
+      const fixture = await createProjectFixture(db, "Proof Status");
+      const service = new OpportunitiesService(testDatabaseService(db));
+      const proof = await service.createRankingProof(fixture.projectId, {
+        query: "dachdecker dachau",
+        pageUrl: "https://customer.example/dachdecker-dachau/",
+        rank: 7,
+        capturedAt: "2026-07-03T10:00:00.000Z",
+        searchEngine: "google",
+        device: "desktop"
+      });
+
+      const invalidated = await service.updateRankingProofStatus(
+        fixture.projectId,
+        proof.id,
+        { status: "invalidated", reason: "Rank was entered for the wrong URL." },
+        fixture.userId
+      );
+
+      assert.equal(invalidated.status, "invalidated");
+      assert.equal(invalidated.invalidatedByUserId, fixture.userId);
+      assert.equal(invalidated.invalidationReason, "Rank was entered for the wrong URL.");
+      assert.ok(invalidated.invalidatedAt);
+
+      const reviewed = await service.updateRankingProofStatus(fixture.projectId, proof.id, { status: "reviewed" });
+
+      assert.equal(reviewed.status, "reviewed");
+      assert.equal(reviewed.invalidatedAt, undefined);
+      assert.equal(reviewed.invalidatedByUserId, undefined);
+      assert.equal(reviewed.invalidationReason, undefined);
+    });
+
+    void it("rejects invalidating ranking proof without a reason", () => {
+      assert.equal(UpdateRankingProofStatusRequestSchema.safeParse({ status: "invalidated" }).success, false);
     });
 
     void it("lists explorer opportunities only for the requested project", async () => {

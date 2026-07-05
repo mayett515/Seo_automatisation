@@ -303,7 +303,7 @@ All schemas live in `packages/contracts`, parsed with strict Zod (unknown keys r
 ```text
 EvidenceRef {
   sourceType: website_import | gsc_signal | gsc_row | serp_snapshot
-            | competitor_snapshot | tracking | field_evidence | manual_note
+            | technical_audit | competitor_snapshot | tracking | field_evidence | manual_note
             | existing_page | ranking_proof | customer_memory
   sourceId?: string          // required above internal_signal, must resolve
   locator?: { url? route? query? pageUrl? sectionId? }
@@ -322,6 +322,7 @@ Invariants enforced by QA, not by prayer:
 gsc_signal / gsc_row evidence can never carry proofTier customer_safe_proof
 customer_safe_proof requires sourceType ranking_proof for MVP
 serp_snapshot is supporting_context by default and cannot prove proven_win unless a future ADR promotes a deterministic proof source
+technical_audit is supporting_context only; it may explain site issues but never rank truth
 competitor_snapshot excerpt length is hard-capped; verbatim reuse downstream is forbidden
 ```
 
@@ -550,17 +551,19 @@ tracking summary
 existing routes
 existing open opportunity keys
 ranking_proofs manual ranking evidence
+captured serp_snapshots as supporting context
+technical_audit findings as supporting context
 ```
 
 Manual evidence bridge:
 
 ```text
 ranking_proof is now backed by project-owned ranking_proofs rows.
-serp_snapshot, field_evidence, and manual_note remain contract vocabulary until
-their own project-owned rows/artifacts exist.
+Only reviewed, fresh ranking_proofs enter Opportunity Scout proof resolution.
+Invalidated or stale ranking_proofs are excluded and therefore fail evidence_resolution if cited.
 The model cannot improve a proof row by claim: proven_win requires the brief's
 ranking_proof observed rank, query, and pageUrl to match the cited row.
-Before automated SERP snapshots exist, Opportunity Explorer should render the
+Opportunity Explorer should render the
 manual ranking-evidence entry path: query, page URL, observed rank, checked-at date,
 optional screenshot artifact key, and notes.
 ```
@@ -597,6 +600,9 @@ implemented in the worker baseline
   API/operator enqueue endpoint
   opportunity:run project permission
   manual ranking_proofs source rows and API bridge
+  ranking_proofs reviewed/invalidated status and freshness filtering
+  captured serp_snapshots loaded into the evidence packet as supporting_context only
+  technical_audit findings loaded into the evidence packet as supporting_context only
   active-run DB/API guard for queued/running scout runs
   Explorer read APIs for opportunities and agent run summaries
   operator lifecycle decision API with reason/user provenance
@@ -645,11 +651,11 @@ SERP proof policy after ADR 0015:
 ```text
 manual ranking_proofs are the only customer-safe ranking proof for MVP.
 
-serp_snapshot evidence may be loaded as supporting_context when:
+serp_snapshot evidence is loaded as supporting_context when:
   row status = captured
   row belongs to the project
   failed snapshots are excluded
-  evidence locator query/pageUrl/rank can be explained from the stored row
+  it is cited as context, not as customer_safe_proof
 
 serp_snapshot evidence cannot support proven_win unless a future ADR explicitly
 promotes a deterministic proof source and defines freshness, result attribution,
@@ -657,6 +663,26 @@ provider/searchEngine/resultType, and review policy.
 
 Brave/Tavily/model-search/generic browser discovery snapshots stay internal_radar
 or supporting_context evidence. They cannot support customer_safe_proof.
+```
+
+Technical audit baseline:
+
+```text
+technical_audit_runs
+  worker run ledger for own-site technical audits.
+
+technical_audit_findings
+  project-owned source rows for sourceType = technical_audit evidence.
+  First vertical derives deterministic findings from crawler artifacts:
+  HTTP status, indexability, canonical, metadata, schema, internal links,
+  and crawl skips.
+
+POST /projects/:id/technical-audit/runs
+  enqueues a project-scoped audit job through BullMQ and job_runs.
+  The worker uses CrawlerPort, stores the crawl artifact key, derives findings
+  through pure domain functions, and persists findings for Opportunity Scout.
+  TechnicalAudit observes and explains site issues; it does not create
+  opportunities and never becomes ranking proof.
 ```
 
 Explorer backend read baseline:

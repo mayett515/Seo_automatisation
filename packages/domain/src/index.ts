@@ -4,6 +4,8 @@ import type {
   ReleaseCheck,
   ReleasePlan,
   ReleaseVerificationStatus,
+  TechnicalAuditFindingCategory,
+  TechnicalAuditFindingSeverity,
   WebsiteImportRun
 } from "@localseo/contracts";
 
@@ -236,6 +238,35 @@ export type WebsiteImportEvidenceInput = {
   pages: readonly WebsiteImportEvidencePageInput[];
 };
 
+export type TechnicalAuditPageInput = WebsiteImportEvidencePageInput & {
+  url: string;
+  status: number;
+  canonical?: string;
+  robots?: string;
+  internalLinks?: readonly string[];
+};
+
+export type TechnicalAuditSkippedUrlInput = {
+  url: string;
+  reason: string;
+};
+
+export type TechnicalAuditEvidenceInput = {
+  sourceUrl: string;
+  pages: readonly TechnicalAuditPageInput[];
+  skippedUrls?: readonly TechnicalAuditSkippedUrlInput[];
+};
+
+export type TechnicalAuditFindingDraft = {
+  checkKey: string;
+  category: TechnicalAuditFindingCategory;
+  severity: TechnicalAuditFindingSeverity;
+  route?: string;
+  pageUrl?: string;
+  message: string;
+  evidence: Record<string, unknown>;
+};
+
 type ImportFactAccumulator = {
   value: string;
   sourceRoutes: Set<string>;
@@ -291,6 +322,204 @@ export function deriveWebsiteImportFacts(input: WebsiteImportEvidenceInput): Web
     services,
     areas
   };
+}
+
+export function deriveTechnicalAuditFindings(input: TechnicalAuditEvidenceInput): TechnicalAuditFindingDraft[] {
+  const findings: TechnicalAuditFindingDraft[] = [];
+
+  for (const page of input.pages) {
+    findings.push(...auditHttpStatus(page));
+    findings.push(...auditIndexability(page));
+    findings.push(...auditCanonical(page));
+    findings.push(...auditMetadata(page));
+    findings.push(...auditSchema(page));
+    findings.push(...auditInternalLinks(page));
+  }
+
+  for (const skipped of input.skippedUrls ?? []) {
+    findings.push({
+      checkKey: "crawl.skipped_url",
+      category: "crawl",
+      severity: "info",
+      pageUrl: skipped.url,
+      message: "Crawler skipped a URL during technical audit.",
+      evidence: { reason: skipped.reason }
+    });
+  }
+
+  return findings.sort(compareTechnicalAuditFindings);
+}
+
+function auditHttpStatus(page: TechnicalAuditPageInput): TechnicalAuditFindingDraft[] {
+  if (page.status >= 500) {
+    return [
+      technicalFinding(page, "http_status.server_error", "http_status", "blocker", "Page returned a server error.", {
+        status: page.status
+      })
+    ];
+  }
+
+  if (page.status >= 400) {
+    return [
+      technicalFinding(page, "http_status.client_error", "http_status", "blocker", "Page returned a client error.", {
+        status: page.status
+      })
+    ];
+  }
+
+  if (page.status >= 300) {
+    return [
+      technicalFinding(page, "http_status.redirect", "http_status", "warning", "Page returned a redirect.", {
+        status: page.status
+      })
+    ];
+  }
+
+  return [];
+}
+
+function auditIndexability(page: TechnicalAuditPageInput): TechnicalAuditFindingDraft[] {
+  const robots = page.robots?.toLowerCase();
+
+  if (robots?.includes("noindex")) {
+    return [
+      technicalFinding(page, "indexability.noindex", "indexability", "blocker", "Page is marked noindex.", {
+        robots: page.robots
+      })
+    ];
+  }
+
+  return [];
+}
+
+function auditCanonical(page: TechnicalAuditPageInput): TechnicalAuditFindingDraft[] {
+  if (!page.canonical || page.canonical.trim().length === 0) {
+    return [
+      technicalFinding(page, "canonical.missing", "canonical", "warning", "Page has no canonical URL.", {
+        url: page.url
+      })
+    ];
+  }
+
+  if (!isHttpUrl(page.canonical)) {
+    return [
+      technicalFinding(page, "canonical.invalid", "canonical", "warning", "Page has an invalid canonical URL.", {
+        canonical: page.canonical
+      })
+    ];
+  }
+
+  return [];
+}
+
+function auditMetadata(page: TechnicalAuditPageInput): TechnicalAuditFindingDraft[] {
+  const findings: TechnicalAuditFindingDraft[] = [];
+
+  if (!page.title || page.title.trim().length === 0) {
+    findings.push(
+      technicalFinding(page, "metadata.missing_title", "metadata", "warning", "Page is missing a title.", {})
+    );
+  }
+
+  if (!page.metaDescription || page.metaDescription.trim().length === 0) {
+    findings.push(
+      technicalFinding(
+        page,
+        "metadata.missing_description",
+        "metadata",
+        "warning",
+        "Page is missing a meta description.",
+        {}
+      )
+    );
+  }
+
+  if (!page.h1 || page.h1.trim().length === 0) {
+    findings.push(technicalFinding(page, "metadata.missing_h1", "metadata", "warning", "Page is missing an H1.", {}));
+  }
+
+  return findings;
+}
+
+function auditSchema(page: TechnicalAuditPageInput): TechnicalAuditFindingDraft[] {
+  if ((page.schemaTypes?.length ?? 0) > 0) {
+    return [];
+  }
+
+  return [
+    technicalFinding(page, "schema.missing", "schema", "info", "Page has no detected structured data.", {
+      schemaTypes: []
+    })
+  ];
+}
+
+function auditInternalLinks(page: TechnicalAuditPageInput): TechnicalAuditFindingDraft[] {
+  if ((page.internalLinks?.length ?? 0) > 0 || page.route === "/") {
+    return [];
+  }
+
+  return [
+    technicalFinding(
+      page,
+      "internal_links.none_detected",
+      "internal_links",
+      "warning",
+      "Page has no detected internal links.",
+      {
+        route: page.route
+      }
+    )
+  ];
+}
+
+function technicalFinding(
+  page: TechnicalAuditPageInput,
+  checkKey: string,
+  category: TechnicalAuditFindingCategory,
+  severity: TechnicalAuditFindingSeverity,
+  message: string,
+  evidence: Record<string, unknown>
+): TechnicalAuditFindingDraft {
+  return {
+    checkKey,
+    category,
+    severity,
+    route: page.route,
+    pageUrl: page.url,
+    message,
+    evidence
+  };
+}
+
+function compareTechnicalAuditFindings(left: TechnicalAuditFindingDraft, right: TechnicalAuditFindingDraft): number {
+  const leftLocation = left.route ?? left.pageUrl ?? "";
+  const rightLocation = right.route ?? right.pageUrl ?? "";
+  return (
+    severityRank(right.severity) - severityRank(left.severity) ||
+    leftLocation.localeCompare(rightLocation) ||
+    left.checkKey.localeCompare(right.checkKey)
+  );
+}
+
+function severityRank(severity: TechnicalAuditFindingSeverity): number {
+  if (severity === "blocker") {
+    return 3;
+  }
+
+  if (severity === "warning") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function deriveBrandFact(input: WebsiteImportEvidenceInput): WebsiteImportFacts["brand"] {

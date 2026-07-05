@@ -16,6 +16,7 @@ import {
   type AiReasoningEnqueueFailureCode,
   CreateOpportunityScoutRunRequestSchema,
   CreateSerpScoutRunRequestSchema,
+  CreateTechnicalAuditRunRequestSchema,
   CreateWebsiteImportRequestSchema,
   LatestWebsiteImportResponseSchema,
   MainPreviewSchema,
@@ -24,21 +25,26 @@ import {
   ProjectSummarySchema,
   SerpScoutJobDataSchema,
   SerpScoutQueueResponseSchema,
+  TechnicalAuditJobDataSchema,
+  TechnicalAuditQueueResponseSchema,
   WebsiteImportRunSchema,
   WebsiteImportQueueResponseSchema,
   type CreateOpportunityScoutRunRequest,
   type CreateSerpScoutRunRequest,
+  type CreateTechnicalAuditRunRequest,
   type LatestWebsiteImportResponse,
   type MainPreview,
   type OpportunityScoutQueueResponse,
   type ProjectSummary,
   type SerpScoutQueueResponse,
+  type TechnicalAuditQueueResponse,
   type WebsiteImportQueueResponse
 } from "@localseo/contracts";
 import {
   agentRuns,
   isDatabaseUniqueViolation,
   mainWebsites,
+  technicalAuditRuns,
   websiteImportRuns,
   type DatabaseClient
 } from "@localseo/db";
@@ -417,6 +423,129 @@ export class ProjectsService {
     });
   }
 
+  async queueTechnicalAudit(
+    projectId: string,
+    input: CreateTechnicalAuditRunRequest = {},
+    userId?: string
+  ): Promise<TechnicalAuditQueueResponse> {
+    if (!this.database.isConfigured()) {
+      if (!input.sourceUrl) {
+        throw new BadRequestException("Technical audit requires sourceUrl when database is not configured.");
+      }
+
+      return TechnicalAuditQueueResponseSchema.parse({
+        jobId: randomUUID(),
+        projectId,
+        sourceUrl: input.sourceUrl,
+        type: "technical_audit",
+        status: "dry_run",
+        inputRef: input.sourceUrl,
+        createdBy: userId,
+        message: "Database is not configured. Technical audit persistence is in explicit dry-run mode.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const db = this.database.requireDb();
+    const sourceUrl = await resolveTechnicalAuditSourceUrl(db, projectId, input.sourceUrl);
+    const auditRunId = randomUUID();
+    const jobId = `technical_audit:${auditRunId}`;
+    const jobData = TechnicalAuditJobDataSchema.parse({
+      projectId,
+      auditRunId,
+      sourceUrl,
+      triggeredByUserId: userId ?? null,
+      triggerSource: "user_action"
+    });
+
+    if (!this.queues.isQueueConfigured("technical-audit")) {
+      await this.queues.enqueue({
+        queueName: "technical-audit",
+        jobName: "technical_audit",
+        jobId,
+        data: jobData,
+        audit: {
+          projectId,
+          type: "technical_audit",
+          inputRef: auditRunId,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
+        }
+      });
+
+      return TechnicalAuditQueueResponseSchema.parse({
+        jobId,
+        projectId,
+        auditRunId,
+        sourceUrl,
+        type: "technical_audit",
+        status: "dry_run",
+        inputRef: auditRunId,
+        createdBy: userId,
+        message: "Technical audit queue is not configured. This is an explicit dry-run response.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    await db.insert(technicalAuditRuns).values({
+      id: auditRunId,
+      projectId,
+      sourceUrl,
+      status: "queued"
+    });
+
+    let enqueued: boolean;
+
+    try {
+      enqueued = await this.queues.enqueue({
+        queueName: "technical-audit",
+        jobName: "technical_audit",
+        jobId,
+        data: jobData,
+        options: {
+          attempts: 3,
+          backoff: {
+            type: "exponential",
+            delay: 5000
+          }
+        },
+        audit: {
+          projectId,
+          type: "technical_audit",
+          inputRef: auditRunId,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
+        }
+      });
+    } catch (error) {
+      await markTechnicalAuditQueueFailure(db, auditRunId, normalizeTechnicalAuditQueueFailure(error));
+      throw error;
+    }
+
+    if (!enqueued) {
+      await markTechnicalAuditQueueFailure(
+        db,
+        auditRunId,
+        "Technical audit queue was not configured after run creation."
+      );
+    }
+
+    return TechnicalAuditQueueResponseSchema.parse({
+      jobId,
+      projectId,
+      auditRunId,
+      sourceUrl,
+      type: "technical_audit",
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: auditRunId,
+      createdBy: userId,
+      message: enqueued ? undefined : "Technical audit queue is not configured. This is an explicit dry-run response.",
+      createdAt: new Date().toISOString()
+    });
+  }
+
   getMainPreview(projectId: string): MainPreview {
     return MainPreviewSchema.parse({
       projectId,
@@ -482,6 +611,18 @@ class ProjectsController {
     return this.projects.queueSerpScout(projectId, parsed.data, request.auth?.user.id);
   }
 
+  @Post(":id/technical-audit/runs")
+  @RequireProjectPermission("website:import")
+  runTechnicalAudit(@Param("id") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
+    const parsed = CreateTechnicalAuditRunRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Technical audit requires an optional http(s) sourceUrl.");
+    }
+
+    return this.projects.queueTechnicalAudit(projectId, parsed.data, request.auth?.user.id);
+  }
+
   @Get(":id/main-preview")
   getMainPreview(@Param("id") projectId: string) {
     return this.projects.getMainPreview(projectId);
@@ -528,6 +669,29 @@ async function upsertMainWebsite(db: DatabaseClient, projectId: string, sourceUr
   return inserted.id;
 }
 
+async function resolveTechnicalAuditSourceUrl(
+  db: DatabaseClient,
+  projectId: string,
+  sourceUrl: string | undefined
+): Promise<string> {
+  if (sourceUrl) {
+    return sourceUrl;
+  }
+
+  const [website] = await db
+    .select({ sourceUrl: mainWebsites.sourceUrl })
+    .from(mainWebsites)
+    .where(eq(mainWebsites.projectId, projectId))
+    .orderBy(desc(mainWebsites.createdAt))
+    .limit(1);
+
+  if (!website) {
+    throw new BadRequestException("Technical audit requires sourceUrl or an imported main website.");
+  }
+
+  return website.sourceUrl;
+}
+
 async function markWebsiteImportQueueFailure(db: DatabaseClient, importRunId: string, message: string): Promise<void> {
   await db
     .update(websiteImportRuns)
@@ -562,8 +726,27 @@ async function markOpportunityScoutQueueFailure(
     .where(eq(agentRuns.id, runId));
 }
 
+async function markTechnicalAuditQueueFailure(db: DatabaseClient, auditRunId: string, message: string): Promise<void> {
+  await db
+    .update(technicalAuditRuns)
+    .set({
+      status: "failed",
+      failureJson: {
+        message
+      },
+      completedAt: new Date(),
+      updatedAt: new Date()
+    })
+    .where(eq(technicalAuditRuns.id, auditRunId));
+}
+
 function normalizeWebsiteImportQueueFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : "website_import_queue_failed";
+  return message.slice(0, 500);
+}
+
+function normalizeTechnicalAuditQueueFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : "technical_audit_queue_failed";
   return message.slice(0, 500);
 }
 

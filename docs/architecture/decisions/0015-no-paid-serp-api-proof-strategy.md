@@ -12,7 +12,9 @@ That was an over-broad provider-research branch. The product constraint is now e
 Current implementation facts:
 
 - `ranking_proofs` exists as a project-owned manual proof table.
-- `serp_snapshots` exists as a project-owned snapshot table, but captured rows are not yet promoted into Opportunity Scout proof.
+- `ranking_proofs` can be invalidated/re-reviewed and stale proof rows are excluded from Opportunity Scout proof resolution.
+- `serp_snapshots` exists as a project-owned snapshot table; captured rows may enter Opportunity Scout as supporting context, never as customer-safe proof.
+- `technical_audit_findings` exists as a project-owned own-site audit evidence source; findings may support opportunity decisions but cannot prove rankings.
 - GSC is internal radar and cannot be customer-facing rank proof.
 - AI reasoning output remains untrusted until Zod parsing, deterministic QA, evidence resolution, and human decisions.
 

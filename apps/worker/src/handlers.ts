@@ -46,6 +46,11 @@ import {
   SerpScoutTerminalError
 } from "./handlers/serp-scout.js";
 import {
+  handleTechnicalAuditJob,
+  TechnicalAuditConfigurationError,
+  TechnicalAuditEvidenceError
+} from "./handlers/technical-audit.js";
+import {
   handleWebsiteImportJob,
   WebsiteImportConfigurationError,
   WebsiteImportEvidenceError
@@ -146,6 +151,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     return handleSerpScoutJob(job, sharedDbHandle, sharedSerpScout);
   }
 
+  if (job.queueName === "technical-audit" || job.name === "technical_audit") {
+    return handleTechnicalAuditJob(job, sharedDbHandle, sharedCrawler);
+  }
+
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
@@ -156,6 +165,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
 export { parseOpportunityScoutJobData } from "./handlers/opportunity-scout.js";
 export { parseSerpScoutJobData } from "./handlers/serp-scout.js";
+export { parseTechnicalAuditJobData } from "./handlers/technical-audit.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
 
 export function isTerminalWorkerError(error: unknown): boolean {
@@ -175,6 +185,8 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof SerpScoutConfigurationError ||
     error instanceof SerpScoutEvidenceError ||
     error instanceof SerpScoutTerminalError ||
+    error instanceof TechnicalAuditConfigurationError ||
+    error instanceof TechnicalAuditEvidenceError ||
     isTerminalGscSyncFailure(error)
   );
 }

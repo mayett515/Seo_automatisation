@@ -5,6 +5,7 @@ import {
   buildReleaseDeploymentKey,
   canDeployRelease,
   classifyRollbackReconciliation,
+  deriveTechnicalAuditFindings,
   deriveWebsiteImportFacts,
   decideReleaseReadiness,
   decideReleaseVerificationStatus,
@@ -172,6 +173,56 @@ void describe("deriveWebsiteImportFacts", () => {
         areas: []
       }
     );
+  });
+});
+
+void describe("deriveTechnicalAuditFindings", () => {
+  void it("derives deterministic basic technical audit findings from crawl evidence", () => {
+    const findings = deriveTechnicalAuditFindings({
+      sourceUrl: "https://example.test/",
+      pages: [
+        {
+          url: "https://example.test/broken/",
+          route: "/broken/",
+          status: 404,
+          title: "",
+          metaDescription: "",
+          h1: "",
+          internalLinks: [],
+          schemaTypes: []
+        },
+        {
+          url: "https://example.test/noindex/",
+          route: "/noindex/",
+          status: 200,
+          title: "Noindex",
+          metaDescription: "Noindex page",
+          h1: "Noindex",
+          canonical: "https://example.test/noindex/",
+          robots: "noindex",
+          internalLinks: ["/"],
+          schemaTypes: ["LocalBusiness"]
+        }
+      ],
+      skippedUrls: [{ url: "https://example.test/private/", reason: "robots_disallow" }]
+    });
+
+    assert.deepEqual(
+      findings.map((finding) => finding.checkKey),
+      [
+        "http_status.client_error",
+        "indexability.noindex",
+        "canonical.missing",
+        "internal_links.none_detected",
+        "metadata.missing_description",
+        "metadata.missing_h1",
+        "metadata.missing_title",
+        "schema.missing",
+        "crawl.skipped_url"
+      ]
+    );
+    assert.equal(findings[0]?.severity, "blocker");
+    assert.equal(findings.at(-1)?.severity, "info");
   });
 });
 

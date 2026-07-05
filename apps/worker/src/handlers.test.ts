@@ -5,6 +5,7 @@ import {
   MockSerpScoutAdapter,
   NotConfiguredReasoningAdapter,
   OpenCodeGoReasoningAdapter,
+  type CrawlerPort,
   type ObjectStoragePort,
   type SerpScoutResult
 } from "@localseo/adapters";
@@ -41,6 +42,13 @@ import {
   SerpScoutTerminalError,
   type SerpScoutRepository
 } from "./handlers/serp-scout.js";
+import {
+  executeTechnicalAudit,
+  parseTechnicalAuditJobData,
+  TechnicalAuditConfigurationError,
+  TechnicalAuditEvidenceError,
+  type TechnicalAuditRepository
+} from "./handlers/technical-audit.js";
 import {
   executeWebsiteImport,
   parseWebsiteImportJobData,
@@ -122,6 +130,40 @@ void describe("parseWebsiteImportJobData", () => {
           sourceUrl: "https://example.test/"
         }),
       /require projectId, importRunId, and sourceUrl/u
+    );
+  });
+});
+
+void describe("parseTechnicalAuditJobData", () => {
+  void it("accepts valid technical audit job data", () => {
+    assert.deepEqual(
+      parseTechnicalAuditJobData({
+        projectId: "project-1",
+        auditRunId: "audit-1",
+        sourceUrl: "https://example.test/",
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }),
+      {
+        projectId: "project-1",
+        auditRunId: "audit-1",
+        sourceUrl: "https://example.test/",
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }
+    );
+  });
+
+  void it("rejects missing technical audit identifiers", () => {
+    assert.throws(
+      () =>
+        parseTechnicalAuditJobData({
+          projectId: "project-1",
+          sourceUrl: "https://example.test/"
+        }),
+      /require projectId, auditRunId, and sourceUrl/u
     );
   });
 });
@@ -298,6 +340,22 @@ void describe("routeJob", () => {
     );
   });
 
+  void it("routes technical audit jobs to the audit handler instead of returning success metadata", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "technical-audit-job-1",
+        queueName: "technical-audit",
+        name: "technical_audit",
+        data: {
+          projectId: "project-1",
+          auditRunId: "audit-1",
+          sourceUrl: "https://example.test/"
+        }
+      } as Job),
+      /DATABASE_URL is required for technical audit jobs/u
+    );
+  });
+
   void it("fails unknown jobs honestly instead of returning success metadata", async () => {
     await assert.rejects(
       routeJob({
@@ -365,6 +423,8 @@ void describe("isTerminalWorkerError", () => {
     assert.equal(isTerminalWorkerError(new SerpScoutEvidenceError("wrong snapshot")), true);
     assert.equal(isTerminalWorkerError(new SerpScoutTerminalError("captcha_blocked")), true);
     assert.equal(isTerminalWorkerError(new SerpScoutProviderError("provider_timeout")), false);
+    assert.equal(isTerminalWorkerError(new TechnicalAuditConfigurationError("missing database")), true);
+    assert.equal(isTerminalWorkerError(new TechnicalAuditEvidenceError("missing audit run")), true);
     assert.equal(
       isTerminalWorkerError(new GscSyncFailureError("google_refresh_token_invalid", { reconnectRequired: true })),
       true
@@ -387,6 +447,7 @@ void describe("isTerminalWorkerError", () => {
     assert.ok(toWorkerRethrowError(new WebsiteImportEvidenceError("missing import run")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new OpportunityScoutWorkflowError("qa_rejected")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new SerpScoutTerminalError("captcha_blocked")) instanceof UnrecoverableError);
+    assert.ok(toWorkerRethrowError(new TechnicalAuditEvidenceError("missing audit run")) instanceof UnrecoverableError);
     assert.equal(toWorkerRethrowError(new Error("provider timeout")) instanceof UnrecoverableError, false);
     assert.equal(
       toWorkerRethrowError(new OpportunityScoutProviderError("provider_timeout")) instanceof UnrecoverableError,
@@ -473,6 +534,75 @@ void describe("executeWebsiteImport", () => {
     ]);
     assert.equal(result.status, "completed");
     assert.equal(result.artifactKey, "website-imports/project-1/import-1.json");
+  });
+});
+
+void describe("executeTechnicalAudit", () => {
+  void it("derives and stores technical audit findings from crawl evidence", async () => {
+    const calls: string[] = [];
+    const completed: { findingCount?: number } = {};
+    const repository: TechnicalAuditRepository = {
+      loadRun() {
+        calls.push("loadRun");
+        return Promise.resolve({
+          id: "audit-1",
+          projectId: "project-1",
+          sourceUrl: "https://example.test/",
+          status: "queued",
+          artifactKey: null,
+          summaryJson: null,
+          failureJson: null,
+          startedAt: null,
+          completedAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      },
+      markRunning() {
+        calls.push("markRunning");
+        return Promise.resolve();
+      },
+      markCompleted(input) {
+        calls.push("markCompleted");
+        completed.findingCount = input.findings.length;
+        return Promise.resolve();
+      },
+      markFailed() {
+        calls.push("markFailed");
+        return Promise.resolve();
+      }
+    };
+
+    const result = await executeTechnicalAudit({
+      data: {
+        projectId: "project-1",
+        auditRunId: "audit-1",
+        sourceUrl: "https://example.test/"
+      },
+      repository,
+      crawler: fakeCrawler({
+        pages: [
+          {
+            url: "https://example.test/noindex/",
+            route: "/noindex/",
+            status: 200,
+            title: "Noindex",
+            metaDescription: "Noindex page",
+            h1: "Noindex",
+            canonical: "https://example.test/noindex/",
+            robots: "noindex",
+            internalLinks: ["/"],
+            images: [],
+            schemaTypes: ["LocalBusiness"]
+          }
+        ]
+      })
+    });
+
+    assert.deepEqual(calls, ["loadRun", "markRunning", "markCompleted"]);
+    assert.equal(result.status, "completed");
+    assert.equal(result.findingCount, 1);
+    assert.equal(completed.findingCount, 1);
   });
 });
 
@@ -848,6 +978,32 @@ class FakeSerpScoutRepository implements SerpScoutRepository {
   }
 }
 
+function fakeCrawler(overrides: Partial<Awaited<ReturnType<CrawlerPort["crawlWebsite"]>>> = {}): CrawlerPort {
+  return {
+    crawlWebsite(input) {
+      return Promise.resolve({
+        projectId: input.projectId,
+        sourceUrl: input.sourceUrl,
+        artifactKey: `website-imports/${input.projectId}/${input.importRunId ?? "crawl"}.json`,
+        crawledAt: "2026-07-05T00:00:00.000Z",
+        discoveredRoutes: ["/"],
+        pages: [
+          {
+            url: input.sourceUrl,
+            route: "/",
+            status: 200,
+            internalLinks: [],
+            images: [],
+            schemaTypes: []
+          }
+        ],
+        skippedUrls: [],
+        ...overrides
+      });
+    }
+  };
+}
+
 class FakeOpportunityScoutRepository implements OpportunityScoutRepository {
   run: FakeAgentRun = {
     id: "run-1",
@@ -894,6 +1050,8 @@ class FakeOpportunityScoutRepository implements OpportunityScoutRepository {
         gsc: { rows: [], signals: [] },
         tracking: { recentEvents: [] },
         rankingProofs: [],
+        serpSnapshots: [],
+        technicalAuditFindings: [],
         existingRoutes: [],
         existingOpportunityKeys: []
       },

@@ -529,10 +529,9 @@ Still deferred:
 
 ```text
 DeepSeek/Gemini/model-search adapter implementation
-technical audit worker
 operator capture helper
 competitor page extraction artifacts
-manual proof review hardening and freshness policy
+manual proof reviewer workflow beyond invalidate/re-review
 no automatic promotion from serp_snapshot rows into customer-safe ranking proof unless a future ADR promotes a deterministic source
 ```
 
@@ -540,21 +539,31 @@ Next no-SERP-API evidence slices:
 
 ```text
 F.1 harden snapshot evidence policy
-  implemented: proof_tier_containment rejects customer_safe_proof unless
+  implemented:
+  proof_tier_containment rejects customer_safe_proof unless
     sourceType = ranking_proof
-  captured serp_snapshots can be loaded as supporting_context only
+  captured serp_snapshots are loaded into Opportunity Scout as supporting_context only
   failed snapshots excluded
   generic search/model/browser snapshots cannot support proven_win
   proven_win still requires ranking_proof
 
 F.2 build TechnicalAudit
-  deterministic site checks, rendered-page checks when needed, artifact manifest
-  supports opportunity decisions and release QA
+  implemented baseline:
+  technical_audit_runs and technical_audit_findings tables
+  POST /projects/:id/technical-audit/runs enqueue endpoint
+  worker crawl through CrawlerPort
+  pure analyzer for first checks: status, indexability, canonical, metadata,
+    schema, internal links, crawl skips
+  Opportunity Scout loads technical_audit findings as supporting_context
+  TechnicalAudit creates findings, not opportunities
   never becomes ranking proof
 
 F.3 harden ManualProof
+  implemented minimal:
   reviewed ranking_proofs remain customer-safe proof
-  proof freshness, reviewer identity, invalidation/correction path
+  stale ranking_proofs are excluded from Opportunity Scout proof resolution
+  ranking_proofs can be invalidated/re-reviewed with user/reason provenance
+  still later: fuller reviewer workflow and correction UI
 
 F.4 optional OperatorCapture
   browser/manual capture creates support artifacts
