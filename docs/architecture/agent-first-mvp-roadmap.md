@@ -273,7 +273,8 @@ implemented now
   OpenCodeGoReasoningAdapter in packages/adapters
   OpenAI-compatible OpenCode Go chat-completions endpoint support
   AI_REASONING_PROVIDER = mock | opencode_go
-  AI_REASONING_MODEL default glm-5.2
+  AI_REASONING_MODEL default glm-5.2 in checked-in env examples, but runtime can
+  select any chat-completions model exposed by OpenCode Go
   AI_REASONING_OPENCODE_GO_API_KEY required only when provider = opencode_go
   AI_REASONING_OPENCODE_GO_ENDPOINT override, defaulting to the Go chat endpoint
   AI_REASONING_TIMEOUT_MS passed into runStructured
@@ -288,14 +289,36 @@ Model routing decision:
 ```text
 current baseline
   AI_REASONING_MODEL remains the single global model setting.
-  Default stays glm-5.2 because the current worker is a general reasoning /
-  opportunity-classification loop, not an automated SERP search tool.
+  Mock remains the safe boot/test default.
+  The first practical real smoke/default is deepseek-v4-flash because the local
+  OpenCode Go key has already completed a chat-completions request with it.
+  glm-5.2 remains the preferred candidate for page/layout/content/report quality
+  until benchmarks prove a cheaper model is better.
+
+current chat-completions family
+  Supported by the current adapter:
+    glm-5.2
+    deepseek-v4-flash
+    deepseek-v4-pro
+    kimi-k2.7-code
+    mimo-v2.5
+    mimo-v2.5-pro
+
+deferred messages family
+  Requires a separate OpenCode Go /messages adapter before use:
+    minimax-m3 / minimax-m2.7
+    qwen3.7-max / qwen3.7-plus / qwen3.6-plus
 
 next model-routing refinement
   Add task-specific model config before automated SERP/search agents:
-    opportunity / page / frontend reasoning -> glm-5.2
+    opportunity smoke / cheap repeated runs -> deepseek-v4-flash first
+    deeper opportunity / search reasoning fallback -> deepseek-v4-pro
+    page / frontend / content / report quality -> glm-5.2 candidate
     search / SERP research orchestration + interpretation -> deepseek-v4-flash first
     heavier search/SERP reasoning fallback -> deepseek-v4-pro
+    judge / reviewer experiments -> kimi-k2.7-code
+    huge competitor-text digestion -> minimax-m3 after /messages support
+    planner / generalist experiments -> qwen3.7 family after /messages support
 
 rule
   Model ids stay adapter/runtime configuration.

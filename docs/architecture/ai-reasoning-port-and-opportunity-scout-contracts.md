@@ -209,7 +209,7 @@ Runtime selection is explicit:
 ```text
 AI_REASONING_PROVIDER=mock          default, local/test safe
 AI_REASONING_PROVIDER=opencode_go   requires AI_REASONING_OPENCODE_GO_API_KEY
-AI_REASONING_MODEL                  default glm-5.2
+AI_REASONING_MODEL                  runtime-selected model id
 AI_REASONING_OPENCODE_GO_ENDPOINT   default OpenCode Go chat-completions endpoint
 AI_REASONING_TIMEOUT_MS             passed to runStructured
 ```
@@ -217,20 +217,27 @@ AI_REASONING_TIMEOUT_MS             passed to runStructured
 Task-level model policy:
 
 ```text
-glm-5.2
-  Default for general reasoning tasks: opportunity_scout, page_brief_draft,
-  section_text_generation, frontend/page composition, and report narrative
-  drafting. It is the current single-model smoke default.
-
 deepseek-v4-flash
-  Preferred first model for future search / SERP / competitor snapshot tasks
-  because those loops need cheaper high-volume query planning, read-only search
-  tool orchestration, and first-pass SERP/competitor interpretation.
+  First practical real smoke/default for the current chat-completions adapter.
+  Use for cheap repeated worker runs, first-pass opportunity/search loops, and
+  high-volume SERP/query orchestration experiments.
 
 deepseek-v4-pro
-  Fallback for search / SERP / competitor reasoning when flash output is too
+  Fallback for harder opportunity/search/SERP reasoning when flash output is too
   weak for query expansion, competitor interpretation, or local-market
   judgement.
+
+glm-5.2
+  Strong candidate for general reasoning tasks: opportunity_scout, page_brief_draft,
+  section_text_generation, frontend/page composition, and report narrative
+  drafting. Keep it especially for page/layout/content quality comparisons.
+
+kimi-k2.7-code
+  Experimental judge/reviewer candidate after baseline smoke results exist.
+
+minimax-m3 / qwen3.7 family
+  Deferred. OpenCode Go exposes these through the /messages family, so they need
+  a separate Anthropic-style adapter before this app can use them.
 ```
 
 This is a runtime-routing policy, not a product contract. The current
@@ -268,6 +275,7 @@ Deferred provider work:
 Mastra internals behind the same port
 task-specific model config for search/SERP versus page/frontend reasoning
 OpenCode Go /messages endpoint support for MiniMax/Qwen-family models
+empirical model benchmarks against Martines/Dachdecker fixtures
 real-provider smoke run and prompt tuning from observed run failures
 cost budget enforcement beyond recording usage metadata
 ```
