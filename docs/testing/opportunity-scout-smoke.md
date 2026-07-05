@@ -36,16 +36,17 @@ The file should contain values such as:
 
 ```text
 AI_REASONING_PROVIDER=opencode_go
-AI_REASONING_MODEL=glm-5.2
+AI_REASONING_MODEL=deepseek-v4-flash
 AI_REASONING_OPENCODE_GO_API_KEY=...
 AI_REASONING_OPENCODE_GO_ENDPOINT=https://opencode.ai/zen/go/v1/chat/completions
 AI_REASONING_TIMEOUT_MS=120000
 ```
 
-`glm-5.2` is intentional for this smoke because the current task is general
-opportunity reasoning over already-loaded evidence. Future automated
-search/SERP/competitor snapshot workers should route to DeepSeek models through
-task-specific model configuration instead of changing this global smoke default.
+`deepseek-v4-flash` is intentional for the first real Opportunity Scout smoke
+because this run may need repeated cheap attempts while prompt and packet
+semantics settle. `glm-5.2` remains the page/layout/content/report quality
+candidate and a later comparison model; it is not the required first smoke
+default.
 
 Do not commit this file, paste it into docs, or print the key in terminal logs.
 
@@ -120,10 +121,13 @@ agent_run.status=running
 agent_run.status=succeeded
 agent_run.failureCode=
 agent_run.provider=opencode_go
-agent_run.model=glm-5.2
+agent_run.model=deepseek-v4-flash
 agent_run.latencyMs=...
+agent_run.inputRef=...
 agent_run.usage={"inputTokens":...,"outputTokens":...,"costCents":...}
 agent_run.diagnostics={...}
+opportunity.count=...
+opportunity.classifications={"near_term_target":...}
 ```
 
 ## Passing Outcomes
@@ -155,12 +159,21 @@ provider_not_configured  Worker was not started with a usable provider key, or
 
 After a real-provider run, create a small Markdown note under `docs/testing/scout-runs/` with:
 
-- date/time,
+- run id and date/time,
 - provider/model,
 - terminal status and failure code,
+- QA gate id when the run failed with `qa_rejected`,
+- latency and usage/cost summary,
+- persisted brief count and classification histogram,
+- `input_ref` key only, not the packet contents,
+- sanitized diagnostics summary,
 - whether the taxonomy was correct,
 - whether the output was German and locally plausible,
 - whether evidence refs were honest,
 - whether the next prompt tuning change is required.
 
-Never paste secrets, raw prompts, full model blobs, competitor body text, or customer data dumps into the artifact.
+For `ok: true` runs, validated model output may be committed only for the
+synthetic Martines fixture project described above. Real-customer-project runs
+must not commit validated output, packet contents, customer notes, competitor
+body text, or other customer data dumps. Never paste secrets, raw prompts, full
+provider bodies, or API keys into the artifact.
