@@ -485,9 +485,10 @@ DeepSeek can drive the search workflow and call read-only SERP tools
 snapshot rows/artifacts first
 snapshot capture is deterministic, not a model call
 model cites snapshot sourceIds later
-proof freshness policy required
-not every serp_snapshot is proof-grade
-provider/searchEngine/resultType policy decides whether a snapshot can support proven_win
+manual ranking_proofs are the only customer-safe ranking proof for MVP
+serp_snapshots default to supporting_context or internal_signal
+no paid SERP APIs for the MVP path
+future proof promotion requires a superseding ADR and proof policy
 ```
 
 Implemented baseline:
@@ -528,37 +529,38 @@ Still deferred:
 
 ```text
 DeepSeek/Gemini/model-search adapter implementation
-real SERP provider/browser adapter
+technical audit worker
+operator capture helper
 competitor page extraction artifacts
-proof freshness enforcement in reports
-automatic promotion from serp_snapshot rows into customer-safe ranking proof
+manual proof review hardening and freshness policy
+no automatic promotion from serp_snapshot rows into customer-safe ranking proof unless a future ADR promotes a deterministic source
 ```
 
-Next SERP evidence wiring slice:
+Next no-SERP-API evidence slices:
 
 ```text
-F.1 wire captured serp_snapshots into Opportunity Scout evidence
-  captured snapshots only
+F.1 harden snapshot evidence policy
+  captured serp_snapshots can be loaded as supporting_context only
   failed snapshots excluded
-  exact result match by query + pageUrl + rank
-  proof freshness max-age
-  provider/searchEngine/resultType proof policy
-  generic search_context snapshots cannot support proven_win
-```
+  generic search/model/browser snapshots cannot support proven_win
+  proven_win still requires ranking_proof
 
-Provider strategy for the later live adapter:
+F.2 build TechnicalAudit
+  deterministic site checks, rendered-page checks when needed, artifact manifest
+  supports opportunity decisions and release QA
+  never becomes ranking proof
 
-```text
-If dedicated SEO APIs are acceptable:
-  Serper is the cheap POC candidate.
-  DataForSEO is the strongest proof-grade production candidate.
-  SerpApi is the mature fallback/reference.
+F.3 harden ManualProof
+  reviewed ranking_proofs remain customer-safe proof
+  proof freshness, reviewer identity, invalidation/correction path
 
-If dedicated SEO APIs are not acceptable:
-  manual ranking_proofs remain customer-safe proof.
-  Brave/Tavily/model search stays discovery/context only.
-  low-volume browser capture can be operator-reviewed evidence, not a default
-  scalable proof provider.
+F.4 optional OperatorCapture
+  browser/manual capture creates support artifacts
+  human review can turn a capture into ranking_proof or reject it
+
+F.5 search context tools
+  DeepSeek/Gemini/Brave/Tavily-style search may help discovery
+  outputs are internal_radar or supporting_context, never customer-safe proof
 ```
 
 ### 8. Page Registry And Preview

@@ -320,7 +320,8 @@ Invariants enforced by QA, not by prayer:
 
 ```text
 gsc_signal / gsc_row evidence can never carry proofTier customer_safe_proof
-customer_safe_proof requires sourceType ranking_proof or serp_snapshot with explicit rank
+customer_safe_proof requires sourceType ranking_proof for MVP
+serp_snapshot is supporting_context by default and cannot prove proven_win unless a future ADR promotes a deterministic proof source
 competitor_snapshot excerpt length is hard-capped; verbatim reuse downstream is forbidden
 ```
 
@@ -626,32 +627,34 @@ serp_snapshots
   Stores query, searchEngine, device, locale/region, cacheKey, capturedAt,
   status, provider, normalized results, SERP features, engine errors, and
   artifact refs.
-  A row is not customer-safe proof by existence. QA must also check status,
-  freshness, exact result attribution, provider, searchEngine, and result type.
+  A row is not customer-safe proof by existence. In the no-paid-SERP-API MVP
+  branch, it is supporting_context or internal_signal only.
 
 POST /projects/:id/serp-scout/runs
   enqueues a SERP capture job with jobId = snapshotId and job_runs audit.
-  The baseline persists captured or failed snapshots; live provider adapters
-  and proof freshness promotion remain later slices. Adapter output that does
-  not parse as SerpSnapshot, or belongs to the wrong project/id, records
+  The baseline persists captured or failed snapshots; technical audit,
+  operator capture, and search-context tooling remain later slices. Adapter
+  output that does not parse as SerpSnapshot, or belongs to the wrong project/id, records
   adapter_invalid_snapshot as a failed snapshot and stops retrying.
 ```
 
-SERP proof policy for the next evidence-wiring slice:
+SERP proof policy after ADR 0015:
 
 ```text
-serp_snapshot can support customer_safe_proof only when:
+manual ranking_proofs are the only customer-safe ranking proof for MVP.
+
+serp_snapshot evidence may be loaded as supporting_context when:
   row status = captured
   row belongs to the project
-  capturedAt is inside the proof freshness max-age
-  evidence locator query matches the snapshot query
-  evidence locator pageUrl resolves to one result inside results
-  observedMetric rank equals the matched result rank
-  matched result is Top 10
-  provider/searchEngine/resultType are allowed for Google-equivalent proof
+  failed snapshots are excluded
+  evidence locator query/pageUrl/rank can be explained from the stored row
 
-Brave/Tavily/model-search/generic discovery snapshots may become search_context
-or supporting_context evidence. They cannot support proven_win.
+serp_snapshot evidence cannot support proven_win unless a future ADR explicitly
+promotes a deterministic proof source and defines freshness, result attribution,
+provider/searchEngine/resultType, and review policy.
+
+Brave/Tavily/model-search/generic browser discovery snapshots stay internal_radar
+or supporting_context evidence. They cannot support customer_safe_proof.
 ```
 
 Explorer backend read baseline:
