@@ -434,7 +434,7 @@ Use TanStack Query for server state, TanStack Table for opportunity lists, TanSt
 
 Add automated search/competitor evidence only after the first scout loop works:
 
-Status: boundary and storage baseline implemented; live provider/tool adapters are still deferred.
+Status: boundary, storage, mock worker, and API trigger baseline implemented; live provider/tool adapters are still deferred.
 
 ```text
 SerpScoutPort
@@ -479,11 +479,21 @@ packages/contracts
 
 packages/adapters
   SerpScoutPort.search(...)
+  MockSerpScoutAdapter
   read-only tool categories search_web / read_public_page reserved
 
 packages/db
   serp_snapshots table with project/run provenance, status, query/device/locale,
   cache key, normalized results/features/errors/artifact refs, and captured_at.
+
+apps/worker
+  serp-scout queue handler persists captured/failed snapshots through SerpScoutPort.
+  Transient provider failures retry; not-configured, captcha, and policy failures
+  stop as terminal worker errors.
+
+apps/api
+  POST /projects/:id/serp-scout/runs enqueues snapshot capture with jobId = snapshotId.
+  The endpoint uses opportunity:run and existing job_runs audit.
 ```
 
 Customer-safe ranking proof expires by policy; a stale rank must not remain customer proof forever.
@@ -492,7 +502,7 @@ Still deferred:
 
 ```text
 DeepSeek/Gemini/model-search adapter implementation
-SERP worker/API trigger
+real SERP provider/browser adapter
 competitor page extraction artifacts
 proof freshness enforcement in reports
 automatic promotion from serp_snapshot rows into customer-safe ranking proof

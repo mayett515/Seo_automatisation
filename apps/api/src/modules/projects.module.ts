@@ -15,19 +15,24 @@ import {
 import {
   type AiReasoningEnqueueFailureCode,
   CreateOpportunityScoutRunRequestSchema,
+  CreateSerpScoutRunRequestSchema,
   CreateWebsiteImportRequestSchema,
   LatestWebsiteImportResponseSchema,
   MainPreviewSchema,
   OpportunityScoutJobDataSchema,
   OpportunityScoutQueueResponseSchema,
   ProjectSummarySchema,
+  SerpScoutJobDataSchema,
+  SerpScoutQueueResponseSchema,
   WebsiteImportRunSchema,
   WebsiteImportQueueResponseSchema,
   type CreateOpportunityScoutRunRequest,
+  type CreateSerpScoutRunRequest,
   type LatestWebsiteImportResponse,
   type MainPreview,
   type OpportunityScoutQueueResponse,
   type ProjectSummary,
+  type SerpScoutQueueResponse,
   type WebsiteImportQueueResponse
 } from "@localseo/contracts";
 import {
@@ -346,6 +351,72 @@ export class ProjectsService {
     });
   }
 
+  async queueSerpScout(
+    projectId: string,
+    input: CreateSerpScoutRunRequest,
+    userId?: string
+  ): Promise<SerpScoutQueueResponse> {
+    const snapshotId = randomUUID();
+    const jobId = snapshotId;
+    const jobData = SerpScoutJobDataSchema.parse({
+      projectId,
+      snapshotId,
+      ...input,
+      triggeredByUserId: userId ?? null,
+      triggerSource: "user_action"
+    });
+
+    if (!this.database.isConfigured()) {
+      return SerpScoutQueueResponseSchema.parse({
+        jobId,
+        projectId,
+        snapshotId,
+        query: input.query,
+        type: "serp_scout",
+        status: "dry_run",
+        inputRef: snapshotId,
+        createdBy: userId,
+        message: "Database is not configured. SERP scout persistence is in explicit dry-run mode.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const enqueued = await this.queues.enqueue({
+      queueName: "serp-scout",
+      jobName: "serp_scout",
+      jobId,
+      data: jobData,
+      options: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 5000
+        }
+      },
+      audit: {
+        projectId,
+        type: "serp_scout",
+        inputRef: snapshotId,
+        actorType: userId ? "user" : "system",
+        actorUserId: userId,
+        triggerSource: "user_action"
+      }
+    });
+
+    return SerpScoutQueueResponseSchema.parse({
+      jobId,
+      projectId,
+      snapshotId,
+      query: input.query,
+      type: "serp_scout",
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: snapshotId,
+      createdBy: userId,
+      message: enqueued ? undefined : "SERP scout queue is not configured. This is an explicit dry-run response.",
+      createdAt: new Date().toISOString()
+    });
+  }
+
   getMainPreview(projectId: string): MainPreview {
     return MainPreviewSchema.parse({
       projectId,
@@ -395,6 +466,20 @@ class ProjectsController {
     }
 
     return this.projects.queueOpportunityScout(projectId, parsed.data, request.auth?.user.id);
+  }
+
+  @Post(":id/serp-scout/runs")
+  @RequireProjectPermission("opportunity:run")
+  runSerpScout(@Param("id") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
+    const parsed = CreateSerpScoutRunRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException(
+        "SERP scout requires a query and optional searchEngine, device, locale, region, or maxResults."
+      );
+    }
+
+    return this.projects.queueSerpScout(projectId, parsed.data, request.auth?.user.id);
   }
 
   @Get(":id/main-preview")

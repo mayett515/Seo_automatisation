@@ -16,6 +16,7 @@ export const jobTypes = [
   "pre_audit",
   "website_import",
   "opportunity_scout",
+  "serp_scout",
   "local_analysis",
   "page_generation",
   "seo_qa",
@@ -32,6 +33,7 @@ export const queueNames = [
   "pre-audit",
   "website-import",
   "opportunity-scout",
+  "serp-scout",
   "local-analysis",
   "page-generation",
   "seo-qa",
@@ -519,6 +521,17 @@ export const OpportunityScoutJobDataSchema = z.object({
   triggerSource: z.string().min(1).optional()
 });
 
+export const SerpScoutJobDataSchema = SerpScoutRequestSchema.extend({
+  snapshotId: z.string().min(1),
+  agentRunId: z.string().min(1).optional(),
+  maxAttempts: z.number().int().positive().optional(),
+  jobRunId: z.string().min(1).optional(),
+  triggeredByUserId: z.string().min(1).nullable().optional(),
+  triggerSource: z.string().min(1).optional()
+}).strict();
+
+export const CreateSerpScoutRunRequestSchema = SerpScoutRequestSchema.omit({ projectId: true }).strict();
+
 export const ApprovedReleaseArtifactPageSchema = z.object({
   releasePlanItemId: z.string().min(1),
   pageVersionId: z.string().min(1).nullable(),
@@ -960,6 +973,10 @@ export const OpportunityScoutQueueResponseSchema = QueueJobSchema.extend({
   status: OpportunityScoutQueueStatusSchema,
   runId: z.string().min(1).optional()
 });
+export const SerpScoutQueueResponseSchema = QueueJobSchema.extend({
+  snapshotId: z.string().min(1).optional(),
+  query: z.string().trim().min(1).max(200).optional()
+});
 
 export const RankingProofSchema = z.object({
   id: z.string().min(1),
@@ -1068,6 +1085,8 @@ export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportRes
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
 export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;
 export type SerpScoutRequest = z.output<typeof SerpScoutRequestSchema>;
+export type SerpScoutJobData = z.output<typeof SerpScoutJobDataSchema>;
+export type CreateSerpScoutRunRequest = z.output<typeof CreateSerpScoutRunRequestSchema>;
 export type SerpSearchResult = z.output<typeof SerpSearchResultSchema>;
 export type SerpFeature = z.output<typeof SerpFeatureSchema>;
 export type SerpEngineError = z.output<typeof SerpEngineErrorSchema>;
@@ -1098,6 +1117,7 @@ export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
 export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
+export type SerpScoutQueueResponse = z.output<typeof SerpScoutQueueResponseSchema>;
 export type RankingProof = z.output<typeof RankingProofSchema>;
 export type RankingProofListResponse = z.output<typeof RankingProofListResponseSchema>;
 export type AiReasoningEnqueueFailureCode = z.output<typeof AiReasoningEnqueueFailureCodeSchema>;

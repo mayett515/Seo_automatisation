@@ -28,6 +28,7 @@ export * from "./not-configured-ai-reasoning.js";
 export * from "./s3-object-storage.js";
 export * from "./token-cipher.js";
 export * from "./mock-ai-reasoning.js";
+export * from "./mock-serp-scout.js";
 export * from "./opencode-go-reasoning.js";
 
 export type DeployReleaseInput = {
@@ -196,7 +197,9 @@ export type SerpScoutResult =
     };
 
 export interface SerpScoutPort {
-  search(input: SerpScoutRequest & { timeoutMs: number; agentRunId?: string }): Promise<SerpScoutResult>;
+  search(
+    input: SerpScoutRequest & { snapshotId?: string; timeoutMs: number; agentRunId?: string }
+  ): Promise<SerpScoutResult>;
 }
 
 export type AiReasoningToolCategory = "read_evidence" | "search_web" | "read_public_page" | "analyze" | "draft_content";

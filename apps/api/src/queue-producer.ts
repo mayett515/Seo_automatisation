@@ -12,7 +12,7 @@ const env = parseAppEnv(process.env);
 
 export type ApiQueueName = Extract<
   QueueName,
-  "pre-audit" | "website-import" | "opportunity-scout" | "deploy" | "rollback"
+  "pre-audit" | "website-import" | "opportunity-scout" | "serp-scout" | "deploy" | "rollback"
 >;
 
 type QueueRegistry = Partial<Record<ApiQueueName, Queue>>;
@@ -47,6 +47,7 @@ export class QueueProducerService implements OnModuleDestroy {
           "pre-audit": new Queue("pre-audit", { connection: redisConnection }),
           "website-import": new Queue("website-import", { connection: redisConnection }),
           "opportunity-scout": new Queue("opportunity-scout", { connection: redisConnection }),
+          "serp-scout": new Queue("serp-scout", { connection: redisConnection }),
           deploy: new Queue("deploy", { connection: redisConnection }),
           rollback: new Queue("rollback", { connection: redisConnection })
         }

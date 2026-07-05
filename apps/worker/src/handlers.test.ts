@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   MockReasoningAdapter,
+  MockSerpScoutAdapter,
   NotConfiguredReasoningAdapter,
   OpenCodeGoReasoningAdapter,
   type ObjectStoragePort
@@ -9,7 +10,8 @@ import {
 import {
   OpportunityScoutOutputSchema,
   type GscSearchAnalyticsRow,
-  type OpportunityScoutOutput
+  type OpportunityScoutOutput,
+  type SerpSnapshot
 } from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
 import {
@@ -29,6 +31,15 @@ import {
   type OpportunityScoutRepository
 } from "./handlers/opportunity-scout.js";
 import { RollbackConfigurationError, RollbackEvidenceError, RollbackProviderFailedError } from "./handlers/rollback.js";
+import {
+  executeSerpScout,
+  parseSerpScoutJobData,
+  SerpScoutConfigurationError,
+  SerpScoutEvidenceError,
+  SerpScoutProviderError,
+  SerpScoutTerminalError,
+  type SerpScoutRepository
+} from "./handlers/serp-scout.js";
 import {
   executeWebsiteImport,
   parseWebsiteImportJobData,
@@ -141,6 +152,39 @@ void describe("parseOpportunityScoutJobData", () => {
   });
 });
 
+void describe("parseSerpScoutJobData", () => {
+  void it("accepts valid SERP scout job data", () => {
+    assert.deepEqual(
+      parseSerpScoutJobData({
+        projectId: "project-1",
+        snapshotId: "snapshot-1",
+        query: "dachdecker dachau",
+        searchEngine: "google",
+        device: "desktop",
+        maxResults: 10,
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }),
+      {
+        projectId: "project-1",
+        snapshotId: "snapshot-1",
+        query: "dachdecker dachau",
+        searchEngine: "google",
+        device: "desktop",
+        maxResults: 10,
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }
+    );
+  });
+
+  void it("rejects missing SERP scout identifiers", () => {
+    assert.throws(() => parseSerpScoutJobData({ projectId: "project-1" }), /require projectId, snapshotId, and query/u);
+  });
+});
+
 void describe("classifyOpportunitySignals", () => {
   void it("flags impression/no-click and page-two opportunity signals", () => {
     assert.deepEqual(
@@ -237,6 +281,22 @@ void describe("routeJob", () => {
     );
   });
 
+  void it("routes SERP scout jobs to the SERP handler instead of returning success metadata", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "serp-scout-job-1",
+        queueName: "serp-scout",
+        name: "serp_scout",
+        data: {
+          projectId: "project-1",
+          snapshotId: "snapshot-1",
+          query: "dachdecker dachau"
+        }
+      } as Job),
+      /DATABASE_URL is required for SERP scout jobs/u
+    );
+  });
+
   void it("fails unknown jobs honestly instead of returning success metadata", async () => {
     await assert.rejects(
       routeJob({
@@ -300,6 +360,10 @@ void describe("isTerminalWorkerError", () => {
     assert.equal(isTerminalWorkerError(new OpportunityScoutEvidenceError("missing run")), true);
     assert.equal(isTerminalWorkerError(new OpportunityScoutWorkflowError("qa_rejected")), true);
     assert.equal(isTerminalWorkerError(new OpportunityScoutProviderError("provider_timeout")), false);
+    assert.equal(isTerminalWorkerError(new SerpScoutConfigurationError("missing database")), true);
+    assert.equal(isTerminalWorkerError(new SerpScoutEvidenceError("wrong snapshot")), true);
+    assert.equal(isTerminalWorkerError(new SerpScoutTerminalError("captcha_blocked")), true);
+    assert.equal(isTerminalWorkerError(new SerpScoutProviderError("provider_timeout")), false);
     assert.equal(
       isTerminalWorkerError(new GscSyncFailureError("google_refresh_token_invalid", { reconnectRequired: true })),
       true
@@ -321,9 +385,14 @@ void describe("isTerminalWorkerError", () => {
     assert.ok(toWorkerRethrowError(new ProviderDeployTerminalStatusError("rolled_back")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new WebsiteImportEvidenceError("missing import run")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new OpportunityScoutWorkflowError("qa_rejected")) instanceof UnrecoverableError);
+    assert.ok(toWorkerRethrowError(new SerpScoutTerminalError("captcha_blocked")) instanceof UnrecoverableError);
     assert.equal(toWorkerRethrowError(new Error("provider timeout")) instanceof UnrecoverableError, false);
     assert.equal(
       toWorkerRethrowError(new OpportunityScoutProviderError("provider_timeout")) instanceof UnrecoverableError,
+      false
+    );
+    assert.equal(
+      toWorkerRethrowError(new SerpScoutProviderError("provider_timeout")) instanceof UnrecoverableError,
       false
     );
   });
@@ -403,6 +472,142 @@ void describe("executeWebsiteImport", () => {
     ]);
     assert.equal(result.status, "completed");
     assert.equal(result.artifactKey, "website-imports/project-1/import-1.json");
+  });
+});
+
+void describe("executeSerpScout", () => {
+  void it("captures a SERP snapshot with the mock adapter", async () => {
+    const repository = new FakeSerpScoutRepository();
+    const adapter = new MockSerpScoutAdapter();
+
+    const result = await executeSerpScout({
+      data: {
+        projectId: "project-1",
+        snapshotId: "snapshot-1",
+        query: "dachdecker dachau",
+        searchEngine: "google",
+        device: "desktop",
+        maxResults: 10
+      },
+      repository,
+      serpScout: adapter,
+      timeoutMs: 15_000
+    });
+
+    assert.equal(result.status, "captured");
+    assert.equal(result.snapshotId, "snapshot-1");
+    assert.equal(repository.snapshot?.id, "snapshot-1");
+    assert.equal(repository.snapshot?.projectId, "project-1");
+    assert.equal(repository.snapshot?.results.length, 1);
+    assert.equal(adapter.calls[0]?.timeoutMs, 15_000);
+    assert.equal(adapter.calls[0]?.snapshotId, "snapshot-1");
+  });
+
+  void it("no-ops when the snapshot was already captured", async () => {
+    const repository = new FakeSerpScoutRepository();
+    repository.existing = {
+      id: "snapshot-1",
+      projectId: "project-1",
+      agentRunId: null,
+      status: "captured",
+      query: "dachdecker dachau",
+      searchEngine: "google",
+      device: "desktop",
+      locale: null,
+      region: null,
+      cacheKey: "google:desktop:default-locale:default-region:dachdecker dachau",
+      provider: "mock",
+      resultsJson: [
+        {
+          rank: 1,
+          type: "organic",
+          title: "Existing result",
+          url: "https://example.com/",
+          domain: "example.com"
+        }
+      ],
+      serpFeaturesJson: [],
+      engineErrorsJson: [],
+      artifactRefsJson: [],
+      capturedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    const adapter = new MockSerpScoutAdapter();
+
+    const result = await executeSerpScout({
+      data: {
+        projectId: "project-1",
+        snapshotId: "snapshot-1",
+        query: "dachdecker dachau",
+        searchEngine: "google",
+        device: "desktop",
+        maxResults: 10
+      },
+      repository,
+      serpScout: adapter,
+      timeoutMs: 15_000
+    });
+
+    assert.equal(result.status, "already_captured");
+    assert.equal(result.resultCount, 1);
+    assert.equal(adapter.calls.length, 0);
+  });
+
+  void it("persists retryable provider failures and lets BullMQ retry", async () => {
+    const repository = new FakeSerpScoutRepository();
+    const adapter = new MockSerpScoutAdapter({
+      ok: false,
+      failureCode: "provider_timeout",
+      diagnostics: { latencyMs: 15_000, detail: "timeout" }
+    });
+
+    await assert.rejects(
+      executeSerpScout({
+        data: {
+          projectId: "project-1",
+          snapshotId: "snapshot-1",
+          query: "dachdecker dachau",
+          searchEngine: "google",
+          device: "desktop",
+          maxResults: 10
+        },
+        repository,
+        serpScout: adapter,
+        timeoutMs: 15_000
+      }),
+      SerpScoutProviderError
+    );
+
+    assert.equal(repository.failure?.failureCode, "provider_timeout");
+  });
+
+  void it("persists terminal SERP failures without retry", async () => {
+    const repository = new FakeSerpScoutRepository();
+    const adapter = new MockSerpScoutAdapter({
+      ok: false,
+      failureCode: "captcha_blocked",
+      diagnostics: { latencyMs: 5, detail: "captcha" }
+    });
+
+    await assert.rejects(
+      executeSerpScout({
+        data: {
+          projectId: "project-1",
+          snapshotId: "snapshot-1",
+          query: "dachdecker dachau",
+          searchEngine: "google",
+          device: "desktop",
+          maxResults: 10
+        },
+        repository,
+        serpScout: adapter,
+        timeoutMs: 15_000
+      }),
+      SerpScoutTerminalError
+    );
+
+    assert.equal(repository.failure?.failureCode, "captcha_blocked");
   });
 });
 
@@ -542,6 +747,28 @@ function row(input: Partial<GscSearchAnalyticsRow>): GscSearchAnalyticsRow {
 }
 
 type FakeAgentRun = NonNullable<Awaited<ReturnType<OpportunityScoutRepository["loadRun"]>>>;
+
+type FakeSerpSnapshotRow = NonNullable<Awaited<ReturnType<SerpScoutRepository["loadSnapshot"]>>>;
+
+class FakeSerpScoutRepository implements SerpScoutRepository {
+  existing: FakeSerpSnapshotRow | undefined;
+  snapshot: SerpSnapshot | undefined;
+  failure: Parameters<SerpScoutRepository["persistFailure"]>[0] | undefined;
+
+  loadSnapshot(): Promise<FakeSerpSnapshotRow | undefined> {
+    return Promise.resolve(this.existing);
+  }
+
+  persistSnapshot(snapshot: SerpSnapshot): Promise<void> {
+    this.snapshot = snapshot;
+    return Promise.resolve();
+  }
+
+  persistFailure(input: Parameters<SerpScoutRepository["persistFailure"]>[0]): Promise<void> {
+    this.failure = input;
+    return Promise.resolve();
+  }
+}
 
 class FakeOpportunityScoutRepository implements OpportunityScoutRepository {
   run: FakeAgentRun = {

@@ -179,6 +179,73 @@ void describe(
         (error) => isDatabaseUniqueViolation(error)
       );
     });
+
+    void it("enqueues SERP scout jobs with jobId equal to snapshotId", async () => {
+      const fixture = await createProjectFixture(db);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setSerpScoutQueue(queueService, queue);
+      const service = new ProjectsService(queueService, testDatabaseService(db));
+
+      const result = await service.queueSerpScout(
+        fixture.projectId,
+        {
+          query: "dachdecker dachau",
+          searchEngine: "google",
+          device: "desktop",
+          maxResults: 10
+        },
+        fixture.userId
+      );
+
+      assert.equal(result.status, "queued");
+      assert.equal(result.type, "serp_scout");
+      assert.equal(result.projectId, fixture.projectId);
+      assert.equal(result.snapshotId, result.jobId);
+      assert.equal(result.inputRef, result.snapshotId);
+      assert.equal(result.query, "dachdecker dachau");
+      assert.equal(queue.addCalls.length, 1);
+      assert.equal(queue.addCalls[0]?.name, "serp_scout");
+      assert.equal(queue.addCalls[0]?.options.jobId, result.snapshotId);
+      assert.equal(queue.addCalls[0]?.data.projectId, fixture.projectId);
+      assert.equal(queue.addCalls[0]?.data.snapshotId, result.snapshotId);
+      assert.equal(queue.addCalls[0]?.data.query, "dachdecker dachau");
+      assert.equal(queue.addCalls[0]?.data.triggeredByUserId, fixture.userId);
+
+      const [jobRun] = await db.select().from(jobRuns).where(eq(jobRuns.externalJobId, result.snapshotId));
+      assert.equal(jobRun?.queueName, "serp-scout");
+      assert.equal(jobRun?.type, "serp_scout");
+      assert.equal(jobRun?.status, "queued");
+      assert.equal(jobRun?.inputRef, result.snapshotId);
+    });
+
+    void it("returns an explicit SERP scout dry-run response when the queue is unavailable", async () => {
+      const fixture = await createProjectFixture(db);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const service = new ProjectsService(queueService, testDatabaseService(db));
+
+      const result = await service.queueSerpScout(
+        fixture.projectId,
+        {
+          query: "dachdecker dachau",
+          searchEngine: "google",
+          device: "desktop",
+          maxResults: 20
+        },
+        fixture.userId
+      );
+
+      assert.equal(result.status, "dry_run");
+      assert.equal(result.type, "serp_scout");
+      assert.equal(result.query, "dachdecker dachau");
+      assert.match(result.message ?? "", /queue is not configured/u);
+      assert.ok(result.snapshotId);
+
+      const jobRunRows = await db.select().from(jobRuns).where(eq(jobRuns.externalJobId, result.snapshotId));
+      assert.equal(jobRunRows.length, 1);
+      assert.equal(jobRunRows[0]?.status, "dry_run");
+      assert.equal(jobRunRows[0]?.queueName, "serp-scout");
+    });
   }
 );
 
@@ -221,6 +288,10 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
 
 function setOpportunityScoutQueue(service: QueueProducerService, queue: FakeQueue): void {
   (service as unknown as { queues: { "opportunity-scout"?: unknown } }).queues["opportunity-scout"] = queue;
+}
+
+function setSerpScoutQueue(service: QueueProducerService, queue: FakeQueue): void {
+  (service as unknown as { queues: { "serp-scout"?: unknown } }).queues["serp-scout"] = queue;
 }
 
 class FakeQueue {

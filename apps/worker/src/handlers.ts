@@ -2,6 +2,7 @@ import {
   FileSystemObjectStorageAdapter,
   HttpWebsiteCrawlerAdapter,
   MockReasoningAdapter,
+  MockSerpScoutAdapter,
   NetlifySiteHostingAdapter,
   NotConfiguredReasoningAdapter,
   NotConfiguredSiteHostingAdapter,
@@ -10,6 +11,7 @@ import {
   type AiReasoningPort,
   S3ObjectStorageAdapter,
   type ObjectStoragePort,
+  type SerpScoutPort,
   type SiteHostingPort
 } from "@localseo/adapters";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
@@ -38,6 +40,12 @@ import {
   RollbackProviderFailedError
 } from "./handlers/rollback.js";
 import {
+  handleSerpScoutJob,
+  SerpScoutConfigurationError,
+  SerpScoutEvidenceError,
+  SerpScoutTerminalError
+} from "./handlers/serp-scout.js";
+import {
   handleWebsiteImportJob,
   WebsiteImportConfigurationError,
   WebsiteImportEvidenceError
@@ -56,6 +64,7 @@ const sharedObjectStorage = createObjectStorageAdapter();
 const sharedSiteHosting = createSiteHostingAdapter(env.NETLIFY_AUTH_TOKEN, sharedObjectStorage);
 const sharedCrawler = createCrawlerAdapter(sharedObjectStorage);
 const sharedReasoning = createReasoningAdapter(env);
+const sharedSerpScout = createSerpScoutAdapter();
 
 export async function handleJob(job: Job): Promise<Record<string, unknown>> {
   await markJobRunRunning(sharedDbHandle?.db, job);
@@ -133,6 +142,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     });
   }
 
+  if (job.queueName === "serp-scout" || job.name === "serp_scout") {
+    return handleSerpScoutJob(job, sharedDbHandle, sharedSerpScout);
+  }
+
   if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
@@ -142,6 +155,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
 export { parseOpportunityScoutJobData } from "./handlers/opportunity-scout.js";
+export { parseSerpScoutJobData } from "./handlers/serp-scout.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
 
 export function isTerminalWorkerError(error: unknown): boolean {
@@ -158,6 +172,9 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof OpportunityScoutConfigurationError ||
     error instanceof OpportunityScoutEvidenceError ||
     error instanceof OpportunityScoutWorkflowError ||
+    error instanceof SerpScoutConfigurationError ||
+    error instanceof SerpScoutEvidenceError ||
+    error instanceof SerpScoutTerminalError ||
     isTerminalGscSyncFailure(error)
   );
 }
@@ -223,4 +240,8 @@ export function createReasoningAdapter(
         endpoint: input.AI_REASONING_OPENCODE_GO_ENDPOINT
       });
   }
+}
+
+function createSerpScoutAdapter(): SerpScoutPort {
+  return new MockSerpScoutAdapter();
 }
