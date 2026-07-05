@@ -11,6 +11,7 @@ import {
   buildOpportunityScoutEvidencePacket,
   buildOpportunityScoutPrompt,
   evaluateOpportunityScoutOutput,
+  opportunityScoutEvidencePacketLimits,
   type EvaluatedOpportunityScoutOutput,
   type OpportunityScoutEvidencePacket,
   type ResolvableEvidenceRef
@@ -389,21 +390,21 @@ async function loadOpportunityScoutEvidence(
     .from(gscSearchAnalyticsRows)
     .where(eq(gscSearchAnalyticsRows.projectId, projectId))
     .orderBy(desc(gscSearchAnalyticsRows.createdAt))
-    .limit(50);
+    .limit(opportunityScoutEvidencePacketLimits.gscRows);
 
   const signals = await db
     .select()
     .from(gscOpportunitySignals)
     .where(eq(gscOpportunitySignals.projectId, projectId))
     .orderBy(desc(gscOpportunitySignals.createdAt))
-    .limit(50);
+    .limit(opportunityScoutEvidencePacketLimits.gscSignals);
 
   const recentTracking = await db
     .select()
     .from(trackingEvents)
     .where(eq(trackingEvents.projectId, projectId))
     .orderBy(desc(trackingEvents.occurredAt))
-    .limit(50);
+    .limit(opportunityScoutEvidencePacketLimits.trackingEvents);
 
   const proofFreshnessCutoff = new Date(Date.now() - rankingProofMaxAgeDays * 24 * 60 * 60 * 1_000);
   const proofRows = await db
@@ -417,14 +418,14 @@ async function loadOpportunityScoutEvidence(
       )
     )
     .orderBy(desc(rankingProofs.capturedAt))
-    .limit(50);
+    .limit(opportunityScoutEvidencePacketLimits.rankingProofs);
 
   const snapshotRows = await db
     .select()
     .from(serpSnapshots)
     .where(and(eq(serpSnapshots.projectId, projectId), eq(serpSnapshots.status, "captured")))
     .orderBy(desc(serpSnapshots.capturedAt))
-    .limit(50);
+    .limit(opportunityScoutEvidencePacketLimits.serpSnapshots);
 
   const [latestCompletedAudit] = await db
     .select({ id: technicalAuditRuns.id })
@@ -439,24 +440,30 @@ async function loadOpportunityScoutEvidence(
         .from(technicalAuditFindings)
         .where(eq(technicalAuditFindings.auditRunId, latestCompletedAudit.id))
         .orderBy(desc(technicalAuditFindings.createdAt))
-        .limit(100)
+        .limit(opportunityScoutEvidencePacketLimits.technicalAuditFindings)
     : [];
 
   const proposals = await db
     .select({ route: pageProposals.route })
     .from(pageProposals)
     .where(eq(pageProposals.projectId, projectId))
-    .limit(100);
+    .limit(opportunityScoutEvidencePacketLimits.existingRoutes);
 
   const openOpportunities = await db
     .select({ evidenceJson: opportunities.evidenceJson })
     .from(opportunities)
     .where(and(eq(opportunities.projectId, projectId), ne(opportunities.status, "rejected")))
-    .limit(100);
+    .limit(opportunityScoutEvidencePacketLimits.existingOpportunityKeys);
 
   const importSummary = recordFromUnknown(latestImport?.summaryJson);
-  const importRoutes = stringArrayFromUnknown(importSummary.discoveredRoutes);
-  const existingRoutes = [...new Set([...importRoutes, ...proposals.map((proposal) => proposal.route)])];
+  const importRoutes = stringArrayFromUnknown(importSummary.discoveredRoutes).slice(
+    0,
+    opportunityScoutEvidencePacketLimits.existingRoutes
+  );
+  const existingRoutes = [...new Set([...importRoutes, ...proposals.map((proposal) => proposal.route)])].slice(
+    0,
+    opportunityScoutEvidencePacketLimits.existingRoutes
+  );
   const existingOpportunityKeys = openOpportunities
     .map((opportunity) => opportunityKeyFromJson(opportunity.evidenceJson))
     .filter((key): key is string => Boolean(key));

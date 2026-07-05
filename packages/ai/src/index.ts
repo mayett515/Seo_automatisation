@@ -148,6 +148,18 @@ export type OpportunityScoutEvidencePacket = {
   existingOpportunityKeys: string[];
 };
 
+export const opportunityScoutEvidencePacketLimits = {
+  gscRows: 50,
+  gscSignals: 50,
+  trackingEvents: 50,
+  rankingProofs: 50,
+  serpSnapshots: 20,
+  technicalAuditFindings: 40,
+  existingRoutes: 100,
+  existingOpportunityKeys: 100,
+  serializedBytes: 120_000
+} as const;
+
 export type OpportunityScoutPromptSection = {
   key:
     | "role"
@@ -179,7 +191,9 @@ export const opportunityScoutPromptSections: readonly OpportunityScoutPromptSect
       "GSC rows and GSC signals are internal radar only, never customer-safe proof.",
       "Customer-safe proven_win requires a brief-level ranking_proof EvidenceRef with a Top 10 rank.",
       "SERP snapshots, browser captures, model search, GSC, tracking, and audits are supporting context only for MVP.",
-      "The observed rank, query, and pageUrl in the EvidenceRef must match the cited proof row."
+      "Use serp_snapshot evidence only as supporting_context; cite locator.query, locator.pageUrl, and observed rank when it explains market visibility.",
+      "Use technical_audit evidence for crawl/indexability/schema/internal-link problems on existing pages; it is never ranking proof.",
+      "The observed rank, query, and pageUrl in a ranking_proof EvidenceRef must match the cited proof row."
     ]
   },
   {
@@ -189,6 +203,7 @@ export const opportunityScoutPromptSections: readonly OpportunityScoutPromptSect
       "Use proven_win only for customer-report-safe ranking facts, and recommend monitor only.",
       "Use near_term_target for page or brief candidates with service fit, local intent, and supporting evidence.",
       "Use internal_radar for weak GSC or tracking signals that need more proof.",
+      "Technical audit findings alone may justify improving existing pages, monitor, or internal_radar; combine them with demand evidence before recommending create actions.",
       "Use rejected only when the opportunity should not be pursued now; explain the rejectionReason.",
       "recommendedAction is a recommendation, not a lifecycle decision."
     ]
@@ -242,6 +257,15 @@ export function buildOpportunityScoutEvidencePacket(
 ): OpportunityScoutEvidencePacket {
   return {
     ...input,
+    websiteImport: input.websiteImport
+      ? {
+          ...input.websiteImport,
+          discoveredRoutes: capStringArray(
+            input.websiteImport.discoveredRoutes,
+            opportunityScoutEvidencePacketLimits.existingRoutes
+          )
+        }
+      : undefined,
     gsc: {
       rows: sortRecords(input.gsc.rows, ["sourceId", "query", "pageUrl"]),
       signals: sortRecords(input.gsc.signals, ["sourceId", "query", "pageUrl", "signalType"])
@@ -252,9 +276,19 @@ export function buildOpportunityScoutEvidencePacket(
     rankingProofs: sortRecords(input.rankingProofs, ["sourceId", "query", "pageUrl", "capturedAt"]),
     serpSnapshots: sortRecords(input.serpSnapshots, ["sourceId", "query", "capturedAt"]),
     technicalAuditFindings: sortRecords(input.technicalAuditFindings, ["severity", "sourceId", "route", "checkKey"]),
-    existingRoutes: [...input.existingRoutes].sort(),
-    existingOpportunityKeys: [...input.existingOpportunityKeys].sort()
+    existingRoutes: [...input.existingRoutes].sort().slice(0, opportunityScoutEvidencePacketLimits.existingRoutes),
+    existingOpportunityKeys: [...input.existingOpportunityKeys]
+      .sort()
+      .slice(0, opportunityScoutEvidencePacketLimits.existingOpportunityKeys)
   };
+}
+
+function capStringArray(value: unknown, limit: number): unknown {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+
+  return value.filter((item): item is string => typeof item === "string").slice(0, limit);
 }
 
 const customerSafeProofSources = new Set<EvidenceSourceType>(["ranking_proof"]);

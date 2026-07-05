@@ -5,6 +5,7 @@ import {
   buildOpportunityScoutEvidencePacket,
   buildOpportunityScoutPrompt,
   evaluateOpportunityScoutOutput,
+  opportunityScoutEvidencePacketLimits,
   opportunityScoutPromptSections,
   scoreOpportunityBrief
 } from "./index.js";
@@ -30,6 +31,9 @@ void test("buildOpportunityScoutPrompt is sectioned around the product safety ru
   assert.match(prompt, /GSC rows and GSC signals are internal radar only/u);
   assert.match(prompt, /ranking_proof EvidenceRef/u);
   assert.match(prompt, /supporting context only for MVP/u);
+  assert.match(prompt, /Use serp_snapshot evidence only as supporting_context/u);
+  assert.match(prompt, /Use technical_audit evidence for crawl\/indexability\/schema\/internal-link problems/u);
+  assert.match(prompt, /Technical audit findings alone may justify improving existing pages/u);
   assert.match(prompt, /proven_win only for customer-report-safe ranking facts/u);
   assert.match(prompt, /Entruempelung Dachau/u);
   assert.match(prompt, /Dachdecker Markt Indersdorf/u);
@@ -151,6 +155,50 @@ void test("rejects proven_win when a SERP snapshot claims customer-safe proof", 
 
   assert.equal(result.failure.gateId, "proof_tier_containment");
   assert.match(result.failure.message, /only ranking_proof/u);
+});
+
+void test("rejects proven_win when a resolved SERP snapshot is only supporting context", () => {
+  const output = validOutput({
+    classification: "proven_win",
+    recommendedAction: "monitor",
+    evidence: [
+      {
+        sourceType: "serp_snapshot",
+        sourceId: "serp-1",
+        locator: {
+          query: "entruempelung dachau",
+          pageUrl: "https://customer.example/entruempelung-dachau/"
+        },
+        summary: "SERP snapshot shows a visible result, but snapshots are supporting context only for MVP.",
+        observedMetric: { name: "rank", value: 4 },
+        strength: "strong",
+        proofTier: "supporting_context"
+      }
+    ]
+  });
+
+  const result = evaluateOpportunityScoutOutput({
+    projectId,
+    output,
+    resolvableEvidence: [
+      { sourceType: "gsc_row", sourceId: "gsc-row-1" },
+      {
+        sourceType: "serp_snapshot",
+        sourceId: "serp-1",
+        rank: 4,
+        query: "entruempelung dachau",
+        pageUrl: "https://customer.example/entruempelung-dachau/"
+      }
+    ]
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.failure.gateId, "proof_gate");
+  assert.match(result.failure.message, /ranking proof/u);
 });
 
 void test("rejects proven_win when claimed rank differs from the cited proof row", () => {
@@ -575,6 +623,128 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
 
   assert.deepEqual(second, first);
   assert.equal(first.maxBriefs, 6);
+});
+
+void test("buildOpportunityScoutEvidencePacket stays within the saturated smoke budget", () => {
+  const packet = buildOpportunityScoutEvidencePacket({
+    projectId,
+    generatedAt: "2026-07-06T00:00:00.000Z",
+    maxBriefs: 6,
+    websiteImport: {
+      sourceId: "import-1",
+      sourceUrl: "https://customer.example",
+      status: "completed",
+      artifactKey: "website-import/import-1.json",
+      facts: {
+        title: "Gebaeudeservice Firma",
+        metaDescription: "Gebaeudeservice, Entruempelung und Dachdecker im Landkreis Dachau"
+      },
+      discoveredRoutes: Array.from(
+        { length: opportunityScoutEvidencePacketLimits.existingRoutes * 2 },
+        (_, index) => `/import-route-${index}/`
+      )
+    },
+    gsc: {
+      rows: Array.from({ length: opportunityScoutEvidencePacketLimits.gscRows }, (_, index) => ({
+        sourceType: "gsc_row",
+        sourceId: `gsc-row-${index}`,
+        query: `entruempelung dachau ${index}`,
+        pageUrl: `https://customer.example/entruempelung/${index}`,
+        clicks: index,
+        impressions: 100 + index,
+        position: 12.4,
+        createdAt: "2026-07-06T00:00:00.000Z"
+      })),
+      signals: Array.from({ length: opportunityScoutEvidencePacketLimits.gscSignals }, (_, index) => ({
+        sourceType: "gsc_signal",
+        sourceId: `gsc-signal-${index}`,
+        signalType: "impressions_no_clicks",
+        status: "internal_radar",
+        query: `dachdecker indersdorf ${index}`,
+        pageUrl: `https://customer.example/dachdecker/${index}`,
+        evidence: { impressions: 50 + index, position: 18.2 }
+      }))
+    },
+    tracking: {
+      recentEvents: Array.from({ length: opportunityScoutEvidencePacketLimits.trackingEvents }, (_, index) => ({
+        sourceType: "tracking",
+        sourceId: `tracking-${index}`,
+        eventName: "cta_click",
+        route: `/route-${index}/`,
+        componentId: "phone-cta",
+        occurredAt: "2026-07-06T00:00:00.000Z"
+      }))
+    },
+    rankingProofs: Array.from({ length: opportunityScoutEvidencePacketLimits.rankingProofs }, (_, index) => ({
+      sourceType: "ranking_proof",
+      sourceId: `rank-${index}`,
+      query: `dachdecker markt indersdorf ${index}`,
+      pageUrl: `https://customer.example/dachdecker/${index}`,
+      rank: (index % 10) + 1,
+      capturedAt: "2026-07-06T00:00:00.000Z",
+      searchEngine: "google",
+      device: "desktop",
+      locale: "de-DE",
+      screenshotArtifactKey: `proofs/${index}.png`,
+      notes: "Manual reviewed proof."
+    })),
+    serpSnapshots: Array.from({ length: opportunityScoutEvidencePacketLimits.serpSnapshots }, (_, index) => ({
+      sourceType: "serp_snapshot",
+      sourceId: `serp-${index}`,
+      query: `entruempelung dachau ${index}`,
+      searchEngine: "google",
+      device: "desktop",
+      locale: "de-DE",
+      region: "Dachau",
+      provider: "mock",
+      capturedAt: "2026-07-06T00:00:00.000Z",
+      resultCount: 10,
+      topResults: Array.from({ length: 10 }, (_, rankIndex) => ({
+        rank: rankIndex + 1,
+        type: "organic",
+        title: `Result ${rankIndex + 1}`,
+        url: `https://competitor-${rankIndex}.example/page-${index}`,
+        domain: `competitor-${rankIndex}.example`
+      }))
+    })),
+    technicalAuditFindings: Array.from(
+      { length: opportunityScoutEvidencePacketLimits.technicalAuditFindings },
+      (_, index) => ({
+        sourceType: "technical_audit",
+        sourceId: `finding-${index}`,
+        auditRunId: "audit-1",
+        checkKey: "metadata.missing_title",
+        category: "metadata",
+        severity: index % 3 === 0 ? "blocker" : index % 3 === 1 ? "warning" : "info",
+        route: `/route-${index}/`,
+        pageUrl: `https://customer.example/route-${index}/`,
+        message: "Page title is missing or too weak for local intent.",
+        evidence: { titleLength: 0 },
+        createdAt: "2026-07-06T00:00:00.000Z"
+      })
+    ),
+    existingRoutes: Array.from(
+      { length: opportunityScoutEvidencePacketLimits.existingRoutes * 2 },
+      (_, index) => `/route-${index}/`
+    ),
+    existingOpportunityKeys: Array.from(
+      { length: opportunityScoutEvidencePacketLimits.existingOpportunityKeys * 2 },
+      (_, index) => `service:${index}|location:${index}`
+    )
+  });
+
+  const discoveredRoutes = packet.websiteImport?.discoveredRoutes;
+
+  assert.ok(Array.isArray(discoveredRoutes));
+  assert.equal(discoveredRoutes.length, opportunityScoutEvidencePacketLimits.existingRoutes);
+  assert.equal(packet.serpSnapshots.length, opportunityScoutEvidencePacketLimits.serpSnapshots);
+  assert.equal(packet.technicalAuditFindings.length, opportunityScoutEvidencePacketLimits.technicalAuditFindings);
+  assert.equal(packet.existingRoutes.length, opportunityScoutEvidencePacketLimits.existingRoutes);
+  assert.equal(packet.existingOpportunityKeys.length, opportunityScoutEvidencePacketLimits.existingOpportunityKeys);
+  assert.ok(
+    JSON.stringify(packet).length <= opportunityScoutEvidencePacketLimits.serializedBytes,
+    "saturated opportunity scout packet exceeds the smoke budget"
+  );
 });
 
 function rankingProofEvidence(
