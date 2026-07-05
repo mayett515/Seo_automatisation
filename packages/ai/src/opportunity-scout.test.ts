@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { OpportunityScoutOutputSchema, type OpportunityScoutOutput } from "@localseo/contracts";
+import { evidenceSourceTypes, OpportunityScoutOutputSchema, type OpportunityScoutOutput } from "@localseo/contracts";
 import {
   buildOpportunityScoutEvidencePacket,
   buildOpportunityScoutPrompt,
@@ -28,6 +28,8 @@ void test("buildOpportunityScoutPrompt is sectioned around the product safety ru
   );
   assert.match(prompt, /## Evidence And Proof Rules/u);
   assert.match(prompt, /GSC rows and GSC signals are internal radar only/u);
+  assert.match(prompt, /ranking_proof EvidenceRef/u);
+  assert.match(prompt, /supporting context only for MVP/u);
   assert.match(prompt, /proven_win only for customer-report-safe ranking facts/u);
   assert.match(prompt, /Entruempelung Dachau/u);
   assert.match(prompt, /Dachdecker Markt Indersdorf/u);
@@ -105,6 +107,50 @@ void test("accepts proven_win only when the brief carries customer-safe ranking 
   });
 
   assert.equal(result.ok, true);
+});
+
+void test("rejects proven_win when a SERP snapshot claims customer-safe proof", () => {
+  const output = validOutput({
+    classification: "proven_win",
+    recommendedAction: "monitor",
+    evidence: [
+      {
+        sourceType: "serp_snapshot",
+        sourceId: "serp-1",
+        locator: {
+          query: "entruempelung dachau",
+          pageUrl: "https://customer.example/entruempelung-dachau/"
+        },
+        summary: "SERP snapshot shows a Top 10 result.",
+        observedMetric: { name: "rank", value: 4 },
+        strength: "strong",
+        proofTier: "customer_safe_proof"
+      }
+    ]
+  });
+
+  const result = evaluateOpportunityScoutOutput({
+    projectId,
+    output,
+    resolvableEvidence: [
+      { sourceType: "gsc_row", sourceId: "gsc-row-1" },
+      {
+        sourceType: "serp_snapshot",
+        sourceId: "serp-1",
+        rank: 4,
+        query: "entruempelung dachau",
+        pageUrl: "https://customer.example/entruempelung-dachau/"
+      }
+    ]
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.failure.gateId, "proof_tier_containment");
+  assert.match(result.failure.message, /only ranking_proof/u);
 });
 
 void test("rejects proven_win when claimed rank differs from the cited proof row", () => {
@@ -265,33 +311,40 @@ void test("does not let location evidence satisfy proven_win proof gate", () => 
   assert.equal(result.failure.gateId, "proof_gate");
 });
 
-void test("rejects GSC evidence that claims customer-safe proof", () => {
-  const output = validOutput({
-    evidence: [
-      {
-        sourceType: "gsc_row",
-        sourceId: "gsc-row-1",
-        summary: "GSC showed impressions for entruempelung dachau.",
-        observedMetric: { name: "position", value: 8 },
-        strength: "strong",
-        proofTier: "customer_safe_proof"
-      }
-    ]
+for (const sourceType of evidenceSourceTypes.filter((sourceType) => sourceType !== "ranking_proof")) {
+  void test(`rejects ${sourceType} evidence that claims customer-safe proof`, () => {
+    const sourceId = `${sourceType}-1`;
+    const output = validOutput({
+      evidence: [
+        {
+          sourceType,
+          sourceId,
+          summary: `${sourceType} should never become customer-safe proof for MVP.`,
+          observedMetric: { name: "rank", value: 4 },
+          strength: "strong",
+          proofTier: "customer_safe_proof"
+        }
+      ]
+    });
+
+    const result = evaluateOpportunityScoutOutput({
+      projectId,
+      output,
+      resolvableEvidence: [
+        { sourceType: "gsc_row", sourceId: "gsc-row-1" },
+        { sourceType, sourceId }
+      ]
+    });
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+
+    assert.equal(result.failure.gateId, "proof_tier_containment");
+    assert.match(result.failure.message, /only ranking_proof/u);
   });
-
-  const result = evaluateOpportunityScoutOutput({
-    projectId,
-    output,
-    resolvableEvidence: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }]
-  });
-
-  assert.equal(result.ok, false);
-  if (result.ok) {
-    return;
-  }
-
-  assert.equal(result.failure.gateId, "gsc_containment");
-});
+}
 
 void test("rejects briefs for a different project", () => {
   const result = evaluateOpportunityScoutOutput({

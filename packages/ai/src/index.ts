@@ -78,8 +78,8 @@ export type OpportunityScoutQaGateId =
   | "brief_cap"
   | "project_scope"
   | "evidence_resolution"
+  | "proof_tier_containment"
   | "proof_gate"
-  | "gsc_containment"
   | "competitor_containment"
   | "uniqueness_gate"
   | "cannibalization_gate"
@@ -175,7 +175,8 @@ export const opportunityScoutPromptSections: readonly OpportunityScoutPromptSect
     lines: [
       "Use only EvidenceRef objects from the input packet; do not invent sourceId values or proof.",
       "GSC rows and GSC signals are internal radar only, never customer-safe proof.",
-      "Customer-safe proven_win requires a brief-level ranking_proof or serp_snapshot EvidenceRef with a Top 10 rank.",
+      "Customer-safe proven_win requires a brief-level ranking_proof EvidenceRef with a Top 10 rank.",
+      "SERP snapshots, browser captures, model search, GSC, tracking, and audits are supporting context only for MVP.",
       "The observed rank, query, and pageUrl in the EvidenceRef must match the cited proof row."
     ]
   },
@@ -252,8 +253,7 @@ export function buildOpportunityScoutEvidencePacket(
   };
 }
 
-const gscEvidenceSources = new Set<EvidenceSourceType>(["gsc_signal", "gsc_row"]);
-const customerSafeProofSources = new Set<EvidenceSourceType>(["ranking_proof", "serp_snapshot"]);
+const customerSafeProofSources = new Set<EvidenceSourceType>(["ranking_proof"]);
 
 export function evaluateOpportunityScoutOutput(input: EvaluateOpportunityScoutInput): OpportunityScoutQaResult {
   const maxBriefs = input.maxBriefs ?? 12;
@@ -278,14 +278,14 @@ export function evaluateOpportunityScoutOutput(input: EvaluateOpportunityScoutIn
       return fail("evidence_resolution", evidenceFailure, briefIndex);
     }
 
+    const proofTierFailure = validateProofTierContainment(evidenceRefs);
+    if (proofTierFailure) {
+      return fail("proof_tier_containment", proofTierFailure, briefIndex);
+    }
+
     const proofFailure = validateProofGate(brief, input.resolvableEvidence);
     if (proofFailure) {
       return fail("proof_gate", proofFailure, briefIndex);
-    }
-
-    const gscFailure = validateGscContainment(evidenceRefs);
-    if (gscFailure) {
-      return fail("gsc_containment", gscFailure, briefIndex);
     }
 
     const competitorFailure = validateCompetitorContainment(brief, evidenceRefs);
@@ -343,7 +343,7 @@ export function scoreOpportunityBrief(brief: OpportunityBrief): number {
 }
 
 export function isCustomerVisibleEvidence(evidence: EvidenceRef): boolean {
-  return evidence.proofTier === "customer_safe_proof";
+  return evidence.proofTier === "customer_safe_proof" && customerSafeProofSources.has(evidence.sourceType);
 }
 
 export function opportunityBriefKey(brief: Pick<OpportunityBrief, "service" | "location">): string {
@@ -438,13 +438,13 @@ function validateRankingProofAttribution(
   return undefined;
 }
 
-function validateGscContainment(evidenceRefs: readonly EvidenceRef[]): string | undefined {
-  const badGscProof = evidenceRefs.find(
-    (evidence) => gscEvidenceSources.has(evidence.sourceType) && evidence.proofTier === "customer_safe_proof"
+function validateProofTierContainment(evidenceRefs: readonly EvidenceRef[]): string | undefined {
+  const unsupportedCustomerSafeProof = evidenceRefs.find(
+    (evidence) => evidence.proofTier === "customer_safe_proof" && !customerSafeProofSources.has(evidence.sourceType)
   );
 
-  if (badGscProof) {
-    return `${badGscProof.sourceType} cannot be customer_safe_proof.`;
+  if (unsupportedCustomerSafeProof) {
+    return `${unsupportedCustomerSafeProof.sourceType} cannot be customer_safe_proof; only ranking_proof is customer-safe proof for MVP.`;
   }
 
   return undefined;

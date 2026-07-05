@@ -540,6 +540,8 @@ Next no-SERP-API evidence slices:
 
 ```text
 F.1 harden snapshot evidence policy
+  implemented: proof_tier_containment rejects customer_safe_proof unless
+    sourceType = ranking_proof
   captured serp_snapshots can be loaded as supporting_context only
   failed snapshots excluded
   generic search/model/browser snapshots cannot support proven_win

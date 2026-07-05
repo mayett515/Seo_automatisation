@@ -408,12 +408,14 @@ Run in order after Zod parse; first failure rejects the run with `qa_rejected` +
 
 ```text
 1. evidence_resolution      every required sourceId resolves to a project-owned row
-2. proof_gate               proven_win requires >=1 customer_safe_proof ranking evidence;
+2. proof_tier_containment   only ranking_proof may carry customer_safe_proof for MVP;
+                            all other sourceTypes are internal/supporting even when
+                            the model marks them as proof
+3. proof_gate               proven_win requires >=1 customer_safe_proof ranking evidence;
                             row-backed ranking_proof must match the cited row's rank,
                             query, and pageUrl;
                             otherwise QA downgrades is NOT allowed — the run fails
                             (silent downgrade would hide a lying model)
-3. gsc_containment          no gsc-sourced evidence marked customer_safe_proof
 4. competitor_containment   excerpt caps, no competitor text in keywords/rationale fields
 5. uniqueness_gate          create_brief/create_page_proposal requires uniquenessRationale
                             and hubSpokeRole
