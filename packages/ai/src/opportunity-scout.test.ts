@@ -543,6 +543,14 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
       { sourceId: "rank-2", query: "b", pageUrl: "https://example.test/b", capturedAt: "2026-07-03T00:00:02.000Z" },
       { sourceId: "rank-1", query: "a", pageUrl: "https://example.test/a", capturedAt: "2026-07-03T00:00:01.000Z" }
     ],
+    serpSnapshots: [
+      { sourceId: "snapshot-2", query: "b", capturedAt: "2026-07-03T00:00:02.000Z" },
+      { sourceId: "snapshot-1", query: "a", capturedAt: "2026-07-03T00:00:01.000Z" }
+    ],
+    technicalAuditFindings: [
+      { sourceId: "finding-2", severity: "warning", route: "/b", checkKey: "metadata.missing_title" },
+      { sourceId: "finding-1", severity: "blocker", route: "/a", checkKey: "indexability.noindex" }
+    ],
     existingRoutes: ["/b", "/a"],
     existingOpportunityKeys: ["b", "a"]
   });
@@ -559,6 +567,8 @@ void test("buildOpportunityScoutEvidencePacket uses stable ordering for audit ar
       recentEvents: [...first.tracking.recentEvents].reverse()
     },
     rankingProofs: [...first.rankingProofs].reverse(),
+    serpSnapshots: [...first.serpSnapshots].reverse(),
+    technicalAuditFindings: [...first.technicalAuditFindings].reverse(),
     existingRoutes: [...first.existingRoutes].reverse(),
     existingOpportunityKeys: [...first.existingOpportunityKeys].reverse()
   });

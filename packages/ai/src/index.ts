@@ -142,6 +142,8 @@ export type OpportunityScoutEvidencePacket = {
     recentEvents: Record<string, unknown>[];
   };
   rankingProofs: Record<string, unknown>[];
+  serpSnapshots: Record<string, unknown>[];
+  technicalAuditFindings: Record<string, unknown>[];
   existingRoutes: string[];
   existingOpportunityKeys: string[];
 };
@@ -248,6 +250,8 @@ export function buildOpportunityScoutEvidencePacket(
       recentEvents: sortRecords(input.tracking.recentEvents, ["occurredAt", "eventName", "route"])
     },
     rankingProofs: sortRecords(input.rankingProofs, ["sourceId", "query", "pageUrl", "capturedAt"]),
+    serpSnapshots: sortRecords(input.serpSnapshots, ["sourceId", "query", "capturedAt"]),
+    technicalAuditFindings: sortRecords(input.technicalAuditFindings, ["severity", "sourceId", "route", "checkKey"]),
     existingRoutes: [...input.existingRoutes].sort(),
     existingOpportunityKeys: [...input.existingOpportunityKeys].sort()
   };

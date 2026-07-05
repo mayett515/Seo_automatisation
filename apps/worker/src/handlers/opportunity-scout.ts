@@ -2,6 +2,7 @@ import type { AiReasoningPort, AiReasoningRunResult, AiReasoningUsage, ObjectSto
 import {
   OpportunityScoutJobDataSchema,
   OpportunityScoutOutputSchema,
+  rankingProofMaxAgeDays,
   type AiReasoningAdapterFailureCode,
   type AiReasoningWorkflowFailureCode,
   type OpportunityScoutJobData
@@ -22,11 +23,14 @@ import {
   opportunities,
   pageProposals,
   rankingProofs,
+  serpSnapshots,
+  technicalAuditFindings,
+  technicalAuditRuns,
   trackingEvents,
   websiteImportRuns
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 
 type AgentRunRow = typeof agentRuns.$inferSelect;
@@ -401,12 +405,42 @@ async function loadOpportunityScoutEvidence(
     .orderBy(desc(trackingEvents.occurredAt))
     .limit(50);
 
+  const proofFreshnessCutoff = new Date(Date.now() - rankingProofMaxAgeDays * 24 * 60 * 60 * 1_000);
   const proofRows = await db
     .select()
     .from(rankingProofs)
-    .where(eq(rankingProofs.projectId, projectId))
+    .where(
+      and(
+        eq(rankingProofs.projectId, projectId),
+        eq(rankingProofs.status, "reviewed"),
+        gte(rankingProofs.capturedAt, proofFreshnessCutoff)
+      )
+    )
     .orderBy(desc(rankingProofs.capturedAt))
     .limit(50);
+
+  const snapshotRows = await db
+    .select()
+    .from(serpSnapshots)
+    .where(and(eq(serpSnapshots.projectId, projectId), eq(serpSnapshots.status, "captured")))
+    .orderBy(desc(serpSnapshots.capturedAt))
+    .limit(50);
+
+  const [latestCompletedAudit] = await db
+    .select({ id: technicalAuditRuns.id })
+    .from(technicalAuditRuns)
+    .where(and(eq(technicalAuditRuns.projectId, projectId), eq(technicalAuditRuns.status, "completed")))
+    .orderBy(desc(technicalAuditRuns.completedAt), desc(technicalAuditRuns.createdAt))
+    .limit(1);
+
+  const auditFindings = latestCompletedAudit
+    ? await db
+        .select()
+        .from(technicalAuditFindings)
+        .where(eq(technicalAuditFindings.auditRunId, latestCompletedAudit.id))
+        .orderBy(desc(technicalAuditFindings.createdAt))
+        .limit(100)
+    : [];
 
   const proposals = await db
     .select({ route: pageProposals.route })
@@ -432,6 +466,8 @@ async function loadOpportunityScoutEvidence(
     ...rows.map((row) => ({ sourceType: "gsc_row" as const, sourceId: row.id })),
     ...signals.map((signal) => ({ sourceType: "gsc_signal" as const, sourceId: signal.id })),
     ...recentTracking.map((event) => ({ sourceType: "tracking" as const, sourceId: event.id })),
+    ...snapshotRows.map((snapshot) => ({ sourceType: "serp_snapshot" as const, sourceId: snapshot.id })),
+    ...auditFindings.map((finding) => ({ sourceType: "technical_audit" as const, sourceId: finding.id })),
     ...proofRows.map((proof) => ({
       sourceType: "ranking_proof" as const,
       sourceId: proof.id,
@@ -498,6 +534,38 @@ async function loadOpportunityScoutEvidence(
       locale: proof.locale,
       screenshotArtifactKey: proof.screenshotArtifactKey,
       notes: proof.notes
+    })),
+    serpSnapshots: snapshotRows.map((snapshot) => ({
+      sourceType: "serp_snapshot",
+      sourceId: snapshot.id,
+      query: snapshot.query,
+      searchEngine: snapshot.searchEngine,
+      device: snapshot.device,
+      locale: snapshot.locale,
+      region: snapshot.region,
+      provider: snapshot.provider,
+      capturedAt: snapshot.capturedAt.toISOString(),
+      resultCount: snapshot.resultsJson.length,
+      topResults: snapshot.resultsJson.slice(0, 10).map((result) => ({
+        rank: result.rank,
+        type: result.type,
+        title: result.title,
+        url: result.url,
+        domain: result.domain
+      }))
+    })),
+    technicalAuditFindings: auditFindings.map((finding) => ({
+      sourceType: "technical_audit",
+      sourceId: finding.id,
+      auditRunId: finding.auditRunId,
+      checkKey: finding.checkKey,
+      category: finding.category,
+      severity: finding.severity,
+      route: finding.route,
+      pageUrl: finding.pageUrl,
+      message: finding.message,
+      evidence: finding.evidenceJson,
+      createdAt: finding.createdAt.toISOString()
     })),
     existingRoutes,
     existingOpportunityKeys

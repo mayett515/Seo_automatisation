@@ -18,7 +18,11 @@ import {
   releaseNoteAudiences,
   releasePlanStatuses,
   releaseVerificationStatuses,
+  rankingProofStatuses,
   serpSnapshotStatuses,
+  technicalAuditFindingCategories,
+  technicalAuditFindingSeverities,
+  technicalAuditStatuses,
   websiteImportStatuses
 } from "@localseo/contracts";
 import type { SerpArtifactRef, SerpEngineError, SerpFeature, SerpSearchResult } from "@localseo/contracts";
@@ -42,6 +46,16 @@ export const agentRunStatusEnum = pgEnum("agent_run_status", agentRunStatuses);
 export const opportunityClassificationEnum = pgEnum("opportunity_classification", opportunityClassifications);
 export const opportunityLifecycleStatusEnum = pgEnum("opportunity_lifecycle_status", opportunityLifecycleStatuses);
 export const serpSnapshotStatusEnum = pgEnum("serp_snapshot_status", serpSnapshotStatuses);
+export const rankingProofStatusEnum = pgEnum("ranking_proof_status", rankingProofStatuses);
+export const technicalAuditStatusEnum = pgEnum("technical_audit_status", technicalAuditStatuses);
+export const technicalAuditFindingSeverityEnum = pgEnum(
+  "technical_audit_finding_severity",
+  technicalAuditFindingSeverities
+);
+export const technicalAuditFindingCategoryEnum = pgEnum(
+  "technical_audit_finding_category",
+  technicalAuditFindingCategories
+);
 export const releaseStatusEnum = pgEnum("release_status", releasePlanStatuses);
 export const deploymentStatusEnum = pgEnum("deployment_status", deploymentStatuses);
 export const providerOperationStatusEnum = pgEnum("provider_operation_status", providerOperationStatuses);
@@ -222,6 +236,50 @@ export const websiteImportRuns = pgTable(
   ]
 );
 
+export const technicalAuditRuns = pgTable(
+  "technical_audit_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    sourceUrl: text("source_url").notNull(),
+    status: technicalAuditStatusEnum("status").notNull().default("queued"),
+    artifactKey: text("artifact_key"),
+    summaryJson: jsonb("summary_json").$type<Record<string, unknown>>(),
+    failureJson: jsonb("failure_json").$type<Record<string, unknown>>(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [index("technical_audit_runs_project_status_idx").on(table.projectId, table.status, table.createdAt)]
+);
+
+export const technicalAuditFindings = pgTable(
+  "technical_audit_findings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    auditRunId: uuid("audit_run_id")
+      .notNull()
+      .references(() => technicalAuditRuns.id, { onDelete: "cascade" }),
+    checkKey: text("check_key").notNull(),
+    category: technicalAuditFindingCategoryEnum("category").notNull(),
+    severity: technicalAuditFindingSeverityEnum("severity").notNull(),
+    route: text("route"),
+    pageUrl: text("page_url"),
+    message: text("message").notNull(),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>().default({}).notNull(),
+    ...timestamps
+  },
+  (table) => [
+    index("technical_audit_findings_run_idx").on(table.auditRunId),
+    index("technical_audit_findings_project_severity_idx").on(table.projectId, table.severity, table.createdAt)
+  ]
+);
+
 export const domains = pgTable("domains", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")
@@ -314,12 +372,16 @@ export const rankingProofs = pgTable(
     locale: text("locale"),
     screenshotArtifactKey: text("screenshot_artifact_key"),
     notes: text("notes"),
+    status: rankingProofStatusEnum("status").notNull().default("reviewed"),
+    invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
+    invalidatedByUserId: uuid("invalidated_by_user_id").references(() => users.id),
+    invalidationReason: text("invalidation_reason"),
     createdByUserId: uuid("created_by_user_id").references(() => users.id),
     evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
     ...timestamps
   },
   (table) => [
-    index("ranking_proofs_project_captured_idx").on(table.projectId, table.capturedAt),
+    index("ranking_proofs_project_status_captured_idx").on(table.projectId, table.status, table.capturedAt),
     index("ranking_proofs_project_query_idx").on(table.projectId, table.query)
   ]
 );
@@ -702,6 +764,8 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   gscSyncRuns: many(gscSyncRuns),
   gscOpportunitySignals: many(gscOpportunitySignals),
   websiteImportRuns: many(websiteImportRuns),
+  technicalAuditRuns: many(technicalAuditRuns),
+  technicalAuditFindings: many(technicalAuditFindings),
   agentRuns: many(agentRuns),
   rankingProofs: many(rankingProofs),
   trackingKeys: many(projectTrackingKeys),
@@ -716,6 +780,19 @@ export const mainWebsiteRelations = relations(mainWebsites, ({ many, one }) => (
 export const websiteImportRunRelations = relations(websiteImportRuns, ({ one }) => ({
   project: one(projects, { fields: [websiteImportRuns.projectId], references: [projects.id] }),
   mainWebsite: one(mainWebsites, { fields: [websiteImportRuns.mainWebsiteId], references: [mainWebsites.id] })
+}));
+
+export const technicalAuditRunRelations = relations(technicalAuditRuns, ({ many, one }) => ({
+  project: one(projects, { fields: [technicalAuditRuns.projectId], references: [projects.id] }),
+  findings: many(technicalAuditFindings)
+}));
+
+export const technicalAuditFindingRelations = relations(technicalAuditFindings, ({ one }) => ({
+  project: one(projects, { fields: [technicalAuditFindings.projectId], references: [projects.id] }),
+  auditRun: one(technicalAuditRuns, {
+    fields: [technicalAuditFindings.auditRunId],
+    references: [technicalAuditRuns.id]
+  })
 }));
 
 export const userRelations = relations(users, ({ many }) => ({
@@ -763,7 +840,8 @@ export const opportunityRelations = relations(opportunities, ({ many, one }) => 
 
 export const rankingProofRelations = relations(rankingProofs, ({ one }) => ({
   project: one(projects, { fields: [rankingProofs.projectId], references: [projects.id] }),
-  createdBy: one(users, { fields: [rankingProofs.createdByUserId], references: [users.id] })
+  createdBy: one(users, { fields: [rankingProofs.createdByUserId], references: [users.id] }),
+  invalidatedBy: one(users, { fields: [rankingProofs.invalidatedByUserId], references: [users.id] })
 }));
 
 export const releasePlanRelations = relations(releasePlans, ({ many, one }) => ({

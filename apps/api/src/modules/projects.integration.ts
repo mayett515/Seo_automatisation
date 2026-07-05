@@ -5,7 +5,9 @@ import {
   customers,
   isDatabaseUniqueViolation,
   jobRuns,
+  mainWebsites,
   projects,
+  technicalAuditRuns,
   users,
   type DatabaseClient
 } from "@localseo/db";
@@ -274,6 +276,48 @@ void describe(
       assert.equal(jobRunRows[0]?.status, "failed");
       assert.deepEqual(jobRunRows[0]?.failureJson, { message: "redis write failed" });
     });
+
+    void it("creates a queued technical audit run and enqueues BullMQ", async () => {
+      const fixture = await createProjectFixture(db);
+      await db.insert(mainWebsites).values({
+        projectId: fixture.projectId,
+        sourceUrl: "https://example.test/"
+      });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setTechnicalAuditQueue(queueService, queue);
+      const service = new ProjectsService(queueService, testDatabaseService(db));
+
+      const result = await service.queueTechnicalAudit(fixture.projectId, {}, fixture.userId);
+
+      assert.equal(result.status, "queued");
+      assert.equal(result.type, "technical_audit");
+      assert.equal(result.projectId, fixture.projectId);
+      assert.equal(result.sourceUrl, "https://example.test/");
+      assert.ok(result.auditRunId);
+      assert.equal(result.inputRef, result.auditRunId);
+      assert.equal(queue.addCalls.length, 1);
+      assert.equal(queue.addCalls[0]?.name, "technical_audit");
+      assert.equal(queue.addCalls[0]?.options.jobId, `technical_audit:${result.auditRunId}`);
+      assert.equal(queue.addCalls[0]?.data.projectId, fixture.projectId);
+      assert.equal(queue.addCalls[0]?.data.auditRunId, result.auditRunId);
+      assert.equal(queue.addCalls[0]?.data.sourceUrl, "https://example.test/");
+      assert.equal(queue.addCalls[0]?.data.triggeredByUserId, fixture.userId);
+
+      const [auditRun] = await db.select().from(technicalAuditRuns).where(eq(technicalAuditRuns.id, result.auditRunId));
+      assert.equal(auditRun?.projectId, fixture.projectId);
+      assert.equal(auditRun?.sourceUrl, "https://example.test/");
+      assert.equal(auditRun?.status, "queued");
+
+      const [jobRun] = await db
+        .select()
+        .from(jobRuns)
+        .where(eq(jobRuns.externalJobId, `technical_audit:${result.auditRunId}`));
+      assert.equal(jobRun?.queueName, "technical-audit");
+      assert.equal(jobRun?.type, "technical_audit");
+      assert.equal(jobRun?.status, "queued");
+      assert.equal(jobRun?.inputRef, result.auditRunId);
+    });
   }
 );
 
@@ -320,6 +364,10 @@ function setOpportunityScoutQueue(service: QueueProducerService, queue: FakeQueu
 
 function setSerpScoutQueue(service: QueueProducerService, queue: FakeQueue): void {
   (service as unknown as { queues: { "serp-scout"?: unknown } }).queues["serp-scout"] = queue;
+}
+
+function setTechnicalAuditQueue(service: QueueProducerService, queue: FakeQueue): void {
+  (service as unknown as { queues: { "technical-audit"?: unknown } }).queues["technical-audit"] = queue;
 }
 
 class FakeQueue {
