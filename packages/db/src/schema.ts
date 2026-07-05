@@ -18,8 +18,10 @@ import {
   releaseNoteAudiences,
   releasePlanStatuses,
   releaseVerificationStatuses,
+  serpSnapshotStatuses,
   websiteImportStatuses
 } from "@localseo/contracts";
+import type { SerpArtifactRef, SerpEngineError, SerpFeature, SerpSearchResult } from "@localseo/contracts";
 import {
   boolean,
   doublePrecision,
@@ -39,6 +41,7 @@ export const agentTaskEnum = pgEnum("agent_task", reasoningTasks);
 export const agentRunStatusEnum = pgEnum("agent_run_status", agentRunStatuses);
 export const opportunityClassificationEnum = pgEnum("opportunity_classification", opportunityClassifications);
 export const opportunityLifecycleStatusEnum = pgEnum("opportunity_lifecycle_status", opportunityLifecycleStatuses);
+export const serpSnapshotStatusEnum = pgEnum("serp_snapshot_status", serpSnapshotStatuses);
 export const releaseStatusEnum = pgEnum("release_status", releasePlanStatuses);
 export const deploymentStatusEnum = pgEnum("deployment_status", deploymentStatuses);
 export const providerOperationStatusEnum = pgEnum("provider_operation_status", providerOperationStatuses);
@@ -318,6 +321,36 @@ export const rankingProofs = pgTable(
   (table) => [
     index("ranking_proofs_project_captured_idx").on(table.projectId, table.capturedAt),
     index("ranking_proofs_project_query_idx").on(table.projectId, table.query)
+  ]
+);
+
+export const serpSnapshots = pgTable(
+  "serp_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    agentRunId: uuid("agent_run_id").references(() => agentRuns.id),
+    status: serpSnapshotStatusEnum("status").notNull().default("captured"),
+    query: text("query").notNull(),
+    searchEngine: text("search_engine").notNull().default("google"),
+    device: text("device").notNull().default("desktop"),
+    locale: text("locale"),
+    region: text("region"),
+    cacheKey: text("cache_key").notNull(),
+    provider: text("provider"),
+    resultsJson: jsonb("results_json").$type<SerpSearchResult[]>().default([]).notNull(),
+    serpFeaturesJson: jsonb("serp_features_json").$type<SerpFeature[]>().default([]).notNull(),
+    engineErrorsJson: jsonb("engine_errors_json").$type<SerpEngineError[]>().default([]).notNull(),
+    artifactRefsJson: jsonb("artifact_refs_json").$type<SerpArtifactRef[]>().default([]).notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    ...timestamps
+  },
+  (table) => [
+    index("serp_snapshots_project_query_captured_idx").on(table.projectId, table.query, table.capturedAt),
+    index("serp_snapshots_project_cache_idx").on(table.projectId, table.cacheKey),
+    index("serp_snapshots_agent_run_idx").on(table.agentRunId)
   ]
 );
 

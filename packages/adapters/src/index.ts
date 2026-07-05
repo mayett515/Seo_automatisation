@@ -10,6 +10,9 @@ import type {
   ReleaseVerification,
   ReleaseVerificationCheck,
   RollbackPoint,
+  SerpScoutFailureCode,
+  SerpScoutRequest,
+  SerpSnapshot,
   TrackingEvent
 } from "@localseo/contracts";
 
@@ -175,7 +178,28 @@ export type AnalyticsSnapshot = {
   metrics: Record<string, number>;
 };
 
-export type AiReasoningToolCategory = "read_evidence" | "analyze" | "draft_content";
+export type SerpScoutDiagnostics = {
+  latencyMs: number;
+  detail?: string;
+};
+
+export type SerpScoutResult =
+  | {
+      ok: true;
+      snapshot: SerpSnapshot;
+      diagnostics: SerpScoutDiagnostics;
+    }
+  | {
+      ok: false;
+      failureCode: SerpScoutFailureCode;
+      diagnostics: SerpScoutDiagnostics;
+    };
+
+export interface SerpScoutPort {
+  search(input: SerpScoutRequest & { timeoutMs: number; agentRunId?: string }): Promise<SerpScoutResult>;
+}
+
+export type AiReasoningToolCategory = "read_evidence" | "search_web" | "read_public_page" | "analyze" | "draft_content";
 
 export type AiReasoningRunPolicy = {
   canMutateProduction: false;

@@ -598,7 +598,22 @@ implemented in the worker baseline
 
 deferred to the next slices
   Opportunity lifecycle buttons in the web UI
-  automated SERP/competitor snapshot source rows
+  automated SERP/competitor worker and provider adapters
+```
+
+SERP boundary baseline:
+
+```text
+SerpScoutPort.search(input)
+  read-only driven port for query/locale/device SERP capture.
+  DeepSeek or another model can drive the research workflow, but the port writes
+  normalized snapshot rows/artifacts before any claim becomes product evidence.
+
+serp_snapshots
+  project-owned source rows for sourceType = serp_snapshot evidence.
+  Stores query, searchEngine, device, locale/region, cacheKey, capturedAt,
+  status, provider, normalized results, SERP features, engine errors, and
+  artifact refs.
 ```
 
 Explorer backend read baseline:

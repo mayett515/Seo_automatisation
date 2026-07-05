@@ -207,6 +207,41 @@ export const opportunityGroupSources = [
   "user_defined"
 ] as const;
 
+export const serpSnapshotStatuses = ["captured", "failed"] as const;
+export const serpResultTypes = [
+  "organic",
+  "local_pack",
+  "map_pack",
+  "paid",
+  "featured_snippet",
+  "ai_overview",
+  "people_also_ask",
+  "video",
+  "image",
+  "other"
+] as const;
+export const serpFeatureTypes = [
+  "local_pack",
+  "map_pack",
+  "featured_snippet",
+  "ai_overview",
+  "people_also_ask",
+  "site_links",
+  "reviews",
+  "image_pack",
+  "video_pack",
+  "other"
+] as const;
+export const serpArtifactKinds = ["raw_json", "screenshot", "html", "markdown"] as const;
+export const serpScoutFailureCodes = [
+  "provider_not_configured",
+  "provider_timeout",
+  "provider_error",
+  "provider_overloaded",
+  "captcha_blocked",
+  "policy_denied"
+] as const;
+
 export const approvalStatuses = ["pending", "approved", "rejected", "held"] as const;
 export const releaseCheckSeverities = ["info", "warning", "blocker"] as const;
 export const releaseCheckResults = ["passed", "failed", "skipped"] as const;
@@ -250,6 +285,11 @@ export const ClusterStrengthSchema = z.enum(clusterStrengths);
 export const HubSpokeRoleSchema = z.enum(hubSpokeRoles);
 export const CannibalizationRiskLevelSchema = z.enum(cannibalizationRiskLevels);
 export const OpportunityGroupSourceSchema = z.enum(opportunityGroupSources);
+export const SerpSnapshotStatusSchema = z.enum(serpSnapshotStatuses);
+export const SerpResultTypeSchema = z.enum(serpResultTypes);
+export const SerpFeatureTypeSchema = z.enum(serpFeatureTypes);
+export const SerpArtifactKindSchema = z.enum(serpArtifactKinds);
+export const SerpScoutFailureCodeSchema = z.enum(serpScoutFailureCodes);
 export const ApprovalStatusSchema = z.enum(approvalStatuses);
 export const CustomerMembershipRoleSchema = z.enum(customerMembershipRoles);
 
@@ -337,6 +377,75 @@ export const CreateRankingProofRequestSchema = z
     locale: z.string().trim().min(1).max(100).optional(),
     screenshotArtifactKey: z.string().trim().min(1).max(500).optional(),
     notes: z.string().trim().min(1).max(2_000).optional()
+  })
+  .strict();
+
+export const SerpScoutRequestSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    query: z.string().trim().min(1).max(200),
+    searchEngine: z.string().trim().min(1).max(60).default("google"),
+    device: RankingProofDeviceSchema.default("desktop"),
+    locale: z.string().trim().min(1).max(100).optional(),
+    region: z.string().trim().min(1).max(160).optional(),
+    maxResults: z.number().int().positive().max(100).default(20)
+  })
+  .strict();
+
+export const SerpSearchResultSchema = z
+  .object({
+    rank: z.number().int().positive().max(100),
+    type: SerpResultTypeSchema,
+    title: z.string().trim().min(1).max(300),
+    url: HttpUrlSchema,
+    displayUrl: z.string().trim().min(1).max(300).optional(),
+    domain: z.string().trim().min(1).max(255),
+    snippet: z.string().trim().min(1).max(1_000).optional()
+  })
+  .strict();
+
+export const SerpFeatureSchema = z
+  .object({
+    type: SerpFeatureTypeSchema,
+    label: z.string().trim().min(1).max(200),
+    rank: z.number().int().positive().max(100).optional(),
+    observed: z.record(z.string(), z.unknown()).optional()
+  })
+  .strict();
+
+export const SerpEngineErrorSchema = z
+  .object({
+    code: z.string().trim().min(1).max(120),
+    message: z.string().trim().min(1).max(500).optional()
+  })
+  .strict();
+
+export const SerpArtifactRefSchema = z
+  .object({
+    kind: SerpArtifactKindSchema,
+    artifactKey: z.string().trim().min(1).max(500),
+    contentHash: z.string().trim().min(1).max(160).optional()
+  })
+  .strict();
+
+export const SerpSnapshotSchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: ProjectIdSchema,
+    agentRunId: z.string().min(1).optional(),
+    status: SerpSnapshotStatusSchema,
+    query: z.string().trim().min(1).max(200),
+    searchEngine: z.string().trim().min(1).max(60),
+    device: RankingProofDeviceSchema,
+    locale: z.string().trim().min(1).max(100).optional(),
+    region: z.string().trim().min(1).max(160).optional(),
+    cacheKey: z.string().trim().min(1).max(500),
+    capturedAt: z.string().datetime(),
+    provider: z.string().trim().min(1).max(120).optional(),
+    results: z.array(SerpSearchResultSchema).max(100).default([]),
+    serpFeatures: z.array(SerpFeatureSchema).max(50).default([]),
+    engineErrors: z.array(SerpEngineErrorSchema).max(20).default([]),
+    artifactRefs: z.array(SerpArtifactRefSchema).max(10).default([])
   })
   .strict();
 
@@ -958,6 +1067,12 @@ export type WebsiteImportRun = z.output<typeof WebsiteImportRunSchema>;
 export type LatestWebsiteImportResponse = z.output<typeof LatestWebsiteImportResponseSchema>;
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
 export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;
+export type SerpScoutRequest = z.output<typeof SerpScoutRequestSchema>;
+export type SerpSearchResult = z.output<typeof SerpSearchResultSchema>;
+export type SerpFeature = z.output<typeof SerpFeatureSchema>;
+export type SerpEngineError = z.output<typeof SerpEngineErrorSchema>;
+export type SerpArtifactRef = z.output<typeof SerpArtifactRefSchema>;
+export type SerpSnapshot = z.output<typeof SerpSnapshotSchema>;
 export type UpdateOpportunityLifecycleRequest = z.output<typeof UpdateOpportunityLifecycleRequestSchema>;
 export type GscSearchAnalyticsRow = z.output<typeof GscSearchAnalyticsRowSchema>;
 export type GscOpportunitySignal = z.output<typeof GscOpportunitySignalSchema>;
@@ -1018,5 +1133,10 @@ export type EvidenceStrength = z.output<typeof EvidenceStrengthSchema>;
 export type EvidenceProofTier = z.output<typeof EvidenceProofTierSchema>;
 export type RankingProofDevice = z.output<typeof RankingProofDeviceSchema>;
 export type OpportunityGroupSource = z.output<typeof OpportunityGroupSourceSchema>;
+export type SerpSnapshotStatus = z.output<typeof SerpSnapshotStatusSchema>;
+export type SerpResultType = z.output<typeof SerpResultTypeSchema>;
+export type SerpFeatureType = z.output<typeof SerpFeatureTypeSchema>;
+export type SerpArtifactKind = z.output<typeof SerpArtifactKindSchema>;
+export type SerpScoutFailureCode = z.output<typeof SerpScoutFailureCodeSchema>;
 export type ApprovalStatus = z.output<typeof ApprovalStatusSchema>;
 export type CustomerMembershipRole = z.output<typeof CustomerMembershipRoleSchema>;
