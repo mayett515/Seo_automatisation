@@ -5,7 +5,8 @@ import {
   MockSerpScoutAdapter,
   NotConfiguredReasoningAdapter,
   OpenCodeGoReasoningAdapter,
-  type ObjectStoragePort
+  type ObjectStoragePort,
+  type SerpScoutResult
 } from "@localseo/adapters";
 import {
   OpportunityScoutOutputSchema,
@@ -608,6 +609,83 @@ void describe("executeSerpScout", () => {
     );
 
     assert.equal(repository.failure?.failureCode, "captcha_blocked");
+  });
+
+  void it("persists invalid adapter snapshots as terminal failures", async () => {
+    const repository = new FakeSerpScoutRepository();
+    const invalidResult = {
+      ok: true,
+      snapshot: {
+        id: "snapshot-1",
+        projectId: "project-1",
+        status: "captured"
+      },
+      diagnostics: { latencyMs: 2 }
+    } as unknown as SerpScoutResult;
+    const adapter = new MockSerpScoutAdapter(invalidResult);
+
+    await assert.rejects(
+      executeSerpScout({
+        data: {
+          projectId: "project-1",
+          snapshotId: "snapshot-1",
+          query: "dachdecker dachau",
+          searchEngine: "google",
+          device: "desktop",
+          maxResults: 10
+        },
+        repository,
+        serpScout: adapter,
+        timeoutMs: 15_000
+      }),
+      SerpScoutTerminalError
+    );
+
+    assert.equal(repository.failure?.failureCode, "adapter_invalid_snapshot");
+    assert.equal(repository.snapshot, undefined);
+  });
+
+  void it("persists wrong-project adapter snapshots as terminal failures", async () => {
+    const repository = new FakeSerpScoutRepository();
+    const adapter = new MockSerpScoutAdapter((input) => ({
+      ok: true,
+      snapshot: {
+        id: "wrong-snapshot",
+        projectId: input.projectId,
+        status: "captured",
+        query: input.query,
+        searchEngine: input.searchEngine,
+        device: input.device,
+        cacheKey: "google:desktop:default-locale:default-region:dachdecker dachau",
+        capturedAt: new Date("2026-07-05T00:00:00.000Z").toISOString(),
+        provider: "mock",
+        results: [],
+        serpFeatures: [],
+        engineErrors: [],
+        artifactRefs: []
+      },
+      diagnostics: { latencyMs: 2 }
+    }));
+
+    await assert.rejects(
+      executeSerpScout({
+        data: {
+          projectId: "project-1",
+          snapshotId: "snapshot-1",
+          query: "dachdecker dachau",
+          searchEngine: "google",
+          device: "desktop",
+          maxResults: 10
+        },
+        repository,
+        serpScout: adapter,
+        timeoutMs: 15_000
+      }),
+      SerpScoutTerminalError
+    );
+
+    assert.equal(repository.failure?.failureCode, "adapter_invalid_snapshot");
+    assert.equal(repository.snapshot, undefined);
   });
 });
 

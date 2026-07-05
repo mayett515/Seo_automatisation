@@ -622,7 +622,9 @@ serp_snapshots
 POST /projects/:id/serp-scout/runs
   enqueues a SERP capture job with jobId = snapshotId and job_runs audit.
   The baseline persists captured or failed snapshots; live provider adapters
-  and proof freshness promotion remain later slices.
+  and proof freshness promotion remain later slices. Adapter output that does
+  not parse as SerpSnapshot, or belongs to the wrong project/id, records
+  adapter_invalid_snapshot as a failed snapshot and stops retrying.
 ```
 
 Explorer backend read baseline:

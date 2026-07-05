@@ -1,4 +1,4 @@
-import type { SerpScoutRequest, SerpSnapshot } from "@localseo/contracts";
+import { buildSerpSnapshotCacheKey, type SerpScoutRequest, type SerpSnapshot } from "@localseo/contracts";
 import type { SerpScoutPort, SerpScoutResult } from "./index.js";
 
 export type MockSerpScoutAdapterResolver =
@@ -45,7 +45,7 @@ function defaultMockSerpResult(
     device: input.device,
     locale: input.locale,
     region: input.region,
-    cacheKey: buildMockSerpCacheKey(input),
+    cacheKey: buildSerpSnapshotCacheKey(input),
     capturedAt,
     provider: "mock",
     results: results.slice(0, input.maxResults),
@@ -62,14 +62,4 @@ function defaultMockSerpResult(
       detail: "mock"
     }
   };
-}
-
-function buildMockSerpCacheKey(input: SerpScoutRequest): string {
-  return [
-    input.searchEngine,
-    input.device,
-    input.locale ?? "default-locale",
-    input.region ?? "default-region",
-    input.query.trim().toLowerCase()
-  ].join(":");
 }

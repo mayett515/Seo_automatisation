@@ -240,6 +240,7 @@ export const serpScoutFailureCodes = [
   "provider_timeout",
   "provider_error",
   "provider_overloaded",
+  "adapter_invalid_snapshot",
   "captcha_blocked",
   "policy_denied"
 ] as const;
@@ -393,6 +394,24 @@ export const SerpScoutRequestSchema = z
     maxResults: z.number().int().positive().max(100).default(20)
   })
   .strict();
+
+export type SerpCacheKeyInput = {
+  query: string;
+  searchEngine: string;
+  device: string;
+  locale?: string | null;
+  region?: string | null;
+};
+
+export function buildSerpSnapshotCacheKey(input: SerpCacheKeyInput): string {
+  return [
+    input.searchEngine,
+    input.device,
+    input.locale ?? "default-locale",
+    input.region ?? "default-region",
+    input.query.trim().toLowerCase()
+  ].join(":");
+}
 
 export const SerpSearchResultSchema = z
   .object({

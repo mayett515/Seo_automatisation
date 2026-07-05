@@ -489,7 +489,8 @@ packages/db
 apps/worker
   serp-scout queue handler persists captured/failed snapshots through SerpScoutPort.
   Transient provider failures retry; not-configured, captcha, and policy failures
-  stop as terminal worker errors.
+  stop as terminal worker errors. Malformed or wrong-id adapter snapshots are
+  recorded as failed snapshots with adapter_invalid_snapshot and do not retry.
 
 apps/api
   POST /projects/:id/serp-scout/runs enqueues snapshot capture with jobId = snapshotId.

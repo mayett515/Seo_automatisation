@@ -1,5 +1,6 @@
 import type { SerpScoutPort } from "@localseo/adapters";
 import {
+  buildSerpSnapshotCacheKey,
   SerpScoutJobDataSchema,
   SerpSnapshotSchema,
   type SerpScoutFailureCode,
@@ -90,10 +91,26 @@ export async function executeSerpScout(input: {
     throw new SerpScoutTerminalError(result.failureCode);
   }
 
-  const snapshot = SerpSnapshotSchema.parse(result.snapshot);
+  const parsedSnapshot = SerpSnapshotSchema.safeParse(result.snapshot);
+
+  if (!parsedSnapshot.success) {
+    await input.repository.persistFailure({
+      data: input.data,
+      failureCode: "adapter_invalid_snapshot",
+      message: "SERP adapter returned output that did not match SerpSnapshotSchema."
+    });
+    throw new SerpScoutTerminalError("adapter_invalid_snapshot");
+  }
+
+  const snapshot = parsedSnapshot.data;
 
   if (snapshot.id !== input.data.snapshotId || snapshot.projectId !== input.data.projectId) {
-    throw new SerpScoutEvidenceError("SERP adapter returned a snapshot for the wrong project or snapshot id.");
+    await input.repository.persistFailure({
+      data: input.data,
+      failureCode: "adapter_invalid_snapshot",
+      message: "SERP adapter returned a snapshot for the wrong project or snapshot id."
+    });
+    throw new SerpScoutTerminalError("adapter_invalid_snapshot");
   }
 
   await input.repository.persistSnapshot(snapshot);
@@ -185,7 +202,7 @@ export function createDrizzleSerpScoutRepository(db: WorkerDb): SerpScoutReposit
           device: input.data.device,
           locale: input.data.locale,
           region: input.data.region,
-          cacheKey: buildSerpCacheKey(input.data),
+          cacheKey: buildSerpSnapshotCacheKey(input.data),
           provider: "unavailable",
           resultsJson: [],
           serpFeaturesJson: [],
@@ -222,14 +239,4 @@ export function createDrizzleSerpScoutRepository(db: WorkerDb): SerpScoutReposit
 
 function isRetryableSerpScoutFailure(code: SerpScoutFailureCode): boolean {
   return code === "provider_timeout" || code === "provider_error" || code === "provider_overloaded";
-}
-
-function buildSerpCacheKey(input: SerpScoutJobData): string {
-  return [
-    input.searchEngine,
-    input.device,
-    input.locale ?? "default-locale",
-    input.region ?? "default-region",
-    input.query.trim().toLowerCase()
-  ].join(":");
 }

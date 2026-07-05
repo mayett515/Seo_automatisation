@@ -246,6 +246,34 @@ void describe(
       assert.equal(jobRunRows[0]?.status, "dry_run");
       assert.equal(jobRunRows[0]?.queueName, "serp-scout");
     });
+
+    void it("marks SERP scout job_runs failed when queue.add throws", async () => {
+      const fixture = await createProjectFixture(db);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue(new Error("redis write failed"));
+      setSerpScoutQueue(queueService, queue);
+      const service = new ProjectsService(queueService, testDatabaseService(db));
+
+      await assert.rejects(
+        () =>
+          service.queueSerpScout(
+            fixture.projectId,
+            {
+              query: "dachdecker dachau",
+              searchEngine: "google",
+              device: "desktop",
+              maxResults: 20
+            },
+            fixture.userId
+          ),
+        /redis write failed/u
+      );
+
+      const jobRunRows = await db.select().from(jobRuns).where(eq(jobRuns.queueName, "serp-scout"));
+      assert.equal(jobRunRows.length, 1);
+      assert.equal(jobRunRows[0]?.status, "failed");
+      assert.deepEqual(jobRunRows[0]?.failureJson, { message: "redis write failed" });
+    });
   }
 );
 
