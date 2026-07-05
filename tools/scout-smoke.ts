@@ -47,6 +47,11 @@ type AgentRunRow = {
   completedAt: Date | null;
 };
 
+type OpportunityCountRow = {
+  classification: string;
+  count: number;
+};
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.envFile) {
@@ -82,6 +87,7 @@ async function main(): Promise<void> {
     });
 
     printRunSummary(run);
+    await printOpportunitySummary(handle.sql, { projectId: args.projectId, runId: run.id });
   } finally {
     await handle.close();
   }
@@ -99,8 +105,8 @@ async function enqueueScout(args: CliArgs): Promise<OpportunityScoutQueueRespons
   });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Scout enqueue failed with HTTP ${response.status}: ${redact(body).slice(0, 500)}`);
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(`Scout enqueue failed with HTTP ${response.status}. Check API logs for the request body.`);
   }
 
   return OpportunityScoutQueueResponseSchema.parse(await response.json());
@@ -172,6 +178,25 @@ function printRunSummary(run: AgentRunRow): void {
     detail: stringFromUnknown(diagnostics.detail)
   };
   console.log(`agent_run.diagnostics=${redact(JSON.stringify(safeDiagnostics))}`);
+}
+
+async function printOpportunitySummary(sql: SqlClient, input: { projectId: string; runId: string }): Promise<void> {
+  const rows = await sql<OpportunityCountRow[]>`
+    select
+      classification,
+      count(*)::int as "count"
+    from opportunities
+    where project_id = ${input.projectId}
+      and agent_run_id = ${input.runId}
+    group by classification
+    order by classification
+  `;
+
+  const histogram = Object.fromEntries(rows.map((row) => [row.classification, Number(row.count)]));
+  const total = Object.values(histogram).reduce((sum, count) => sum + count, 0);
+
+  console.log(`opportunity.count=${total}`);
+  console.log(`opportunity.classifications=${redact(JSON.stringify(histogram))}`);
 }
 
 async function loadEnvFile(path: string): Promise<void> {

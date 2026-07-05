@@ -199,7 +199,7 @@ OpenCodeGoReasoningAdapter
   lives in packages/adapters
   implements AiReasoningPort
   calls the OpenCode Go OpenAI-compatible chat-completions endpoint
-  defaults to model glm-5.2 and endpoint https://opencode.ai/zen/go/v1/chat/completions
+  uses runtime-selected chat-completions models and endpoint https://opencode.ai/zen/go/v1/chat/completions
   sends one JSON-only structured reasoning request
   returns untrusted outputJson only after the provider response is parseable JSON
 ```
@@ -228,9 +228,9 @@ deepseek-v4-pro
   judgement.
 
 glm-5.2
-  Strong candidate for general reasoning tasks: opportunity_scout, page_brief_draft,
-  section_text_generation, frontend/page composition, and report narrative
-  drafting. Keep it especially for page/layout/content quality comparisons.
+  Strong candidate for page_brief_draft, section_text_generation,
+  frontend/page composition, report narrative drafting, and high-quality
+  opportunity-scout comparison after cheap baseline artifacts exist.
 
 kimi-k2.7-code
   Experimental judge/reviewer candidate after baseline smoke results exist.
@@ -751,6 +751,8 @@ timeoutMs default            120_000 for opportunity_scout
 briefs-per-run cap           12
 maxCostCents default         provider-config concern, start unenforced but recorded
 provider config              adapter env vars, never in contracts
-model routing                glm-5.2 for general/page/frontend reasoning;
-                             DeepSeek only for search/SERP/competitor tasks
+model routing                deepseek-v4-flash for first scout smoke /
+                             cheap repeated runs; deepseek-v4-pro fallback for
+                             harder search/opportunity reasoning; glm-5.2 for
+                             page/frontend/content/report quality comparison
 ```
