@@ -43,6 +43,22 @@ export async function postJson<T>(path: string, body: unknown, schema: JsonSchem
   return schema.parse(await response.json());
 }
 
+export async function patchJson<T>(path: string, body: unknown, schema: JsonSchema<T>): Promise<T> {
+  const response = await apiFetch(path, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    throw await createApiError(response);
+  }
+
+  return schema.parse(await response.json());
+}
+
 async function createApiError(response: Response): Promise<Error> {
   const detail = await readErrorDetail(response);
   return new Error(

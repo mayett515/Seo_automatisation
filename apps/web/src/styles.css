@@ -78,7 +78,8 @@ a {
   gap: 10px;
 }
 
-.form-field input {
+.form-field input,
+.form-field textarea {
   min-height: 40px;
   border: 1px solid #c7cec4;
   border-radius: 8px;
@@ -86,6 +87,11 @@ a {
   font: inherit;
   color: #16201d;
   background: #ffffff;
+}
+
+.form-field textarea {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .auth-submit,
@@ -169,6 +175,11 @@ a {
   border: 1px solid #c7cec4;
   color: #1d3f36;
   background: #ffffff;
+}
+
+.button-secondary--active {
+  border-color: #1d3f36;
+  background: #e7eee9;
 }
 
 .button-primary:disabled,
@@ -407,13 +418,38 @@ a {
 }
 
 .metric-row--compact {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.decision-card,
 .detail-section,
 .evidence-item,
 .run-item {
   display: grid;
+  gap: 8px;
+}
+
+.decision-card {
+  border: 1px solid #e0e4dc;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfa;
+}
+
+.decision-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.decision-card__header h3 {
+  margin: 0;
+}
+
+.decision-button-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -478,6 +514,8 @@ a {
   .explorer-layout,
   .explorer-lower-grid,
   .data-table__row--opportunity,
+  .decision-button-row,
+  .metric-row--compact,
   .run-item {
     grid-template-columns: 1fr;
   }

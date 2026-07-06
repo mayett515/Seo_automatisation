@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable, type Row } from "@tanstack/react-table";
@@ -6,17 +7,20 @@ import { StatusPill } from "@localseo/ui";
 import {
   AgentRunListResponseSchema,
   OpportunityExplorerListResponseSchema,
+  OpportunityExplorerOpportunitySchema,
   OpportunityScoutQueueResponseSchema,
   RankingProofListResponseSchema,
   RankingProofSchema,
+  UpdateOpportunityLifecycleRequestSchema,
   type AgentRunSummary,
   type EvidenceRef,
   type OpportunityBrief,
   type OpportunityExplorerOpportunity,
+  type OpportunityLifecycleStatus,
   type OpportunityScoutQueueResponse,
   type RankingProof
 } from "@localseo/contracts";
-import { getJson, postJson } from "../lib/api";
+import { getJson, patchJson, postJson } from "../lib/api";
 
 type RankingProofFormState = {
   query: string;
@@ -25,7 +29,20 @@ type RankingProofFormState = {
   notes: string;
 };
 
+type OpportunityDecisionStatus = Exclude<OpportunityLifecycleStatus, "brief_created">;
+
+type OpportunityDecisionFormState = {
+  status: OpportunityDecisionStatus;
+  reason: string;
+};
+
 const opportunityColumn = createColumnHelper<OpportunityExplorerOpportunity>();
+const opportunityDecisionStatuses = [
+  "monitoring",
+  "held",
+  "rejected",
+  "new"
+] as const satisfies readonly OpportunityDecisionStatus[];
 
 export function OpportunityExplorerScreen() {
   const projectId = useProjectId();
@@ -41,6 +58,7 @@ export function OpportunityExplorerScreen() {
   });
   const [latestScoutResponse, setLatestScoutResponse] = useState<OpportunityScoutQueueResponse | undefined>();
   const [latestProof, setLatestProof] = useState<RankingProof | undefined>();
+  const [latestDecision, setLatestDecision] = useState<OpportunityExplorerOpportunity | undefined>();
 
   const opportunities = useQuery({
     queryKey: ["opportunities", projectId],
@@ -93,6 +111,28 @@ export function OpportunityExplorerScreen() {
       setLatestProof(proof);
       setProofForm({ query: "", pageUrl: "", rank: "", notes: "" });
       await queryClient.invalidateQueries({ queryKey: ["ranking-proofs", projectId] });
+    }
+  });
+  const updateOpportunityDecision = useMutation({
+    mutationFn: (input: { opportunityId: string; decision: OpportunityDecisionFormState }) => {
+      const body = UpdateOpportunityLifecycleRequestSchema.parse({
+        status: input.decision.status,
+        reason: normalizedReason(input.decision.reason)
+      });
+
+      return patchJson(
+        projectApiPath(projectId, `/opportunities/${encodeURIComponent(input.opportunityId)}/status`),
+        body,
+        OpportunityExplorerOpportunitySchema
+      );
+    },
+    onSuccess: async (opportunity) => {
+      setLatestDecision(opportunity);
+      setSelectedOpportunityId(opportunity.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["agent-runs", projectId, "opportunity_scout"] })
+      ]);
     }
   });
 
@@ -152,6 +192,12 @@ export function OpportunityExplorerScreen() {
           Ranking proof recorded: {latestProof.query}, rank {latestProof.rank}
         </div>
       ) : null}
+      {latestDecision ? (
+        <div className="notice notice--neutral">
+          Opportunity decision saved: {label(latestDecision.status)}
+          {latestDecision.statusReason ? ` (${latestDecision.statusReason})` : ""}
+        </div>
+      ) : null}
       {runScout.isError ? (
         <div className="notice notice--danger">
           {errorMessage(runScout.error, "Opportunity scout could not be queued.")}
@@ -160,6 +206,11 @@ export function OpportunityExplorerScreen() {
       {createProof.isError ? (
         <div className="notice notice--danger">
           {errorMessage(createProof.error, "Ranking proof could not be recorded.")}
+        </div>
+      ) : null}
+      {updateOpportunityDecision.isError ? (
+        <div className="notice notice--danger">
+          {errorMessage(updateOpportunityDecision.error, "Opportunity decision could not be saved.")}
         </div>
       ) : null}
 
@@ -172,7 +223,11 @@ export function OpportunityExplorerScreen() {
           selectedId={selectedOpportunity?.id}
           onSelect={setSelectedOpportunityId}
         />
-        <OpportunityDetail opportunity={selectedOpportunity} />
+        <OpportunityDetail
+          decisionPending={updateOpportunityDecision.isPending}
+          opportunity={selectedOpportunity}
+          onDecide={(opportunityId, decision) => updateOpportunityDecision.mutate({ opportunityId, decision })}
+        />
       </section>
 
       <section className="explorer-lower-grid">
@@ -278,10 +333,15 @@ function OpportunityRow(props: {
   );
 }
 
-function OpportunityDetail(props: { opportunity?: OpportunityExplorerOpportunity }) {
-  const brief = props.opportunity?.evidenceJson;
+function OpportunityDetail(props: {
+  opportunity?: OpportunityExplorerOpportunity;
+  decisionPending: boolean;
+  onDecide: (opportunityId: string, decision: OpportunityDecisionFormState) => void;
+}) {
+  const opportunity = props.opportunity;
+  const brief = opportunity?.evidenceJson;
 
-  if (!props.opportunity) {
+  if (!opportunity) {
     return (
       <section className="detail-panel">
         <h2>Evidence</h2>
@@ -311,9 +371,17 @@ function OpportunityDetail(props: { opportunity?: OpportunityExplorerOpportunity
 
       <div className="metric-row metric-row--compact">
         <Metric title="Recommended" value={label(brief.recommendedAction)} />
+        <Metric title="Lifecycle" value={label(opportunity.status)} />
         <Metric title="Risk" value={brief.cannibalizationRisk.level} />
         <Metric title="Confidence" value={`${Math.round(brief.confidence * 100)}%`} />
       </div>
+
+      <OpportunityDecisionForm
+        key={opportunity.id}
+        isPending={props.decisionPending}
+        opportunity={opportunity}
+        onSubmit={(decision) => props.onDecide(opportunity.id, decision)}
+      />
 
       <DetailSection title="Evidence stack">
         {brief.evidence.map((evidence, index) => (
@@ -347,6 +415,85 @@ function OpportunityDetail(props: { opportunity?: OpportunityExplorerOpportunity
         <CompactList items={brief.corridorCluster?.recommendedSequence ?? []} empty="No sequence recorded." />
       </DetailSection>
     </section>
+  );
+}
+
+function OpportunityDecisionForm(props: {
+  opportunity: OpportunityExplorerOpportunity;
+  isPending: boolean;
+  onSubmit: (decision: OpportunityDecisionFormState) => void;
+}) {
+  const form = useForm({
+    defaultValues: {
+      status: props.opportunity.status === "brief_created" ? "monitoring" : props.opportunity.status,
+      reason: props.opportunity.statusReason ?? ""
+    } satisfies OpportunityDecisionFormState,
+    onSubmit: async ({ value }) => {
+      if (value.status === "rejected" && normalizedReason(value.reason) === undefined) {
+        return;
+      }
+
+      props.onSubmit(value);
+    }
+  });
+
+  return (
+    <form
+      className="decision-card"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void form.handleSubmit();
+      }}
+    >
+      <div className="decision-card__header">
+        <h3>Operator decision</h3>
+        <StatusPill tone={lifecycleTone(props.opportunity.status)}>{label(props.opportunity.status)}</StatusPill>
+      </div>
+      <form.Field name="status">
+        {(field) => (
+          <div className="decision-button-row">
+            {opportunityDecisionStatuses.map((status) => (
+              <button
+                className={`button-secondary${field.state.value === status ? " button-secondary--active" : ""}`}
+                key={status}
+                type="button"
+                onClick={() => field.handleChange(status)}
+              >
+                {decisionLabel(status)}
+              </button>
+            ))}
+          </div>
+        )}
+      </form.Field>
+      <form.Field name="reason">
+        {(field) => (
+          <label className="form-field">
+            <span>Reason</span>
+            <textarea
+              value={field.state.value}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+              placeholder="Required when rejecting; optional for hold or monitor."
+            />
+          </label>
+        )}
+      </form.Field>
+      <form.Subscribe selector={(state) => ({ isSubmitting: state.isSubmitting, values: state.values })}>
+        {(state) => {
+          const rejectNeedsReason =
+            state.values.status === "rejected" && normalizedReason(state.values.reason) === undefined;
+          return (
+            <button
+              className="button-primary"
+              type="submit"
+              disabled={props.isPending || state.isSubmitting || rejectNeedsReason}
+            >
+              Save decision
+            </button>
+          );
+        }}
+      </form.Subscribe>
+    </form>
   );
 }
 
@@ -583,6 +730,35 @@ function runStatusTone(status: AgentRunSummary["status"]) {
   }
 
   return "warning";
+}
+
+function lifecycleTone(status: OpportunityExplorerOpportunity["status"]) {
+  if (status === "monitoring" || status === "brief_created") {
+    return "success";
+  }
+
+  if (status === "held") {
+    return "warning";
+  }
+
+  if (status === "rejected") {
+    return "danger";
+  }
+
+  return "neutral";
+}
+
+function decisionLabel(status: OpportunityDecisionStatus): string {
+  if (status === "new") {
+    return "Reopen";
+  }
+
+  return label(status);
+}
+
+function normalizedReason(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function label(value: string): string {
