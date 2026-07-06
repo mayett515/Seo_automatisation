@@ -16,6 +16,10 @@ The useful finding is that the project already has many durable Markdown knowled
 - architecture docs and ADRs,
 - project rules and anti-regression lessons.
 
+The field folder `C:/gebäudeservicefirma/Seo/future-seo-growth-plan` is also a concrete example of the pattern the
+project wants to preserve: flat Markdown shards, YAML frontmatter, XML-style rule blocks, a small router/index file, and
+human-readable SEO reasoning. It is field evidence and Scheme inspiration, not a runtime data source.
+
 Those documents are valuable for future agents, prompt tuning, page-brief drafting, and local SEO reasoning. They should not become a second application database.
 
 Current operational truth already lives in Postgres:
@@ -67,6 +71,9 @@ index/
 ```
 
 Agents may write proposed records only to `delta` or local scratch. Human review promotes records to canonical `base`.
+
+A future Scheme viewer can read the same record shape, but it should read records and generated indexes as documentation
+memory. It must not become the place where app state, approvals, queue status, or ranking proof review state live.
 
 ## Consequences
 
@@ -123,3 +130,4 @@ Future work must not:
 - `.ai-planning-rules/01-planner-mode.md`
 - `docs/progress/2026-07-06.md`
 - `C:/big eater/markdown-context-db-strategy-local-seo-2026-07-06.md`
+- `C:/gebäudeservicefirma/Seo/future-seo-growth-plan`

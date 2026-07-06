@@ -731,6 +731,21 @@ project-owned source rows/artifacts and/or reviewed Markdown context records
 
 Context records may summarize field workflows, Big Eater findings, reusable SEO lessons, prompt/playbook guidance, and architecture memory. They may not own queue status, proof review state, deployments, approvals, GSC rows, tracking events, audit findings, opportunities, OAuth state, or any other high-churn product truth.
 
+Scheme/context-record note:
+
+```text
+C:/gebäudeservicefirma/Seo/future-seo-growth-plan is a useful field example of
+the record/rule-shard shape:
+  YAML frontmatter for metadata
+  XML-style blocks for routing and constraints
+  Markdown body for human-readable reasoning
+  flat files plus an index/router shard
+
+Future Scheme work may generalize that into Markdown Knowledge Records and a
+viewer, but this repo should not create `.ai-context-db` or a vector index until
+one of the retrieval triggers above is real and a blueprint is approved.
+```
+
 ## MVP Non-Goals
 
 ```text
@@ -781,6 +796,7 @@ C:\big eater\mastra-docs-for-local-seo-project-2026-07-02.md
 C:\big eater\rag-stealer-findings-2026-07-02.md
 C:\big eater\agentic-evidence-web-ui-stealer-findings-2026-07-02.md
 C:\big eater\markdown-context-db-strategy-local-seo-2026-07-06.md
+C:\gebäudeservicefirma\Seo\future-seo-growth-plan
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/05-template-component-preview-system.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/07-subdomains-local-pages.md
