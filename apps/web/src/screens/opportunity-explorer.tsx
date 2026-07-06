@@ -428,7 +428,7 @@ function OpportunityDecisionForm(props: {
       status: props.opportunity.status === "brief_created" ? "monitoring" : props.opportunity.status,
       reason: props.opportunity.statusReason ?? ""
     } satisfies OpportunityDecisionFormState,
-    onSubmit: async ({ value }) => {
+    onSubmit: ({ value }) => {
       if (value.status === "rejected" && normalizedReason(value.reason) === undefined) {
         return;
       }
