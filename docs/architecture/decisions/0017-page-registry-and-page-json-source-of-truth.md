@@ -1,7 +1,7 @@
 # 0017 - Page Registry And PageJson Source Of Truth
 
 Date: 2026-07-06
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -33,6 +33,13 @@ page_proposals
 ```
 
 Existing schema tables also include `component_templates`, `component_instances`, and `component_notes`. Without a clear ownership decision, those tables could become a competing source of truth for rendered pages.
+
+The accepted review also surfaced two current-code facts that the page lane must reconcile:
+
+- the existing static HTML renderer lives in `packages/domain` and is invoked by the Netlify adapter,
+- current release preflight and current static rendering duck-type different loose `pageJson` keys, including a robots/noindex vocabulary mismatch.
+
+Those paths are acceptable scaffold code before PageJson v1. They are not acceptable as the long-term Page Registry implementation.
 
 ## Decision
 
@@ -71,7 +78,11 @@ apps/web
 
 `page_versions.pageJson` is the source of truth for page structure and rendering.
 
-`component_instances` must not become a competing renderer source. If kept, it is a projection or note-anchor table generated from `pageJson`. `component_notes` should anchor to stable section ids and optional field paths, not to array position or rendered markup.
+`component_instances` must not become a competing renderer source. If kept, it is a projection generated from `pageJson`, not an editable render model.
+
+`component_templates` must not become runtime registry truth. It is a dormant table from the initial scaffold; the MVP registry is code-owned.
+
+Notes should anchor directly to `(pageVersionId, sectionId, fieldPath?)`, not to projection row identity. A future `page_section_notes` table is preferred over using `component_notes.componentInstanceId` if projection regeneration would orphan notes.
 
 The registry is code-owned for MVP. Do not add a runtime component registry table until operators actually need mutable registry entries or tenant-specific components.
 
@@ -95,6 +106,34 @@ The AI lane may emit only structured `PageProposalJson`/`PageJson` that validate
 
 Approved page versions are immutable. New AI work creates new proposals or versions.
 
+Structured `PageProposalJson` should persist as a proposal artifact, not only as `agent_runs.outputJson`. The default direction is a future `page_proposals.proposalJson` JSONB column, with existing flat proposal columns treated as query/projection fields. `agent_runs.outputJson` remains reasoning audit, not the UI's proposal source of truth.
+
+The current release renderer is a scaffold path. The Page Registry implementation must migrate production rendering so that:
+
+```text
+page-registry static renderer
+-> release artifact builder / worker creates rendered StaticSiteFile[]
+-> object storage keeps the rendered artifact
+-> SiteHostingPort adapter uploads bytes only
+```
+
+Provider adapters must not import `packages/page-registry`, `packages/domain` renderers, or React renderers to create production HTML.
+
+Preview and deploy must share the same rendering core. Approval must approve the same structural page and renderer output that deploy will ship.
+
+`packages/seo` remains the page-level QA/preflight owner, but it must consume parsed PageJson and registry-derived facts instead of loose key duck-typing. Preflight and rendering must agree on the same resolved values for title, canonical, robots, JSON-LD, H1, FAQ, area served, internal links, sitemap readiness, and uniqueness.
+
+Robots/indexability is resolved at release time. PageJson may carry content intent, but the final rendered robots value is owned by the release action and deploy context:
+
+```text
+preview/staging    -> noindex
+live create/update -> index only after approval and release preflight allow it
+noindex action     -> noindex
+redirect/remove    -> no page render required
+```
+
+Release preflight validates the resolved robots value, and render parity tests must prove the renderer emits the value preflight accepted.
+
 ## Consequences
 
 This preserves the current controlled-automation architecture:
@@ -108,12 +147,15 @@ This preserves the current controlled-automation architecture:
 It also gives the next implementation slice a concrete target:
 
 1. Add PageJson/PageProposalJson contracts.
-2. Create `packages/page-registry` with a small Local SEO section set.
-3. Add pure registry validation and page-studio movement helpers.
-4. Add preview rendering for registry-backed page versions.
-5. Wire project-scoped proposal/version reads.
-6. Add section notes anchored to stable section ids.
-7. Freeze approved versions and revalidate pageJson during release preflight.
+2. Add contracts-owned page version status vocabulary and action-conditional release artifact validation.
+3. Decide and migrate the structured proposal artifact home, defaulting to `page_proposals.proposalJson`.
+4. Create `packages/page-registry` with a small Local SEO section set.
+5. Add pure registry validation and page-studio movement helpers.
+6. Retarget release preflight and static rendering to typed PageJson.
+7. Add preview rendering that shares the static renderer core.
+8. Wire project-scoped proposal/version reads.
+9. Add section notes anchored to stable section ids.
+10. Freeze approved versions and revalidate PageJson during release preflight.
 
 The first registry can be small:
 
@@ -133,6 +175,8 @@ Footer
 
 Richer sections such as galleries, before-after, maps, nearby places, and references can follow after the source-of-truth path is proven.
 
+The first migration in this lane should add a unique index on `(pageProposalId, versionNumber)` and repository tests that approved versions cannot be mutated in place.
+
 ## Alternatives Considered
 
 ### Freeform Website Builder
@@ -147,6 +191,8 @@ Rejected. A normalized `component_instances` render model would duplicate `page_
 
 Rejected for MVP. A database-backed registry creates authoring, migration, tenancy, caching, and release questions before the first page proposal exists. Code-owned registry entries are simpler and reviewable.
 
+This rejection includes the existing dormant `component_templates` table. Do not populate it as registry truth unless a future ADR supersedes this one.
+
 ### Arbitrary Agent HTML
 
 Rejected. Agent-generated HTML/CSS/React cannot be safely validated against local SEO, approval, release, and rollback rules. The model must operate inside structured contracts.
@@ -157,11 +203,14 @@ Future work must not:
 
 - build Page Studio before Page Registry and preview validation exist,
 - let `component_instances` become a second source of render truth,
+- populate `component_templates` as registry truth,
 - mutate an approved `page_versions.pageJson` in place,
 - accept raw HTML, React, CSS, JavaScript, class names, or inline styles from model output,
 - store page truth in rendered markup or comments,
 - attach notes to unstable section order,
-- bypass registry validation during preview, approval, release preflight, or deploy.
+- bypass registry validation during preview, approval, release preflight, or deploy,
+- let provider adapters render page HTML,
+- let preflight accept SEO evidence that the renderer does not emit.
 
 ## Related Files
 

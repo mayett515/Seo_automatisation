@@ -181,6 +181,8 @@ component_notes        = comments anchored to stable section ids/fields
 
 `component_instances` must not become a competing renderer source. If the UI needs component rows for notes, outlines, or search, they should be generated from `pageJson` and treated as projection data.
 
+Do not populate `component_templates` as runtime registry truth for MVP. Registry definitions stay code-owned unless a future ADR explicitly introduces editable tenant-specific registry entries.
+
 Initial registry candidates and Page Studio target section families:
 
 ```text
@@ -264,6 +266,8 @@ packages/ai
 ```
 
 Every page section needs a stable section instance id so notes, validation errors, diffs, and future AI patches remain attached when the section moves.
+
+Preview and deploy must share the same renderer core. The future static release renderer belongs in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON.
 
 ## Page Studio MVP
 

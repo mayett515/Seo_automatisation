@@ -619,14 +619,16 @@ approved page versions are immutable.
 First implementation order:
 
 ```text
-PageJson/PageProposalJson contracts
+PageJson/PageProposalJson contracts + page version status vocabulary
+-> structured proposal persistence decision, default page_proposals.proposalJson
 -> packages/page-registry with a small Local SEO section set
 -> pure page-studio movement and validation helpers
--> preview renderer for registry-backed page versions
+-> retarget SEO preflight and static rendering to typed PageJson
+-> preview renderer sharing the static/deploy renderer core
 -> project-scoped proposal/version read path
 -> section notes anchored to stable section ids
 -> approval freezes one concrete pageVersionId
--> release preflight revalidates pageJson before deploy
+-> release preflight revalidates PageJson and resolved robots before deploy
 ```
 
 Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
@@ -647,6 +649,8 @@ opportunity brief
 The page proposal must be structured page JSON, not arbitrary HTML, React code, or a freeform website builder output. This slice depends on the page registry.
 
 The AI may emit only structured proposal JSON. Raw HTML, CSS, React, JavaScript, class names, inline styles, and freeform layout instructions are rejected at the AI/API boundary.
+
+The page lane must also migrate the existing scaffold renderer out of `packages/domain`/provider adapters. Workers build rendered release artifacts with the page-registry renderer; site-hosting adapters upload bytes only.
 
 ### 10. Page Studio, Notes, Approval, And Versioning
 
@@ -685,6 +689,8 @@ approval freezes the deployable version
 ```
 
 Notes attach to stable section ids and optional field paths, not visual order. If `component_instances` rows are used for note anchoring, they are regenerated/projection data from `pageJson`.
+
+Default note persistence should avoid projection-row identity. Prefer a future `page_section_notes` table keyed by `pageVersionId`, `sectionId`, and optional `fieldPath`.
 
 ### 11. Release Handoff
 
