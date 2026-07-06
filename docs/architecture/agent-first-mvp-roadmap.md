@@ -578,6 +578,10 @@ F.5 search context tools
 
 Implement the minimal customer-site component registry needed by page proposals and Page Studio.
 
+Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
+
+Source finding: `C:/big eater/page-registry-page-studio-stealer-findings-2026-07-06.md`.
+
 MVP registry can start with a small subset, but the target taxonomy must support richer section families:
 
 ```text
@@ -604,6 +608,27 @@ Footer
 
 Each component needs a prop schema, variants, allowed tokens, preview renderer, validation errors, customer note anchors, layout zone metadata, and legal movement rules.
 
+Source-of-truth rule:
+
+```text
+page_versions.pageJson is the render and approval artifact.
+component_instances may be a projection or note-anchor table only.
+approved page versions are immutable.
+```
+
+First implementation order:
+
+```text
+PageJson/PageProposalJson contracts
+-> packages/page-registry with a small Local SEO section set
+-> pure page-studio movement and validation helpers
+-> preview renderer for registry-backed page versions
+-> project-scoped proposal/version read path
+-> section notes anchored to stable section ids
+-> approval freezes one concrete pageVersionId
+-> release preflight revalidates pageJson before deploy
+```
+
 Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
@@ -620,6 +645,8 @@ opportunity brief
 ```
 
 The page proposal must be structured page JSON, not arbitrary HTML, React code, or a freeform website builder output. This slice depends on the page registry.
+
+The AI may emit only structured proposal JSON. Raw HTML, CSS, React, JavaScript, class names, inline styles, and freeform layout instructions are rejected at the AI/API boundary.
 
 ### 10. Page Studio, Notes, Approval, And Versioning
 
@@ -656,6 +683,8 @@ new agent runs create new proposals or versions
 customer notes attach to preview/component anchors
 approval freezes the deployable version
 ```
+
+Notes attach to stable section ids and optional field paths, not visual order. If `component_instances` rows are used for note anchoring, they are regenerated/projection data from `pageJson`.
 
 ### 11. Release Handoff
 

@@ -169,6 +169,18 @@ apps/web/src/features/
 
 The customer-page registry is a future package for deployable page sections. It should be schema-first and controlled.
 
+Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
+
+The registry source-of-truth rule is:
+
+```text
+page_versions.pageJson = approved/rendered page structure
+component_instances    = optional projection or note-anchor data
+component_notes        = comments anchored to stable section ids/fields
+```
+
+`component_instances` must not become a competing renderer source. If the UI needs component rows for notes, outlines, or search, they should be generated from `pageJson` and treated as projection data.
+
 Initial registry candidates and Page Studio target section families:
 
 ```text
@@ -234,6 +246,24 @@ packages/page-registry/src/
 ```
 
 The registry should produce controlled page JSON. It must not accept arbitrary agent-generated HTML, unvalidated props, illegal movement, or silent mutation of an approved page version.
+
+Initial ownership for the page lane:
+
+```text
+packages/contracts
+  PageJson/PageProposalJson schemas, section types, zones, DTOs
+
+packages/page-registry
+  registry entries, prop schemas, variants, preview/static renderers
+
+packages/domain/src/page-studio
+  canMoveSection, canSwitchVariant, canReplaceSectionType, publish readiness
+
+packages/ai
+  page brief/proposal prompt builders and QA
+```
+
+Every page section needs a stable section instance id so notes, validation errors, diffs, and future AI patches remain attached when the section moves.
 
 ## Page Studio MVP
 
