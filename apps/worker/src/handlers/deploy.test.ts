@@ -631,6 +631,108 @@ void describe("executeDeploy", () => {
     assert.equal(repository.failed.length, 1);
   });
 
+  void it("fails closed when a deploy artifact item is missing a page version", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        releaseItems: [releaseArtifactItem({ pageVersionId: null })]
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not be called"))
+      }),
+      /missing a page version/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.failed.length, 1);
+  });
+
+  void it("fails closed when a deploy artifact item references an unapproved page version", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        releaseItems: [releaseArtifactItem({ pageVersionStatus: "preview" })]
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not be called"))
+      }),
+      /unapproved page version/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.failed.length, 1);
+  });
+
+  void it("fails closed when a deploy artifact item lacks approval evidence", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        releaseItems: [releaseArtifactItem({ pageVersionApprovedAt: null })]
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not be called"))
+      }),
+      /without approval evidence/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.failed.length, 1);
+  });
+
+  void it("allows redirect artifact items without a page version", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        releaseItems: [
+          releaseArtifactItem({
+            action: "redirect",
+            pageVersionId: null,
+            pageVersionStatus: null,
+            pageVersionApprovedAt: null,
+            pageJson: {}
+          })
+        ]
+      })
+    );
+
+    const result = await executeDeploy({
+      data,
+      jobId: data.deploymentKey,
+      objectStorage: createObjectStorage(),
+      repository,
+      siteHosting: createSiteHosting({
+        status: "ready",
+        providerDeployId: "provider-deploy-1",
+        liveUrls: ["https://example.test/"]
+      })
+    });
+
+    assert.equal(result.status, "provider_succeeded");
+    assert.equal(repository.started.length, 1);
+    assert.equal(repository.failed.length, 0);
+  });
+
   void it("replays a deployment row that became successful during start without creating another provider deploy", async () => {
     const data = deployJobData();
     const repository = createRepository(deployContext(), {
@@ -812,18 +914,25 @@ function deployContext(input: Partial<DeployContext> = {}): DeployContext {
     checks: [releaseCheck({ severity: "blocker", result: "passed" })],
     hasApproval: true,
     hostingSiteId: "netlify-site-1",
-    releaseItems: [
-      {
-        id: "release-item-1",
-        pageVersionId: "page-version-1",
-        targetUrl: "/",
-        targetSubdomain: null,
-        action: "publish",
-        pageJson: { title: "Home" }
-      }
-    ],
+    releaseItems: [releaseArtifactItem()],
     rollbackPointCount: 1,
     priorSuccessfulDeploymentCount: 1,
+    ...input
+  };
+}
+
+function releaseArtifactItem(
+  input: Partial<DeployContext["releaseItems"][number]> = {}
+): DeployContext["releaseItems"][number] {
+  return {
+    id: "release-item-1",
+    pageVersionId: "page-version-1",
+    pageVersionStatus: "approved",
+    pageVersionApprovedAt: new Date("2026-06-29T00:00:00.000Z"),
+    targetUrl: "/",
+    targetSubdomain: null,
+    action: "publish",
+    pageJson: { title: "Home" },
     ...input
   };
 }

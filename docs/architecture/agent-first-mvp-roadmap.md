@@ -331,7 +331,7 @@ Adapter preflight already satisfied by the worker baseline:
 ```text
 failed -> running clears stale outputJson/provider/model/usage/latency fields
 qa_rejected stores compacted output_json, not uncapped model output
-OpportunityScoutOutput arrays are capped before QA and persistence
+OpportunityScoutOutput arrays over the contract caps are rejected before persistence
 ```
 
 Acceptance criteria for this slice:
@@ -394,9 +394,9 @@ implemented now
   scout run button renders already_active as in-progress state
   manual ranking-proof form records query, page URL, observed rank, and notes
   lifecycle PATCH API records monitor/hold/reject decisions with reason/user provenance
+  lifecycle buttons in the web UI
 
 still deferred
-  lifecycle buttons in the web UI
   MapLibre/corridor map surface
   agent_run_events streaming timeline
   PageBrief/Page Studio handoff actions
@@ -429,8 +429,8 @@ GET /projects/:projectId/agent-runs?task=opportunity_scout
   timestamps, and opportunity count. It does not expose raw output_json or diagnostics_json.
 ```
 
-Manual evidence entry is added here as the bridge before automated SERP snapshots. The backend bridge is now the
-`ranking_proofs` table plus project-scoped API endpoints; the Explorer UI still needs the form and evidence panel.
+Manual evidence entry is added here as the bridge before automated SERP snapshots. The bridge is now the
+`ranking_proofs` table plus project-scoped API endpoints and the Explorer form/evidence panel.
 
 ```text
 ranking_proofs

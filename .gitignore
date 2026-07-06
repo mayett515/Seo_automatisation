@@ -8,6 +8,7 @@ dist/
 .env
 .env.*
 !.env.example
+dump.rdb
 coverage/
 test-results/
 playwright-report/

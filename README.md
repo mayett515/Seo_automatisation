@@ -424,4 +424,4 @@ The repository has a strong foundation for an AI-assisted Local SEO MVP:
 - AI reasoning boundary and opportunity contracts,
 - roadmap for Opportunity Scout, Page Studio, and reporting.
 
-The next product feature is the Opportunity Scout worker vertical: a real end-to-end path from evidence snapshot to validated opportunity rows.
+The Opportunity Scout and Explorer decision loop is live as the first end-to-end product path. The next product frontier is the Page Registry/PageJson lane, after the small seam repairs that keep strict persisted JSON and deploy artifacts aligned before Page Studio work starts.

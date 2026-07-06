@@ -1,7 +1,7 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { MockReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
-import type { OpportunityScoutOutput } from "@localseo/contracts";
+import { OpportunityBriefSchema, type OpportunityScoutOutput } from "@localseo/contracts";
 import {
   agentRuns,
   customers,
@@ -110,11 +110,16 @@ void describe(
       assert.equal(rows[0]?.primaryKeyword, "entruempelung dachau");
       assert.equal(rows[0]?.status, "new");
       assert.ok((rows[0]?.score ?? 0) > 0);
-      const evidenceJson = recordFromUnknown(rows[0]?.evidenceJson);
+      const rawEvidenceJson = recordFromUnknown(rows[0]?.evidenceJson);
+      assert.equal("score" in rawEvidenceJson, false);
+      const parsedEvidenceJson = OpportunityBriefSchema.safeParse(rows[0]?.evidenceJson);
+      if (!parsedEvidenceJson.success) {
+        assert.fail(parsedEvidenceJson.error.message);
+      }
+      const evidenceJson = parsedEvidenceJson.data;
       assert.equal(evidenceJson.service, "Entruempelung");
       assert.equal(recordFromUnknown(evidenceJson.location).name, "Dachau");
       assert.equal(rows[0]?.classification, evidenceJson.classification);
-      assert.equal(rows[0]?.score, evidenceJson.score);
     });
 
     void it("allows a succeeded run with zero briefs and no opportunity rows", async () => {

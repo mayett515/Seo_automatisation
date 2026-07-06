@@ -329,17 +329,21 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
 
         if (input.output.briefs.length > 0) {
           await tx.insert(opportunities).values(
-            input.output.briefs.map((brief) => ({
-              projectId: input.data.projectId,
-              agentRunId: input.data.runId,
-              classification: brief.classification,
-              primaryKeyword: brief.primaryKeyword,
-              score: brief.score,
-              status: "new" as const,
-              evidenceJson: brief,
-              createdAt: now,
-              updatedAt: now
-            }))
+            input.output.briefs.map((brief) => {
+              const { score, ...evidenceJson } = brief;
+
+              return {
+                projectId: input.data.projectId,
+                agentRunId: input.data.runId,
+                classification: brief.classification,
+                primaryKeyword: brief.primaryKeyword,
+                score,
+                status: "new" as const,
+                evidenceJson,
+                createdAt: now,
+                updatedAt: now
+              };
+            })
           );
         }
 

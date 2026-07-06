@@ -48,6 +48,8 @@ export type DeployContext = {
 export type ReleaseArtifactItem = {
   id: string;
   pageVersionId: string | null;
+  pageVersionStatus: string | null;
+  pageVersionApprovedAt: Date | null;
   targetUrl: string;
   targetSubdomain: string | null;
   action: string;
@@ -477,6 +479,8 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         .select({
           id: releasePlanItems.id,
           pageVersionId: releasePlanItems.pageVersionId,
+          pageVersionStatus: pageVersions.status,
+          pageVersionApprovedAt: pageVersions.approvedAt,
           targetUrl: releasePlanItems.targetUrl,
           targetSubdomain: releasePlanItems.targetSubdomain,
           action: releasePlanItems.action,
@@ -1139,19 +1143,58 @@ function mapReleaseCheck(row: typeof releaseChecks.$inferSelect): ReleaseCheck {
 function mapReleaseArtifactItem(row: {
   id: string;
   pageVersionId: string | null;
+  pageVersionStatus: string | null;
+  pageVersionApprovedAt: Date | null;
   targetUrl: string;
   targetSubdomain: string | null;
   action: string;
   pageJson: Record<string, unknown> | null;
 }): ReleaseArtifactItem {
+  assertDeployableReleaseArtifactItem(row);
+
   return {
     id: row.id,
     pageVersionId: row.pageVersionId,
+    pageVersionStatus: row.pageVersionStatus,
+    pageVersionApprovedAt: row.pageVersionApprovedAt,
     targetUrl: row.targetUrl,
     targetSubdomain: row.targetSubdomain,
     action: row.action,
     pageJson: row.pageJson ?? {}
   };
+}
+
+function requiresPageVersionArtifact(action: string): boolean {
+  return action !== "redirect" && action !== "remove" && action !== "noindex";
+}
+
+function assertDeployableReleaseArtifactItem(item: {
+  id: string;
+  pageVersionId: string | null;
+  pageVersionStatus: string | null;
+  pageVersionApprovedAt: Date | null;
+  action: string;
+  pageJson: Record<string, unknown> | null;
+}): void {
+  if (!requiresPageVersionArtifact(item.action)) {
+    return;
+  }
+
+  if (!item.pageVersionId) {
+    throw new DeployEvidenceError(`Release item ${item.id} is missing a page version.`);
+  }
+
+  if (item.pageVersionStatus !== "approved") {
+    throw new DeployEvidenceError(`Release item ${item.id} references an unapproved page version.`);
+  }
+
+  if (!item.pageVersionApprovedAt) {
+    throw new DeployEvidenceError(`Release item ${item.id} references a page version without approval evidence.`);
+  }
+
+  if (!item.pageJson) {
+    throw new DeployEvidenceError(`Release item ${item.id} references a page version without pageJson.`);
+  }
 }
 
 function toDeployablePlan(plan: ReleasePlanRow): ReleasePlan | undefined {
@@ -1192,14 +1235,18 @@ function buildApprovedReleaseArtifact(data: DeployJobData, context: DeployContex
     releasePlanId: data.releasePlanId,
     deploymentKey: data.deploymentKey,
     createdAt: new Date().toISOString(),
-    pages: context.releaseItems.map((item) => ({
-      releasePlanItemId: item.id,
-      pageVersionId: item.pageVersionId,
-      targetUrl: item.targetUrl,
-      targetSubdomain: item.targetSubdomain,
-      action: item.action,
-      pageJson: item.pageJson
-    }))
+    pages: context.releaseItems.map((item) => {
+      assertDeployableReleaseArtifactItem(item);
+
+      return {
+        releasePlanItemId: item.id,
+        pageVersionId: item.pageVersionId,
+        targetUrl: item.targetUrl,
+        targetSubdomain: item.targetSubdomain,
+        action: item.action,
+        pageJson: item.pageJson
+      };
+    })
   };
 }
 

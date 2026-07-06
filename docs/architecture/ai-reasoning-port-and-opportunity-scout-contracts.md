@@ -378,7 +378,7 @@ OpportunityBrief {
   projectId
   classification: proven_win | near_term_target | internal_radar | rejected
   service: string               // hint; serviceId resolved on acceptance
-  location: NearbyPlaceCandidate | { name, kind }   // explicit target or scouted place
+  location: NearbyPlaceCandidate                    // explicit target or scouted place
   primaryKeyword
   secondaryKeywords: string[]
   suggestedRoute?: string
@@ -583,7 +583,7 @@ transient provider failure then retry can flip failed -> running -> succeeded
 conditional success race has one winner and no duplicate inserts
 redelivery of a running run after crash is safe and does not duplicate
 existing routes and open opportunities are loaded from DB and can trigger QA gates
-persisted opportunity classification/score columns match evidenceJson
+persisted opportunity classification matches evidenceJson; score is stored in the queryable score column only
 same project state produces a stable redacted evidence packet
 manual ranking evidence resolves as project-owned proof when present
 ```
@@ -606,6 +606,7 @@ implemented in the worker baseline
   active-run DB/API guard for queued/running scout runs
   Explorer read APIs for opportunities and agent run summaries
   operator lifecycle decision API with reason/user provenance
+  Opportunity lifecycle buttons in the web UI
   agent_runs queued row creation before enqueue
   BullMQ jobId = runId
   ObjectStoragePort input_ref write
@@ -614,7 +615,6 @@ implemented in the worker baseline
   unit tests plus DB-backed integration tests
 
 deferred to the next slices
-  Opportunity lifecycle buttons in the web UI
   live SERP/competitor provider adapters and model-driven orchestration
 ```
 
@@ -738,7 +738,7 @@ No contract field exists solely for a UI that does not exist yet except `mapGrou
 ```text
 Mastra multi-agent orchestration (single scout task first)
 agent_run_events / streaming timeline
-Opportunity Explorer UI
+additional Explorer UI beyond the current table/detail/run/proof/decision baseline
 PageBrief / page proposal generation
 read-only tool plumbing beyond what the worker loads directly
 MapLibre, RAG, agent memory
