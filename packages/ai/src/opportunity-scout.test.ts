@@ -1,9 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evidenceSourceTypes, OpportunityScoutOutputSchema, type OpportunityScoutOutput } from "@localseo/contracts";
+import {
+  cannibalizationRiskLevels,
+  clusterStrengths,
+  evidenceProofTiers,
+  evidenceSourceTypes,
+  evidenceStrengths,
+  hubSpokeRoles,
+  nearbyPlaceAdjacencyReasons,
+  nearbyPlaceKinds,
+  OpportunityScoutOutputSchema,
+  opportunityClassifications,
+  opportunityGroupSources,
+  opportunityRecommendedActions,
+  opportunitySuggestedPageTypes,
+  type OpportunityScoutOutput
+} from "@localseo/contracts";
 import {
   buildOpportunityScoutEvidencePacket,
   buildOpportunityScoutPrompt,
+  canonicalOpportunityScoutOutputExample,
   evaluateOpportunityScoutOutput,
   opportunityScoutEvidencePacketLimits,
   opportunityScoutPromptSections,
@@ -11,6 +27,10 @@ import {
 } from "./index.js";
 
 const projectId = "project-1";
+
+void test("canonical opportunity scout prompt example stays valid against the contract", () => {
+  assert.doesNotThrow(() => OpportunityScoutOutputSchema.parse(canonicalOpportunityScoutOutputExample));
+});
 
 void test("buildOpportunityScoutPrompt is sectioned around the product safety rules", () => {
   const prompt = buildOpportunityScoutPrompt();
@@ -39,6 +59,29 @@ void test("buildOpportunityScoutPrompt is sectioned around the product safety ru
   assert.match(prompt, /Dachdecker Markt Indersdorf/u);
   assert.match(prompt, /Return only JSON matching OpportunityScoutOutput/u);
   assert.match(prompt, /maxBriefs value from the input packet/u);
+  assert.match(prompt, /Copy projectId exactly from the input packet into every brief/u);
+  assert.match(prompt, /never output evidence as strings or sourceId arrays/u);
+  assert.match(prompt, /Never output null/u);
+  assert.match(prompt, /"projectId": "11111111-1111-4111-8111-111111111111"/u);
+  assert.match(prompt, /"recommendedAction": "create_brief"/u);
+  assert.match(prompt, /"sourceType": "gsc_row"/u);
+
+  for (const vocabulary of [
+    opportunityClassifications,
+    opportunityRecommendedActions,
+    opportunitySuggestedPageTypes,
+    evidenceSourceTypes,
+    evidenceStrengths,
+    evidenceProofTiers,
+    nearbyPlaceKinds,
+    nearbyPlaceAdjacencyReasons,
+    clusterStrengths,
+    hubSpokeRoles,
+    cannibalizationRiskLevels,
+    opportunityGroupSources
+  ]) {
+    assert.match(prompt, new RegExp(vocabulary.join(" \\| "), "u"));
+  }
 });
 
 void test("accepts empty-evidence scout output as zero persisted briefs", () => {

@@ -1,10 +1,22 @@
-import type {
-  EvidenceProofTier,
-  EvidenceRef,
-  EvidenceSourceType,
-  OpportunityBrief,
-  OpportunityGroupHint,
-  OpportunityScoutOutput
+import {
+  cannibalizationRiskLevels,
+  clusterStrengths,
+  evidenceProofTiers,
+  evidenceSourceTypes,
+  evidenceStrengths,
+  hubSpokeRoles,
+  nearbyPlaceAdjacencyReasons,
+  nearbyPlaceKinds,
+  opportunityClassifications,
+  opportunityGroupSources,
+  opportunityRecommendedActions,
+  opportunitySuggestedPageTypes,
+  type EvidenceProofTier,
+  type EvidenceRef,
+  type EvidenceSourceType,
+  type OpportunityBrief,
+  type OpportunityGroupHint,
+  type OpportunityScoutOutput
 } from "@localseo/contracts";
 
 export const mastraAgents = [
@@ -160,6 +172,128 @@ export const opportunityScoutEvidencePacketLimits = {
   serializedBytes: 120_000
 } as const;
 
+export const canonicalOpportunityScoutOutputExample = {
+  briefs: [
+    {
+      projectId: "11111111-1111-4111-8111-111111111111",
+      classification: "near_term_target",
+      service: "Entruempelung",
+      location: {
+        name: "Dachau",
+        kind: "city",
+        adjacencyReason: "gsc_testing_signal",
+        existingClusterStrength: "weak",
+        mapGroupKey: "dachau-south-corridor",
+        evidence: [
+          {
+            sourceType: "gsc_signal",
+            sourceId: "77777777-7777-4777-8777-777777777777",
+            locator: {
+              query: "entruempelung dachau",
+              pageUrl: "https://customer.example/entruempelung/"
+            },
+            summary: "GSC signal shows Dachau intent on the generic Entruempelung page.",
+            observedMetric: { name: "impressions", value: 28 },
+            strength: "medium",
+            proofTier: "internal_signal"
+          }
+        ]
+      },
+      primaryKeyword: "entruempelung dachau",
+      secondaryKeywords: ["wohnungsaufloesung dachau", "haushaltsaufloesung dachau"],
+      suggestedRoute: "/entruempelung-dachau/",
+      suggestedPageType: "normal_page",
+      evidence: [
+        {
+          sourceType: "gsc_row",
+          sourceId: "66666666-6666-4666-8666-666666666666",
+          locator: {
+            query: "entruempelung dachau",
+            pageUrl: "https://customer.example/entruempelung/"
+          },
+          summary: "The query has impressions on a generic service page but no proven Top 10 ranking proof.",
+          observedMetric: { name: "impressions", value: 28 },
+          strength: "medium",
+          proofTier: "internal_signal"
+        }
+      ],
+      competitorObservations: [],
+      groupHints: [
+        {
+          key: "gsc-entruempelung-dachau",
+          label: "GSC cluster: Entruempelung Dachau",
+          source: "gsc_query_cluster",
+          description: "Specific Dachau query demand appears on a generic Entruempelung route.",
+          evidence: [
+            {
+              sourceType: "gsc_row",
+              sourceId: "66666666-6666-4666-8666-666666666666",
+              locator: {
+                query: "entruempelung dachau",
+                pageUrl: "https://customer.example/entruempelung/"
+              },
+              summary: "Use this GSC row as demand context, not customer-safe proof.",
+              observedMetric: { name: "position", value: 17 },
+              strength: "medium",
+              proofTier: "internal_signal"
+            }
+          ]
+        }
+      ],
+      hubSpokeRole: "standalone",
+      uniquenessRationale:
+        "A Dachau-specific page would answer local intent that the generic service page does not cover.",
+      cannibalizationRisk: {
+        level: "medium",
+        conflictingRoutes: ["/entruempelung/"]
+      },
+      missingEvidence: ["Manual ranking proof or reviewed SERP evidence would be needed before any proven_win claim."],
+      confidence: 0.62,
+      recommendedAction: "create_brief"
+    }
+  ],
+  groups: [
+    {
+      key: "gsc-entruempelung-dachau",
+      label: "GSC cluster: Entruempelung Dachau",
+      source: "gsc_query_cluster",
+      description: "Specific Dachau query demand appears on a generic Entruempelung route.",
+      evidence: [
+        {
+          sourceType: "gsc_row",
+          sourceId: "66666666-6666-4666-8666-666666666666",
+          locator: {
+            query: "entruempelung dachau",
+            pageUrl: "https://customer.example/entruempelung/"
+          },
+          summary: "GSC demand signal for Dachau; not customer-safe proof.",
+          observedMetric: { name: "impressions", value: 28 },
+          strength: "medium",
+          proofTier: "internal_signal"
+        }
+      ]
+    }
+  ],
+  runNotes: "Example only. Replace values with facts from the input packet."
+} satisfies OpportunityScoutOutput;
+
+const opportunityScoutOutputExampleJson = JSON.stringify(canonicalOpportunityScoutOutputExample, null, 2);
+
+const opportunityScoutEnumVocabulary = [
+  `classification: ${formatVocabulary(opportunityClassifications)}`,
+  `recommendedAction: ${formatVocabulary(opportunityRecommendedActions)}`,
+  `suggestedPageType: ${formatVocabulary(opportunitySuggestedPageTypes)}`,
+  `EvidenceRef.sourceType: ${formatVocabulary(evidenceSourceTypes)}`,
+  `EvidenceRef.strength: ${formatVocabulary(evidenceStrengths)}`,
+  `EvidenceRef.proofTier: ${formatVocabulary(evidenceProofTiers)}`,
+  `location.kind: ${formatVocabulary(nearbyPlaceKinds)}`,
+  `location.adjacencyReason: ${formatVocabulary(nearbyPlaceAdjacencyReasons)}`,
+  `corridorCluster.clusterStrength and location.existingClusterStrength: ${formatVocabulary(clusterStrengths)}`,
+  `hubSpokeRole: ${formatVocabulary(hubSpokeRoles)}`,
+  `cannibalizationRisk.level: ${formatVocabulary(cannibalizationRiskLevels)}`,
+  `groupHints.source and groups.source: ${formatVocabulary(opportunityGroupSources)}`
+] as const;
+
 export type OpportunityScoutPromptSection = {
   key:
     | "role"
@@ -241,10 +375,20 @@ export const opportunityScoutPromptSections: readonly OpportunityScoutPromptSect
     lines: [
       "Return only JSON matching OpportunityScoutOutput.",
       "Return at most the maxBriefs value from the input packet.",
+      "Copy projectId exactly from the input packet into every brief.",
+      "Every evidence item must be a full EvidenceRef object with sourceType, sourceId, summary, strength, and proofTier; never output evidence as strings or sourceId arrays.",
+      "Never output null. Omit optional fields when unknown, and use empty arrays only where the example shows arrays.",
+      `Allowed enum values:\n${opportunityScoutEnumVocabulary.map((line) => `- ${line}`).join("\n")}`,
+      "Use this canonical schema example as the output shape; replace values with input-backed facts and do not copy example sourceIds unless they exist in the input packet:",
+      opportunityScoutOutputExampleJson,
       'If the packet has no useful evidence, return {"briefs":[],"groups":[]}.'
     ]
   }
 ];
+
+function formatVocabulary(values: readonly string[]): string {
+  return values.join(" | ");
+}
 
 export function buildOpportunityScoutPrompt(): string {
   return opportunityScoutPromptSections
