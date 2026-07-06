@@ -698,6 +698,16 @@ claims that AI "found proof" without evidence
 
 RAG stays deferred. The direct evidence packet is the first implementation path.
 
+After the Markdown context-db research pass, the accepted memory boundary is:
+
+```text
+Postgres = operational product truth
+Markdown context records = durable project memory and field-evidence lessons
+generated index/vector store = derived search aid, rebuildable and non-authoritative
+```
+
+Do not build vector retrieval or create a new `.ai-context-db` folder until the direct evidence/proposal workflow proves a real retrieval need. If a Markdown context-record layer is introduced later, it starts as schema-backed docs with human promotion, not as app state and not as customer-safe proof.
+
 Build retrieval only when one of these is true:
 
 ```text
@@ -711,13 +721,15 @@ repeated runs waste tokens loading the same stable context
 First retrieval shape:
 
 ```text
-project-owned source rows/artifacts
--> chunk/index with source metadata and proof tier
--> retrieve with project/source/proof filters before similarity
--> return RetrievedEvidenceCandidate
--> map to EvidenceRef
+project-owned source rows/artifacts and/or reviewed Markdown context records
+-> chunk/index with source metadata, privacy, source refs, and proof tier
+-> retrieve with project/source/privacy/proof filters before similarity
+-> return RetrievedEvidenceCandidate or ContextRecordCandidate
+-> map to EvidenceRef only when the candidate resolves to project-owned evidence
 -> deterministic QA still decides product truth
 ```
+
+Context records may summarize field workflows, Big Eater findings, reusable SEO lessons, prompt/playbook guidance, and architecture memory. They may not own queue status, proof review state, deployments, approvals, GSC rows, tracking events, audit findings, opportunities, OAuth state, or any other high-churn product truth.
 
 ## MVP Non-Goals
 
@@ -753,6 +765,8 @@ MapLibre / graph dependencies
 Mastra memory / RAG
   After the direct evidence-packet workflow proves the evidence/proposal boundary
   and one of the slice 13 retrieval triggers becomes real.
+  Markdown context records may be the first memory substrate, but only after
+  an approved blueprint and human-promotion workflow.
 ```
 
 ## Source Map
@@ -766,6 +780,7 @@ C:\big eater\ai-reasoning-opportunity-scout-stealer-findings-2026-07-02.md
 C:\big eater\mastra-docs-for-local-seo-project-2026-07-02.md
 C:\big eater\rag-stealer-findings-2026-07-02.md
 C:\big eater\agentic-evidence-web-ui-stealer-findings-2026-07-02.md
+C:\big eater\markdown-context-db-strategy-local-seo-2026-07-06.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/05-template-component-preview-system.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/07-subdomains-local-pages.md

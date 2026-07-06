@@ -57,3 +57,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0013 - Rollback Operation Vocabulary And Storage Model](0013-rollback-operation-vocabulary-and-storage-model.md)
 - [0014 - Rollback Trigger Policy](0014-rollback-trigger-policy.md)
 - [0015 - No Paid SERP API Proof Strategy](0015-no-paid-serp-api-proof-strategy.md)
+- [0016 - Markdown Context Records And Retrieval Boundary](0016-markdown-context-records-and-retrieval-boundary.md)
