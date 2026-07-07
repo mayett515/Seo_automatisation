@@ -20,6 +20,8 @@ priority_schema: "critical > strong > guideline"
 - Model Query states explicitly: pending, error, success, and background fetching when relevant.
 - Use serializable, stable query keys that include every variable that changes the fetched data.
 - Invalidate affected queries after successful mutations.
+- Best-effort cache invalidations may be detached with `void` when stale UI is the only failure mode.
+- User-triggered mutations, submissions, approvals, deploys, destructive actions, or provider-affecting requests must be owned by TanStack Query/Form state, a route/action boundary, visible error UI, or an explicit `.catch`.
 - Prefer route-owned typed params. Use `useParams({ strict: false })` only in shared components that are intentionally route-ambiguous.
 - Encode route params when manually constructing API URLs.
 - For TanStack CLI scaffolding, add-ons, or ecosystem choices, use installed TanStack CLI skills and official CLI metadata discovery before choosing flags.

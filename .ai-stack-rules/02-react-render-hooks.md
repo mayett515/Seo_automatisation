@@ -28,6 +28,7 @@ priority_schema: "critical > strong > guideline"
 - Use dependency arrays honestly; if a dependency causes unwanted repeats, redesign the effect to be idempotent or move logic to an event/mutation boundary.
 - Use route/panel error boundaries, Suspense/lazy boundaries, and local skeletons for feature surfaces that can fail or load independently.
 - Lift stable constants/components out of render when they do not depend on render state.
+- React event handlers may ignore returned promises, but async work started from handlers must still have Query, Form, route, error-boundary, local-error, or explicit catch ownership.
 </positive-directives>
 
 <absolute-constraints>

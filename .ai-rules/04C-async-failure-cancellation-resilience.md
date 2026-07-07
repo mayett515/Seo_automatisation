@@ -90,6 +90,9 @@ THEN represent individual outcomes instead of throwing away successful results.
 
 IF work is intentionally detached:
 THEN mark it with `void` and attach a catch/log/queue owner.
+
+IF a framework owns frontend async work:
+THEN it still needs explicit ownership through the framework's event, form, mutation, route, cache, or error-state rules.
 </conditional-logic>
 
 <pre-flight-checklist>
