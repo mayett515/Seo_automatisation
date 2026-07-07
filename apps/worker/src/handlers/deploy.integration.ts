@@ -519,7 +519,7 @@ function pageJson(input: Partial<PageJson> = {}): PageJson {
         variant: "default",
         props: {
           h1: "Dachreinigung",
-          body: "Dachreinigung vor Ort."
+          lead: "Dachreinigung vor Ort."
         },
         evidenceRefs: []
       }

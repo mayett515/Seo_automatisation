@@ -905,7 +905,53 @@ function pageJson(route: string): PageJson {
         variant: "default",
         props: {
           h1: "Dachreinigung in Muenchen",
-          body: "Lokale Dachreinigung in Muenchen."
+          lead: "Lokale Dachreinigung in Muenchen.",
+          primaryCtaLabel: "Anfragen",
+          primaryCtaHref: "/kontakt/"
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "areas-1",
+        type: "ServiceAreaList",
+        registryKey: "ServiceAreaList.default",
+        schemaVersion: 1,
+        zone: "body_late",
+        order: 1,
+        variant: "default",
+        props: {
+          heading: "Einsatzgebiet",
+          areas: [{ name: "Muenchen", route: "/dachreinigung/" }]
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "faq-1",
+        type: "FAQ",
+        registryKey: "FAQ.default",
+        schemaVersion: 1,
+        zone: "body_late",
+        order: 2,
+        variant: "default",
+        props: {
+          heading: "Haeufige Fragen",
+          items: [{ question: "Wie schnell?", answer: "Nach Absprache." }]
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "cta-1",
+        type: "FinalCTA",
+        registryKey: "FinalCTA.default",
+        schemaVersion: 1,
+        zone: "cta_late",
+        order: 3,
+        variant: "default",
+        props: {
+          heading: "Dachreinigung anfragen",
+          body: "Wir pruefen die passende Ausfuehrung fuer Ihr Objekt.",
+          ctaLabel: "Anfragen",
+          ctaHref: "/kontakt/"
         },
         evidenceRefs: []
       }

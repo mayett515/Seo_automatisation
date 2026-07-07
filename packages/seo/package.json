@@ -18,6 +18,7 @@
     "test": "tsc -p tsconfig.json --noEmit && tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@localseo/contracts": "workspace:*"
+    "@localseo/contracts": "workspace:*",
+    "@localseo/page-registry": "workspace:*"
   }
 }

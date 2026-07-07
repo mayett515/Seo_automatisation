@@ -22,6 +22,7 @@ import {
   type ReleasePlan
 } from "@localseo/contracts";
 import { buildReleaseDeploymentKey, canDeployRelease } from "@localseo/domain";
+import { renderApprovedReleaseArtifact } from "@localseo/page-registry";
 import {
   approvals,
   deployments,
@@ -241,12 +242,23 @@ export async function executeDeploy(input: {
       throw new DeployEvidenceError("Release is not deployable from persisted worker evidence");
     }
 
-    const evidence = buildDeployEvidence(context);
-    const buildArtifactKey = buildReleaseArtifactKey(input.data.releasePlanId);
+    const approvedArtifact = buildApprovedReleaseArtifact(input.data, context);
+    const staticSiteArtifact = renderApprovedReleaseArtifact(approvedArtifact);
+    const approvedArtifactKey = buildReleaseArtifactKey(input.data.releasePlanId);
+    const buildArtifactKey = buildStaticSiteArtifactKey(input.data.releasePlanId);
+    const evidence = buildDeployEvidence(context, {
+      approvedArtifactKey,
+      renderedFileCount: staticSiteArtifact.files.length,
+      staticSiteArtifactKey: buildArtifactKey
+    });
 
     await input.objectStorage.putJson({
+      key: approvedArtifactKey,
+      value: approvedArtifact
+    });
+    await input.objectStorage.putJson({
       key: buildArtifactKey,
-      value: buildApprovedReleaseArtifact(input.data, context)
+      value: staticSiteArtifact
     });
 
     const deployment = await input.repository.startDeployment({
@@ -459,6 +471,10 @@ export function parseDeployJobData(data: unknown): DeployJobData {
 
 export function buildReleaseArtifactKey(releasePlanId: string): string {
   return `releases/${releasePlanId}/approved-artifact.json`;
+}
+
+export function buildStaticSiteArtifactKey(releasePlanId: string): string {
+  return `releases/${releasePlanId}/static-site-artifact.json`;
 }
 
 export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
@@ -1115,7 +1131,7 @@ async function getProviderSnapshotAfterUploadResume(input: {
     projectId: input.data.projectId,
     releasePlanId: input.data.releasePlanId,
     deploymentKey: input.data.deploymentKey,
-    buildArtifactKey: buildReleaseArtifactKey(input.data.releasePlanId),
+    buildArtifactKey: buildStaticSiteArtifactKey(input.data.releasePlanId),
     providerDeployId: input.providerDeployId,
     resumeToken
   });
@@ -1245,11 +1261,21 @@ function toDeployablePlan(plan: ReleasePlanRow): ReleasePlan | undefined {
   };
 }
 
-function buildDeployEvidence(context: DeployContext): Record<string, unknown> {
+function buildDeployEvidence(
+  context: DeployContext,
+  artifactEvidence: {
+    approvedArtifactKey: string;
+    renderedFileCount: number;
+    staticSiteArtifactKey: string;
+  }
+): Record<string, unknown> {
   return {
     source: "deploy_worker",
     releasePlanStatusAtStart: context.plan.status,
     releaseItemCount: context.releaseItems.length,
+    approvedArtifactKey: artifactEvidence.approvedArtifactKey,
+    staticSiteArtifactKey: artifactEvidence.staticSiteArtifactKey,
+    renderedFileCount: artifactEvidence.renderedFileCount,
     rollbackPointCount: context.rollbackPointCount,
     priorSuccessfulDeploymentCount: context.priorSuccessfulDeploymentCount,
     hasApproval: context.hasApproval,

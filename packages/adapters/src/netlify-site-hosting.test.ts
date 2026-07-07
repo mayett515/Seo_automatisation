@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import type { ApprovedReleaseArtifact, PageJson } from "@localseo/contracts";
-import { renderApprovedReleaseArtifact } from "@localseo/domain";
+import type { ApprovedReleaseArtifact, PageJson, StaticSiteArtifact } from "@localseo/contracts";
+import { renderApprovedReleaseArtifact } from "@localseo/page-registry";
 import type { ObjectStoragePort } from "./index.js";
 import { NetlifySiteHostingAdapter } from "./netlify-site-hosting.js";
 import { ProviderRequestError } from "./provider-errors.js";
@@ -53,7 +53,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       releasePlanId: "release-1",
       deploymentId: "deployment-1",
       deploymentKey: "release_plan:release-1",
-      buildArtifactKey: "releases/release-1/approved-artifact.json",
+      buildArtifactKey: "releases/release-1/static-site-artifact.json",
       hostingSiteId: "site-1"
     });
 
@@ -130,7 +130,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       projectId: "project-1",
       releasePlanId: "release-1",
       deploymentKey: "release_plan:release-1",
-      buildArtifactKey: "releases/release-1/approved-artifact.json",
+      buildArtifactKey: "releases/release-1/static-site-artifact.json",
       hostingSiteId: "site-1"
     });
 
@@ -180,7 +180,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       projectId: "project-1",
       releasePlanId: "release-1",
       deploymentKey: "release_plan:release-1",
-      buildArtifactKey: "releases/release-1/approved-artifact.json",
+      buildArtifactKey: "releases/release-1/static-site-artifact.json",
       hostingSiteId: "site-1"
     });
 
@@ -190,12 +190,12 @@ void describe("NetlifySiteHostingAdapter", () => {
 
   void it("uploads files directly from a Netlify resume token", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
-    const approvedArtifact = artifact();
-    const [file] = renderApprovedReleaseArtifact(approvedArtifact).files;
+    const staticArtifact = artifact();
+    const [file] = staticArtifact.files;
     assert.ok(file);
     const adapter = new NetlifySiteHostingAdapter({
       authToken: "netlify-token",
-      objectStorage: createObjectStorage(approvedArtifact),
+      objectStorage: createObjectStorage(staticArtifact),
       fetchImpl: (url, init = {}) => {
         const requestUrl = requestUrlToString(url);
         calls.push({ url: requestUrl, init });
@@ -212,7 +212,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       projectId: "project-1",
       releasePlanId: "release-1",
       deploymentKey: "release_plan:release-1",
-      buildArtifactKey: "releases/release-1/approved-artifact.json",
+      buildArtifactKey: "releases/release-1/static-site-artifact.json",
       providerDeployId: "deploy-1",
       resumeToken: {
         adapter: "netlify",
@@ -253,10 +253,10 @@ void describe("NetlifySiteHostingAdapter", () => {
         projectId: "project-1",
         releasePlanId: "release-1",
         deploymentKey: "release_plan:release-1",
-        buildArtifactKey: "releases/release-1/approved-artifact.json",
+        buildArtifactKey: "releases/release-1/static-site-artifact.json",
         hostingSiteId: "site-1"
       }),
-      /not in the approved artifact/u
+      /not in the static site artifact/u
     );
   });
 
@@ -408,14 +408,18 @@ void describe("NetlifySiteHostingAdapter", () => {
   });
 });
 
-function createObjectStorage(value: ApprovedReleaseArtifact): ObjectStoragePort {
+function createObjectStorage(value: StaticSiteArtifact): ObjectStoragePort {
   return {
     putJson: (input) => Promise.resolve({ key: input.key }),
     getJson: () => Promise.resolve(value)
   };
 }
 
-function artifact(): ApprovedReleaseArtifact {
+function artifact(): StaticSiteArtifact {
+  return renderApprovedReleaseArtifact(approvedArtifact());
+}
+
+function approvedArtifact(): ApprovedReleaseArtifact {
   return {
     projectId: "project-1",
     releasePlanId: "release-1",
@@ -463,7 +467,7 @@ function pageJson(input: Partial<PageJson> = {}): PageJson {
         variant: "default",
         props: {
           h1: "Home",
-          body: "Home page."
+          lead: "Home page."
         },
         evidenceRefs: []
       }

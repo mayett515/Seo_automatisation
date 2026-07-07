@@ -18,6 +18,7 @@
     "@localseo/contracts": "workspace:*",
     "@localseo/db": "workspace:*",
     "@localseo/domain": "workspace:*",
+    "@localseo/page-registry": "workspace:*",
     "bullmq": "5.79.1",
     "drizzle-orm": "0.45.2"
   },

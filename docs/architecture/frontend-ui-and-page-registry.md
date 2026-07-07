@@ -279,7 +279,7 @@ packages/ai
 
 Every page section needs a stable section instance id so notes, validation errors, diffs, and future AI patches remain attached when the section moves.
 
-Preview and deploy must share the same renderer core. The future static release renderer belongs in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON.
+Preview and deploy must share the same renderer core. The static release renderer now lives in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON. Preview rendering should reuse that same core rather than introducing a parallel renderer.
 
 The first renderer CSS foundation should stay inside `packages/page-registry`:
 

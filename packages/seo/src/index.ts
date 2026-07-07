@@ -1,6 +1,14 @@
-import { ReleaseCheckSchema, type ReleaseCheck } from "@localseo/contracts";
+import {
+  PageJsonSchema,
+  ReleaseCheckSchema,
+  type PageJson,
+  type ReleaseCheck,
+  type ReleaseItemAction
+} from "@localseo/contracts";
+import { derivePageRegistrySeoFacts, resolveRenderedRobots } from "@localseo/page-registry";
 
 export type LocalPageQaInput = {
+  invalidPageJson?: boolean;
   title?: string;
   metaDescription?: string;
   h1?: string;
@@ -24,6 +32,7 @@ export function evaluateLocalPageQa(input: LocalPageQaInput): LocalPageQaResult 
   const blockers: string[] = [];
   const warnings: string[] = [];
 
+  if (input.invalidPageJson) blockers.push("invalid_page_json");
   if (!input.title) blockers.push("missing_title");
   if (!input.metaDescription) blockers.push("missing_meta_description");
   if (!input.h1) blockers.push("missing_h1");
@@ -44,10 +53,11 @@ export function evaluateLocalPageQa(input: LocalPageQaInput): LocalPageQaResult 
 }
 
 export type ReleasePreflightPageEvidence = {
+  action: ReleaseItemAction;
   pageVersionId: string | null;
   targetUrl: string;
   approvedAt: Date | null;
-  pageJson: Record<string, unknown> | null;
+  pageJson: unknown;
   sitemapReady: boolean;
   uniquenessRationale: string | null;
 };
@@ -60,9 +70,11 @@ export type ReleasePreflightEvidence = {
 };
 
 export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence): ReleaseCheck[] {
-  const missingApproval = evidence.pages.filter((page) => !page.pageVersionId || !page.approvedAt);
-  const missingNoindex = evidence.pages.filter((page) => !hasNoindexEvidence(page.pageJson));
-  const pageQaResults = evidence.pages.map((page) => ({
+  const renderablePages = evidence.pages.filter(isRenderableReleasePage);
+  const missingApproval = renderablePages.filter((page) => !page.pageVersionId || !page.approvedAt);
+  const missingNoindex = renderablePages.filter((page) => !hasNoindexEvidence(page.pageJson));
+  const unresolvedLiveRobots = evidence.pages.filter((page) => !hasResolvedRobotsForAction(page.action));
+  const pageQaResults = renderablePages.map((page) => ({
     pageVersionId: page.pageVersionId,
     targetUrl: page.targetUrl,
     result: evaluateLocalPageQa(toLocalPageQaInput(page))
@@ -81,20 +93,22 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
       warning
     }))
   );
-  const pageCount = evidence.pages.length;
+  const releaseItemCount = evidence.pages.length;
+  const pageCount = renderablePages.length;
 
   return [
     ReleaseCheckSchema.parse({
       checkKey: "approval_check",
       scope: "page",
       severity: "blocker",
-      result: pageCount > 0 && missingApproval.length === 0 ? "passed" : "failed",
+      result: releaseItemCount > 0 && missingApproval.length === 0 ? "passed" : "failed",
       message:
-        pageCount > 0 && missingApproval.length === 0
-          ? "Every release item references an approved page version."
-          : "Every release item must reference an approved page version before deploy approval.",
+        releaseItemCount > 0 && missingApproval.length === 0
+          ? "Every renderable release item references an approved page version."
+          : "Every create/update release item must reference an approved page version before deploy approval.",
       evidence: {
         pageCount,
+        releaseItemCount,
         missingApprovalCount: missingApproval.length,
         missingApprovalPageVersionIds: missingApproval.map((page) => page.pageVersionId ?? "missing_page_version")
       }
@@ -103,11 +117,11 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
       checkKey: "staging_noindex_check",
       scope: "domain",
       severity: "blocker",
-      result: pageCount > 0 && missingNoindex.length === 0 ? "passed" : "failed",
+      result: releaseItemCount > 0 && missingNoindex.length === 0 ? "passed" : "failed",
       message:
-        pageCount > 0 && missingNoindex.length === 0
+        releaseItemCount > 0 && missingNoindex.length === 0
           ? "Every preview page carries noindex evidence."
-          : "Every preview page must carry noindex evidence before deploy approval.",
+          : "Every create/update preview page must carry noindex evidence before deploy approval.",
       evidence: {
         pageCount,
         missingNoindexCount: missingNoindex.length,
@@ -115,12 +129,31 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
       }
     }),
     ReleaseCheckSchema.parse({
+      checkKey: "resolved_robots_check",
+      scope: "domain",
+      severity: "blocker",
+      result: releaseItemCount > 0 && unresolvedLiveRobots.length === 0 ? "passed" : "failed",
+      message:
+        releaseItemCount > 0 && unresolvedLiveRobots.length === 0
+          ? "Release actions resolve to deterministic robots directives."
+          : "Every release action must resolve to a deterministic robots directive or a non-rendering operation.",
+      evidence: {
+        releaseItemCount,
+        resolvedRobots: evidence.pages.map((page) => ({
+          action: page.action,
+          targetUrl: page.targetUrl,
+          robots: resolveRenderedRobots(page.action) ?? null
+        })),
+        unresolvedTargets: unresolvedLiveRobots.map((page) => page.targetUrl)
+      }
+    }),
+    ReleaseCheckSchema.parse({
       checkKey: "local_seo_page_quality_gate",
       scope: "page",
       severity: "blocker",
-      result: pageCount > 0 && qaBlockers.length === 0 ? "passed" : "failed",
+      result: releaseItemCount > 0 && qaBlockers.length === 0 ? "passed" : "failed",
       message:
-        pageCount > 0 && qaBlockers.length === 0
+        releaseItemCount > 0 && qaBlockers.length === 0
           ? "Local SEO page quality gate has no blockers."
           : "Local SEO page quality gate has blockers that must be resolved before deploy approval.",
       evidence: {
@@ -183,76 +216,53 @@ function hasRollbackEvidence(
 }
 
 function toLocalPageQaInput(page: ReleasePreflightPageEvidence): LocalPageQaInput {
-  const pageJson = asRecord(page.pageJson);
-  const seo = asRecord(pageJson.seo);
-  const meta = asRecord(pageJson.meta);
+  const pageJson = parsePageJson(page.pageJson);
+
+  if (!pageJson) {
+    return {
+      invalidPageJson: true,
+      hasJsonLd: false,
+      hasAreaServed: false,
+      hasInternalLinks: false,
+      hasLocalFaq: false,
+      hasVisibleCta: false,
+      sitemapReady: false
+    };
+  }
+
+  const facts = derivePageRegistrySeoFacts(pageJson);
 
   return {
-    title: firstString([pageJson, seo, meta], ["title", "metaTitle"]),
-    metaDescription: firstString([pageJson, seo, meta], ["metaDescription", "description"]),
-    h1: firstString([pageJson], ["h1", "headline"]),
-    canonical: firstString([pageJson, seo], ["canonical", "canonicalUrl"]),
-    hasJsonLd: booleanFlag(pageJson, ["hasJsonLd", "jsonLdReady"]) || hasAnyValue(pageJson, ["jsonLd", "schemaJson"]),
-    hasAreaServed: booleanFlag(pageJson, ["hasAreaServed", "areaServedReady"]) || hasAnyValue(pageJson, ["areaServed"]),
-    hasInternalLinks:
-      booleanFlag(pageJson, ["hasInternalLinks"]) ||
-      (Array.isArray(pageJson.internalLinks) && pageJson.internalLinks.length > 0),
-    hasLocalFaq: booleanFlag(pageJson, ["hasLocalFaq"]) || hasAnyValue(pageJson, ["localFaq", "faq"]),
-    hasVisibleCta: booleanFlag(pageJson, ["hasVisibleCta", "visibleCta"]) || hasAnyValue(pageJson, ["cta"]),
-    sitemapReady: page.sitemapReady || booleanFlag(pageJson, ["sitemapReady"]),
-    uniquenessRationale: page.uniquenessRationale ?? firstString([pageJson], ["uniquenessRationale"])
+    title: facts.title,
+    metaDescription: facts.metaDescription,
+    h1: facts.h1,
+    canonical: facts.canonicalPath,
+    hasJsonLd: facts.hasJsonLd,
+    hasAreaServed: facts.hasAreaServed,
+    hasInternalLinks: facts.hasInternalLinks,
+    hasLocalFaq: facts.hasLocalFaq,
+    hasVisibleCta: facts.hasVisibleCta,
+    sitemapReady: page.sitemapReady || facts.sitemapReady,
+    uniquenessRationale: page.uniquenessRationale ?? facts.uniquenessRationale
   };
 }
 
-function hasNoindexEvidence(pageJson: Record<string, unknown> | null): boolean {
-  const value = asRecord(pageJson);
-  const seo = asRecord(value.seo);
-  const meta = asRecord(value.meta);
-  const robots = [
-    firstString([value], ["robots", "previewRobots"]),
-    firstString([seo], ["robots", "previewRobots"]),
-    firstString([meta], ["robots", "content"])
-  ]
-    .filter((item): item is string => Boolean(item))
-    .join(",");
-
-  return (
-    booleanFlag(value, ["noindex", "previewNoindex", "stagingNoindex"]) || robots.toLowerCase().includes("noindex")
-  );
+function hasNoindexEvidence(pageJson: unknown): boolean {
+  const parsed = parsePageJson(pageJson);
+  return parsed ? derivePageRegistrySeoFacts(parsed).robotsIntent === "noindex" : false;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+function isRenderableReleasePage(page: ReleasePreflightPageEvidence): boolean {
+  return page.action === "create" || page.action === "update";
 }
 
-function firstString(records: Record<string, unknown>[], keys: string[]): string | undefined {
-  for (const record of records) {
-    for (const key of keys) {
-      const value = record[key];
-
-      if (typeof value === "string" && value.trim().length > 0) {
-        return value;
-      }
-    }
-  }
-
-  return undefined;
+function hasResolvedRobotsForAction(action: ReleaseItemAction): boolean {
+  return action === "redirect" || action === "remove" || resolveRenderedRobots(action) !== undefined;
 }
 
-function booleanFlag(record: Record<string, unknown>, keys: string[]): boolean {
-  return keys.some((key) => record[key] === true);
-}
-
-function hasAnyValue(record: Record<string, unknown>, keys: string[]): boolean {
-  return keys.some((key) => {
-    const value = record[key];
-
-    if (Array.isArray(value)) {
-      return value.length > 0;
-    }
-
-    return Boolean(value);
-  });
+function parsePageJson(input: unknown): PageJson | undefined {
+  const parsed = PageJsonSchema.safeParse(input);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export const customerReportMetricBans = ["impressions", "ctr", "average_position", "averagePosition"] as const;

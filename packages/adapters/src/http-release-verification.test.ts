@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { PageJson } from "@localseo/contracts";
-import { renderApprovedReleaseArtifact } from "@localseo/domain";
+import { renderApprovedReleaseArtifact } from "@localseo/page-registry";
 import {
   HttpReleaseVerificationAdapter,
   type BrowserRuntimeCheckResult,
@@ -484,7 +484,7 @@ function pageJson(input: Partial<PageJson> = {}): PageJson {
         variant: "default",
         props: {
           h1: "Dachreinigung in Muenchen",
-          body: "Lokale Dachreinigung in Muenchen."
+          lead: "Lokale Dachreinigung in Muenchen."
         },
         evidenceRefs: []
       }

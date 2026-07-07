@@ -622,7 +622,7 @@ PageJson/PageProposalJson contracts + page version status vocabulary (implemente
 -> structured proposal persistence decision, default page_proposals.proposalJson (implemented 2026-07-07)
 -> packages/page-registry with a small Local SEO section set (implemented 2026-07-07)
 -> pure page-studio movement/composition helpers (implemented 2026-07-07)
--> retarget SEO preflight and static rendering to typed PageJson with an internal CSS foundation
+-> retarget SEO preflight and static rendering to typed PageJson with an internal CSS foundation (implemented 2026-07-07)
 -> preview renderer sharing the static/deploy renderer core and theme tokens
 -> project-scoped proposal/version read path
 -> section notes anchored to stable section ids
@@ -661,7 +661,7 @@ The page proposal must be structured page JSON, not arbitrary HTML, React code, 
 
 The AI may emit only structured proposal JSON. Raw HTML, CSS, React, JavaScript, class names, inline styles, and freeform layout instructions are rejected at the AI/API boundary.
 
-The page lane must also migrate the existing scaffold renderer out of `packages/domain`/provider adapters. Workers build rendered release artifacts with the page-registry renderer; site-hosting adapters upload bytes only.
+The page lane has migrated the scaffold renderer out of `packages/domain`/provider adapters. Workers build rendered release artifacts with the page-registry renderer; site-hosting adapters upload bytes only.
 
 ### 10. Page Studio, Notes, Approval, And Versioning
 

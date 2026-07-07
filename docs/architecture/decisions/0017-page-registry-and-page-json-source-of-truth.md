@@ -34,12 +34,12 @@ page_proposals
 
 Existing schema tables also include `component_templates`, `component_instances`, and `component_notes`. Without a clear ownership decision, those tables could become a competing source of truth for rendered pages.
 
-The accepted review also surfaced two current-code facts that the page lane must reconcile:
+The accepted review also surfaced two then-current scaffold facts that the page lane had to reconcile:
 
 - the existing static HTML renderer lives in `packages/domain` and is invoked by the Netlify adapter,
 - current release preflight and current static rendering duck-type different loose `pageJson` keys, including a robots/noindex vocabulary mismatch.
 
-Those paths are acceptable scaffold code before PageJson v1. They are not acceptable as the long-term Page Registry implementation.
+Those paths were acceptable scaffold code before PageJson v1. The slice-7 renderer/preflight migration has since moved static rendering into `packages/page-registry`, made the deploy worker persist rendered `StaticSiteArtifact` files, and retargeted release preflight to parsed PageJson and registry-derived SEO facts.
 
 ## Decision
 
@@ -169,7 +169,7 @@ It also gives the next implementation slice a concrete target:
 4. Create `packages/page-registry` with a small Local SEO section set. Done in the second Page Registry slice.
 5. Add pure registry validation. Done in the second Page Registry slice.
 6. Add page-studio movement and composition helpers: required frame sections, legal ordering, legal movement, replacement, and variant switching. Done in the third Page Registry slice.
-7. Retarget release preflight and static rendering to typed PageJson, including the internal CSS foundation.
+7. Retarget release preflight and static rendering to typed PageJson, including the internal CSS foundation. Done in the fourth Page Registry slice.
 8. Add preview rendering that shares the static renderer core and theme tokens.
 9. Wire project-scoped proposal/version reads.
 10. Add section notes anchored to stable section ids.

@@ -169,6 +169,34 @@ requireNotRegex(
   "provider success must not write releasePlans.status = live"
 );
 
+requireNotIncludes(
+  "packages/adapters/src/netlify-site-hosting.ts",
+  "renderApprovedReleaseArtifact",
+  "page-registry-renderer-boundary",
+  "provider adapters must upload rendered static artifacts, not render PageJson"
+);
+
+requireNotIncludes(
+  "packages/adapters/src/netlify-site-hosting.ts",
+  "@localseo/page-registry",
+  "page-registry-renderer-boundary",
+  "provider adapters must not import page-registry renderer code"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  "buildStaticSiteArtifactKey",
+  "page-registry-renderer-boundary",
+  "deploy worker must hand provider adapters a rendered static-site artifact"
+);
+
+requireIncludes(
+  "packages/seo/src/index.ts",
+  "derivePageRegistrySeoFacts",
+  "page-registry-renderer-boundary",
+  "release preflight must use registry-derived typed PageJson facts"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

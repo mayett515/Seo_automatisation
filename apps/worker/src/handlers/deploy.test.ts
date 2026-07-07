@@ -5,6 +5,7 @@ import type { DeployJobData, PageJson, ReleaseCheck } from "@localseo/contracts"
 import { buildReleaseDeploymentKey } from "@localseo/domain";
 import {
   buildReleaseArtifactKey,
+  buildStaticSiteArtifactKey,
   executeDeploy,
   parseDeployJobData,
   type DeployContext,
@@ -51,21 +52,29 @@ void describe("parseDeployJobData", () => {
 void describe("executeDeploy", () => {
   void it("creates a deployment ledger row and persists provider success", async () => {
     const data = deployJobData();
+    const beginCalls: Array<Parameters<SiteHostingPort["beginDeploy"]>[0]> = [];
+    const uploadCalls: Array<Parameters<SiteHostingPort["uploadDeployFiles"]>[0]> = [];
     const repository = createRepository();
     const result = await executeDeploy({
       data,
       jobId: data.deploymentKey,
       objectStorage: createObjectStorage(),
       repository,
-      siteHosting: createSiteHosting({
-        status: "ready",
-        providerDeployId: "provider-deploy-1",
-        liveUrls: ["https://example.test/"]
-      })
+      siteHosting: createSiteHosting(
+        {
+          status: "ready",
+          providerDeployId: "provider-deploy-1",
+          liveUrls: ["https://example.test/"]
+        },
+        undefined,
+        { beginCalls, uploadCalls }
+      )
     });
 
     assert.equal(result.status, "provider_succeeded");
     assert.equal(result.providerDeployId, "provider-deploy-1");
+    assert.equal(beginCalls[0]?.buildArtifactKey, "releases/release-1/static-site-artifact.json");
+    assert.equal(uploadCalls[0]?.buildArtifactKey, "releases/release-1/static-site-artifact.json");
     assert.equal(repository.started.length, 1);
     assert.equal(repository.providerStarted.length, 1);
     assert.equal(repository.providerSucceeded.length, 1);
@@ -970,6 +979,10 @@ void describe("buildReleaseArtifactKey", () => {
   void it("uses a deterministic artifact key for the approved release artifact", () => {
     assert.equal(buildReleaseArtifactKey("release-1"), "releases/release-1/approved-artifact.json");
   });
+
+  void it("uses a deterministic artifact key for the rendered static site artifact", () => {
+    assert.equal(buildStaticSiteArtifactKey("release-1"), "releases/release-1/static-site-artifact.json");
+  });
 });
 
 function deployJobData(input: Partial<DeployJobData> = {}): DeployJobData {
@@ -1041,7 +1054,7 @@ function pageJson(input: Partial<PageJson> = {}): PageJson {
         variant: "default",
         props: {
           h1: "Gebaeudeservice",
-          body: "Lokaler Gebaeudeservice."
+          lead: "Lokaler Gebaeudeservice."
         },
         evidenceRefs: []
       }
@@ -1240,6 +1253,7 @@ function createSiteHosting(
   result: Awaited<ReturnType<SiteHostingPort["createDeploy"]>> | Error,
   snapshot?: Awaited<ReturnType<SiteHostingPort["getDeploy"]>>,
   options: {
+    beginCalls?: Array<Parameters<SiteHostingPort["beginDeploy"]>[0]>;
     uploadError?: Error;
     uploadCalls?: Array<Parameters<SiteHostingPort["uploadDeployFiles"]>[0]>;
     getDeployError?: Error;
@@ -1263,7 +1277,9 @@ function createSiteHosting(
   let getDeployIndex = 0;
 
   return {
-    beginDeploy: () => {
+    beginDeploy: (input) => {
+      options.beginCalls?.push(input);
+
       if (result instanceof Error) {
         return Promise.reject(result);
       }

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { ApprovedReleaseArtifactSchema } from "@localseo/contracts";
-import { renderApprovedReleaseArtifact } from "@localseo/domain";
+import { StaticSiteArtifactSchema } from "@localseo/contracts";
 import { ProviderRequestError, runProviderRequestWithTimeout } from "./provider-errors.js";
 import type {
   BeginDeployResult,
@@ -357,10 +356,10 @@ export class NetlifySiteHostingAdapter implements SiteHostingPort {
   }
 
   private async buildStaticFileManifest(buildArtifactKey: string): Promise<StaticFileManifest> {
-    const artifact = ApprovedReleaseArtifactSchema.parse(
+    const artifact = StaticSiteArtifactSchema.parse(
       await this.options.objectStorage.getJson({ key: buildArtifactKey })
     );
-    const files = renderApprovedReleaseArtifact(artifact).files;
+    const files = artifact.files;
 
     return {
       digestByPath: Object.fromEntries(files.map((file) => [file.path, sha1(file.body)])),
@@ -397,7 +396,7 @@ function requiredFiles(required: string[], fileByDigest: Map<string, StaticFile>
     const byDigest = fileByDigest.get(item);
 
     if (!byDigest) {
-      throw new Error(`Netlify requested a digest that is not in the approved artifact: ${item}`);
+      throw new Error(`Netlify requested a digest that is not in the static site artifact: ${item}`);
     }
 
     return byDigest;

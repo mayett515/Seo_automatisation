@@ -19,6 +19,7 @@ import {
   DeployJobDataSchema,
   ExecuteRollbackRequestSchema,
   ReleaseCheckSchema,
+  ReleaseItemActionSchema,
   ReleaseNoteSchema,
   ReleasePlanSchema,
   ReleaseVerificationJobDataSchema,
@@ -778,6 +779,7 @@ async function loadReleasePreflightEvidence(
   const pageRows = await db
     .select({
       pageVersionId: releasePlanItems.pageVersionId,
+      action: releasePlanItems.action,
       targetUrl: releasePlanItems.targetUrl,
       approvedAt: pageVersions.approvedAt,
       pageJson: pageVersions.pageJson,
@@ -825,6 +827,7 @@ async function loadReleasePreflightEvidence(
   return {
     pages: pageRows.map((row) => ({
       pageVersionId: row.pageVersionId,
+      action: ReleaseItemActionSchema.parse(row.action),
       targetUrl: row.targetUrl,
       approvedAt: row.approvedAt,
       pageJson: row.pageJson,
