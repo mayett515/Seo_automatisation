@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable, type Row } from "@tanstack/react-table";
 import { StatusPill } from "@localseo/ui";
 import {
   AgentRunListResponseSchema,
+  CreatePageProposalRunRequestSchema,
   OpportunityExplorerListResponseSchema,
   OpportunityExplorerOpportunitySchema,
+  PageProposalQueueResponseSchema,
   OpportunityScoutQueueResponseSchema,
   RankingProofListResponseSchema,
   RankingProofSchema,
@@ -17,6 +19,7 @@ import {
   type OpportunityBrief,
   type OpportunityExplorerOpportunity,
   type OpportunityLifecycleStatus,
+  type PageProposalQueueResponse,
   type OpportunityScoutQueueResponse,
   type RankingProof
 } from "@localseo/contracts";
@@ -44,10 +47,11 @@ const opportunityDecisionStatuses = [
   "new"
 ] as const satisfies readonly OpportunityDecisionStatus[];
 
-export function OpportunityExplorerScreen() {
-  const projectId = useProjectId();
+export function OpportunityExplorerScreen(props: { projectId: string }) {
+  const projectId = props.projectId;
   const queryClient = useQueryClient();
   const previousActiveRun = useRef(false);
+  const previousActivePageProposalRun = useRef(false);
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | undefined>();
   const [maxBriefs, setMaxBriefs] = useState("8");
   const [proofForm, setProofForm] = useState<RankingProofFormState>({
@@ -57,6 +61,7 @@ export function OpportunityExplorerScreen() {
     notes: ""
   });
   const [latestScoutResponse, setLatestScoutResponse] = useState<OpportunityScoutQueueResponse | undefined>();
+  const [latestPageProposalResponse, setLatestPageProposalResponse] = useState<PageProposalQueueResponse | undefined>();
   const [latestProof, setLatestProof] = useState<RankingProof | undefined>();
   const [latestDecision, setLatestDecision] = useState<OpportunityExplorerOpportunity | undefined>();
 
@@ -71,6 +76,15 @@ export function OpportunityExplorerScreen() {
     retry: false,
     refetchInterval: (query) => {
       const active = query.state.data?.runs.some((run) => run.status === "queued" || run.status === "running");
+      return active ? 3000 : false;
+    }
+  });
+  const pageProposalRuns = useQuery({
+    queryKey: ["agent-runs", projectId, "page_brief_draft"],
+    queryFn: () => getJson(projectApiPath(projectId, "/agent-runs?task=page_brief_draft"), AgentRunListResponseSchema),
+    retry: false,
+    refetchInterval: (query) => {
+      const active = query.state.data?.runs.some(isActiveRun);
       return active ? 3000 : false;
     }
   });
@@ -135,11 +149,38 @@ export function OpportunityExplorerScreen() {
       ]);
     }
   });
+  const queuePageProposal = useMutation({
+    mutationFn: (opportunityId: string) => {
+      const body = CreatePageProposalRunRequestSchema.parse({ opportunityId });
+
+      return postJson(projectApiPath(projectId, "/pages/proposals/runs"), body, PageProposalQueueResponseSchema);
+    },
+    onSuccess: async (response) => {
+      setLatestPageProposalResponse(response);
+      if (response.opportunityId) {
+        setSelectedOpportunityId(response.opportunityId);
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["agent-runs", projectId, "page_brief_draft"] }),
+        queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] })
+      ]);
+    }
+  });
 
   const opportunityRows = opportunities.data?.opportunities ?? [];
   const selectedOpportunity =
     opportunityRows.find((opportunity) => opportunity.id === selectedOpportunityId) ?? opportunityRows[0];
-  const hasActiveRun = runs.data?.runs.some((run) => run.status === "queued" || run.status === "running") ?? false;
+  const pageProposalRunsByOpportunity = useMemo(
+    () => latestRunBySubject(pageProposalRuns.data?.runs ?? []),
+    [pageProposalRuns.data?.runs]
+  );
+  const selectedPageProposalRun = selectedOpportunity
+    ? pageProposalRunsByOpportunity.get(selectedOpportunity.id)
+    : undefined;
+  const hasActiveRun = runs.data?.runs.some(isActiveRun) ?? false;
+  const hasActivePageProposalRun = pageProposalRuns.data?.runs.some(isActiveRun) ?? false;
   const table = useOpportunityTable(opportunityRows);
 
   useEffect(() => {
@@ -153,6 +194,19 @@ export function OpportunityExplorerScreen() {
     previousActiveRun.current = hasActiveRun;
   }, [hasActiveRun, projectId, queryClient]);
 
+  useEffect(() => {
+    if (previousActivePageProposalRun.current && !hasActivePageProposalRun) {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["agent-runs", projectId, "page_brief_draft"] }),
+        queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] })
+      ]);
+    }
+
+    previousActivePageProposalRun.current = hasActivePageProposalRun;
+  }, [hasActivePageProposalRun, projectId, queryClient]);
+
   return (
     <section className="screen-grid">
       <header className="screen-header">
@@ -160,8 +214,16 @@ export function OpportunityExplorerScreen() {
           <h1>Opportunity Explorer</h1>
           <p>{projectId}</p>
         </div>
-        <StatusPill tone={hasActiveRun ? "warning" : opportunityRows.length > 0 ? "success" : "neutral"}>
-          {hasActiveRun ? "scout running" : `${opportunityRows.length} opportunities`}
+        <StatusPill
+          tone={
+            hasActiveRun || hasActivePageProposalRun ? "warning" : opportunityRows.length > 0 ? "success" : "neutral"
+          }
+        >
+          {hasActiveRun
+            ? "scout running"
+            : hasActivePageProposalRun
+              ? "proposal running"
+              : `${opportunityRows.length} opportunities`}
         </StatusPill>
       </header>
 
@@ -198,6 +260,12 @@ export function OpportunityExplorerScreen() {
           {latestDecision.statusReason ? ` (${latestDecision.statusReason})` : ""}
         </div>
       ) : null}
+      {latestPageProposalResponse ? (
+        <div className="notice notice--neutral">
+          Page proposal response: {latestPageProposalResponse.status.replaceAll("_", " ")}
+          {latestPageProposalResponse.runId ? ` (${latestPageProposalResponse.runId})` : ""}
+        </div>
+      ) : null}
       {runScout.isError ? (
         <div className="notice notice--danger">
           {errorMessage(runScout.error, "Opportunity scout could not be queued.")}
@@ -213,6 +281,11 @@ export function OpportunityExplorerScreen() {
           {errorMessage(updateOpportunityDecision.error, "Opportunity decision could not be saved.")}
         </div>
       ) : null}
+      {queuePageProposal.isError ? (
+        <div className="notice notice--danger">
+          {errorMessage(queuePageProposal.error, "Page proposal could not be queued.")}
+        </div>
+      ) : null}
 
       <section className="explorer-layout">
         <OpportunityTable
@@ -225,13 +298,32 @@ export function OpportunityExplorerScreen() {
         />
         <OpportunityDetail
           decisionPending={updateOpportunityDecision.isPending}
+          pageProposalPending={queuePageProposal.isPending}
+          pageProposalPendingOpportunityId={queuePageProposal.variables}
+          pageProposalRun={selectedPageProposalRun}
+          pageProposalRunsPending={pageProposalRuns.isPending}
+          projectId={projectId}
           opportunity={selectedOpportunity}
           onDecide={(opportunityId, decision) => updateOpportunityDecision.mutate({ opportunityId, decision })}
+          onQueuePageProposal={(opportunityId) => queuePageProposal.mutate(opportunityId)}
         />
       </section>
 
       <section className="explorer-lower-grid">
-        <AgentRunList runs={runs.data?.runs ?? []} isPending={runs.isPending} isError={runs.isError} />
+        <AgentRunList
+          emptyMessage="No scout runs have been recorded."
+          isError={runs.isError}
+          isPending={runs.isPending}
+          runs={runs.data?.runs ?? []}
+          title="Scout runs"
+        />
+        <AgentRunList
+          emptyMessage="No page proposal runs have been recorded."
+          isError={pageProposalRuns.isError}
+          isPending={pageProposalRuns.isPending}
+          runs={pageProposalRuns.data?.runs ?? []}
+          title="Page proposal runs"
+        />
         <RankingProofList proofs={proofs.data?.proofs ?? []} isPending={proofs.isPending} isError={proofs.isError} />
       </section>
     </section>
@@ -336,7 +428,13 @@ function OpportunityRow(props: {
 function OpportunityDetail(props: {
   opportunity?: OpportunityExplorerOpportunity;
   decisionPending: boolean;
+  pageProposalPending: boolean;
+  pageProposalPendingOpportunityId?: string;
+  pageProposalRun?: AgentRunSummary;
+  pageProposalRunsPending: boolean;
+  projectId: string;
   onDecide: (opportunityId: string, decision: OpportunityDecisionFormState) => void;
+  onQueuePageProposal: (opportunityId: string) => void;
 }) {
   const opportunity = props.opportunity;
   const brief = opportunity?.evidenceJson;
@@ -383,6 +481,16 @@ function OpportunityDetail(props: {
         onSubmit={(decision) => props.onDecide(opportunity.id, decision)}
       />
 
+      <PageProposalActionCard
+        brief={brief}
+        isPending={props.pageProposalPending && props.pageProposalPendingOpportunityId === opportunity.id}
+        isRunListPending={props.pageProposalRunsPending}
+        latestRun={props.pageProposalRun}
+        opportunity={opportunity}
+        projectId={props.projectId}
+        onQueue={() => props.onQueuePageProposal(opportunity.id)}
+      />
+
       <DetailSection title="Evidence stack">
         {brief.evidence.map((evidence, index) => (
           <EvidenceItem
@@ -414,6 +522,61 @@ function OpportunityDetail(props: {
         <p>{brief.corridorCluster?.rationale ?? "No corridor context recorded."}</p>
         <CompactList items={brief.corridorCluster?.recommendedSequence ?? []} empty="No sequence recorded." />
       </DetailSection>
+    </section>
+  );
+}
+
+function PageProposalActionCard(props: {
+  brief: OpportunityBrief;
+  isPending: boolean;
+  isRunListPending: boolean;
+  latestRun?: AgentRunSummary;
+  opportunity: OpportunityExplorerOpportunity;
+  projectId: string;
+  onQueue: () => void;
+}) {
+  const activeRun = props.latestRun ? isActiveRun(props.latestRun) : false;
+  const disabledReason = pageProposalDisabledReason(props.opportunity, props.brief, props.latestRun);
+  const canQueue = disabledReason === undefined;
+  const statusLabel = props.latestRun ? props.latestRun.status : props.opportunity.status;
+
+  return (
+    <section className="decision-card">
+      <div className="decision-card__header">
+        <h3>Page proposal</h3>
+        <StatusPill
+          tone={props.latestRun ? runStatusTone(props.latestRun.status) : lifecycleTone(props.opportunity.status)}
+        >
+          {label(statusLabel)}
+        </StatusPill>
+      </div>
+      <div className="metric-row metric-row--compact metric-row--three">
+        <Metric title="Route" value={props.brief.suggestedRoute ?? "not set"} />
+        <Metric title="Page type" value={label(props.brief.suggestedPageType)} />
+        <Metric title="Run" value={props.latestRun ? shortId(props.latestRun.id) : "none"} />
+      </div>
+      <div className="decision-card__actions">
+        <button
+          className="button-primary"
+          disabled={!canQueue || props.isPending || props.isRunListPending}
+          type="button"
+          onClick={props.onQueue}
+        >
+          {proposalButtonLabel(props.latestRun, props.isPending, activeRun)}
+        </button>
+        {props.opportunity.status === "brief_created" ? (
+          <Link className="button-link" to="/projects/$projectId/pages" params={{ projectId: props.projectId }}>
+            Open pages
+          </Link>
+        ) : null}
+      </div>
+      {disabledReason ? <p className="muted-text">{disabledReason}</p> : null}
+      {props.latestRun?.failure ? (
+        <div className="notice notice--danger">
+          {props.latestRun.failure.message ?? props.latestRun.failure.code}
+          {props.latestRun.failure.gateId ? ` (${props.latestRun.failure.gateId})` : ""}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -585,10 +748,16 @@ function RankingProofForm(props: {
   );
 }
 
-function AgentRunList(props: { runs: AgentRunSummary[]; isPending: boolean; isError: boolean }) {
+function AgentRunList(props: {
+  emptyMessage: string;
+  isError: boolean;
+  isPending: boolean;
+  runs: AgentRunSummary[];
+  title: string;
+}) {
   return (
     <section className="table-panel">
-      <h2>Agent runs</h2>
+      <h2>{props.title}</h2>
       {props.isPending ? <div className="notice notice--neutral">Loading runs</div> : null}
       {props.isError ? <div className="notice notice--danger">Agent runs could not be loaded.</div> : null}
       <div className="run-list">
@@ -597,13 +766,13 @@ function AgentRunList(props: { runs: AgentRunSummary[]; isPending: boolean; isEr
             <StatusPill tone={runStatusTone(run.status)}>{run.status}</StatusPill>
             <div>
               <strong>{run.task}</strong>
-              <span>{run.failure?.message ?? run.failureCode ?? `${run.opportunityCount} opportunities`}</span>
+              <span>{agentRunDescription(run)}</span>
             </div>
             <span>{run.model ?? run.provider ?? "not started"}</span>
           </article>
         ))}
         {props.runs.length === 0 && !props.isPending ? (
-          <div className="notice notice--neutral">No scout runs have been recorded.</div>
+          <div className="notice notice--neutral">{props.emptyMessage}</div>
         ) : null}
       </div>
     </section>
@@ -732,6 +901,82 @@ function runStatusTone(status: AgentRunSummary["status"]) {
   return "warning";
 }
 
+function latestRunBySubject(runs: AgentRunSummary[]): Map<string, AgentRunSummary> {
+  const latest = new Map<string, AgentRunSummary>();
+
+  for (const run of runs) {
+    if (run.subjectId && !latest.has(run.subjectId)) {
+      latest.set(run.subjectId, run);
+    }
+  }
+
+  return latest;
+}
+
+function isActiveRun(run: AgentRunSummary): boolean {
+  return run.status === "queued" || run.status === "running";
+}
+
+function agentRunDescription(run: AgentRunSummary): string {
+  if (run.failure?.message) {
+    return run.failure.message;
+  }
+
+  if (run.failureCode) {
+    return run.failure?.gateId ? `${run.failureCode}: ${run.failure.gateId}` : run.failureCode;
+  }
+
+  if (run.task === "page_brief_draft") {
+    return run.subjectId ? `opportunity ${shortId(run.subjectId)}` : "opportunity unknown";
+  }
+
+  return `${run.opportunityCount} opportunities`;
+}
+
+function pageProposalDisabledReason(
+  opportunity: OpportunityExplorerOpportunity,
+  brief: OpportunityBrief,
+  latestRun?: AgentRunSummary
+): string | undefined {
+  if (latestRun && isActiveRun(latestRun)) {
+    return "A proposal run is already active for this opportunity.";
+  }
+
+  if (latestRun?.status === "succeeded") {
+    return "A draft proposal already exists for this opportunity.";
+  }
+
+  if (opportunity.status === "rejected") {
+    return "Rejected opportunities cannot create page proposals.";
+  }
+
+  if (opportunity.status === "brief_created") {
+    return "A draft proposal already exists for this opportunity.";
+  }
+
+  if (brief.recommendedAction !== "create_page_proposal") {
+    return `Recommended action is ${label(brief.recommendedAction)}.`;
+  }
+
+  return undefined;
+}
+
+function proposalButtonLabel(latestRun: AgentRunSummary | undefined, isPending: boolean, activeRun: boolean): string {
+  if (isPending) {
+    return "Queueing";
+  }
+
+  if (activeRun) {
+    return "Run active";
+  }
+
+  if (latestRun?.status === "failed") {
+    return "Retry proposal";
+  }
+
+  return "Generate proposal";
+}
+
 function lifecycleTone(status: OpportunityExplorerOpportunity["status"]) {
   if (status === "monitoring" || status === "brief_created") {
     return "success";
@@ -765,6 +1010,10 @@ function label(value: string): string {
   return value.replaceAll("_", " ");
 }
 
+function shortId(value: string): string {
+  return value.length > 8 ? value.slice(0, 8) : value;
+}
+
 function numberFromForm(value: string, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -785,11 +1034,6 @@ function safeUrlLabel(url: string): string {
   } catch {
     return url;
   }
-}
-
-function useProjectId(): string {
-  const params = useParams({ strict: false });
-  return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }
 
 function projectApiPath(projectId: string, suffix: string): string {

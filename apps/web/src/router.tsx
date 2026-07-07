@@ -169,6 +169,12 @@ const projectPagesRoute = createRoute({
   component: PagesRouteComponent
 });
 
+const projectOpportunitiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/opportunities",
+  component: OpportunitiesRouteComponent
+});
+
 const projectPagePreviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectId/pages/$pageId/preview",
@@ -186,11 +192,7 @@ const projectChildRoutes = [
     path: "/projects/$projectId/areas",
     component: () => <PlaceholderScreen title="Areas and Radius" />
   }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/projects/$projectId/opportunities",
-    component: OpportunityExplorerScreen
-  }),
+  projectOpportunitiesRoute,
   projectPagesRoute,
   projectPagePreviewRoute,
   createRoute({
@@ -258,6 +260,11 @@ const projectChildRoutes = [
 function PagesRouteComponent() {
   const params = projectPagesRoute.useParams();
   return <PagesScreen projectId={params.projectId} />;
+}
+
+function OpportunitiesRouteComponent() {
+  const params = projectOpportunitiesRoute.useParams();
+  return <OpportunityExplorerScreen projectId={params.projectId} />;
 }
 
 function PagePreviewRouteComponent() {

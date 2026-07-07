@@ -400,6 +400,27 @@ requireIncludes(
   "Page Proposal routes must stay DB-unique per project"
 );
 
+requireIncludes(
+  "apps/web/src/screens/opportunity-explorer.tsx",
+  "PageProposalQueueResponseSchema",
+  "page-proposal-ui",
+  "Page Proposal UI must parse queue responses through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/opportunity-explorer.tsx",
+  '"/pages/proposals/runs"',
+  "page-proposal-ui",
+  "Page Proposal UI must trigger durable API queue work instead of calling worker/model code directly"
+);
+
+requireIncludes(
+  "apps/web/src/screens/opportunity-explorer.tsx",
+  "agent-runs?task=page_brief_draft",
+  "page-proposal-ui",
+  "Page Proposal UI must read status from the subject-scoped page_brief_draft run list"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

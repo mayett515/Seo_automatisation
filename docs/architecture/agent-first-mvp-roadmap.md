@@ -645,7 +645,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation implemented; approval and UI trigger are still deferred.
+Status: worker foundation and UI trigger/status implemented; approval is still deferred.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -686,7 +686,7 @@ implemented now
   page:propose permission for owner/admin/editor roles
   agent_runs row with task = page_brief_draft before enqueue
   BullMQ jobId = agent_runs.id
-  existing active-run guard reuses one queued/running page_brief_draft run per project
+  active-run guard reuses one queued/running page_brief_draft run per opportunity subject
   named policyForReasoningTask("page_brief_draft") profile
   evidence packet from OpportunityBrief + existing proposal routes + registry summary
   AiReasoningPort.runStructured with outputSchemaName = PageProposalJson
@@ -698,9 +698,10 @@ implemented now
   success transaction creates page_proposals.status = draft and page_versions.status = preview
   source opportunity moves to brief_created
   project route uniqueness enforced by page_proposals(project_id, route)
+  Opportunity Explorer trigger posts to /pages/proposals/runs
+  Opportunity Explorer status reads subject-scoped page_brief_draft agent runs
 
 still deferred
-  frontend trigger/button
   approval flow and approved PageVersion writer
   unresolved approval_blocker enforcement
   release-plan creation from approved versions

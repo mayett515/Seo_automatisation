@@ -175,6 +175,7 @@ It also gives the next implementation slice a concrete target:
 9. Wire project-scoped proposal/version reads and the minimal preview API/UI foundation. Done in the sixth Page Registry slice.
 10. Add section notes anchored to stable section ids. Done in the seventh Page Registry slice.
 11. Freeze approved versions and revalidate PageJson during release preflight. Done in the eighth Page Registry slice.
+12. Add Opportunity Explorer Page Proposal trigger and run-status UI on top of the durable `page_brief_draft` queue path. Done in the ninth Page Registry slice.
 
 The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:
 

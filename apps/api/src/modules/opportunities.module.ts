@@ -351,6 +351,7 @@ function agentRunToResponse(row: typeof agentRuns.$inferSelect, opportunityCount
   return AgentRunListResponseSchema.shape.runs.element.parse({
     id: row.id,
     projectId: row.projectId,
+    subjectId: row.subjectId ?? undefined,
     task: row.task,
     status: row.status,
     failureCode,

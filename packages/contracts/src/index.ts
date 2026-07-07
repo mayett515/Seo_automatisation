@@ -1608,6 +1608,7 @@ export const AgentRunFailureSummarySchema = z.object({
 export const AgentRunSummarySchema = z.object({
   id: z.string().min(1),
   projectId: ProjectIdSchema,
+  subjectId: z.string().min(1).optional(),
   task: ReasoningTaskSchema,
   status: AgentRunStatusSchema,
   failureCode: AgentRunFailureCodeSchema.optional(),

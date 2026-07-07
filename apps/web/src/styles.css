@@ -389,7 +389,7 @@ a {
 
 .explorer-lower-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -426,6 +426,10 @@ a {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.metric-row--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .decision-card,
 .detail-section,
 .evidence-item,
@@ -450,6 +454,13 @@ a {
 
 .decision-card__header h3 {
   margin: 0;
+}
+
+.decision-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 .decision-button-row {
@@ -557,6 +568,7 @@ a {
   .data-table__row--opportunity,
   .decision-button-row,
   .metric-row--compact,
+  .metric-row--three,
   .run-item {
     grid-template-columns: 1fr;
   }

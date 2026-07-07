@@ -356,11 +356,40 @@ void describe(
       assert.equal(list.projectId, first.projectId);
       assert.equal(list.runs.length, 1);
       assert.equal(list.runs[0]?.id, firstRun.id);
+      assert.equal(list.runs[0]?.subjectId, undefined);
       assert.equal(list.runs[0]?.opportunityCount, 1);
       assert.equal(list.runs[0]?.failureCode, "qa_rejected");
       assert.equal(list.runs[0]?.failure?.gateId, "dedupe_gate");
       assert.match(list.runs[0]?.failure?.message ?? "", /No new opportunities/u);
       assert.equal("outputJson" in (list.runs[0] as Record<string, unknown>), false);
+      assert.equal("diagnosticsJson" in (list.runs[0] as Record<string, unknown>), false);
+    });
+
+    void it("lists subject-scoped page proposal runs with their subject id", async () => {
+      const fixture = await createProjectFixture(db, "Subject Run");
+      const service = new OpportunitiesService(testDatabaseService(db));
+      const subjectId = "33333333-3333-4333-8333-333333333333";
+
+      const [run] = await db
+        .insert(agentRuns)
+        .values({
+          projectId: fixture.projectId,
+          subjectId,
+          task: "page_brief_draft",
+          status: "queued",
+          diagnosticsJson: {
+            opportunityId: subjectId
+          }
+        })
+        .returning();
+      assert.ok(run);
+
+      const list = await service.listAgentRuns(fixture.projectId, "page_brief_draft");
+
+      assert.equal(list.runs.length, 1);
+      assert.equal(list.runs[0]?.id, run.id);
+      assert.equal(list.runs[0]?.subjectId, subjectId);
+      assert.equal(list.runs[0]?.task, "page_brief_draft");
       assert.equal("diagnosticsJson" in (list.runs[0] as Record<string, unknown>), false);
     });
   }

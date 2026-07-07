@@ -136,6 +136,8 @@ implemented 2026-07-07
   Page Proposal worker gates output through PageProposalJsonSchema, deterministic QA,
     registry validation, Page Studio publish-readiness, and shared preview rendering
   page_proposals route uniqueness is DB-enforced per project
+  Opportunity Explorer can trigger Page Proposal runs through the API queue endpoint only
+  Page Proposal UI status reads subject-scoped page_brief_draft agent runs
 
 still deferred
   approved page version creation

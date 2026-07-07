@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, and records section notes anchored to stable PageJson section ids. Full Page Studio editing, richer section families, and approval surfaces remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. Full Page Studio editing, richer section families, and approval surfaces remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
