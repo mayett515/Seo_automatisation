@@ -138,10 +138,10 @@ implemented 2026-07-07
   page_proposals route uniqueness is DB-enforced per project
   Opportunity Explorer can trigger Page Proposal runs through the API queue endpoint only
   Page Proposal UI status reads subject-scoped page_brief_draft agent runs
+  Page version review API owns durable approval/request-changes with actor audit
+  unresolved approval_blocker notes block approval
 
 still deferred
-  approved page version creation
-  approval flow and actor audit
   release/deploy enqueue from approved page versions
   agent_run_events timeline
 ```
@@ -252,7 +252,8 @@ Completed implementation work:
 
 - added `policyForReasoningTask(task)` before the Page Proposal worker foundation;
 - kept Opportunity Scout on `read_evidence` and `analyze` only;
-- added fail-closed tests for unprofiled reasoning tasks.
+- added fail-closed tests for unprofiled reasoning tasks;
+- added the durable page-version review API so product approval is an explicit `page:approve` human/operator action tied to one `pageVersionId`, not a Mastra/session/tool approval.
 
 Remaining implementation work:
 
@@ -273,6 +274,7 @@ Future agent work must not:
 - add a new agent task or tool without a named constraint profile;
 - let agents call production side-effect ports directly;
 - treat session/tool approval as product approval;
+- bypass the page-version review API when a generated page needs product approval;
 - let subagents widen parent constraints;
 - persist or display model output as product truth before contract parse and deterministic QA;
 - let web/browser/search/model output become customer-safe proof without a future ADR promoting that evidence source;

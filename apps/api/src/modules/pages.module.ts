@@ -32,7 +32,9 @@ import {
   PageVersionDetailSchema,
   PageVersionListResponseSchema,
   PageVersionPreviewResponseSchema,
+  PageVersionReviewResponseSchema,
   PageVersionSummarySchema,
+  ReviewPageVersionRequestSchema,
   type CreatePageProposalRunRequest,
   type CreatePageSectionNoteRequest,
   type PageJson,
@@ -45,10 +47,12 @@ import {
   type PageVersionDetail,
   type PageVersionListResponse,
   type PageVersionPreviewResponse,
+  type PageVersionReviewResponse,
   type PageVersionSummary
 } from "@localseo/contracts";
 import {
   agentRuns,
+  approvals,
   isDatabaseUniqueViolation,
   opportunities,
   pageProposals,
@@ -73,6 +77,8 @@ type Db = DatabaseClient;
 type PageProposalRow = Awaited<ReturnType<typeof selectPageProposalRows>>[number];
 type PageSectionNoteRow = Awaited<ReturnType<typeof selectPageSectionNoteRows>>[number];
 type PageVersionRow = Awaited<ReturnType<typeof selectPageVersionRows>>[number];
+type PageVersionApprovalRow = typeof approvals.$inferSelect;
+type ApprovalBlockerReader = Pick<DatabaseClient, "select">;
 
 @Injectable()
 export class PagesService {
@@ -384,6 +390,94 @@ export class PagesService {
     return pageSectionNoteToResponse(projectId, latest ?? existing);
   }
 
+  async reviewPageVersion(
+    projectId: string,
+    pageVersionId: string,
+    body: unknown,
+    decidedByUserId?: string
+  ): Promise<PageVersionReviewResponse> {
+    const input = ReviewPageVersionRequestSchema.parse(body ?? {});
+
+    if (!decidedByUserId) {
+      throw new BadRequestException("Page version review requires an authenticated persisted user id.");
+    }
+
+    const row = await this.loadPageVersion(projectId, pageVersionId);
+    parseStoredPageJson(row);
+
+    if (row.status !== "preview" && row.status !== "changes_requested") {
+      throw new BadRequestException("Only preview or changes-requested page versions can be reviewed.");
+    }
+
+    const db = this.database.requireDb();
+    const decidedAt = new Date();
+    const targetPageStatus = input.decision === "approve" ? "approved" : "changes_requested";
+    const targetProposalStatus = input.decision === "approve" ? "approved" : "changes_requested";
+    const approvalStatus = input.decision === "approve" ? "approved" : "rejected";
+    let approval: PageVersionApprovalRow | undefined;
+
+    await db.transaction(async (tx) => {
+      if (input.decision === "approve") {
+        const openBlockerCount = await countOpenApprovalBlockers(tx, row.id);
+        if (openBlockerCount > 0) {
+          throw new UnprocessableEntityException(
+            `Page version has ${openBlockerCount} unresolved approval blocker note(s).`
+          );
+        }
+      }
+
+      const [updated] = await tx
+        .update(pageVersions)
+        .set({
+          status: targetPageStatus,
+          approvedAt: input.decision === "approve" ? decidedAt : null,
+          updatedAt: decidedAt
+        })
+        .where(and(eq(pageVersions.id, row.id), inArray(pageVersions.status, ["preview", "changes_requested"])))
+        .returning({ id: pageVersions.id });
+
+      if (!updated) {
+        throw new BadRequestException("Page version is no longer in a reviewable state.");
+      }
+
+      await tx
+        .update(pageProposals)
+        .set({
+          status: targetProposalStatus,
+          updatedAt: decidedAt
+        })
+        .where(and(eq(pageProposals.id, row.pageProposalId), eq(pageProposals.projectId, projectId)));
+
+      const [inserted] = await tx
+        .insert(approvals)
+        .values({
+          pageVersionId: row.id,
+          userId: decidedByUserId,
+          status: approvalStatus,
+          decisionNote: input.decisionNote,
+          decidedAt
+        })
+        .returning();
+
+      approval = inserted;
+    });
+
+    if (!approval) {
+      throw new Error("Failed to record page version approval.");
+    }
+
+    const [updatedRow] = await selectPageVersionRows(db, projectId, { pageVersionId: row.id });
+    if (!updatedRow) {
+      throw new NotFoundException("Page version was not found for this project.");
+    }
+
+    return PageVersionReviewResponseSchema.parse({
+      projectId,
+      pageVersion: pageVersionSummaryToResponse(updatedRow),
+      approval: pageVersionApprovalToResponse(projectId, approval)
+    });
+  }
+
   private async loadPageVersion(projectId: string, pageVersionId: string): Promise<PageVersionRow> {
     if (!isPersistedId(pageVersionId)) {
       throw new BadRequestException("Page version id must be a UUID.");
@@ -481,6 +575,23 @@ class PagesController {
     @Req() request: RequestWithAuth
   ) {
     return this.pages.resolvePageSectionNote(projectId, pageVersionId, noteId, persistedActorUserId(request));
+  }
+
+  @Post(":pageVersionId/review")
+  @RequireProjectPermission("page:approve")
+  reviewVersion(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    const parsed = ReviewPageVersionRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Page version review requires a valid review decision.");
+    }
+
+    return this.pages.reviewPageVersion(projectId, pageVersionId, parsed.data, persistedActorUserId(request));
   }
 }
 
@@ -622,6 +733,23 @@ async function selectPageSectionNoteRows(db: Db, pageVersionId: string, noteId?:
     .limit(noteId ? 1 : 500);
 }
 
+async function countOpenApprovalBlockers(db: ApprovalBlockerReader, pageVersionId: string): Promise<number> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`
+    })
+    .from(pageSectionNotes)
+    .where(
+      and(
+        eq(pageSectionNotes.pageVersionId, pageVersionId),
+        eq(pageSectionNotes.instructionType, "approval_blocker"),
+        isNull(pageSectionNotes.resolvedAt)
+      )
+    );
+
+  return row?.count ?? 0;
+}
+
 async function selectPageVersionRows(
   db: Db,
   projectId: string,
@@ -710,6 +838,19 @@ function pageSectionNoteToResponse(projectId: string, row: PageSectionNoteRow): 
     resolvedAt: row.resolvedAt?.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
+  });
+}
+
+function pageVersionApprovalToResponse(projectId: string, row: PageVersionApprovalRow) {
+  return PageVersionReviewResponseSchema.shape.approval.parse({
+    id: row.id,
+    projectId,
+    pageVersionId: row.pageVersionId,
+    status: row.status,
+    decisionNote: row.decisionNote ?? undefined,
+    decidedByUserId: row.userId ?? undefined,
+    decidedAt: row.decidedAt?.toISOString(),
+    createdAt: row.createdAt.toISOString()
   });
 }
 

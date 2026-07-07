@@ -278,6 +278,7 @@ export const pageSectionNoteInstructionTypes = [
   "evidence_request",
   "approval_blocker"
 ] as const;
+export const pageVersionReviewDecisions = ["approve", "request_changes"] as const;
 export const customerMembershipRoles = ["owner", "admin", "editor", "viewer"] as const;
 export const pageVersionStatuses = [
   "draft",
@@ -375,6 +376,7 @@ export const ApprovalStatusSchema = z.enum(approvalStatuses);
 export const ReleaseItemActionSchema = z.enum(releaseItemActions);
 export const PageVersionStatusSchema = z.enum(pageVersionStatuses);
 export const PageSectionNoteInstructionTypeSchema = z.enum(pageSectionNoteInstructionTypes);
+export const PageVersionReviewDecisionSchema = z.enum(pageVersionReviewDecisions);
 export const PageZoneSchema = z.enum(pageZones);
 export const PageSectionTypeSchema = z.enum(pageSectionTypes);
 export const PageTypeSchema = z.enum(pageTypes);
@@ -961,6 +963,43 @@ export const PageSectionNoteListResponseSchema = z
     projectId: ProjectIdSchema,
     pageVersionId: z.string().min(1),
     notes: z.array(PageSectionNoteSchema).max(500)
+  })
+  .strict();
+
+export const ReviewPageVersionRequestSchema = z
+  .object({
+    decision: PageVersionReviewDecisionSchema,
+    decisionNote: z.string().trim().min(1).max(2_000).optional()
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.decision === "request_changes" && !value.decisionNote) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["decisionNote"],
+        message: "Requesting changes requires a decision note."
+      });
+    }
+  });
+
+export const PageVersionApprovalRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: ProjectIdSchema,
+    pageVersionId: z.string().min(1),
+    status: ApprovalStatusSchema.extract(["approved", "rejected"]),
+    decisionNote: z.string().min(1).optional(),
+    decidedByUserId: z.string().min(1).optional(),
+    decidedAt: z.string().datetime(),
+    createdAt: z.string().datetime()
+  })
+  .strict();
+
+export const PageVersionReviewResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    pageVersion: PageVersionSummarySchema,
+    approval: PageVersionApprovalRecordSchema
   })
   .strict();
 
@@ -1662,6 +1701,10 @@ export type PageSectionNoteInstructionType = z.output<typeof PageSectionNoteInst
 export type PageSectionNote = z.output<typeof PageSectionNoteSchema>;
 export type CreatePageSectionNoteRequest = z.output<typeof CreatePageSectionNoteRequestSchema>;
 export type PageSectionNoteListResponse = z.output<typeof PageSectionNoteListResponseSchema>;
+export type PageVersionReviewDecision = z.output<typeof PageVersionReviewDecisionSchema>;
+export type ReviewPageVersionRequest = z.output<typeof ReviewPageVersionRequestSchema>;
+export type PageVersionApprovalRecord = z.output<typeof PageVersionApprovalRecordSchema>;
+export type PageVersionReviewResponse = z.output<typeof PageVersionReviewResponseSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
 export type PageProposal = z.output<typeof PageProposalSchema>;
 export type ReleaseCheck = z.output<typeof ReleaseCheckSchema>;

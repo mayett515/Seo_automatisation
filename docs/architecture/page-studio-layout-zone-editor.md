@@ -272,6 +272,7 @@ This keeps layout rules reusable by the LLM boundary, API validation, preview UI
 AI proposal creates a page proposal.
 Page Studio edits create a preview version.
 Customer/operator notes create explicit instructions.
+Unresolved approval blocker notes stop approval.
 Approval freezes one concrete page version.
 New AI or manual changes create a new version.
 Deploy publishes only approved versions.

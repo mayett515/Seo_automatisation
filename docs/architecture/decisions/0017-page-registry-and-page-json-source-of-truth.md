@@ -108,6 +108,8 @@ The first PageJson contract slice enforces this with a recursive forbidden-key a
 
 Approved page versions are immutable. New AI work creates new proposals or versions. The DB boundary enforces this with `page_versions_prevent_immutable_update`, `page_versions_prevent_immutable_delete`, and an approval-evidence CHECK constraint: once a row is approved, release-candidate, released, or superseded, structural edits to `page_proposal_id`, `version_number`, or `page_json` are rejected, the frozen artifact cannot be deleted, and frozen statuses require `approved_at`.
 
+Page version approval is a durable human/operator decision on one concrete `pageVersionId`. The API owns the transition from `preview` or `changes_requested` to `approved` or back to `changes_requested`, requires `page:approve`, parses and registry-validates the stored PageJson, blocks approval while unresolved `approval_blocker` section notes exist, sets `page_versions.approvedAt` only on approval, and writes an `approvals` audit row. Approval does not enqueue deploy or mutate providers; release planning, release preflight, deploy, and verification remain separate deterministic steps.
+
 Structured `PageProposalJson` should persist as a proposal artifact, not only as `agent_runs.outputJson`. The default direction is a future `page_proposals.proposalJson` JSONB column, with existing flat proposal columns treated as query/projection fields. `agent_runs.outputJson` remains reasoning audit, not the UI's proposal source of truth.
 
 `page_versions.pageJson` is a JSONB column whose TypeScript `$type` is only a compile-time hint. Consumers that turn page JSON into release artifacts, previews, deploys, or customer-visible output must parse with `PageJsonSchema` at the boundary.
@@ -176,6 +178,7 @@ It also gives the next implementation slice a concrete target:
 10. Add section notes anchored to stable section ids. Done in the seventh Page Registry slice.
 11. Freeze approved versions and revalidate PageJson during release preflight. Done in the eighth Page Registry slice.
 12. Add Opportunity Explorer Page Proposal trigger and run-status UI on top of the durable `page_brief_draft` queue path. Done in the ninth Page Registry slice.
+13. Add durable page version approval/request-changes flow with `approval_blocker` enforcement and `approvals` audit rows. Done in the tenth Page Registry slice.
 
 The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:
 

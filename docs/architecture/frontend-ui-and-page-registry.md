@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. Full Page Studio editing, richer section families, and approval surfaces remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, approves or requests changes on preview versions, blocks approval on unresolved `approval_blocker` notes, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. Full Page Studio editing and richer section families remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -285,6 +285,19 @@ page_section_notes.fieldPath?
 ```
 
 This keeps operator feedback attached to the approved/proposed page artifact even if projection rows or visual ordering are regenerated.
+
+Page version approval is a durable API decision, not a local UI flag:
+
+```text
+POST /projects/:projectId/pages/:pageVersionId/review
+  decision = approve | request_changes
+  page:approve permission required
+  unresolved approval_blocker notes block approve
+  approvals row records actor, decision, note, timestamp
+  approved versions become immutable through the DB trigger
+```
+
+The first preview screen owns only this review decision. It does not create release plans, enqueue deploy, or mutate providers.
 
 Preview and deploy must share the same renderer core. The static release renderer now lives in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON. The pure preview renderer reuses that same core: editor/staging preview emits `noindex`, while deploy-preview mode is byte-identical to the deploy static artifact for the same PageJson and target URL.
 

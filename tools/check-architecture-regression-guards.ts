@@ -421,6 +421,55 @@ requireIncludes(
   "Page Proposal UI must read status from the subject-scoped page_brief_draft run list"
 );
 
+requireIncludes(
+  "apps/api/src/auth/permissions/project-permissions.ts",
+  '"page:approve"',
+  "page-version-approval",
+  "Page version approval must have an explicit project permission"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  '@RequireProjectPermission("page:approve")',
+  "page-version-approval",
+  "Page version review endpoint must require explicit page approval permission"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "countOpenApprovalBlockers",
+  "page-version-approval",
+  "Page version approval must check unresolved approval_blocker notes before approving"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  ".insert(approvals)",
+  "page-version-approval",
+  "Page version review must persist a durable approval audit row"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "blocks approval while approval blocker notes are open",
+  "page-version-approval",
+  "Pages integration tests must prove unresolved approval_blocker notes block approval"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "ReviewPageVersionRequestSchema",
+  "page-version-approval",
+  "Page preview UI must parse page version review requests through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "}/review",
+  "page-version-approval",
+  "Page preview UI must post review decisions through the API review endpoint"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

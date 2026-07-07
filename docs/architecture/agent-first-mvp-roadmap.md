@@ -645,7 +645,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation and UI trigger/status implemented; approval is still deferred.
+Status: worker foundation, UI trigger/status, and durable page-version approval/request-changes flow are implemented. Release-plan creation from approved versions is still deferred.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -700,10 +700,14 @@ implemented now
   project route uniqueness enforced by page_proposals(project_id, route)
   Opportunity Explorer trigger posts to /pages/proposals/runs
   Opportunity Explorer status reads subject-scoped page_brief_draft agent runs
+  page:approve permission for page version review
+  POST /projects/:projectId/pages/:pageVersionId/review
+  approval blocks unresolved approval_blocker section notes
+  approval updates one preview/changes_requested page version to approved with approvedAt
+  request_changes moves the page version and proposal projection to changes_requested
+  approvals audit row records actor, decision, note, and timestamp
 
 still deferred
-  approval flow and approved PageVersion writer
-  unresolved approval_blocker enforcement
   release-plan creation from approved versions
   agent_run_events streaming timeline
 ```
@@ -743,6 +747,8 @@ approved versions are not silently mutated
 new agent runs create new proposals or versions
 customer notes attach to preview/component anchors
 approval freezes the deployable version
+unresolved approval_blocker notes block approval
+request changes records a rejected approval event without approving the version
 ```
 
 Notes attach to stable section ids and optional field paths, not visual order. If `component_instances` rows are used for note anchoring, they are regenerated/projection data from `pageJson`.

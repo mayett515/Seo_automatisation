@@ -49,6 +49,12 @@ void describe("PermissionGuard", () => {
     assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
   });
 
+  void it("allows editors to approve page versions", () => {
+    const guard = new PermissionGuard(new TestReflector(["page:approve"]));
+
+    assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
+  });
+
   void it("rejects viewers on privileged project actions", () => {
     const guard = new PermissionGuard(new TestReflector(["release:approve"]));
 
@@ -63,6 +69,12 @@ void describe("PermissionGuard", () => {
 
   void it("rejects viewers from page proposal requests", () => {
     const guard = new PermissionGuard(new TestReflector(["page:propose"]));
+
+    assert.throws(() => guard.canActivate(contextFor({ role: "viewer" })), ForbiddenException);
+  });
+
+  void it("rejects viewers from page approvals", () => {
+    const guard = new PermissionGuard(new TestReflector(["page:approve"]));
 
     assert.throws(() => guard.canActivate(contextFor({ role: "viewer" })), ForbiddenException);
   });

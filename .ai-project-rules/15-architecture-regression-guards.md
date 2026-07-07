@@ -193,6 +193,20 @@ Agent constraint policy
 
 </context>
 
+<context>
+```text
+Page Version approval
+  Page approval is a durable human/operator decision for one concrete pageVersionId.
+  The approval endpoint must require explicit page:approve permission.
+  Approval must parse and registry-validate the stored PageJson before state transition.
+  Approval must block while unresolved approval_blocker notes exist for that page version.
+  Approval must write an approvals audit row tied to actor, page version, timestamp, decision, and note.
+  Approval may move preview/changes_requested versions to approved; request-changes may move them to changes_requested.
+  Approval must not enqueue deploy or mutate providers; release planning/preflight/deploy remain separate deterministic steps.
+```
+
+</context>
+
 ## 5. Executable Guard
 
 <context>

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ApprovedReleaseArtifactPageSchema, PageJsonSchema, PageProposalJsonSchema, type PageJson } from "./index.js";
+import {
+  ApprovedReleaseArtifactPageSchema,
+  PageJsonSchema,
+  PageProposalJsonSchema,
+  ReviewPageVersionRequestSchema,
+  type PageJson
+} from "./index.js";
 
 void describe("PageJsonSchema", () => {
   void it("parses a structured v1 page", () => {
@@ -146,6 +152,19 @@ void describe("ApprovedReleaseArtifactPageSchema", () => {
         true
       );
     }
+  });
+});
+
+void describe("ReviewPageVersionRequestSchema", () => {
+  void it("requires a decision note when requesting changes", () => {
+    const result = ReviewPageVersionRequestSchema.safeParse({ decision: "request_changes" });
+
+    assert.equal(result.success, false);
+    assert.match(result.error.issues.map((issue) => issue.message).join("\n"), /requires a decision note/u);
+  });
+
+  void it("allows approval without a decision note", () => {
+    assert.equal(ReviewPageVersionRequestSchema.safeParse({ decision: "approve" }).success, true);
   });
 });
 

@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import { OpportunityBriefSchema, type PageJson, type PageProposalJson } from "@localseo/contracts";
 import {
   agentRuns,
+  approvals,
   customers,
   jobRuns,
   opportunities,
   pageProposals,
   pageVersions,
   projects,
+  users,
   type DatabaseClient
 } from "@localseo/db";
 import { eq } from "drizzle-orm";
@@ -24,6 +26,7 @@ type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDataba
 
 type PageVersionFixture = {
   projectId: string;
+  userId: string;
   pageProposalId: string;
   pageVersionId: string;
   route: string;
@@ -338,6 +341,126 @@ void describe(
       assert.equal(note.instructionType, "approval_blocker");
     });
 
+    void it("approves preview page versions and records durable approval audit", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Approve version", route: "/approve-version/" });
+
+      const reviewed = await service.reviewPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          decision: "approve",
+          decisionNote: "Ready for release planning."
+        },
+        fixture.userId
+      );
+
+      assert.equal(reviewed.projectId, fixture.projectId);
+      assert.equal(reviewed.pageVersion.id, fixture.pageVersionId);
+      assert.equal(reviewed.pageVersion.status, "approved");
+      assert.ok(reviewed.pageVersion.approvedAt);
+      assert.equal(reviewed.approval.pageVersionId, fixture.pageVersionId);
+      assert.equal(reviewed.approval.status, "approved");
+      assert.equal(reviewed.approval.decisionNote, "Ready for release planning.");
+      assert.equal(reviewed.approval.decidedByUserId, fixture.userId);
+
+      const [version] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(version?.status, "approved");
+      assert.ok(version?.approvedAt);
+
+      const [proposal] = await db.select().from(pageProposals).where(eq(pageProposals.id, fixture.pageProposalId));
+      assert.equal(proposal?.status, "approved");
+
+      const [approval] = await db.select().from(approvals).where(eq(approvals.pageVersionId, fixture.pageVersionId));
+      assert.equal(approval?.status, "approved");
+      assert.equal(approval?.userId, fixture.userId);
+      assert.equal(approval?.decisionNote, "Ready for release planning.");
+      assert.ok(approval?.decidedAt);
+    });
+
+    void it("blocks approval while approval blocker notes are open", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Approval blockers", route: "/approval-blockers/" });
+      const note = await service.createPageSectionNote(fixture.projectId, fixture.pageVersionId, {
+        sectionId: "hero-1",
+        instructionType: "approval_blocker",
+        note: "Resolve this before approval."
+      });
+
+      await assert.rejects(
+        () =>
+          service.reviewPageVersion(fixture.projectId, fixture.pageVersionId, { decision: "approve" }, fixture.userId),
+        /unresolved approval blocker/u
+      );
+
+      await service.resolvePageSectionNote(fixture.projectId, fixture.pageVersionId, note.id, fixture.userId);
+      const reviewed = await service.reviewPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { decision: "approve" },
+        fixture.userId
+      );
+
+      assert.equal(reviewed.pageVersion.status, "approved");
+    });
+
+    void it("requests changes without approving the page version", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Request changes", route: "/request-changes/" });
+
+      const reviewed = await service.reviewPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          decision: "request_changes",
+          decisionNote: "Tighten the service proof before approval."
+        },
+        fixture.userId
+      );
+
+      assert.equal(reviewed.pageVersion.status, "changes_requested");
+      assert.equal(reviewed.pageVersion.approvedAt, undefined);
+      assert.equal(reviewed.approval.status, "rejected");
+      assert.equal(reviewed.approval.decisionNote, "Tighten the service proof before approval.");
+
+      const [version] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(version?.status, "changes_requested");
+      assert.equal(version?.approvedAt, null);
+
+      const [proposal] = await db.select().from(pageProposals).where(eq(pageProposals.id, fixture.pageProposalId));
+      assert.equal(proposal?.status, "changes_requested");
+    });
+
+    void it("requires a decision note when requesting changes", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Request changes note", route: "/request-note/" });
+
+      await assert.rejects(
+        () =>
+          service.reviewPageVersion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            {
+              decision: "request_changes"
+            },
+            fixture.userId
+          ),
+        /Requesting changes requires a decision note/u
+      );
+    });
+
+    void it("does not review already approved page versions again", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Already approved", route: "/already-approved/" });
+      await service.reviewPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { decision: "approve" },
+        fixture.userId
+      );
+
+      await assert.rejects(
+        () =>
+          service.reviewPageVersion(fixture.projectId, fixture.pageVersionId, { decision: "approve" }, fixture.userId),
+        /Only preview or changes-requested page versions/u
+      );
+    });
+
     void it("blocks structural updates to approved page versions", async () => {
       const fixture = await createPageVersionFixture(db, { name: "Frozen", route: "/frozen/" });
       await approvePageVersion(db, fixture.pageVersionId);
@@ -532,6 +655,15 @@ async function createPageVersionFixture(
     storedProposalJson?: StoredProposalJsonFixture;
   }
 ): Promise<PageVersionFixture> {
+  const [user] = await db
+    .insert(users)
+    .values({
+      email: `${input.name.toLowerCase().replaceAll(" ", "-")}@example.com`,
+      name: `${input.name} Operator`
+    })
+    .returning();
+  assert.ok(user);
+
   const [customer] = await db
     .insert(customers)
     .values({ name: `${input.name} Customer` })
@@ -574,6 +706,7 @@ async function createPageVersionFixture(
 
   return {
     projectId: project.id,
+    userId: user.id,
     pageProposalId: proposal.id,
     pageVersionId: pageVersion.id,
     route: input.route
