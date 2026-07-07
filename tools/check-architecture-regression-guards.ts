@@ -246,6 +246,20 @@ requireIncludes(
   "approved page version immutability must block in-place PageJson changes"
 );
 
+requireIncludes(
+  "packages/db/migrations/0027_page_version_freeze_completion.sql",
+  "page_versions_immutable_status_requires_approved_at",
+  "page-version-immutability",
+  "immutable page version statuses must require approval evidence on insert and update"
+);
+
+requireIncludes(
+  "packages/db/migrations/0027_page_version_freeze_completion.sql",
+  "page_versions_prevent_immutable_delete",
+  "page-version-immutability",
+  "immutable page version rows must not be deleted"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

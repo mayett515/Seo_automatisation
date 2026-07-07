@@ -189,6 +189,93 @@ void describe(
       assert.equal(resolvedAgain.resolvedAt, resolved.resolvedAt);
     });
 
+    void it("allows notes on approved page versions without mutating the frozen artifact", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Approved note", route: "/approved-note/" });
+      await approvePageVersion(db, fixture.pageVersionId);
+
+      const note = await service.createPageSectionNote(fixture.projectId, fixture.pageVersionId, {
+        sectionId: "hero-1",
+        instructionType: "approval_blocker",
+        note: "Review this approved version before release."
+      });
+
+      assert.equal(note.status, "open");
+      assert.equal(note.sectionId, "hero-1");
+      assert.equal(note.instructionType, "approval_blocker");
+    });
+
+    void it("blocks structural updates to approved page versions", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Frozen", route: "/frozen/" });
+      await approvePageVersion(db, fixture.pageVersionId);
+
+      await assert.rejects(
+        () =>
+          db
+            .update(pageVersions)
+            .set({
+              pageJson: pageJson(fixture.route, {
+                mutate: (value) => {
+                  const firstSection = value.sections[0];
+                  assert.ok(firstSection);
+                  value.sections[0] = {
+                    ...firstSection,
+                    props: {
+                      ...firstSection.props,
+                      h1: "Changed after approval"
+                    }
+                  };
+                }
+              })
+            })
+            .where(eq(pageVersions.id, fixture.pageVersionId)),
+        /immutable|PageJson|page versions/u
+      );
+    });
+
+    void it("blocks approved page versions from returning to editable statuses", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "No downgrade", route: "/no-downgrade/" });
+      await approvePageVersion(db, fixture.pageVersionId);
+
+      await assert.rejects(
+        () => db.update(pageVersions).set({ status: "preview" }).where(eq(pageVersions.id, fixture.pageVersionId)),
+        /editable statuses|page versions/u
+      );
+    });
+
+    void it("requires approval evidence before a page version becomes immutable", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Approval evidence", route: "/approval-evidence/" });
+
+      await assert.rejects(
+        () => db.update(pageVersions).set({ status: "approved" }).where(eq(pageVersions.id, fixture.pageVersionId)),
+        /approved_at|approval evidence|check constraint/u
+      );
+      await assert.rejects(
+        () =>
+          db.insert(pageVersions).values({
+            pageProposalId: fixture.pageProposalId,
+            versionNumber: 2,
+            status: "approved",
+            pageJson: pageJson(fixture.route)
+          }),
+        /approved_at|approval evidence|check constraint/u
+      );
+    });
+
+    void it("allows immutable lifecycle progression while blocking approved version deletes", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Lifecycle", route: "/lifecycle/" });
+      await approvePageVersion(db, fixture.pageVersionId);
+
+      await db.update(pageVersions).set({ status: "released" }).where(eq(pageVersions.id, fixture.pageVersionId));
+
+      const [released] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(released?.status, "released");
+
+      await assert.rejects(
+        () => db.delete(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId)),
+        /cannot be deleted|page versions/u
+      );
+    });
+
     void it("fails closed when stored PageJson no longer matches the contract", async () => {
       const fixture = await createPageVersionFixture(db, {
         name: "Invalid",
@@ -357,6 +444,12 @@ async function createPageVersionFixture(
     pageVersionId: pageVersion.id,
     route: input.route
   };
+}
+
+async function approvePageVersion(db: DatabaseClient, pageVersionId: string): Promise<Date> {
+  const approvedAt = new Date("2026-07-07T10:00:00.000Z");
+  await db.update(pageVersions).set({ status: "approved", approvedAt }).where(eq(pageVersions.id, pageVersionId));
+  return approvedAt;
 }
 
 function resolveStoredProposalJson(

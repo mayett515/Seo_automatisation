@@ -170,6 +170,7 @@ Page Version immutability
   Approved, release-candidate, released, and superseded page versions are frozen structural artifacts.
   Edits after approval must create a new page_versions row with a new versionNumber.
   The database trigger must reject in-place changes to page_proposal_id, version_number, and page_json for frozen versions.
+  Frozen versions require approved_at and must not be deleted.
 ```
 
 </context>
