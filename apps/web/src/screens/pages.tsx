@@ -1,14 +1,20 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import {
   PageProposalListResponseSchema,
+  PageSectionNoteListResponseSchema,
+  PageSectionNoteSchema,
   PageVersionListResponseSchema,
   PageVersionPreviewResponseSchema,
+  pageSectionNoteInstructionTypes,
   type PageProposalSummary,
+  type PageSectionNote,
+  type PageSectionNoteInstructionType,
   type PageVersionSummary
 } from "@localseo/contracts";
-import { getJson } from "../lib/api";
+import { getJson, patchJson, postJson } from "../lib/api";
 
 export function PagesScreen(props: { projectId: string }) {
   const projectId = props.projectId;
@@ -135,9 +141,152 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
           </article>
 
           <iframe className="preview-frame" sandbox="" srcDoc={preview.data.file.body} title="Page preview" />
+          <PageSectionNotesPanel pageVersionId={pageVersionId} projectId={projectId} />
         </section>
       ) : null}
     </section>
+  );
+}
+
+function PageSectionNotesPanel(props: { projectId: string; pageVersionId: string }) {
+  const queryClient = useQueryClient();
+  const [sectionId, setSectionId] = useState("hero-1");
+  const [instructionType, setInstructionType] = useState<PageSectionNoteInstructionType>("general");
+  const [note, setNote] = useState("");
+  const notesQueryKey = ["page-section-notes", props.projectId, props.pageVersionId];
+  const notes = useQuery({
+    queryKey: notesQueryKey,
+    queryFn: () =>
+      getJson(
+        projectApiPath(props.projectId, `/pages/${encodeURIComponent(props.pageVersionId)}/notes`),
+        PageSectionNoteListResponseSchema
+      ),
+    retry: false
+  });
+  const createNote = useMutation({
+    mutationFn: () =>
+      postJson(
+        projectApiPath(props.projectId, `/pages/${encodeURIComponent(props.pageVersionId)}/notes`),
+        {
+          sectionId,
+          instructionType,
+          note
+        },
+        PageSectionNoteSchema
+      ),
+    onSuccess: async () => {
+      setNote("");
+      await queryClient.invalidateQueries({ queryKey: notesQueryKey });
+    }
+  });
+  const resolveNote = useMutation({
+    mutationFn: (noteId: string) =>
+      patchJson(
+        projectApiPath(
+          props.projectId,
+          `/pages/${encodeURIComponent(props.pageVersionId)}/notes/${encodeURIComponent(noteId)}/resolve`
+        ),
+        {},
+        PageSectionNoteSchema
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: notesQueryKey });
+    }
+  });
+  const noteItems = notes.data?.notes ?? [];
+
+  return (
+    <aside className="detail-panel notes-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Section notes</h2>
+          <p>Anchored to stable PageJson section ids.</p>
+        </div>
+        <StatusPill tone={noteItems.some((item) => item.status === "open") ? "warning" : "neutral"}>
+          {`${noteItems.length} notes`}
+        </StatusPill>
+      </div>
+
+      <form
+        className="note-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          createNote.mutate();
+        }}
+      >
+        <label className="form-field">
+          <span>Section id</span>
+          <input value={sectionId} onChange={(event) => setSectionId(event.currentTarget.value)} />
+        </label>
+        <label className="form-field">
+          <span>Instruction</span>
+          <select
+            value={instructionType}
+            onChange={(event) => setInstructionType(event.currentTarget.value as PageSectionNoteInstructionType)}
+          >
+            {pageSectionNoteInstructionTypes.map((value) => (
+              <option key={value} value={value}>
+                {labelFromInstructionType(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field">
+          <span>Note</span>
+          <textarea value={note} onChange={(event) => setNote(event.currentTarget.value)} />
+        </label>
+        <button className="button-primary" disabled={createNote.isPending || note.trim().length === 0} type="submit">
+          {createNote.isPending ? "Adding" : "Add note"}
+        </button>
+      </form>
+
+      {createNote.isError ? <div className="notice notice--danger">Note could not be added.</div> : null}
+      {resolveNote.isError ? <div className="notice notice--danger">Note could not be resolved.</div> : null}
+      {notes.isPending ? <div className="notice notice--neutral">Loading notes</div> : null}
+      {notes.isError ? <div className="notice notice--danger">Notes could not be loaded.</div> : null}
+
+      <div className="note-list">
+        {noteItems.map((item) => (
+          <PageSectionNoteItem
+            key={item.id}
+            isResolving={resolveNote.isPending}
+            note={item}
+            onResolve={(noteId) => resolveNote.mutate(noteId)}
+          />
+        ))}
+        {!notes.isPending && noteItems.length === 0 ? <p className="muted-text">No section notes yet.</p> : null}
+      </div>
+    </aside>
+  );
+}
+
+function PageSectionNoteItem(props: {
+  isResolving: boolean;
+  note: PageSectionNote;
+  onResolve: (noteId: string) => void;
+}) {
+  return (
+    <article className="note-item">
+      <div className="decision-card__header">
+        <div>
+          <strong>{props.note.sectionId}</strong>
+          <p>{props.note.fieldPath.length > 0 ? props.note.fieldPath.join(".") : "section"}</p>
+        </div>
+        <StatusPill tone={props.note.status === "open" ? "warning" : "success"}>{props.note.status}</StatusPill>
+      </div>
+      <p>{props.note.note}</p>
+      <span className="muted-text">{props.note.instructionType.replaceAll("_", " ")}</span>
+      {props.note.status === "open" ? (
+        <button
+          className="button-secondary"
+          disabled={props.isResolving}
+          type="button"
+          onClick={() => props.onResolve(props.note.id)}
+        >
+          Resolve
+        </button>
+      ) : null}
+    </article>
   );
 }
 
@@ -182,6 +331,13 @@ function Metric(props: { title: string; value: string }) {
       <strong className="truncate">{props.value}</strong>
     </article>
   );
+}
+
+function labelFromInstructionType(value: PageSectionNoteInstructionType): string {
+  return value
+    .split("_")
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function pageVersionTone(status: PageVersionSummary["status"]): "neutral" | "success" | "warning" | "danger" {

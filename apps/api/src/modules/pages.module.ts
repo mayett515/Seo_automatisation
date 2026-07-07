@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Inject,
@@ -7,35 +8,46 @@ import {
   Module,
   NotFoundException,
   Param,
+  Patch,
+  Post,
+  Req,
   UnprocessableEntityException,
   UseGuards
 } from "@nestjs/common";
 import {
+  CreatePageSectionNoteRequestSchema,
   PageJsonSchema,
   PageProposalDetailSchema,
   PageProposalJsonSchema,
   PageProposalListResponseSchema,
   PageProposalSummarySchema,
+  PageSectionNoteFieldPathSchema,
+  PageSectionNoteListResponseSchema,
+  PageSectionNoteSchema,
   PageVersionDetailSchema,
   PageVersionListResponseSchema,
   PageVersionPreviewResponseSchema,
   PageVersionSummarySchema,
+  type CreatePageSectionNoteRequest,
   type PageJson,
   type PageProposalDetail,
   type PageProposalListResponse,
   type PageProposalSummary,
+  type PageSectionNote,
+  type PageSectionNoteListResponse,
   type PageVersionDetail,
   type PageVersionListResponse,
   type PageVersionPreviewResponse,
   type PageVersionSummary
 } from "@localseo/contracts";
-import { pageProposals, pageVersions, type DatabaseClient } from "@localseo/db";
+import { pageProposals, pageSectionNotes, pageVersions, type DatabaseClient } from "@localseo/db";
 import { renderPagePreviewFile, validatePageJsonAgainstRegistry } from "@localseo/page-registry";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
@@ -43,6 +55,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12
 
 type Db = DatabaseClient;
 type PageProposalRow = Awaited<ReturnType<typeof selectPageProposalRows>>[number];
+type PageSectionNoteRow = Awaited<ReturnType<typeof selectPageSectionNoteRows>>[number];
 type PageVersionRow = Awaited<ReturnType<typeof selectPageVersionRows>>[number];
 
 @Injectable()
@@ -115,6 +128,96 @@ export class PagesService {
     }
   }
 
+  async listPageSectionNotes(projectId: string, pageVersionId: string): Promise<PageSectionNoteListResponse> {
+    const row = await this.loadPageVersion(projectId, pageVersionId);
+    const notes = await selectPageSectionNoteRows(this.database.requireDb(), row.id);
+
+    return PageSectionNoteListResponseSchema.parse({
+      projectId,
+      pageVersionId: row.id,
+      notes: notes.map((note) => pageSectionNoteToResponse(projectId, note))
+    });
+  }
+
+  async createPageSectionNote(
+    projectId: string,
+    pageVersionId: string,
+    body: unknown,
+    createdByUserId?: string
+  ): Promise<PageSectionNote> {
+    const input = CreatePageSectionNoteRequestSchema.parse(body ?? {});
+    const row = await this.loadPageVersion(projectId, pageVersionId);
+    const pageJson = parseStoredPageJson(row);
+
+    assertPageJsonSectionExists(pageJson, input.sectionId);
+
+    const [note] = await this.database
+      .requireDb()
+      .insert(pageSectionNotes)
+      .values({
+        pageVersionId: row.id,
+        sectionId: input.sectionId,
+        fieldPath: input.fieldPath,
+        instructionType: input.instructionType,
+        note: input.note,
+        createdByUserId
+      })
+      .returning();
+
+    if (!note) {
+      throw new Error("Failed to create page section note.");
+    }
+
+    return pageSectionNoteToResponse(projectId, note);
+  }
+
+  async resolvePageSectionNote(
+    projectId: string,
+    pageVersionId: string,
+    noteId: string,
+    resolvedByUserId?: string
+  ): Promise<PageSectionNote> {
+    if (!isPersistedId(noteId)) {
+      throw new BadRequestException("Page section note id must be a UUID.");
+    }
+
+    const pageVersion = await this.loadPageVersion(projectId, pageVersionId);
+    const db = this.database.requireDb();
+    const [existing] = await selectPageSectionNoteRows(db, pageVersion.id, noteId);
+
+    if (!existing) {
+      throw new NotFoundException("Page section note was not found for this page version.");
+    }
+
+    if (existing.resolvedAt) {
+      return pageSectionNoteToResponse(projectId, existing);
+    }
+
+    const [resolved] = await db
+      .update(pageSectionNotes)
+      .set({
+        resolvedAt: new Date(),
+        resolvedByUserId,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(pageSectionNotes.id, noteId),
+          eq(pageSectionNotes.pageVersionId, pageVersion.id),
+          isNull(pageSectionNotes.resolvedAt)
+        )
+      )
+      .returning();
+
+    if (resolved) {
+      return pageSectionNoteToResponse(projectId, resolved);
+    }
+
+    const [latest] = await selectPageSectionNoteRows(db, pageVersion.id, noteId);
+
+    return pageSectionNoteToResponse(projectId, latest ?? existing);
+  }
+
   private async loadPageVersion(projectId: string, pageVersionId: string): Promise<PageVersionRow> {
     if (!isPersistedId(pageVersionId)) {
       throw new BadRequestException("Page version id must be a UUID.");
@@ -174,6 +277,33 @@ class PagesController {
   preview(@Param("projectId") projectId: string, @Param("pageVersionId") pageVersionId: string) {
     return this.pages.previewPageVersion(projectId, pageVersionId);
   }
+
+  @Get(":pageVersionId/notes")
+  listNotes(@Param("projectId") projectId: string, @Param("pageVersionId") pageVersionId: string) {
+    return this.pages.listPageSectionNotes(projectId, pageVersionId);
+  }
+
+  @Post(":pageVersionId/notes")
+  @RequireProjectPermission("page:comment")
+  createNote(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.pages.createPageSectionNote(projectId, pageVersionId, body, persistedActorUserId(request));
+  }
+
+  @Patch(":pageVersionId/notes/:noteId/resolve")
+  @RequireProjectPermission("page:comment")
+  resolveNote(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Param("noteId") noteId: string,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.pages.resolvePageSectionNote(projectId, pageVersionId, noteId, persistedActorUserId(request));
+  }
 }
 
 @Module({
@@ -219,6 +349,19 @@ async function selectPageVersionCountsByProposal(db: Db, projectId: string): Pro
     .groupBy(pageVersions.pageProposalId);
 
   return new Map(rows.map((row) => [row.pageProposalId, row.versionCount]));
+}
+
+async function selectPageSectionNoteRows(db: Db, pageVersionId: string, noteId?: string) {
+  return db
+    .select()
+    .from(pageSectionNotes)
+    .where(
+      noteId
+        ? and(eq(pageSectionNotes.pageVersionId, pageVersionId), eq(pageSectionNotes.id, noteId))
+        : eq(pageSectionNotes.pageVersionId, pageVersionId)
+    )
+    .orderBy(desc(pageSectionNotes.createdAt))
+    .limit(noteId ? 1 : 500);
 }
 
 async function selectPageVersionRows(
@@ -292,6 +435,26 @@ function pageVersionSummaryToResponse(row: PageVersionRow): PageVersionSummary {
   });
 }
 
+function pageSectionNoteToResponse(projectId: string, row: PageSectionNoteRow): PageSectionNote {
+  const fieldPath = PageSectionNoteFieldPathSchema.parse(row.fieldPath);
+
+  return PageSectionNoteSchema.parse({
+    id: row.id,
+    projectId,
+    pageVersionId: row.pageVersionId,
+    sectionId: row.sectionId,
+    fieldPath,
+    instructionType: row.instructionType,
+    note: row.note,
+    status: row.resolvedAt ? "resolved" : "open",
+    createdByUserId: row.createdByUserId ?? undefined,
+    resolvedByUserId: row.resolvedByUserId ?? undefined,
+    resolvedAt: row.resolvedAt?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  });
+}
+
 function parseStoredPageJson(row: PageVersionRow): PageJson {
   const parsed = PageJsonSchema.safeParse(row.pageJson);
 
@@ -318,6 +481,14 @@ function parseStoredPageJson(row: PageVersionRow): PageJson {
   }
 
   return parsed.data;
+}
+
+function assertPageJsonSectionExists(pageJson: PageJson, sectionId: CreatePageSectionNoteRequest["sectionId"]): void {
+  const section = pageJson.sections.find((candidate) => candidate.id === sectionId);
+
+  if (!section) {
+    throw new UnprocessableEntityException("Page section note must target an existing PageJson section id.");
+  }
 }
 
 function parseStoredProposalJson(row: PageProposalRow): ReturnType<typeof PageProposalJsonSchema.parse> | undefined {
@@ -350,4 +521,9 @@ function parseStoredProposalJson(row: PageProposalRow): ReturnType<typeof PagePr
 
 function isPersistedId(value: string): boolean {
   return uuidPattern.test(value);
+}
+
+function persistedActorUserId(request: RequestWithAuth): string | undefined {
+  const userId = request.auth?.user.id;
+  return userId && isPersistedId(userId) ? userId : undefined;
 }

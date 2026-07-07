@@ -18,6 +18,7 @@ import {
   releaseCheckSeverities,
   releaseItemActions,
   releaseNoteAudiences,
+  pageSectionNoteInstructionTypes,
   releasePlanStatuses,
   releaseVerificationStatuses,
   rankingProofStatuses,
@@ -30,6 +31,7 @@ import {
 import type {
   PageJson,
   PageProposalJson,
+  PageSectionNoteFieldPath,
   SerpArtifactRef,
   SerpEngineError,
   SerpFeature,
@@ -79,6 +81,10 @@ export const releaseSeverityEnum = pgEnum("release_check_severity", releaseCheck
 export const releaseCheckResultEnum = pgEnum("release_check_result", releaseCheckResults);
 export const releaseItemActionEnum = pgEnum("release_item_action", releaseItemActions);
 export const pageVersionStatusEnum = pgEnum("page_version_status", pageVersionStatuses);
+export const pageSectionNoteInstructionTypeEnum = pgEnum(
+  "page_section_note_instruction_type",
+  pageSectionNoteInstructionTypes
+);
 export const approvalStatusEnum = pgEnum("approval_status", approvalStatuses);
 export const customerMembershipRoleEnum = pgEnum("customer_membership_role", customerMembershipRoles);
 
@@ -489,6 +495,31 @@ export const componentNotes = pgTable("component_notes", {
   ...timestamps
 });
 
+export const pageSectionNotes = pgTable(
+  "page_section_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pageVersionId: uuid("page_version_id")
+      .notNull()
+      .references(() => pageVersions.id),
+    sectionId: text("section_id").notNull(),
+    fieldPath: jsonb("field_path")
+      .$type<PageSectionNoteFieldPath>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    instructionType: pageSectionNoteInstructionTypeEnum("instruction_type").notNull().default("general"),
+    note: text("note").notNull(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id),
+    ...timestamps
+  },
+  (table) => [
+    index("page_section_notes_version_section_idx").on(table.pageVersionId, table.sectionId),
+    index("page_section_notes_version_resolved_idx").on(table.pageVersionId, table.resolvedAt)
+  ]
+);
+
 export const approvals = pgTable("approvals", {
   id: uuid("id").primaryKey().defaultRandom(),
   pageVersionId: uuid("page_version_id").references(() => pageVersions.id),
@@ -848,6 +879,17 @@ export const customerMembershipRelations = relations(customerMemberships, ({ one
 export const pageProposalRelations = relations(pageProposals, ({ many, one }) => ({
   project: one(projects, { fields: [pageProposals.projectId], references: [projects.id] }),
   versions: many(pageVersions)
+}));
+
+export const pageVersionRelations = relations(pageVersions, ({ many, one }) => ({
+  proposal: one(pageProposals, { fields: [pageVersions.pageProposalId], references: [pageProposals.id] }),
+  sectionNotes: many(pageSectionNotes)
+}));
+
+export const pageSectionNoteRelations = relations(pageSectionNotes, ({ one }) => ({
+  pageVersion: one(pageVersions, { fields: [pageSectionNotes.pageVersionId], references: [pageVersions.id] }),
+  createdBy: one(users, { fields: [pageSectionNotes.createdByUserId], references: [users.id] }),
+  resolvedBy: one(users, { fields: [pageSectionNotes.resolvedByUserId], references: [users.id] })
 }));
 
 export const agentRunRelations = relations(agentRuns, ({ many, one }) => ({

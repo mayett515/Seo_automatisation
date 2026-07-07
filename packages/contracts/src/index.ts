@@ -269,6 +269,14 @@ export const releaseCheckSeverities = ["info", "warning", "blocker"] as const;
 export const releaseCheckResults = ["passed", "failed", "skipped"] as const;
 export const releaseItemActions = ["create", "update", "redirect", "noindex", "remove"] as const;
 export const releaseNoteAudiences = ["internal", "customer"] as const;
+export const pageSectionNoteInstructionTypes = [
+  "general",
+  "copy_change",
+  "design_change",
+  "seo_change",
+  "evidence_request",
+  "approval_blocker"
+] as const;
 export const customerMembershipRoles = ["owner", "admin", "editor", "viewer"] as const;
 export const pageVersionStatuses = [
   "draft",
@@ -364,6 +372,7 @@ export const SerpScoutFailureCodeSchema = z.enum(serpScoutFailureCodes);
 export const ApprovalStatusSchema = z.enum(approvalStatuses);
 export const ReleaseItemActionSchema = z.enum(releaseItemActions);
 export const PageVersionStatusSchema = z.enum(pageVersionStatuses);
+export const PageSectionNoteInstructionTypeSchema = z.enum(pageSectionNoteInstructionTypes);
 export const PageZoneSchema = z.enum(pageZones);
 export const PageSectionTypeSchema = z.enum(pageSectionTypes);
 export const PageTypeSchema = z.enum(pageTypes);
@@ -893,6 +902,45 @@ export const PageVersionPreviewResponseSchema = z
     route: PagePathSchema,
     mode: z.literal("editor"),
     file: StaticSiteFileSchema
+  })
+  .strict();
+
+export const PageSectionNoteFieldPathSchema = z
+  .array(z.union([z.string().trim().min(1).max(120), z.number().int().nonnegative()]))
+  .max(20);
+
+export const PageSectionNoteSchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: ProjectIdSchema,
+    pageVersionId: z.string().min(1),
+    sectionId: z.string().trim().min(1).max(120),
+    fieldPath: PageSectionNoteFieldPathSchema,
+    instructionType: PageSectionNoteInstructionTypeSchema,
+    note: z.string().trim().min(1).max(2_000),
+    status: z.enum(["open", "resolved"]),
+    createdByUserId: z.string().min(1).optional(),
+    resolvedByUserId: z.string().min(1).optional(),
+    resolvedAt: z.string().datetime().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
+
+export const CreatePageSectionNoteRequestSchema = z
+  .object({
+    sectionId: z.string().trim().min(1).max(120),
+    fieldPath: PageSectionNoteFieldPathSchema.default([]),
+    instructionType: PageSectionNoteInstructionTypeSchema.default("general"),
+    note: z.string().trim().min(1).max(2_000)
+  })
+  .strict();
+
+export const PageSectionNoteListResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    pageVersionId: z.string().min(1),
+    notes: z.array(PageSectionNoteSchema).max(500)
   })
   .strict();
 
@@ -1582,6 +1630,11 @@ export type PageProposalSummary = z.output<typeof PageProposalSummarySchema>;
 export type PageProposalDetail = z.output<typeof PageProposalDetailSchema>;
 export type PageProposalListResponse = z.output<typeof PageProposalListResponseSchema>;
 export type PageVersionPreviewResponse = z.output<typeof PageVersionPreviewResponseSchema>;
+export type PageSectionNoteFieldPath = z.output<typeof PageSectionNoteFieldPathSchema>;
+export type PageSectionNoteInstructionType = z.output<typeof PageSectionNoteInstructionTypeSchema>;
+export type PageSectionNote = z.output<typeof PageSectionNoteSchema>;
+export type CreatePageSectionNoteRequest = z.output<typeof CreatePageSectionNoteRequestSchema>;
+export type PageSectionNoteListResponse = z.output<typeof PageSectionNoteListResponseSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
 export type PageProposal = z.output<typeof PageProposalSchema>;
 export type ReleaseCheck = z.output<typeof ReleaseCheckSchema>;

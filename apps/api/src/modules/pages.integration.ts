@@ -124,6 +124,71 @@ void describe(
       assert.match(preview.file.body, /Dachreinigung in Muenchen/u);
     });
 
+    void it("creates and lists section notes anchored to stable PageJson section ids", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Notes", route: "/notes/" });
+
+      const note = await service.createPageSectionNote(fixture.projectId, fixture.pageVersionId, {
+        sectionId: "hero-1",
+        fieldPath: ["props", "h1"],
+        instructionType: "copy_change",
+        note: "Make the H1 more specific to the roof-cleaning service."
+      });
+
+      assert.equal(note.projectId, fixture.projectId);
+      assert.equal(note.pageVersionId, fixture.pageVersionId);
+      assert.equal(note.sectionId, "hero-1");
+      assert.deepEqual(note.fieldPath, ["props", "h1"]);
+      assert.equal(note.instructionType, "copy_change");
+      assert.equal(note.status, "open");
+
+      const list = await service.listPageSectionNotes(fixture.projectId, fixture.pageVersionId);
+
+      assert.equal(list.projectId, fixture.projectId);
+      assert.equal(list.pageVersionId, fixture.pageVersionId);
+      assert.equal(list.notes.length, 1);
+      assert.equal(list.notes[0]?.id, note.id);
+      assert.equal(list.notes[0]?.sectionId, "hero-1");
+    });
+
+    void it("rejects section notes for unknown PageJson section ids", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Unknown section", route: "/unknown-section/" });
+
+      await assert.rejects(
+        () =>
+          service.createPageSectionNote(fixture.projectId, fixture.pageVersionId, {
+            sectionId: "missing-section",
+            note: "This should not attach to a missing section."
+          }),
+        /must target an existing PageJson section id/u
+      );
+    });
+
+    void it("resolves notes only for the owning page version", async () => {
+      const first = await createPageVersionFixture(db, { name: "First note", route: "/first-note/" });
+      const second = await createPageVersionFixture(db, { name: "Second note", route: "/second-note/" });
+      const firstNote = await service.createPageSectionNote(first.projectId, first.pageVersionId, {
+        sectionId: "hero-1",
+        note: "Resolve this one."
+      });
+      const secondNote = await service.createPageSectionNote(second.projectId, second.pageVersionId, {
+        sectionId: "hero-1",
+        note: "This belongs to another project."
+      });
+
+      await assert.rejects(
+        () => service.resolvePageSectionNote(first.projectId, first.pageVersionId, secondNote.id),
+        /not found for this page version/u
+      );
+
+      const resolved = await service.resolvePageSectionNote(first.projectId, first.pageVersionId, firstNote.id);
+      const resolvedAgain = await service.resolvePageSectionNote(first.projectId, first.pageVersionId, firstNote.id);
+
+      assert.equal(resolved.status, "resolved");
+      assert.ok(resolved.resolvedAt);
+      assert.equal(resolvedAgain.status, "resolved");
+      assert.equal(resolvedAgain.resolvedAt, resolved.resolvedAt);
+    });
+
     void it("fails closed when stored PageJson no longer matches the contract", async () => {
       const fixture = await createPageVersionFixture(db, {
         name: "Invalid",
@@ -209,7 +274,7 @@ void describe(
       const fixture = await createPageVersionFixture(db, {
         name: "Invalid proposal",
         route: "/invalid-proposal/",
-        storedProposalJson: { schemaVersion: 1, route: "/invalid-proposal/", invalid: true }
+        storedProposalJson: { kind: "value", value: { schemaVersion: 1, route: "/invalid-proposal/", invalid: true } }
       });
 
       await assert.rejects(
@@ -222,7 +287,7 @@ void describe(
       const fixture = await createPageVersionFixture(db, {
         name: "Proposal mismatch",
         route: "/expected-proposal/",
-        storedProposalJson: (projectId: string) => pageProposalJson(projectId, "/other-proposal/")
+        storedProposalJson: { kind: "factory", create: (projectId) => pageProposalJson(projectId, "/other-proposal/") }
       });
 
       await assert.rejects(
@@ -233,13 +298,17 @@ void describe(
   }
 );
 
+type StoredProposalJsonFixture =
+  | { kind: "value"; value: unknown }
+  | { kind: "factory"; create: (projectId: string) => unknown };
+
 async function createPageVersionFixture(
   db: DatabaseClient,
   input: {
     name: string;
     route: string;
     storedPageJson?: unknown;
-    storedProposalJson?: unknown | ((projectId: string) => unknown);
+    storedProposalJson?: StoredProposalJsonFixture;
   }
 ): Promise<PageVersionFixture> {
   const [customer] = await db
@@ -292,13 +361,17 @@ async function createPageVersionFixture(
 
 function resolveStoredProposalJson(
   projectId: string,
-  input: { route: string; storedProposalJson?: unknown | ((projectId: string) => unknown) }
+  input: { route: string; storedProposalJson?: StoredProposalJsonFixture }
 ): unknown {
-  if (typeof input.storedProposalJson === "function") {
-    return input.storedProposalJson(projectId);
+  if (input.storedProposalJson?.kind === "factory") {
+    return input.storedProposalJson.create(projectId);
   }
 
-  return input.storedProposalJson ?? pageProposalJson(projectId, input.route);
+  if (input.storedProposalJson?.kind === "value") {
+    return input.storedProposalJson.value;
+  }
+
+  return pageProposalJson(projectId, input.route);
 }
 
 function pageProposalJson(projectId: string, route: string): PageProposalJson {

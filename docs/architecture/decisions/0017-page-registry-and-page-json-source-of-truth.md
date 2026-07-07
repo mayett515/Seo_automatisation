@@ -82,7 +82,7 @@ apps/web
 
 `component_templates` must not become runtime registry truth. It is a dormant table from the initial scaffold; the MVP registry is code-owned.
 
-Notes should anchor directly to `(pageVersionId, sectionId, fieldPath?)`, not to projection row identity. A future `page_section_notes` table is preferred over using `component_notes.componentInstanceId` if projection regeneration would orphan notes.
+Notes anchor directly to `(pageVersionId, sectionId, fieldPath?)` in `page_section_notes`, not to projection row identity. `component_notes.componentInstanceId` remains scaffold/projection-adjacent and must not become the product source of truth because projection regeneration could orphan notes.
 
 The registry is code-owned for MVP. Do not add a runtime component registry table until operators actually need mutable registry entries or tenant-specific components.
 
@@ -173,7 +173,7 @@ It also gives the next implementation slice a concrete target:
    7a. Harden preflight/render parity after review: preflight must call registry validation before deriving facts; literal `class` keys are rejected by the PageJson safety scan; non-rendering actions are blocked until directive artifacts exist. Done in the fourth Page Registry hardening slice.
 8. Add preview rendering that shares the static renderer core and theme tokens. Done in the fifth Page Registry slice.
 9. Wire project-scoped proposal/version reads and the minimal preview API/UI foundation. Done in the sixth Page Registry slice.
-10. Add section notes anchored to stable section ids.
+10. Add section notes anchored to stable section ids. Done in the seventh Page Registry slice.
 11. Freeze approved versions and revalidate PageJson during release preflight.
 
 The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:

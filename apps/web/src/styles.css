@@ -79,7 +79,8 @@ a {
 }
 
 .form-field input,
-.form-field textarea {
+.form-field textarea,
+.form-field select {
   min-height: 40px;
   border: 1px solid #c7cec4;
   border-radius: 8px;
@@ -488,6 +489,29 @@ a {
 .preview-layout {
   display: grid;
   gap: 16px;
+}
+
+.notes-panel {
+  align-content: start;
+}
+
+.note-form,
+.note-list {
+  display: grid;
+  gap: 10px;
+}
+
+.note-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e0e4dc;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfa;
+}
+
+.note-item p {
+  margin: 0;
 }
 
 .preview-frame {
