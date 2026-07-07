@@ -663,6 +663,19 @@ The AI may emit only structured proposal JSON. Raw HTML, CSS, React, JavaScript,
 
 The page lane has migrated the scaffold renderer out of `packages/domain`/provider adapters. Workers build rendered release artifacts with the page-registry renderer; site-hosting adapters upload bytes only.
 
+Before the Page Proposal worker widens agent tooling, apply ADR 0019:
+
+```text
+Page Proposal constraint profile
+  allow: read_evidence, read_registry, analyze, draft_content, draft_page_json, render_preview
+  deny: approval, deploy, provider mutation, approved PageVersion writes, ranking-proof writes, raw code/markup/style controls
+  output: PageProposalJson or a future PageBriefJson
+  gates: PageJson contract, registry validation, Page Studio composition, route/cannibalization, SEO metadata, uniqueness, proof containment
+  approval: human/customer durable approval of one concrete PageVersion before release
+```
+
+The worker may persist a draft/proposal artifact after deterministic validation. It must not create an approved page version, enqueue deploy, or turn tool/session approval into product approval.
+
 ### 10. Page Studio, Notes, Approval, And Versioning
 
 Page Studio is the "WordPress but easier" surface for subpages and local pages. It is a constrained layout-zone editor, not a freeform builder:
@@ -829,6 +842,12 @@ Mastra memory / RAG
   and one of the slice 13 retrieval triggers becomes real.
   Markdown context records may be the first memory substrate, but only after
   an approved blueprint and human-promotion workflow.
+
+agent_run_events
+  After Opportunity Explorer, Page Studio, or report UI needs streaming/replay.
+  Until then, `agent_runs` remains the run header and task outputs/gate failures
+  remain redacted evidence. Do not add event streaming only because a provider
+  exposes tool-call traces.
 ```
 
 ## Source Map

@@ -33,6 +33,7 @@ You have been routed here because the task touches architecture style, dependenc
 - Name ports by purpose, not vendor. Vendor names belong in adapter implementations, provider records, and deployment configuration.
 - Use DDD-lite bounded contexts: Lead, Customer, Project, Website, Service, Area, Opportunity, PageProposal, PageVersion, Approval, ReleasePlan, Deployment, GscSync, TrackingEvent, Report.
 - Keep Mastra agents/workflows in reasoning, orchestration, and proposal generation. Deterministic workers perform production mutations.
+- Keep agent constraints outcome-based: allowed tool categories and denied production outcomes must travel with the run, including subagent delegation.
 - Wire concrete adapters in process composition roots, not inside controllers, domain functions, agents, or random worker handlers.
 - Use System Design guidance for AWS, Postgres, Redis, object storage, observability, security, retries, idempotency, and failure recovery.
 - Before writing an ADR or shaping a new vertical slice, scan `.ai-stealer-rules/03-architecture-decision-domains.md` for cross-cutting concerns and quality attributes the user may not have named.
@@ -46,6 +47,7 @@ You have been routed here because the task touches architecture style, dependenc
 - DO NOT name ports after vendors, for example `NetlifyPort` or `GscPort`.
 - DO NOT put provider-specific field names in domain entities, for example `netlifySiteId`.
 - DO NOT let Mastra agents call production side-effect ports directly.
+- DO NOT let a child agent, tool runner, or workflow step widen the parent task's denied outcomes.
 - DO NOT introduce an external provider without a purpose-named port, adapter, failure mode, and test/fake strategy.
 - DO NOT hand-maintain duplicate shared enums, event names, or payload shapes without identifying the single source of truth.
 - DO NOT introduce microservices before the modular monolith boundaries are proven insufficient.
@@ -68,6 +70,9 @@ THEN route it through a BullMQ job and deterministic worker.
 
 IF work is open-ended reasoning, strategy, SEO analysis, content proposal, or release evaluation:
 THEN model it as a Mastra workflow/agent output that is schema-validated before any worker acts.
+
+IF the work adds or widens an agent capability:
+THEN define or update the agent constraint profile from ADR 0019 before implementation.
 
 IF the task is an ADR, new slice, major refactor, provider integration, production mutation, public endpoint, or tenant-data boundary:
 THEN scan `.ai-stealer-rules/03-architecture-decision-domains.md` before finalizing the design.
@@ -124,7 +129,8 @@ const mainWebsite = { netlifySiteId: "..." };
 2. [ ] Did core packages stay free of framework, provider, queue, UI, and database-client imports?
 3. [ ] Are external systems behind purpose-named ports with adapters and failure modes?
 4. [ ] Did agents stay in reasoning while deterministic workers own production mutations?
-5. [ ] Did each shared enum, event, and payload shape have a declared source of truth?
-6. [ ] Did the design remain a modular monolith unless a proven boundary requires otherwise?
-7. [ ] Did I scan architecture decision domains for relevant cross-cutting concerns?
+5. [ ] Did new agent capabilities follow ADR 0019's constraint-profile policy?
+6. [ ] Did each shared enum, event, and payload shape have a declared source of truth?
+7. [ ] Did the design remain a modular monolith unless a proven boundary requires otherwise?
+8. [ ] Did I scan architecture decision domains for relevant cross-cutting concerns?
 </pre-flight-checklist>

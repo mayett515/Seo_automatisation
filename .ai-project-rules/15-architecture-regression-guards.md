@@ -29,6 +29,7 @@ Use this shard when a task touches a seam previously found by review: persisted 
 - When a worker writes JSON that an API reads through a strict schema, add a writer-to-reader round-trip assertion or an equivalent strict parse test.
 - When an API route touches a provider port, classify the call as read-only, write/mutation, token/state mutation, or queue enqueue before accepting it.
 - When a workflow persists a durable run row and enqueues BullMQ work, define DB/queue-gap recovery before treating the lane as production-ready.
+- When an agent task gains tools or delegation, define the ADR 0019 constraint profile before accepting the implementation.
 </positive-directives>
 
 ## 2. Hard Regression Prohibitions
@@ -42,6 +43,8 @@ Use this shard when a task touches a seam previously found by review: persisted 
 - DO NOT mark shipped UI/API/worker features as deferred in roadmap docs after the same commit ships them.
 - DO NOT treat Redis/BullMQ job state as product truth; Postgres durable rows own product state and recovery decisions.
 - DO NOT re-post provider mutations from a generic recovery scanner; provider-mutation recovery must reconcile or require manual review.
+- DO NOT add or widen agent tool access without a named task constraint profile, output schema, QA gate, approval boundary, and denied-action list.
+- DO NOT let agent, subagent, browser, web-search, or Mastra tool output bypass contract parsing and deterministic QA.
 </absolute-constraints>
 
 ## 3. Category Checklists
@@ -90,6 +93,18 @@ Use this shard when a task touches a seam previously found by review: persisted 
 4. [ ] What happens when the row exists but enqueue fails or the Redis job disappears?
 5. [ ] Can stale work be safely re-enqueued, or must it reconcile provider state / mark manual review?
 6. [ ] Is recovery exhaustion visible in product state, not only logs or Redis dead-letter state?
+</pre-flight-checklist>
+
+### Agent Constraint Policy
+
+<pre-flight-checklist>
+1. [ ] Which agent task/profile owns this capability?
+2. [ ] Which tool categories are allowed, ask-gated, and denied?
+3. [ ] What output schema parses untrusted model output before use?
+4. [ ] Which deterministic QA gates reject schema-valid but unsafe output?
+5. [ ] What durable approval row/event is required before customer/business state changes?
+6. [ ] Can a subagent or tool runner widen authority? If yes, stop and pass/narrow the parent policy.
+7. [ ] Does any search/browser/model output risk becoming customer-safe proof without an ADR-promoted source?
 </pre-flight-checklist>
 
 ### Roadmap Drift
@@ -145,6 +160,19 @@ Page Registry render/preflight boundary
   Release preflight blocks actions that do not yet materialize to rendered files or explicit directive artifacts.
   PageJson safety guards reject raw markup, scripts, event handlers, inline styles, className, and literal class keys.
   Preview rendering must call the page-registry renderer core, and deploy-preview output must stay byte-identical to deploy artifact output for the same PageJson.
+```
+
+</context>
+
+<context>
+```text
+Agent constraint policy
+  AI may propose; only contracts, QA, approval, workers, and verification can make a proposal real.
+  New agent tasks and widened tool access require a named constraint profile.
+  Opportunity Scout remains read_evidence + analyze only.
+  Page Proposal may draft structured PageProposalJson only after contracts, registry, Page Studio composition, preview, and approval boundaries are in place.
+  Agent/session/tool approval is not product approval; product approval must be durable.
+  Subagents inherit or narrow parent denied outcomes.
 ```
 
 </context>
