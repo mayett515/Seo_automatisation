@@ -206,7 +206,9 @@ void describe(
 
       await assert.rejects(
         () =>
-          service.verify(projectA.projectId, projectA.releasePlanId, undefined, { deploymentId: projectB.deploymentId }),
+          service.verify(projectA.projectId, projectA.releasePlanId, undefined, {
+            deploymentId: projectB.deploymentId
+          }),
         /No provider-succeeded deployment is available for verification/u
       );
 
