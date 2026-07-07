@@ -19,6 +19,7 @@
     "@localseo/contracts": "workspace:*",
     "@localseo/db": "workspace:*",
     "@localseo/domain": "workspace:*",
+    "@localseo/page-registry": "workspace:*",
     "@localseo/seo": "workspace:*",
     "@nestjs/common": "11.1.27",
     "@nestjs/config": "4.0.4",

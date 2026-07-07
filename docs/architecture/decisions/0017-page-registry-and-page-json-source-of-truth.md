@@ -172,7 +172,7 @@ It also gives the next implementation slice a concrete target:
 7. Retarget release preflight and static rendering to typed PageJson, including the internal CSS foundation. Done in the fourth Page Registry slice.
    7a. Harden preflight/render parity after review: preflight must call registry validation before deriving facts; literal `class` keys are rejected by the PageJson safety scan; non-rendering actions are blocked until directive artifacts exist. Done in the fourth Page Registry hardening slice.
 8. Add preview rendering that shares the static renderer core and theme tokens. Done in the fifth Page Registry slice.
-9. Wire project-scoped proposal/version reads.
+9. Wire project-scoped proposal/version reads and the minimal preview API/UI foundation. Done in the sixth Page Registry slice.
 10. Add section notes anchored to stable section ids.
 11. Freeze approved versions and revalidate PageJson during release preflight.
 

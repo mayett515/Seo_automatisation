@@ -68,6 +68,9 @@ importers:
       '@localseo/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@localseo/page-registry':
+        specifier: workspace:*
+        version: link:../../packages/page-registry
       '@localseo/seo':
         specifier: workspace:*
         version: link:../../packages/seo

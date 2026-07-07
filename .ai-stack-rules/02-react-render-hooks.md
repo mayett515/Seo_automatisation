@@ -29,6 +29,11 @@ priority_schema: "critical > strong > guideline"
 - Use route/panel error boundaries, Suspense/lazy boundaries, and local skeletons for feature surfaces that can fail or load independently.
 - Lift stable constants/components out of render when they do not depend on render state.
 - React event handlers may ignore returned promises, but async work started from handlers must still have Query, Form, route, error-boundary, local-error, or explicit catch ownership.
+- Use Effects to synchronize with external systems; put event-specific work in event handlers or TanStack mutations.
+- Model mutually exclusive local UI workflow states as discriminated unions or reducers instead of multiple booleans/nullables.
+- Prefer state colocation before memoization; add `useMemo`, `useCallback`, or `memo` only for expensive derived data, measured re-render pressure, or stable props required by memoized children.
+- Use route-level or panel-level error boundaries around independently failing mission-control surfaces such as Opportunity Explorer, Page Preview/Page Studio, evidence panels, GSC panels, maps, agent timelines, and release verification panels.
+- Lazy-load heavy optional surfaces such as maps, Page Studio, preview tooling, chart-heavy reports, and trace viewers, but keep workflow-critical loading and error states explicit.
 </positive-directives>
 
 <absolute-constraints>
@@ -39,6 +44,9 @@ priority_schema: "critical > strong > guideline"
 - DO NOT create generic data-fetching custom hooks that duplicate TanStack Query behavior for server state.
 - DO NOT hide hook dependency problems by omitting dependencies.
 - DO NOT declare child components inside parent components unless the identity reset is intentional and documented.
+- DO NOT route user-triggered submits, approvals, deploys, rejects, or destructive actions through `useEffect` state toggles.
+- DO NOT collapse render/parse failures into empty states; empty means no data, error means data or rendering failed.
+- DO NOT add memoization hooks around trivial primitive string, boolean, or number calculations.
 </absolute-constraints>
 
 <conditional-logic>
@@ -50,4 +58,7 @@ THEN guard runtime availability and keep render paths non-throwing.
 
 IF a component has many local state values that represent one workflow state:
 THEN consider a discriminated union state model or reducer before adding unrelated `useState` calls.
+
+IF an Effect dependency list feels wrong:
+THEN change the code shape instead of silencing the dependency rule.
 </conditional-logic>

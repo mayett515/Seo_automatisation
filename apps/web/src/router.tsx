@@ -15,6 +15,7 @@ import { GscConnectScreen } from "./screens/gsc-connect";
 import { LoginScreen } from "./screens/login";
 import { MissionControlPage } from "./screens/mission-control";
 import { OpportunityExplorerScreen } from "./screens/opportunity-explorer";
+import { PagePreviewScreen, PagesScreen } from "./screens/pages";
 import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
 import { ProjectDashboardScreen } from "./screens/project-dashboard";
@@ -88,6 +89,9 @@ function AuthenticatedShell(props: { userEmail: string; onSignOut?: () => Promis
           </Link>
           <Link to="/projects/$projectId/opportunities" params={{ projectId: "demo-project" }}>
             Opportunities
+          </Link>
+          <Link to="/projects/$projectId/pages" params={{ projectId: "demo-project" }}>
+            Pages
           </Link>
           <Link to="/projects/$projectId/releases" params={{ projectId: "demo-project" }}>
             Releases
@@ -178,12 +182,12 @@ const projectChildRoutes = [
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/pages",
-    component: () => <PlaceholderScreen title="Local Pages" />
+    component: PagesScreen
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/pages/$pageId/preview",
-    component: () => <PlaceholderScreen title="Preview and Notes" />
+    component: PagePreviewScreen
   }),
   createRoute({
     getParentRoute: () => rootRoute,

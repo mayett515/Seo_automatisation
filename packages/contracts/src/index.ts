@@ -828,6 +828,74 @@ export const StaticSiteArtifactSchema = z
   })
   .strict();
 
+export const PageVersionSummarySchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: ProjectIdSchema,
+    pageProposalId: z.string().min(1),
+    opportunityId: z.string().min(1).optional(),
+    route: PagePathSchema,
+    primaryKeyword: z.string().trim().min(1).max(200),
+    uniquenessRationale: z.string().trim().min(1).max(2_000),
+    proposalStatus: z.string().trim().min(1).max(80),
+    sitemapReady: z.boolean(),
+    versionNumber: z.number().int().positive(),
+    status: PageVersionStatusSchema,
+    approvedAt: z.string().datetime().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
+
+export const PageVersionDetailSchema = PageVersionSummarySchema.extend({
+  pageJson: PageJsonSchema
+}).strict();
+
+export const PageVersionListResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    pageVersions: z.array(PageVersionSummarySchema).max(500)
+  })
+  .strict();
+
+export const PageProposalSummarySchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: ProjectIdSchema,
+    opportunityId: z.string().min(1).optional(),
+    route: PagePathSchema,
+    primaryKeyword: z.string().trim().min(1).max(200),
+    uniquenessRationale: z.string().trim().min(1).max(2_000),
+    status: z.string().trim().min(1).max(80),
+    sitemapReady: z.boolean(),
+    versionCount: z.number().int().nonnegative(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
+
+export const PageProposalDetailSchema = PageProposalSummarySchema.extend({
+  proposalJson: PageProposalJsonSchema.optional(),
+  versions: z.array(PageVersionSummarySchema).max(500)
+}).strict();
+
+export const PageProposalListResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    pageProposals: z.array(PageProposalSummarySchema).max(500)
+  })
+  .strict();
+
+export const PageVersionPreviewResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    pageVersionId: z.string().min(1),
+    route: PagePathSchema,
+    mode: z.literal("editor"),
+    file: StaticSiteFileSchema
+  })
+  .strict();
+
 export const PageProposalSchema = z.object({
   projectId: ProjectIdSchema,
   service: z.string().min(1),
@@ -1507,6 +1575,13 @@ export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSch
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type StaticSiteFile = z.output<typeof StaticSiteFileSchema>;
 export type StaticSiteArtifact = z.output<typeof StaticSiteArtifactSchema>;
+export type PageVersionSummary = z.output<typeof PageVersionSummarySchema>;
+export type PageVersionDetail = z.output<typeof PageVersionDetailSchema>;
+export type PageVersionListResponse = z.output<typeof PageVersionListResponseSchema>;
+export type PageProposalSummary = z.output<typeof PageProposalSummarySchema>;
+export type PageProposalDetail = z.output<typeof PageProposalDetailSchema>;
+export type PageProposalListResponse = z.output<typeof PageProposalListResponseSchema>;
+export type PageVersionPreviewResponse = z.output<typeof PageVersionPreviewResponseSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
 export type PageProposal = z.output<typeof PageProposalSchema>;
 export type ReleaseCheck = z.output<typeof ReleaseCheckSchema>;

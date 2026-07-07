@@ -26,6 +26,8 @@ You have been routed here because the task touches React UI, routing, forms, tab
 - Use TanStack Form for audit, onboarding, notes, approval, hold, and rollback forms.
 - Use TanStack Table for keywords, bundles, pages, reports, checks, and release items.
 - Use TanStack Store only for local/shared UI state that is not server state.
+- Build Page Studio as a constrained editor over structured PageJson, registry variants, legal movement helpers, notes, and preview. It is not a freeform component builder.
+- Keep product-state actions visible: approvals, rejects, holds, deploys, rollbacks, notes, ranking proof changes, and PageJson edits need pending/error/success feedback.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -35,6 +37,9 @@ You have been routed here because the task touches React UI, routing, forms, tab
 - DO NOT build a marketing landing page when the task asks for the app experience.
 - DO NOT expose deploy actions without release status, approval status, and risk context.
 - DO NOT clone the copied HTML inspiration as the product UI.
+- DO NOT let Page Studio React components write arbitrary HTML, CSS, className, style, JSX, or raw layout instructions into PageJson.
+- DO NOT bypass Page Studio domain helpers for section movement, replacement, variant switching, or publish-readiness decisions.
+- DO NOT treat query invalidation as the only user feedback for a productive customer-visible action.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -48,6 +53,9 @@ THEN use TanStack Query patterns instead of ad hoc effects.
 
 IF the task creates a customer decision flow:
 THEN include preview, note, approve, hold, reject, or rollback actions as appropriate.
+
+IF the task edits PageJson:
+THEN expose only registry-owned, schema-backed controls and render preview through the page-registry renderer core.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -76,4 +84,6 @@ const [releaseStatus, setReleaseStatus] = useState<ReleaseStatus>("loading");
 1. [ ] Did I use the correct TanStack primitive for route, server state, form, table, or UI state?
 2. [ ] Did customer-visible screens preserve preview and decision control?
 3. [ ] Did I avoid copying inspiration HTML as implementation truth?
+4. [ ] Did Page Studio controls edit structured PageJson only through legal registry/domain actions?
+5. [ ] Did product-state actions surface pending, success, and error feedback?
 </pre-flight-checklist>

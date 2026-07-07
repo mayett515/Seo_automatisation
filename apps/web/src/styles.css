@@ -319,6 +319,10 @@ a {
   grid-template-columns: 120px minmax(220px, 1fr) minmax(180px, 0.8fr) 110px;
 }
 
+.data-table__row--pages {
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) 130px 80px 120px;
+}
+
 .data-table--opportunities {
   min-width: 0;
 }
@@ -481,6 +485,19 @@ a {
   grid-template-columns: minmax(92px, max-content) minmax(0, 1fr) minmax(90px, max-content);
 }
 
+.preview-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.preview-frame {
+  width: 100%;
+  min-height: 680px;
+  border: 1px solid #d9ddd5;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -521,7 +538,8 @@ a {
   }
 
   .inline-form,
-  .data-table__row--tracking {
+  .data-table__row--tracking,
+  .data-table__row--pages {
     grid-template-columns: 1fr;
   }
 }
