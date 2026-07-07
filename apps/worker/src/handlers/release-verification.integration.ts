@@ -206,6 +206,107 @@ void describe(
       assert.deepEqual(checks[0]?.evidenceJson?.executionFailure, { message: "verifier network failure" });
     });
 
+    void it("does not rerun provider calls for already completed verification jobs", async () => {
+      const fixture = await createVerificationFixture(db, { releasePlanStatus: "deploying" });
+      await db
+        .update(releaseVerifications)
+        .set({
+          status: "live_healthy",
+          summary: "Post-deploy verification already passed.",
+          checkedAt: new Date("2026-06-30T12:00:00.000Z")
+        })
+        .where(eq(releaseVerifications.id, fixture.verificationId));
+      const verifier = new FakeVerificationPort();
+
+      const result = await executeReleaseVerification({
+        data: fixture.data,
+        db,
+        dependencies: { verification: verifier },
+        isFinalAttempt: true
+      });
+
+      assert.equal(result.status, "already_completed");
+      assert.equal(result.verificationId, fixture.verificationId);
+      assert.equal(result.verificationStatus, "live_healthy");
+      assert.equal(verifier.requests.length, 0);
+    });
+
+    void it("no-ops when another worker completes the verification before persistence", async () => {
+      const fixture = await createVerificationFixture(db, { releasePlanStatus: "deploying" });
+      await db.insert(releaseVerificationChecks).values({
+        verificationId: fixture.verificationId,
+        checkKey: "http_status_check",
+        scope: "domain",
+        severity: "blocker",
+        result: "passed",
+        message: "Existing verification check."
+      });
+      const verifier = new FakeVerificationPort();
+      verifier.beforeResolve = async () => {
+        await db
+          .update(releaseVerifications)
+          .set({
+            status: "live_healthy",
+            summary: "Another worker completed first.",
+            checkedAt: new Date("2026-06-30T12:00:00.000Z")
+          })
+          .where(eq(releaseVerifications.id, fixture.verificationId));
+      };
+
+      const result = await executeReleaseVerification({
+        data: fixture.data,
+        db,
+        dependencies: { verification: verifier },
+        isFinalAttempt: true
+      });
+
+      assert.equal(result.status, "stale_noop");
+      assert.equal(verifier.requests.length, 1);
+
+      const checks = await db
+        .select()
+        .from(releaseVerificationChecks)
+        .where(eq(releaseVerificationChecks.verificationId, fixture.verificationId));
+      assert.equal(checks.length, 1);
+      assert.equal(checks[0]?.message, "Existing verification check.");
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "provider_succeeded");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "deploying");
+    });
+
+    void it("projects failed blocker checks to rollback_recommended and failed release state", async () => {
+      const fixture = await createVerificationFixture(db, { releasePlanStatus: "deploying" });
+      const verifier = new FakeVerificationPort();
+      verifier.mode = "blocker";
+
+      const result = await executeReleaseVerification({
+        data: fixture.data,
+        db,
+        dependencies: { verification: verifier },
+        isFinalAttempt: true
+      });
+
+      assert.equal(result.status, "completed");
+      assert.equal(result.verificationStatus, "rollback_recommended");
+
+      const [verification] = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.id, fixture.verificationId));
+      assert.equal(verification?.status, "rollback_recommended");
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rollback_recommended");
+      assert.equal(deployment?.verificationStatus, "rollback_recommended");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "failed");
+      assert.equal(releasePlan?.deployedAt, null);
+    });
+
     void it("rejects unsafe verification target routes in the worker path", async () => {
       const fixture = await createVerificationFixture(db, {
         targetUrl: "https://attacker.example/dachreinigung/"
@@ -341,7 +442,8 @@ async function createVerificationFixture(
 }
 
 class FakeVerificationPort implements VerificationPort {
-  mode: "healthy" | "throw" = "healthy";
+  mode: "healthy" | "throw" | "blocker" = "healthy";
+  beforeResolve: (() => Promise<void> | void) | undefined;
   readonly requests: Array<{
     releasePlanId: string;
     deploymentId?: string;
@@ -349,7 +451,7 @@ class FakeVerificationPort implements VerificationPort {
     trackingExpected?: boolean;
   }> = [];
 
-  verifyRelease(input: {
+  async verifyRelease(input: {
     releasePlanId: string;
     deploymentId?: string;
     liveUrls: string[];
@@ -361,28 +463,43 @@ class FakeVerificationPort implements VerificationPort {
       return Promise.reject(new Error("verifier network failure"));
     }
 
-    return Promise.resolve(
-      ReleaseVerificationSchema.parse({
-        releasePlanId: input.releasePlanId,
-        deploymentId: input.deploymentId,
-        verificationStatus: "live_healthy",
-        summary: "Post-deploy verification passed.",
-        checkedAt: "2026-06-30T12:00:00.000Z",
-        checks: [
-          releaseCheck({
-            checkKey: "http_status_check",
-            scope: "domain",
-            severity: "blocker",
-            result: "passed",
-            message: "Live route returned a successful HTTP response.",
-            evidence: {
-              targetUrl: input.liveUrls[0],
-              observed: { statusCode: 200 }
-            }
-          })
-        ]
-      })
-    );
+    await this.beforeResolve?.();
+
+    return ReleaseVerificationSchema.parse({
+      releasePlanId: input.releasePlanId,
+      deploymentId: input.deploymentId,
+      verificationStatus: "live_healthy",
+      summary:
+        this.mode === "blocker" ? "Post-deploy verification found blockers." : "Post-deploy verification passed.",
+      checkedAt: "2026-06-30T12:00:00.000Z",
+      checks: [
+        releaseCheck(
+          this.mode === "blocker"
+            ? {
+                checkKey: "http_status_check",
+                scope: "domain",
+                severity: "blocker",
+                result: "failed",
+                message: "Live route returned a failing HTTP response.",
+                evidence: {
+                  targetUrl: input.liveUrls[0],
+                  observed: { statusCode: 500 }
+                }
+              }
+            : {
+                checkKey: "http_status_check",
+                scope: "domain",
+                severity: "blocker",
+                result: "passed",
+                message: "Live route returned a successful HTTP response.",
+                evidence: {
+                  targetUrl: input.liveUrls[0],
+                  observed: { statusCode: 200 }
+                }
+              }
+        )
+      ]
+    });
   }
 }
 

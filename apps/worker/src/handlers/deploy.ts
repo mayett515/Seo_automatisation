@@ -28,7 +28,7 @@ import {
   rollbackPoints
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq, inArray, isNotNull, not, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, not, or, sql } from "drizzle-orm";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 export type DeploymentRow = typeof deployments.$inferSelect;
@@ -875,7 +875,7 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         .update(releasePlans)
         .set({
           status: "live",
-          deployedAt: new Date(),
+          deployedAt: sql`coalesce(${releasePlans.deployedAt}, now())`,
           updatedAt: new Date()
         })
         .where(and(eq(releasePlans.id, data.releasePlanId), eq(releasePlans.projectId, data.projectId)));
