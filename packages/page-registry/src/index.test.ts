@@ -9,6 +9,8 @@ import {
   pageRegistrySummary,
   derivePageRegistrySeoFacts,
   renderApprovedReleaseArtifact,
+  renderPagePreviewArtifact,
+  renderPagePreviewFile,
   validatePageJsonAgainstRegistry
 } from "./index.js";
 
@@ -238,6 +240,63 @@ void describe("page registry", () => {
     assert.match(body, /<script type="application\/ld\+json">/u);
     assert.match(body, /"@type":"LocalBusiness"/u);
     assert.match(body, /@layer reset, tokens, base, primitives, components, sections/u);
+  });
+
+  void it("renders deploy preview output byte-identical to the deploy artifact", () => {
+    const page = pageJson({
+      seo: {
+        title: "Dachreinigung Dachau",
+        metaDescription: "Lokale Dachreinigung in Dachau.",
+        canonicalPath: "/dachreinigung-dachau/",
+        robots: "noindex",
+        jsonLd: [],
+        sitemapReady: false
+      }
+    });
+    const deployArtifact = renderApprovedReleaseArtifact({
+      projectId: "project-1",
+      releasePlanId: "release-1",
+      deploymentKey: "release_plan:release-1",
+      createdAt: "2026-06-29T00:00:00.000Z",
+      pages: [
+        {
+          releasePlanItemId: "preview",
+          pageVersionId: null,
+          targetUrl: "/dachreinigung-dachau/",
+          targetSubdomain: null,
+          action: "create",
+          pageJson: page
+        }
+      ]
+    });
+    const previewArtifact = renderPagePreviewArtifact({
+      pageJson: page,
+      targetUrl: "/dachreinigung-dachau/",
+      mode: "deploy",
+      previewId: "preview"
+    });
+
+    assert.deepEqual(previewArtifact, deployArtifact);
+  });
+
+  void it("renders editor preview with noindex while sharing the static renderer", () => {
+    const file = renderPagePreviewFile({
+      pageJson: pageJson({
+        seo: {
+          title: "Dachreinigung Dachau",
+          metaDescription: "Lokale Dachreinigung in Dachau.",
+          canonicalPath: "/dachreinigung-dachau/",
+          robots: "index",
+          jsonLd: [],
+          sitemapReady: false
+        }
+      }),
+      targetUrl: "/dachreinigung-dachau/"
+    });
+
+    assert.equal(file.path, "/dachreinigung-dachau/index.html");
+    assert.match(file.body, /<meta name="robots" content="noindex">/u);
+    assert.match(file.body, /@layer reset, tokens, base, primitives, components, sections/u);
   });
 
   void it("derives SEO facts from typed PageJson and registry-owned props", () => {

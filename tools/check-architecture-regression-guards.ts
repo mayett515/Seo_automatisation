@@ -218,6 +218,20 @@ requireIncludes(
   "PageJson safety scan must reject literal class keys, not only className"
 );
 
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  "renderPagePreviewArtifact",
+  "page-registry-renderer-boundary",
+  "preview rendering must live in page-registry and share the static renderer core"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.test.ts",
+  "byte-identical to the deploy artifact",
+  "page-registry-renderer-boundary",
+  "preview rendering must have a deploy parity test"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

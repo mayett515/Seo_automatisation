@@ -171,7 +171,7 @@ It also gives the next implementation slice a concrete target:
 6. Add page-studio movement and composition helpers: required frame sections, legal ordering, legal movement, replacement, and variant switching. Done in the third Page Registry slice.
 7. Retarget release preflight and static rendering to typed PageJson, including the internal CSS foundation. Done in the fourth Page Registry slice.
    7a. Harden preflight/render parity after review: preflight must call registry validation before deriving facts; literal `class` keys are rejected by the PageJson safety scan; non-rendering actions are blocked until directive artifacts exist. Done in the fourth Page Registry hardening slice.
-8. Add preview rendering that shares the static renderer core and theme tokens.
+8. Add preview rendering that shares the static renderer core and theme tokens. Done in the fifth Page Registry slice.
 9. Wire project-scoped proposal/version reads.
 10. Add section notes anchored to stable section ids.
 11. Freeze approved versions and revalidate PageJson during release preflight.

@@ -623,7 +623,7 @@ PageJson/PageProposalJson contracts + page version status vocabulary (implemente
 -> packages/page-registry with a small Local SEO section set (implemented 2026-07-07)
 -> pure page-studio movement/composition helpers (implemented 2026-07-07)
 -> retarget SEO preflight and static rendering to typed PageJson with an internal CSS foundation (implemented 2026-07-07)
--> preview renderer sharing the static/deploy renderer core and theme tokens
+-> preview renderer sharing the static/deploy renderer core and theme tokens (implemented 2026-07-07)
 -> project-scoped proposal/version read path
 -> section notes anchored to stable section ids
 -> approval freezes one concrete pageVersionId

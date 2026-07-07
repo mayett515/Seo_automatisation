@@ -62,6 +62,17 @@ export type PageRegistryValidationResult =
   | { success: true; pageJson: PageJson }
   | { success: false; issues: PageRegistryValidationIssue[] };
 
+export type PagePreviewRenderMode = "editor" | "deploy";
+
+export type RenderPagePreviewInput = {
+  pageJson: PageJson;
+  targetUrl?: string;
+  mode?: PagePreviewRenderMode;
+  action?: Extract<ReleaseItemAction, "create" | "update">;
+  previewId?: string;
+  pageVersionId?: string | null;
+};
+
 const textShort = z.string().trim().min(1).max(180);
 const textMedium = z.string().trim().min(1).max(500);
 const textLong = z.string().trim().min(1).max(1_500);
@@ -430,6 +441,37 @@ export function renderApprovedReleaseArtifact(
   });
 }
 
+export function renderPagePreviewArtifact(
+  input: RenderPagePreviewInput,
+  registry: PageRegistry = pageRegistry
+): StaticSiteArtifact {
+  return StaticSiteArtifactSchema.parse({
+    files: [renderPagePreviewFile(input, registry)]
+  });
+}
+
+export function renderPagePreviewFile(
+  input: RenderPagePreviewInput,
+  registry: PageRegistry = pageRegistry
+): StaticSiteFile {
+  const action = input.action ?? "create";
+  const targetUrl = input.targetUrl ?? input.pageJson.route;
+  const page = {
+    releasePlanItemId: input.previewId ?? "preview",
+    pageVersionId: input.pageVersionId ?? null,
+    targetUrl,
+    targetSubdomain: null,
+    action,
+    pageJson: input.pageJson
+  } satisfies RenderableArtifactPage;
+  const robots = input.mode === "deploy" ? undefined : "noindex";
+
+  return renderStaticSiteFile(page, registry, {
+    failureContext: `preview '${targetUrl}'`,
+    robots
+  });
+}
+
 export function targetUrlToHtmlPath(targetUrl: string): string {
   const url =
     targetUrl.startsWith("http://") || targetUrl.startsWith("https://")
@@ -444,20 +486,24 @@ export function targetUrlToHtmlPath(targetUrl: string): string {
   return /\.[a-z0-9]+$/iu.test(pathname) ? pathname : `${pathname}/index.html`;
 }
 
-function renderStaticSiteFile(page: RenderableArtifactPage, registry: PageRegistry): StaticSiteFile {
+function renderStaticSiteFile(
+  page: RenderableArtifactPage,
+  registry: PageRegistry,
+  options: { failureContext?: string; robots?: "index" | "noindex" } = {}
+): StaticSiteFile {
   const validation = validatePageJsonAgainstRegistry(page.pageJson, registry);
 
   if (!validation.success) {
+    const context = options.failureContext ?? `release item '${page.releasePlanItemId}'`;
+
     throw new Error(
-      `Cannot render PageJson for release item '${page.releasePlanItemId}': ${validation.issues
-        .map((issue) => issue.code)
-        .join(", ")}`
+      `Cannot render PageJson for ${context}: ${validation.issues.map((issue) => issue.code).join(", ")}`
     );
   }
 
   return {
     path: targetUrlToHtmlPath(page.targetUrl),
-    body: renderPageHtml(page, validation.pageJson),
+    body: renderPageHtml(page, validation.pageJson, options.robots),
     contentType: "text/html; charset=utf-8"
   };
 }
@@ -466,10 +512,14 @@ function isRenderableArtifactPage(page: ApprovedReleaseArtifactPage): page is Re
   return (page.action === "create" || page.action === "update") && page.pageJson !== null;
 }
 
-function renderPageHtml(page: RenderableArtifactPage, pageJson: PageJson): string {
+function renderPageHtml(
+  page: RenderableArtifactPage,
+  pageJson: PageJson,
+  robotsOverride?: "index" | "noindex"
+): string {
   const facts = derivePageRegistrySeoFacts(pageJson);
   const canonical = resolveCanonicalUrl(facts.canonicalPath, page.targetUrl);
-  const robots = resolveRenderedRobots(page.action) ?? facts.robotsIntent;
+  const robots = robotsOverride ?? resolveRenderedRobots(page.action) ?? facts.robotsIntent;
   const jsonLdScript = renderJsonLdScript(pageJson.seo.jsonLd);
 
   return `<!doctype html>

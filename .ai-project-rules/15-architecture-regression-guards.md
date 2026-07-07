@@ -144,6 +144,7 @@ Page Registry render/preflight boundary
   Renderer and preflight must agree on release-resolved robots values.
   Release preflight blocks actions that do not yet materialize to rendered files or explicit directive artifacts.
   PageJson safety guards reject raw markup, scripts, event handlers, inline styles, className, and literal class keys.
+  Preview rendering must call the page-registry renderer core, and deploy-preview output must stay byte-identical to deploy artifact output for the same PageJson.
 ```
 
 </context>

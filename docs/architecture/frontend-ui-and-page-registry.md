@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, and deterministic static rendering/CSS for approved PageJson. Preview rendering, Page Studio UI integration, richer section families, and note/approval surfaces remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. Page Studio UI integration, richer section families, and note/approval surfaces remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -276,7 +276,7 @@ packages/ai
 
 Every page section needs a stable section instance id so notes, validation errors, diffs, and future AI patches remain attached when the section moves.
 
-Preview and deploy must share the same renderer core. The static release renderer now lives in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON. Preview rendering should reuse that same core rather than introducing a parallel renderer.
+Preview and deploy must share the same renderer core. The static release renderer now lives in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON. The pure preview renderer reuses that same core: editor/staging preview emits `noindex`, while deploy-preview mode is byte-identical to the deploy static artifact for the same PageJson and target URL.
 
 The first renderer CSS foundation should stay inside `packages/page-registry`:
 
