@@ -905,7 +905,13 @@ function latestRunBySubject(runs: AgentRunSummary[]): Map<string, AgentRunSummar
   const latest = new Map<string, AgentRunSummary>();
 
   for (const run of runs) {
-    if (run.subjectId && !latest.has(run.subjectId)) {
+    if (!run.subjectId) {
+      continue;
+    }
+
+    // For page_brief_draft runs, subjectId is the source opportunity id.
+    const existing = latest.get(run.subjectId);
+    if (!existing || new Date(run.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
       latest.set(run.subjectId, run);
     }
   }
