@@ -87,6 +87,7 @@ Rejected. Verification is evidence-rich and route/check-specific. Collapsing it 
 - Do not explain `releasePlans.status = "failed"` without checking deployment and verification detail rows.
 - Do not show customer-facing "deploy failed" language for a release that actually deployed but has `deployments.status = "rollback_recommended"`.
 - Do not treat provider success as live-health success.
+- Do not project `releasePlans.status = "live"` from `deployments.status = "provider_succeeded"`; only post-deploy verification outcomes may project the coarse release plan to `live`.
 - Do not add UI/reporting copy that ignores `release_verification_checks` evidence when verification exists.
 - Do not replace detailed verification evidence with a single release-plan status.
 

@@ -9,7 +9,7 @@
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "lint": "eslint .",
-    "text:check": "tsx tools/check-text-health.ts",
+    "text:check": "tsx tools/check-text-health.ts && tsx tools/check-architecture-regression-guards.ts",
     "typecheck": "corepack pnpm -r --if-present --workspace-concurrency=1 run typecheck",
     "test": "corepack pnpm -r --if-present --workspace-concurrency=1 run test",
     "test:browser": "playwright test",

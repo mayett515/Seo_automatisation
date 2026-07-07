@@ -28,6 +28,9 @@ THEN you MUST load and comply with: `.ai-stack-rules/00-system-index.md`.
 IF the task touches architecture style, layering, Clean Architecture dependency direction, Hexagonal ports/adapters, bounded contexts, composition roots, modular monolith vs microservices, or where logic belongs:
 THEN you MUST load and comply with: `.ai-project-rules/14-architecture-direction.md`.
 
+IF the task touches repeated review findings, regression guards, persisted JSON read/write seams, provider mutations in API routes, release live-truth projection, deploy artifact approval, or stale implemented/deferred roadmap lists:
+THEN you MUST load and comply with: `.ai-project-rules/15-architecture-regression-guards.md`.
+
 IF the task touches customer approval, previews, notes, generated suggestions, or productive customer changes:
 THEN you MUST load and comply with: `.ai-project-rules/03-controlled-automation.md`.
 
@@ -79,6 +82,7 @@ THEN you MUST load and comply with: `.ai-project-rules/13-seo-opportunity-planni
 - Use `.ai-project-rules/12-local-seo-page-quality-gate.md` as the reusable checklist for generated local SEO pages before preview approval, deploy, and report handoff.
 - Use `.ai-project-rules/13-seo-opportunity-planning.md` when deciding future markets, page opportunities, keyword tiers, or execution sequence.
 - Use `.ai-project-rules/14-architecture-direction.md` when judging implementation quality, dependency direction, module boundaries, and provider isolation.
+- Use `.ai-project-rules/15-architecture-regression-guards.md` when touching a seam that previous reviews identified, especially strict persisted JSON, provider mutation ownership, release live truth, deploy artifact approval, and roadmap drift.
 - Use `.ai-stack-rules/00-system-index.md` for stack-specific implementation guardrails; it complements but does not override `.ai-rules/` or project product rules.
 </positive-directives>
 
