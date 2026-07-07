@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   Body,
@@ -15,11 +16,15 @@ import {
   UseGuards
 } from "@nestjs/common";
 import {
+  type AiReasoningEnqueueFailureCode,
+  CreatePageProposalRunRequestSchema,
   CreatePageSectionNoteRequestSchema,
   PageJsonSchema,
+  PageProposalJobDataSchema,
   PageProposalDetailSchema,
   PageProposalJsonSchema,
   PageProposalListResponseSchema,
+  PageProposalQueueResponseSchema,
   PageProposalSummarySchema,
   PageSectionNoteFieldPathSchema,
   PageSectionNoteListResponseSchema,
@@ -28,10 +33,12 @@ import {
   PageVersionListResponseSchema,
   PageVersionPreviewResponseSchema,
   PageVersionSummarySchema,
+  type CreatePageProposalRunRequest,
   type CreatePageSectionNoteRequest,
   type PageJson,
   type PageProposalDetail,
   type PageProposalListResponse,
+  type PageProposalQueueResponse,
   type PageProposalSummary,
   type PageSectionNote,
   type PageSectionNoteListResponse,
@@ -40,9 +47,18 @@ import {
   type PageVersionPreviewResponse,
   type PageVersionSummary
 } from "@localseo/contracts";
-import { pageProposals, pageSectionNotes, pageVersions, type DatabaseClient } from "@localseo/db";
+import {
+  agentRuns,
+  isDatabaseUniqueViolation,
+  opportunities,
+  pageProposals,
+  pageSectionNotes,
+  pageVersions,
+  type DatabaseClient
+} from "@localseo/db";
 import { renderPagePreviewFile, validatePageJsonAgainstRegistry } from "@localseo/page-registry";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
@@ -60,7 +76,10 @@ type PageVersionRow = Awaited<ReturnType<typeof selectPageVersionRows>>[number];
 
 @Injectable()
 export class PagesService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(QueueProducerService) private readonly queues: QueueProducerService
+  ) {}
 
   async listPageVersions(projectId: string): Promise<PageVersionListResponse> {
     const db = this.database.requireDb();
@@ -80,6 +99,152 @@ export class PagesService {
     return PageProposalListResponseSchema.parse({
       projectId,
       pageProposals: proposalRows.map((row) => pageProposalSummaryToResponse(row, versionCounts.get(row.id) ?? 0))
+    });
+  }
+
+  async queuePageProposal(
+    projectId: string,
+    input: CreatePageProposalRunRequest,
+    userId?: string
+  ): Promise<PageProposalQueueResponse> {
+    if (!this.database.isConfigured()) {
+      return PageProposalQueueResponseSchema.parse({
+        jobId: randomUUID(),
+        projectId,
+        type: "page_generation",
+        status: "dry_run",
+        opportunityId: input.opportunityId,
+        createdBy: userId,
+        message: "Database is not configured. Page proposal persistence is in explicit dry-run mode.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!this.queues.isQueueConfigured("page-generation")) {
+      const jobId = randomUUID();
+      const jobData = PageProposalJobDataSchema.parse({
+        projectId,
+        runId: jobId,
+        opportunityId: input.opportunityId,
+        triggeredByUserId: userId ?? null,
+        triggerSource: "user_action"
+      });
+
+      await this.queues.enqueue({
+        queueName: "page-generation",
+        jobName: "page_generation",
+        jobId,
+        data: jobData,
+        audit: {
+          projectId,
+          type: "page_generation",
+          inputRef: jobId,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
+        }
+      });
+
+      return PageProposalQueueResponseSchema.parse({
+        jobId,
+        projectId,
+        type: "page_generation",
+        status: "dry_run",
+        runId: undefined,
+        opportunityId: input.opportunityId,
+        inputRef: jobId,
+        createdBy: userId,
+        message: "Page generation queue is not configured. This is an explicit dry-run response.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const db = this.database.requireDb();
+    await assertOpportunityForPageProposal(db, projectId, input.opportunityId);
+
+    const activeRun = await findActivePageProposalRun(db, projectId);
+    if (activeRun) {
+      return activePageProposalResponse(activeRun);
+    }
+
+    const runId = randomUUID();
+
+    try {
+      await db.insert(agentRuns).values({
+        id: runId,
+        projectId,
+        task: "page_brief_draft",
+        status: "queued",
+        diagnosticsJson: {
+          opportunityId: input.opportunityId
+        }
+      });
+    } catch (error) {
+      if (isDatabaseUniqueViolation(error)) {
+        const conflictingRun = await findActivePageProposalRun(db, projectId);
+        if (conflictingRun) {
+          return activePageProposalResponse(conflictingRun);
+        }
+      }
+
+      throw error;
+    }
+
+    let enqueued: boolean;
+
+    try {
+      enqueued = await this.queues.enqueue({
+        queueName: "page-generation",
+        jobName: "page_generation",
+        jobId: runId,
+        data: PageProposalJobDataSchema.parse({
+          projectId,
+          runId,
+          opportunityId: input.opportunityId,
+          triggeredByUserId: userId ?? null,
+          triggerSource: "user_action"
+        }),
+        options: {
+          attempts: 3,
+          backoff: {
+            type: "exponential",
+            delay: 5000
+          }
+        },
+        audit: {
+          projectId,
+          type: "page_generation",
+          inputRef: runId,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
+        }
+      });
+    } catch (error) {
+      await markPageProposalQueueFailure(db, runId, "queue_enqueue_failed", normalizePageProposalQueueFailure(error));
+      throw error;
+    }
+
+    if (!enqueued) {
+      await markPageProposalQueueFailure(
+        db,
+        runId,
+        "queue_not_configured",
+        "Page generation queue was not configured after run creation."
+      );
+    }
+
+    return PageProposalQueueResponseSchema.parse({
+      jobId: runId,
+      projectId,
+      runId,
+      opportunityId: input.opportunityId,
+      type: "page_generation",
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: runId,
+      createdBy: userId,
+      message: enqueued ? undefined : "Page generation queue is not configured. This is an explicit dry-run response.",
+      createdAt: new Date().toISOString()
     });
   }
 
@@ -263,6 +428,18 @@ class PagesController {
     return this.pages.listPageProposals(projectId);
   }
 
+  @Post("proposals/runs")
+  @RequireProjectPermission("page:propose")
+  runPageProposal(@Param("projectId") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
+    const parsed = CreatePageProposalRunRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Page proposal generation requires a project-owned opportunityId.");
+    }
+
+    return this.pages.queuePageProposal(projectId, parsed.data, persistedActorUserId(request));
+  }
+
   @Get("proposals/:pageProposalId")
   getProposal(@Param("projectId") projectId: string, @Param("pageProposalId") pageProposalId: string) {
     return this.pages.getPageProposal(projectId, pageProposalId);
@@ -311,6 +488,84 @@ class PagesController {
   providers: [PagesService]
 })
 export class PagesModule {}
+
+async function assertOpportunityForPageProposal(db: Db, projectId: string, opportunityId: string): Promise<void> {
+  if (!isPersistedId(opportunityId)) {
+    throw new BadRequestException("Opportunity id must be a UUID.");
+  }
+
+  const [opportunity] = await db
+    .select({ id: opportunities.id, status: opportunities.status })
+    .from(opportunities)
+    .where(and(eq(opportunities.id, opportunityId), eq(opportunities.projectId, projectId)))
+    .limit(1);
+
+  if (!opportunity) {
+    throw new NotFoundException("Opportunity was not found for this project.");
+  }
+
+  if (opportunity.status === "rejected") {
+    throw new BadRequestException("Rejected opportunities cannot create page proposals.");
+  }
+}
+
+async function findActivePageProposalRun(db: Db, projectId: string) {
+  const [run] = await db
+    .select()
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.projectId, projectId),
+        eq(agentRuns.task, "page_brief_draft"),
+        inArray(agentRuns.status, ["queued", "running"])
+      )
+    )
+    .orderBy(desc(agentRuns.createdAt))
+    .limit(1);
+
+  return run;
+}
+
+function activePageProposalResponse(run: typeof agentRuns.$inferSelect): PageProposalQueueResponse {
+  const diagnostics = recordFromUnknown(run.diagnosticsJson);
+
+  return PageProposalQueueResponseSchema.parse({
+    jobId: run.id,
+    projectId: run.projectId,
+    runId: run.id,
+    opportunityId: stringFromUnknown(diagnostics.opportunityId),
+    type: "page_generation",
+    status: "already_active",
+    inputRef: run.inputRef ?? run.id,
+    message: "A page proposal run is already queued or running for this project.",
+    createdAt: run.createdAt.toISOString()
+  });
+}
+
+async function markPageProposalQueueFailure(
+  db: Db,
+  runId: string,
+  failureCode: AiReasoningEnqueueFailureCode,
+  message: string
+): Promise<void> {
+  await db
+    .update(agentRuns)
+    .set({
+      status: "failed",
+      failureCode,
+      diagnosticsJson: {
+        message
+      },
+      completedAt: new Date(),
+      updatedAt: new Date()
+    })
+    .where(eq(agentRuns.id, runId));
+}
+
+function normalizePageProposalQueueFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : "page_generation_queue_failed";
+  return message.slice(0, 500);
+}
 
 async function selectPageProposalRows(db: Db, projectId: string, pageProposalId?: string) {
   return db
@@ -526,4 +781,12 @@ function isPersistedId(value: string): boolean {
 function persistedActorUserId(request: RequestWithAuth): string | undefined {
   const userId = request.auth?.user.id;
   return userId && isPersistedId(userId) ? userId : undefined;
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }

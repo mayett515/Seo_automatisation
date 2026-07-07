@@ -288,6 +288,104 @@ requireIncludes(
   "recovery tests must prove provider mutation uncertainty does not generic re-enqueue"
 );
 
+requireIncludes(
+  "apps/worker/src/reasoning-policy.ts",
+  "policyForReasoningTask",
+  "agent-constraint-policy",
+  "worker agent tasks must use named reasoning policy profiles instead of inline ad hoc tool grants"
+);
+
+requireIncludes(
+  "apps/worker/src/reasoning-policy.test.ts",
+  "fails closed for reasoning tasks without a named policy profile",
+  "agent-constraint-policy",
+  "reasoning policy tests must prove unprofiled tasks fail closed"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/opportunity-scout.ts",
+  'policyForReasoningTask("opportunity_scout")',
+  "agent-constraint-policy",
+  "Opportunity Scout must keep using its named read/analyze-only policy profile"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  'policyForReasoningTask("page_brief_draft")',
+  "page-proposal-worker",
+  "Page Proposal worker must use the named ADR 0019 policy profile"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  "PageProposalJsonSchema.safeParse",
+  "page-proposal-worker",
+  "Page Proposal worker must parse model output through PageProposalJsonSchema before use"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  "evaluatePageProposalOutput",
+  "page-proposal-worker",
+  "Page Proposal worker must run deterministic page proposal QA before persistence"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  "validatePageJsonAgainstRegistry",
+  "page-proposal-worker",
+  "Page Proposal worker must validate generated PageJson against the registry allow-list"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  "decidePageStudioPublishReadiness",
+  "page-proposal-worker",
+  "Page Proposal worker must run Page Studio composition/publish-readiness checks"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  "renderPagePreviewFile",
+  "page-proposal-worker",
+  "Page Proposal worker must prove generated PageJson renders through the shared preview renderer"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  'status: "draft"',
+  "page-proposal-worker",
+  "Page Proposal worker may persist draft proposals only, not approved proposals"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  'status: "preview"',
+  "page-proposal-worker",
+  "Page Proposal worker may persist preview page versions only, not approved page versions"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "jobId: runId",
+  "page-proposal-worker",
+  "Page Proposal enqueue path must use the durable agent run id as the BullMQ job id"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  'queueName: "page-generation"',
+  "page-proposal-worker",
+  "Page Proposal enqueue path must route through the page-generation queue"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  "page_proposals_project_route_idx",
+  "page-proposal-worker",
+  "Page Proposal routes must stay DB-unique per project"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

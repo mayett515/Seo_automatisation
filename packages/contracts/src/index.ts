@@ -167,6 +167,7 @@ export const aiReasoningEnqueueFailureCodes = ["queue_enqueue_failed", "queue_no
 export const opportunityClassifications = ["proven_win", "near_term_target", "internal_radar", "rejected"] as const;
 export const opportunityLifecycleStatuses = ["new", "monitoring", "held", "rejected", "brief_created"] as const;
 export const opportunityScoutQueueStatuses = [...jobStatuses, "already_active"] as const;
+export const pageProposalQueueStatuses = [...jobStatuses, "already_active"] as const;
 
 export const opportunityRecommendedActions = [
   "monitor",
@@ -349,6 +350,7 @@ export const AiReasoningEnqueueFailureCodeSchema = z.enum(aiReasoningEnqueueFail
 export const OpportunityClassificationSchema = z.enum(opportunityClassifications);
 export const OpportunityLifecycleStatusSchema = z.enum(opportunityLifecycleStatuses);
 export const OpportunityScoutQueueStatusSchema = z.enum(opportunityScoutQueueStatuses);
+export const PageProposalQueueStatusSchema = z.enum(pageProposalQueueStatuses);
 export const OpportunityRecommendedActionSchema = z.enum(opportunityRecommendedActions);
 export const OpportunitySuggestedPageTypeSchema = z.enum(opportunitySuggestedPageTypes);
 export const EvidenceSourceTypeSchema = z.enum(evidenceSourceTypes);
@@ -442,6 +444,12 @@ export const CreateWebsiteImportRequestSchema = z.object({
 export const CreateOpportunityScoutRunRequestSchema = z.object({
   maxBriefs: z.number().int().positive().max(12).optional()
 });
+
+export const CreatePageProposalRunRequestSchema = z
+  .object({
+    opportunityId: z.string().trim().min(1).max(200)
+  })
+  .strict();
 
 export const HttpUrlSchema = z
   .string()
@@ -650,6 +658,18 @@ export const OpportunityScoutJobDataSchema = z.object({
   triggeredByUserId: z.string().min(1).nullable().optional(),
   triggerSource: z.string().min(1).optional()
 });
+
+export const PageProposalJobDataSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    runId: z.string().min(1),
+    opportunityId: z.string().min(1),
+    maxAttempts: z.number().int().positive().optional(),
+    jobRunId: z.string().min(1).optional(),
+    triggeredByUserId: z.string().min(1).nullable().optional(),
+    triggerSource: z.string().min(1).optional()
+  })
+  .strict();
 
 export const SerpScoutJobDataSchema = SerpScoutRequestSchema.extend({
   snapshotId: z.string().min(1),
@@ -1509,6 +1529,11 @@ export const OpportunityScoutQueueResponseSchema = QueueJobSchema.extend({
   status: OpportunityScoutQueueStatusSchema,
   runId: z.string().min(1).optional()
 });
+export const PageProposalQueueResponseSchema = QueueJobSchema.extend({
+  status: PageProposalQueueStatusSchema,
+  runId: z.string().min(1).optional(),
+  opportunityId: z.string().min(1).optional()
+});
 export const SerpScoutQueueResponseSchema = QueueJobSchema.extend({
   snapshotId: z.string().min(1).optional(),
   query: z.string().trim().min(1).max(200).optional()
@@ -1613,6 +1638,7 @@ export type RollbackJobData = z.output<typeof RollbackJobDataSchema>;
 export type ReleaseVerificationJobData = z.output<typeof ReleaseVerificationJobDataSchema>;
 export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
 export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
+export type PageProposalJobData = z.output<typeof PageProposalJobDataSchema>;
 export type TechnicalAuditJobData = z.output<typeof TechnicalAuditJobDataSchema>;
 export type PageEvidenceRef = z.output<typeof PageEvidenceRefSchema>;
 export type PageGeneration = z.output<typeof PageGenerationSchema>;
@@ -1656,6 +1682,7 @@ export type TechnicalAuditFinding = z.output<typeof TechnicalAuditFindingSchema>
 export type TechnicalAuditRun = z.output<typeof TechnicalAuditRunSchema>;
 export type LatestTechnicalAuditResponse = z.output<typeof LatestTechnicalAuditResponseSchema>;
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
+export type CreatePageProposalRunRequest = z.output<typeof CreatePageProposalRunRequestSchema>;
 export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;
 export type UpdateRankingProofStatusRequest = z.output<typeof UpdateRankingProofStatusRequestSchema>;
 export type SerpScoutRequest = z.output<typeof SerpScoutRequestSchema>;
@@ -1692,6 +1719,7 @@ export type HealthProbeResponse = z.output<typeof HealthProbeResponseSchema>;
 export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
 export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
+export type PageProposalQueueResponse = z.output<typeof PageProposalQueueResponseSchema>;
 export type SerpScoutQueueResponse = z.output<typeof SerpScoutQueueResponseSchema>;
 export type TechnicalAuditQueueResponse = z.output<typeof TechnicalAuditQueueResponseSchema>;
 export type ReleaseVerificationQueueResponse = z.output<typeof ReleaseVerificationQueueResponseSchema>;
@@ -1701,6 +1729,7 @@ export type AiReasoningEnqueueFailureCode = z.output<typeof AiReasoningEnqueueFa
 export type AgentRunFailureCode = z.output<typeof AgentRunFailureCodeSchema>;
 export type OpportunityLifecycleStatus = z.output<typeof OpportunityLifecycleStatusSchema>;
 export type OpportunityScoutQueueStatus = z.output<typeof OpportunityScoutQueueStatusSchema>;
+export type PageProposalQueueStatus = z.output<typeof PageProposalQueueStatusSchema>;
 export type ReleaseVerificationQueueStatus = z.output<typeof ReleaseVerificationQueueStatusSchema>;
 export type OpportunityExplorerOpportunity = z.output<typeof OpportunityExplorerOpportunitySchema>;
 export type OpportunityExplorerListResponse = z.output<typeof OpportunityExplorerListResponseSchema>;

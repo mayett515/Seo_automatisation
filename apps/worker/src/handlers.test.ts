@@ -10,9 +10,11 @@ import {
   type SerpScoutResult
 } from "@localseo/adapters";
 import {
+  PageProposalJsonSchema,
   OpportunityScoutOutputSchema,
   type GscSearchAnalyticsRow,
   type OpportunityScoutOutput,
+  type PageProposalJson,
   type SerpSnapshot
 } from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
@@ -32,6 +34,14 @@ import {
   parseOpportunityScoutJobData,
   type OpportunityScoutRepository
 } from "./handlers/opportunity-scout.js";
+import {
+  executePageProposal,
+  PageProposalConfigurationError,
+  PageProposalEvidenceError,
+  PageProposalWorkflowError,
+  parsePageProposalJobData,
+  type PageProposalRepository
+} from "./handlers/page-proposal.js";
 import { RollbackConfigurationError, RollbackEvidenceError, RollbackProviderFailedError } from "./handlers/rollback.js";
 import {
   executeSerpScout,
@@ -200,6 +210,36 @@ void describe("parseOpportunityScoutJobData", () => {
   });
 });
 
+void describe("parsePageProposalJobData", () => {
+  void it("accepts valid page proposal job data", () => {
+    assert.deepEqual(
+      parsePageProposalJobData({
+        projectId: "project-1",
+        runId: "run-1",
+        opportunityId: "opportunity-1",
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }),
+      {
+        projectId: "project-1",
+        runId: "run-1",
+        opportunityId: "opportunity-1",
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }
+    );
+  });
+
+  void it("rejects missing page proposal identifiers", () => {
+    assert.throws(
+      () => parsePageProposalJobData({ projectId: "project-1", runId: "run-1" }),
+      /require projectId, runId, and opportunityId/u
+    );
+  });
+});
+
 void describe("parseSerpScoutJobData", () => {
   void it("accepts valid SERP scout job data", () => {
     assert.deepEqual(
@@ -361,6 +401,22 @@ void describe("routeJob", () => {
     );
   });
 
+  void it("routes page generation jobs to the page proposal handler instead of returning success metadata", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "page-generation-job-1",
+        queueName: "page-generation",
+        name: "page_generation",
+        data: {
+          projectId: "project-1",
+          runId: "run-1",
+          opportunityId: "opportunity-1"
+        }
+      } as Job),
+      /DATABASE_URL is required for page proposal jobs/u
+    );
+  });
+
   void it("routes SERP scout jobs to the SERP handler instead of returning success metadata", async () => {
     await assert.rejects(
       routeJob({
@@ -456,6 +512,9 @@ void describe("isTerminalWorkerError", () => {
     assert.equal(isTerminalWorkerError(new OpportunityScoutEvidenceError("missing run")), true);
     assert.equal(isTerminalWorkerError(new OpportunityScoutWorkflowError("qa_rejected")), true);
     assert.equal(isTerminalWorkerError(new OpportunityScoutProviderError("provider_timeout")), false);
+    assert.equal(isTerminalWorkerError(new PageProposalConfigurationError("missing database")), true);
+    assert.equal(isTerminalWorkerError(new PageProposalEvidenceError("missing run")), true);
+    assert.equal(isTerminalWorkerError(new PageProposalWorkflowError("qa_rejected")), true);
     assert.equal(isTerminalWorkerError(new SerpScoutConfigurationError("missing database")), true);
     assert.equal(isTerminalWorkerError(new SerpScoutEvidenceError("wrong snapshot")), true);
     assert.equal(isTerminalWorkerError(new SerpScoutTerminalError("captcha_blocked")), true);
@@ -485,6 +544,7 @@ void describe("isTerminalWorkerError", () => {
     assert.ok(toWorkerRethrowError(new ProviderDeployTerminalStatusError("rolled_back")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new WebsiteImportEvidenceError("missing import run")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new OpportunityScoutWorkflowError("qa_rejected")) instanceof UnrecoverableError);
+    assert.ok(toWorkerRethrowError(new PageProposalWorkflowError("qa_rejected")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new SerpScoutTerminalError("captcha_blocked")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new TechnicalAuditEvidenceError("missing audit run")) instanceof UnrecoverableError);
     assert.ok(
@@ -983,6 +1043,114 @@ void describe("executeOpportunityScout", () => {
   });
 });
 
+void describe("executePageProposal", () => {
+  void it("persists a preview page proposal and succeeds the run", async () => {
+    const repository = new FakePageProposalRepository();
+    const reasoning = new MockReasoningAdapter({
+      ok: true,
+      provider: "mock",
+      model: "mock-page-proposal",
+      outputJson: validPageProposalJson(),
+      diagnostics: { latencyMs: 18, finishReason: "stop" }
+    });
+    const storage = new MemoryObjectStorage();
+
+    const result = await executePageProposal({
+      data: { projectId: "project-1", runId: "run-1", opportunityId: "opportunity-1" },
+      repository,
+      reasoning,
+      objectStorage: storage,
+      reasoningTimeoutMs: 60_000
+    });
+
+    assert.equal(result.status, "succeeded");
+    assert.equal(result.pageProposalId, "proposal-1");
+    assert.equal(result.pageVersionId, "version-1");
+    assert.equal(repository.run.status, "succeeded");
+    assert.equal(repository.persistedOutput?.route, "/dachreinigung-muenchen/");
+    assert.equal(repository.failed, undefined);
+    assert.equal(reasoning.calls[0]?.task, "page_brief_draft");
+    assert.equal(reasoning.calls[0]?.outputSchemaName, "PageProposalJson");
+    assert.equal(reasoning.calls[0]?.policy.canMutateProduction, false);
+    assert.deepEqual(reasoning.calls[0]?.policy.allowedToolCategories, [
+      "read_evidence",
+      "read_registry",
+      "analyze",
+      "draft_content",
+      "draft_page_json",
+      "render_preview"
+    ]);
+    assert.equal(reasoning.calls[0]?.timeoutMs, 60_000);
+    assert.equal(storage.values.size, 1);
+    assert.match([...storage.values.keys()][0] ?? "", /page-proposal-input\.json$/u);
+  });
+
+  void it("marks schema mismatches failed without persisting proposals", async () => {
+    const repository = new FakePageProposalRepository();
+
+    await assert.rejects(
+      executePageProposal({
+        data: { projectId: "project-1", runId: "run-1", opportunityId: "opportunity-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: true,
+          provider: "mock",
+          model: "mock-page-proposal",
+          outputJson: { not: "PageProposalJson" },
+          diagnostics: { latencyMs: 5 }
+        }),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      /output_schema_mismatch/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "output_schema_mismatch");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
+  void it("marks route collisions failed before persistence", async () => {
+    const repository = new FakePageProposalRepository();
+    repository.existingRoutes = ["/dachreinigung-muenchen/"];
+
+    await assert.rejects(
+      executePageProposal({
+        data: { projectId: "project-1", runId: "run-1", opportunityId: "opportunity-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: true,
+          provider: "mock",
+          model: "mock-page-proposal",
+          outputJson: validPageProposalJson(),
+          diagnostics: { latencyMs: 5 }
+        }),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      /qa_rejected:route_collision/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "qa_rejected");
+    assert.equal(recordFromUnknown(repository.failed?.diagnostics).gateId, "route_collision");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
+  void it("marks missing reasoning provider config as a terminal page proposal failure", async () => {
+    const repository = new FakePageProposalRepository();
+
+    await assert.rejects(
+      executePageProposal({
+        data: { projectId: "project-1", runId: "run-1", opportunityId: "opportunity-1" },
+        repository,
+        reasoning: new NotConfiguredReasoningAdapter(),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      PageProposalConfigurationError
+    );
+
+    assert.equal(repository.failed?.failureCode, "provider_not_configured");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+});
+
 function row(input: Partial<GscSearchAnalyticsRow>): GscSearchAnalyticsRow {
   return {
     projectId: "project-1",
@@ -1119,6 +1287,90 @@ class FakeOpportunityScoutRepository implements OpportunityScoutRepository {
   }
 }
 
+class FakePageProposalRepository implements PageProposalRepository {
+  run: FakeAgentRun = {
+    id: "run-1",
+    projectId: "project-1",
+    task: "page_brief_draft",
+    status: "queued",
+    failureCode: null,
+    provider: null,
+    model: null,
+    inputRef: null,
+    outputJson: null,
+    usageJson: null,
+    diagnosticsJson: null,
+    latencyMs: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+
+  existingRoutes: string[] = [];
+  persistedOutput: Parameters<PageProposalRepository["persistSuccess"]>[0]["output"] | undefined;
+  failed: Parameters<PageProposalRepository["markFailed"]>[0] | undefined;
+
+  loadRun(): Promise<FakeAgentRun> {
+    return Promise.resolve(this.run);
+  }
+
+  markRunning(): Promise<boolean> {
+    this.run.status = "running";
+    return Promise.resolve(true);
+  }
+
+  recordInputRef(input: { inputRef: string }): Promise<void> {
+    this.run.inputRef = input.inputRef;
+    return Promise.resolve();
+  }
+
+  loadEvidence(): ReturnType<PageProposalRepository["loadEvidence"]> {
+    return Promise.resolve({
+      packet: {
+        projectId: "project-1",
+        runId: "run-1",
+        generatedAt: "2026-07-07T00:00:00.000Z",
+        opportunity: {
+          id: "opportunity-1",
+          primaryKeyword: "dachreinigung muenchen",
+          service: "Dachreinigung",
+          locationName: "Muenchen",
+          suggestedRoute: "/dachreinigung-muenchen/",
+          uniquenessRationale: "Muenchen has dedicated Dachreinigung intent.",
+          evidenceJson: {}
+        },
+        existingRoutes: this.existingRoutes,
+        registrySummary: []
+      },
+      resolvableEvidence: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }],
+      existingRoutes: this.existingRoutes
+    });
+  }
+
+  persistSuccess(input: Parameters<PageProposalRepository["persistSuccess"]>[0]): Promise<{
+    pageProposalId: string;
+    pageVersionId: string;
+    route: string;
+    versionNumber: number;
+  }> {
+    this.persistedOutput = input.output;
+    this.run.status = "succeeded";
+    return Promise.resolve({
+      pageProposalId: "proposal-1",
+      pageVersionId: "version-1",
+      route: input.output.route,
+      versionNumber: 1
+    });
+  }
+
+  markFailed(input: Parameters<PageProposalRepository["markFailed"]>[0]): Promise<void> {
+    this.failed = input;
+    this.run.status = "failed";
+    return Promise.resolve();
+  }
+}
+
 class MemoryObjectStorage implements ObjectStoragePort {
   readonly values = new Map<string, unknown>();
 
@@ -1173,6 +1425,162 @@ function validOpportunityScoutOutput(
       }
     ],
     groups: []
+  });
+}
+
+function validPageProposalJson(overrides: Partial<PageProposalJson> = {}): PageProposalJson {
+  return PageProposalJsonSchema.parse({
+    schemaVersion: 1,
+    projectId: "project-1",
+    opportunityId: "opportunity-1",
+    route: "/dachreinigung-muenchen/",
+    primaryKeyword: "dachreinigung muenchen",
+    evidenceRefs: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }],
+    proposalRationale: "A dedicated Muenchen page addresses local Dachreinigung intent.",
+    generation: { source: "agent", agentRunId: "run-1" },
+    page: {
+      schemaVersion: 1,
+      route: "/dachreinigung-muenchen/",
+      pageType: "service_area_page",
+      target: {
+        service: "Dachreinigung",
+        location: "Muenchen",
+        primaryKeyword: "dachreinigung muenchen",
+        secondaryKeywords: ["dach reinigen muenchen"]
+      },
+      seo: {
+        title: "Dachreinigung Muenchen",
+        metaDescription: "Lokale Dachreinigung in Muenchen mit klarer Beratung und schneller Anfrage.",
+        canonicalPath: "/dachreinigung-muenchen/",
+        robots: "noindex",
+        jsonLd: [],
+        sitemapReady: true
+      },
+      sections: [
+        {
+          id: "header-1",
+          type: "Header",
+          registryKey: "Header.default",
+          schemaVersion: 1,
+          zone: "frame_top",
+          order: 0,
+          variant: "default",
+          props: { brandName: "Muster Dachservice", navItems: [{ label: "Kontakt", href: "/kontakt/" }] }
+        },
+        {
+          id: "hero-1",
+          type: "Hero",
+          registryKey: "Hero.default",
+          schemaVersion: 1,
+          zone: "hero",
+          order: 1,
+          variant: "default",
+          props: {
+            h1: "Dachreinigung in Muenchen",
+            lead: "Gruendliche Dachreinigung fuer Immobilien in Muenchen.",
+            primaryCtaLabel: "Anfragen",
+            primaryCtaHref: "/kontakt/"
+          }
+        },
+        {
+          id: "intro-1",
+          type: "ServiceIntro",
+          registryKey: "ServiceIntro.default",
+          schemaVersion: 1,
+          zone: "body_intro",
+          order: 2,
+          variant: "default",
+          props: {
+            heading: "Lokale Dachpflege mit sauberem Ablauf",
+            body: "Die Seite beantwortet Muenchner Suchintention mit Service, Ablauf und Kontaktmoeglichkeit."
+          }
+        },
+        {
+          id: "description-1",
+          type: "ServiceDescription",
+          registryKey: "ServiceDescription.default",
+          schemaVersion: 1,
+          zone: "body_main",
+          order: 3,
+          variant: "default",
+          props: {
+            heading: "Was die Dachreinigung umfasst",
+            paragraphs: ["Moos, Schmutz und Ablagerungen werden geprueft und schonend entfernt."]
+          }
+        },
+        {
+          id: "benefits-1",
+          type: "BenefitsGrid",
+          registryKey: "BenefitsGrid.default",
+          schemaVersion: 1,
+          zone: "body_main",
+          order: 4,
+          variant: "default",
+          props: {
+            heading: "Vorteile",
+            benefits: [
+              { title: "Lokale Anfahrt", body: "Termine in Muenchen und Umgebung." },
+              { title: "Klare Beratung", body: "Vor der Reinigung wird der Zustand nachvollziehbar besprochen." }
+            ]
+          }
+        },
+        {
+          id: "faq-1",
+          type: "FAQ",
+          registryKey: "FAQ.default",
+          schemaVersion: 1,
+          zone: "body_late",
+          order: 5,
+          variant: "default",
+          props: {
+            heading: "Haeufige Fragen",
+            items: [
+              { question: "Wann lohnt sich eine Dachreinigung?", answer: "Wenn Moos oder Schmutz sichtbar sind." }
+            ]
+          }
+        },
+        {
+          id: "areas-1",
+          type: "ServiceAreaList",
+          registryKey: "ServiceAreaList.default",
+          schemaVersion: 1,
+          zone: "body_late",
+          order: 6,
+          variant: "default",
+          props: { heading: "Einsatzgebiet", areas: [{ name: "Muenchen", route: "/dachreinigung-muenchen/" }] }
+        },
+        {
+          id: "cta-1",
+          type: "FinalCTA",
+          registryKey: "FinalCTA.default",
+          schemaVersion: 1,
+          zone: "cta_late",
+          order: 7,
+          variant: "default",
+          props: {
+            heading: "Dachreinigung anfragen",
+            body: "Beschreiben Sie kurz das Objekt und wir melden uns.",
+            ctaLabel: "Kontakt aufnehmen",
+            ctaHref: "/kontakt/"
+          }
+        },
+        {
+          id: "footer-1",
+          type: "Footer",
+          registryKey: "Footer.default",
+          schemaVersion: 1,
+          zone: "frame_bottom",
+          order: 8,
+          variant: "default",
+          props: { businessName: "Muster Dachservice", legalLinks: [{ label: "Impressum", href: "/impressum/" }] }
+        }
+      ],
+      internalLinks: ["/kontakt/", "/impressum/"],
+      evidenceRefs: [{ sourceType: "gsc_row", sourceId: "gsc-row-1" }],
+      uniquenessRationale: "Muenchen bekommt eine eigenstaendige Dachreinigung-Seite mit lokalem Anfragefokus.",
+      generation: { source: "agent", agentRunId: "run-1" }
+    },
+    ...overrides
   });
 }
 

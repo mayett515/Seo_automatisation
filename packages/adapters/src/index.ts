@@ -202,7 +202,15 @@ export interface SerpScoutPort {
   ): Promise<SerpScoutResult>;
 }
 
-export type AiReasoningToolCategory = "read_evidence" | "search_web" | "read_public_page" | "analyze" | "draft_content";
+export type AiReasoningToolCategory =
+  | "read_evidence"
+  | "read_registry"
+  | "search_web"
+  | "read_public_page"
+  | "analyze"
+  | "draft_content"
+  | "draft_page_json"
+  | "render_preview";
 
 export type AiReasoningRunPolicy = {
   canMutateProduction: false;

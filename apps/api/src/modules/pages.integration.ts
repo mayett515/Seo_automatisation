@@ -1,9 +1,19 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { type PageJson, type PageProposalJson } from "@localseo/contracts";
-import { customers, pageProposals, pageVersions, projects, type DatabaseClient } from "@localseo/db";
+import { OpportunityBriefSchema, type PageJson, type PageProposalJson } from "@localseo/contracts";
+import {
+  agentRuns,
+  customers,
+  jobRuns,
+  opportunities,
+  pageProposals,
+  pageVersions,
+  projects,
+  type DatabaseClient
+} from "@localseo/db";
 import { eq } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
+import { QueueProducerService } from "../queue-producer.js";
 import { PagesService } from "./pages.module.js";
 import {
   createIntegrationTestDatabase,
@@ -17,6 +27,12 @@ type PageVersionFixture = {
   pageProposalId: string;
   pageVersionId: string;
   route: string;
+};
+
+type OpportunityFixture = {
+  projectId: string;
+  userId: string;
+  opportunityId: string;
 };
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -38,7 +54,7 @@ void describe(
 
     beforeEach(async () => {
       await truncateIntegrationTables(handle.sql);
-      service = new PagesService(testDatabaseService(db));
+      service = new PagesService(testDatabaseService(db), new QueueProducerService(testDatabaseService(db)));
     });
 
     after(async () => {
@@ -70,6 +86,89 @@ void describe(
       assert.equal(list.pageProposals[0]?.route, "/dachreinigung/");
       assert.equal(list.pageProposals[0]?.versionCount, 1);
       assert.equal("proposalJson" in (list.pageProposals[0] as Record<string, unknown>), false);
+    });
+
+    void it("creates a queued page proposal run and enqueues page-generation with jobId equal to runId", async () => {
+      const fixture = await createOpportunityFixture(db, { name: "Proposal queue" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setPageGenerationQueue(queueService, queue);
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      const result = await service.queuePageProposal(
+        fixture.projectId,
+        { opportunityId: fixture.opportunityId },
+        fixture.userId
+      );
+
+      assert.equal(result.status, "queued");
+      assert.equal(result.type, "page_generation");
+      assert.equal(result.projectId, fixture.projectId);
+      assert.equal(result.opportunityId, fixture.opportunityId);
+      assert.equal(result.runId, result.jobId);
+      assert.equal(queue.addCalls.length, 1);
+      assert.equal(queue.addCalls[0]?.name, "page_generation");
+      assert.equal(queue.addCalls[0]?.options.jobId, result.runId);
+      assert.equal(queue.addCalls[0]?.data.projectId, fixture.projectId);
+      assert.equal(queue.addCalls[0]?.data.runId, result.runId);
+      assert.equal(queue.addCalls[0]?.data.opportunityId, fixture.opportunityId);
+      assert.equal(typeof queue.addCalls[0]?.data.jobRunId, "string");
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, result.runId));
+      assert.equal(run?.projectId, fixture.projectId);
+      assert.equal(run?.task, "page_brief_draft");
+      assert.equal(run?.status, "queued");
+      assert.deepEqual(run?.diagnosticsJson, { opportunityId: fixture.opportunityId });
+
+      const [jobRun] = await db.select().from(jobRuns).where(eq(jobRuns.externalJobId, result.runId));
+      assert.equal(jobRun?.queueName, "page-generation");
+      assert.equal(jobRun?.type, "page_generation");
+      assert.equal(jobRun?.status, "queued");
+    });
+
+    void it("returns explicit page proposal dry-run without agent_runs when the queue is unavailable", async () => {
+      const fixture = await createOpportunityFixture(db, { name: "Proposal dry run" });
+
+      const result = await service.queuePageProposal(fixture.projectId, { opportunityId: fixture.opportunityId });
+
+      assert.equal(result.status, "dry_run");
+      assert.equal(result.type, "page_generation");
+      assert.equal(result.runId, undefined);
+      assert.equal(result.opportunityId, fixture.opportunityId);
+      assert.match(result.message ?? "", /queue is not configured/u);
+
+      const runRows = await db.select().from(agentRuns);
+      assert.equal(runRows.length, 0);
+
+      const jobRunRows = await db.select().from(jobRuns).where(eq(jobRuns.externalJobId, result.jobId));
+      assert.equal(jobRunRows.length, 1);
+      assert.equal(jobRunRows[0]?.status, "dry_run");
+      assert.equal(jobRunRows[0]?.queueName, "page-generation");
+    });
+
+    void it("returns the active page proposal run instead of enqueueing a duplicate", async () => {
+      const fixture = await createOpportunityFixture(db, { name: "Proposal active" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setPageGenerationQueue(queueService, queue);
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      await db.insert(agentRuns).values({
+        id: "44444444-4444-4444-8444-444444444444",
+        projectId: fixture.projectId,
+        task: "page_brief_draft",
+        status: "running",
+        inputRef: "agent-runs/page-proposal-input.json",
+        diagnosticsJson: { opportunityId: fixture.opportunityId }
+      });
+
+      const result = await service.queuePageProposal(fixture.projectId, { opportunityId: fixture.opportunityId });
+
+      assert.equal(result.status, "already_active");
+      assert.equal(result.runId, "44444444-4444-4444-8444-444444444444");
+      assert.equal(result.opportunityId, fixture.opportunityId);
+      assert.equal(result.inputRef, "agent-runs/page-proposal-input.json");
+      assert.equal(queue.addCalls.length, 0);
     });
 
     void it("returns a parsed page proposal only for its owning project", async () => {
@@ -446,6 +545,66 @@ async function createPageVersionFixture(
   };
 }
 
+async function createOpportunityFixture(db: DatabaseClient, input: { name: string }): Promise<OpportunityFixture> {
+  const [customer] = await db
+    .insert(customers)
+    .values({ name: `${input.name} Customer` })
+    .returning();
+  assert.ok(customer);
+
+  const [project] = await db
+    .insert(projects)
+    .values({
+      customerId: customer.id,
+      name: `${input.name} Project`
+    })
+    .returning();
+  assert.ok(project);
+
+  const userId = "22222222-2222-4222-8222-222222222222";
+  const [opportunity] = await db
+    .insert(opportunities)
+    .values({
+      projectId: project.id,
+      classification: "near_term_target",
+      primaryKeyword: "dachreinigung muenchen",
+      score: 72,
+      status: "new",
+      evidenceJson: OpportunityBriefSchema.parse({
+        projectId: project.id,
+        classification: "near_term_target",
+        service: "Dachreinigung",
+        location: {
+          name: "Muenchen",
+          kind: "city",
+          adjacencyReason: "manual_seed",
+          existingClusterStrength: "weak"
+        },
+        primaryKeyword: "dachreinigung muenchen",
+        secondaryKeywords: ["dach reinigen muenchen"],
+        suggestedRoute: "/dachreinigung-muenchen/",
+        suggestedPageType: "normal_page",
+        evidence: [],
+        competitorObservations: [],
+        groupHints: [],
+        hubSpokeRole: "standalone",
+        uniquenessRationale: "A dedicated Muenchen page can address local Dachreinigung intent.",
+        cannibalizationRisk: { level: "low", conflictingRoutes: [] },
+        missingEvidence: [],
+        confidence: 0.72,
+        recommendedAction: "create_page_proposal"
+      })
+    })
+    .returning();
+  assert.ok(opportunity);
+
+  return {
+    projectId: project.id,
+    userId,
+    opportunityId: opportunity.id
+  };
+}
+
 async function approvePageVersion(db: DatabaseClient, pageVersionId: string): Promise<Date> {
   const approvedAt = new Date("2026-07-07T10:00:00.000Z");
   await db.update(pageVersions).set({ status: "approved", approvedAt }).where(eq(pageVersions.id, pageVersionId));
@@ -584,4 +743,47 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
     ping: () => Promise.resolve("up"),
     onModuleDestroy: () => Promise.resolve()
   } as unknown as DatabaseService;
+}
+
+function setPageGenerationQueue(service: QueueProducerService, queue: FakeQueue): void {
+  (service as unknown as { queues: { "page-generation"?: unknown } }).queues["page-generation"] = queue;
+}
+
+type QueueAddCall = {
+  name: string;
+  data: Record<string, unknown>;
+  options: Record<string, unknown>;
+};
+
+class FakeQueue {
+  readonly addCalls: QueueAddCall[] = [];
+  private existingJob: FakeJob | undefined;
+
+  getJob(): Promise<FakeJob | undefined> {
+    return Promise.resolve(this.existingJob);
+  }
+
+  add(
+    name: string,
+    data: Record<string, unknown>,
+    options: Record<string, unknown>
+  ): Promise<{ id: string | undefined }> {
+    this.addCalls.push({ name, data, options });
+    this.existingJob = new FakeJob();
+    return Promise.resolve({ id: typeof options.jobId === "string" ? options.jobId : undefined });
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+class FakeJob {
+  getState(): Promise<string> {
+    return Promise.resolve("waiting");
+  }
+
+  remove(): Promise<void> {
+    return Promise.resolve();
+  }
 }

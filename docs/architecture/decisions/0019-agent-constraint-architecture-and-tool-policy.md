@@ -124,6 +124,25 @@ Approval: human/customer approves a concrete PageVersion before release
 Forbidden: approve page, deploy page, write approved PageVersion, invent proof, copy competitor copy, emit raw code/markup
 ```
 
+Implementation checkpoint:
+
+```text
+implemented 2026-07-07
+  apps/worker/src/reasoning-policy.ts owns policyForReasoningTask(task)
+  Opportunity Scout consumes policyForReasoningTask("opportunity_scout")
+  Page Proposal consumes policyForReasoningTask("page_brief_draft")
+  Page Proposal persists only page_proposals.status = draft and page_versions.status = preview
+  Page Proposal worker gates output through PageProposalJsonSchema, deterministic QA,
+    registry validation, Page Studio publish-readiness, and shared preview rendering
+  page_proposals route uniqueness is DB-enforced per project
+
+still deferred
+  approved page version creation
+  approval flow and actor audit
+  release/deploy enqueue from approved page versions
+  agent_run_events timeline
+```
+
 Report Narrative:
 
 ```text
@@ -226,11 +245,15 @@ project result from worker/verification
 
 The cost is more upfront policy typing before adding tools. That cost is intentional: it prevents broad tool catalogs, prompt-only safety, chat-style approvals, or agent-created production mutations from entering the product.
 
-Follow-up implementation work:
+Completed implementation work:
 
-- add a `policyForReasoningTask(task)` helper before adding the Page Proposal worker;
-- keep Opportunity Scout on `read_evidence` and `analyze` only;
-- add policy tests that reject provider mutation, approval, shell/file/db writes, browser state-changing actions, and unknown tool categories;
+- added `policyForReasoningTask(task)` before the Page Proposal worker foundation;
+- kept Opportunity Scout on `read_evidence` and `analyze` only;
+- added fail-closed tests for unprofiled reasoning tasks.
+
+Remaining implementation work:
+
+- add policy tests that reject provider mutation, approval, shell/file/db writes, browser state-changing actions, and unknown tool categories once those categories exist as executable tool calls;
 - add `agent_run_events` only when the UI needs live/replay event timelines.
 
 ## Alternatives Considered
@@ -257,7 +280,9 @@ Future agent work must not:
 
 - `packages/adapters/src/index.ts`
 - `packages/ai/src/index.ts`
+- `apps/worker/src/reasoning-policy.ts`
 - `apps/worker/src/handlers/opportunity-scout.ts`
+- `apps/worker/src/handlers/page-proposal.ts`
 - `docs/architecture/agent-first-mvp-roadmap.md`
 - `docs/architecture/ai-reasoning-port-and-opportunity-scout-contracts.md`
 - `docs/architecture/backend-foundation-status.md`

@@ -182,7 +182,9 @@ Agent constraint policy
   AI may propose; only contracts, QA, approval, workers, and verification can make a proposal real.
   New agent tasks and widened tool access require a named constraint profile.
   Opportunity Scout remains read_evidence + analyze only.
-  Page Proposal may draft structured PageProposalJson only after contracts, registry, Page Studio composition, preview, and approval boundaries are in place.
+  Page Proposal runs through the named page_brief_draft policy profile.
+  Page Proposal may draft structured PageProposalJson only after contracts, registry, Page Studio composition, and preview gates pass.
+  Page Proposal may persist draft page_proposals and preview page_versions only; it must not create approved page versions or enqueue deploy.
   Agent/session/tool approval is not product approval; product approval must be durable.
   Subagents inherit or narrow parent denied outcomes.
 ```

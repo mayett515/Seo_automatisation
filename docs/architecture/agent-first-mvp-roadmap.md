@@ -645,6 +645,8 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
+Status: worker foundation implemented; approval and UI trigger are still deferred.
+
 Turn an accepted opportunity into a structured page proposal:
 
 ```text
@@ -674,6 +676,36 @@ Page Proposal constraint profile
 ```
 
 The worker may persist a draft/proposal artifact after deterministic validation. It must not create an approved page version, enqueue deploy, or turn tool/session approval into product approval.
+
+Implementation checkpoint:
+
+```text
+implemented now
+  page_generation queue/job contract for Page Proposal runs
+  POST /projects/:projectId/pages/proposals/runs enqueue endpoint
+  page:propose permission for owner/admin/editor roles
+  agent_runs row with task = page_brief_draft before enqueue
+  BullMQ jobId = agent_runs.id
+  existing active-run guard reuses one queued/running page_brief_draft run per project
+  named policyForReasoningTask("page_brief_draft") profile
+  evidence packet from OpportunityBrief + existing proposal routes + registry summary
+  AiReasoningPort.runStructured with outputSchemaName = PageProposalJson
+  PageProposalJsonSchema parse
+  deterministic page proposal QA for project/opportunity/evidence/route uniqueness
+  page-registry validation
+  Page Studio publish-readiness/composition validation
+  shared preview render proof
+  success transaction creates page_proposals.status = draft and page_versions.status = preview
+  source opportunity moves to brief_created
+  project route uniqueness enforced by page_proposals(project_id, route)
+
+still deferred
+  frontend trigger/button
+  approval flow and approved PageVersion writer
+  unresolved approval_blocker enforcement
+  release-plan creation from approved versions
+  agent_run_events streaming timeline
+```
 
 ### 10. Page Studio, Notes, Approval, And Versioning
 

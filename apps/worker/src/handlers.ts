@@ -39,6 +39,12 @@ import {
   OpportunityScoutWorkflowError
 } from "./handlers/opportunity-scout.js";
 import {
+  handlePageProposalJob,
+  PageProposalConfigurationError,
+  PageProposalEvidenceError,
+  PageProposalWorkflowError
+} from "./handlers/page-proposal.js";
+import {
   handleRollbackJob,
   reconcilePendingRollbacks,
   RollbackConfigurationError,
@@ -164,6 +170,12 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     });
   }
 
+  if (job.queueName === "page-generation" || job.name === "page_generation") {
+    return handlePageProposalJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
+      reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
+    });
+  }
+
   if (job.queueName === "serp-scout" || job.name === "serp_scout") {
     return handleSerpScoutJob(job, sharedDbHandle, sharedSerpScout);
   }
@@ -189,6 +201,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
 export { parseOpportunityScoutJobData } from "./handlers/opportunity-scout.js";
+export { parsePageProposalJobData } from "./handlers/page-proposal.js";
 export { parseSerpScoutJobData } from "./handlers/serp-scout.js";
 export { parseTechnicalAuditJobData } from "./handlers/technical-audit.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
@@ -208,6 +221,9 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof OpportunityScoutConfigurationError ||
     error instanceof OpportunityScoutEvidenceError ||
     error instanceof OpportunityScoutWorkflowError ||
+    error instanceof PageProposalConfigurationError ||
+    error instanceof PageProposalEvidenceError ||
+    error instanceof PageProposalWorkflowError ||
     error instanceof SerpScoutConfigurationError ||
     error instanceof SerpScoutEvidenceError ||
     error instanceof SerpScoutTerminalError ||

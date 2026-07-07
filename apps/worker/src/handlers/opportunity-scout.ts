@@ -33,6 +33,7 @@ import {
 import type { Job } from "bullmq";
 import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
+import { policyForReasoningTask } from "../reasoning-policy.js";
 
 type AgentRunRow = typeof agentRuns.$inferSelect;
 
@@ -147,10 +148,7 @@ export async function executeOpportunityScout(input: {
     inputJson: evidence.packet,
     outputSchemaName: "OpportunityScoutOutput",
     timeoutMs: input.reasoningTimeoutMs ?? 120_000,
-    policy: {
-      canMutateProduction: false,
-      allowedToolCategories: ["read_evidence", "analyze"]
-    }
+    policy: policyForReasoningTask("opportunity_scout")
   });
 
   if (!reasoningResult.ok) {

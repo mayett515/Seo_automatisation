@@ -433,20 +433,24 @@ export const serpSnapshots = pgTable(
   ]
 );
 
-export const pageProposals = pgTable("page_proposals", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id),
-  opportunityId: uuid("opportunity_id").references(() => opportunities.id),
-  route: text("route").notNull(),
-  primaryKeyword: text("primary_keyword").notNull(),
-  uniquenessRationale: text("uniqueness_rationale").notNull(),
-  status: text("status").notNull().default("draft"),
-  sitemapReady: boolean("sitemap_ready").default(false).notNull(),
-  proposalJson: jsonb("proposal_json").$type<PageProposalJson>(),
-  ...timestamps
-});
+export const pageProposals = pgTable(
+  "page_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+    route: text("route").notNull(),
+    primaryKeyword: text("primary_keyword").notNull(),
+    uniquenessRationale: text("uniqueness_rationale").notNull(),
+    status: text("status").notNull().default("draft"),
+    sitemapReady: boolean("sitemap_ready").default(false).notNull(),
+    proposalJson: jsonb("proposal_json").$type<PageProposalJson>(),
+    ...timestamps
+  },
+  (table) => [uniqueIndex("page_proposals_project_route_idx").on(table.projectId, table.route)]
+);
 
 export const pageVersions = pgTable(
   "page_versions",

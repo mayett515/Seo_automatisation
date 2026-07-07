@@ -14,15 +14,21 @@ import {
   opportunityGroupSources,
   opportunityRecommendedActions,
   opportunitySuggestedPageTypes,
+  PageProposalJsonSchema,
+  type PageProposalJson,
   type OpportunityScoutOutput
 } from "@localseo/contracts";
 import {
+  buildPageProposalEvidencePacket,
+  buildPageProposalPrompt,
   buildOpportunityScoutEvidencePacket,
   buildOpportunityScoutPrompt,
   canonicalOpportunityScoutOutputExample,
+  evaluatePageProposalOutput,
   evaluateOpportunityScoutOutput,
   opportunityScoutEvidencePacketLimits,
   opportunityScoutPromptSections,
+  pageProposalPromptSections,
   scoreOpportunityBrief
 } from "./index.js";
 
@@ -82,6 +88,88 @@ void test("buildOpportunityScoutPrompt is sectioned around the product safety ru
   ]) {
     assert.match(prompt, new RegExp(vocabulary.join(" \\| "), "u"));
   }
+});
+
+void test("buildPageProposalPrompt is sectioned around the PageJson safety boundary", () => {
+  const prompt = buildPageProposalPrompt();
+
+  assert.deepEqual(
+    pageProposalPromptSections.map((section) => section.key),
+    ["role", "evidence_and_proof", "classification", "nearby_orte_corridors", "output_format"]
+  );
+  assert.match(prompt, /AI drafts structured PageProposalJson only/u);
+  assert.match(prompt, /You never approve, deploy, mutate providers/u);
+  assert.match(prompt, /Return one JSON object matching PageProposalJson/u);
+  assert.match(prompt, /Use only registry keys, section types, zones, and variants from registrySummary/u);
+  assert.match(prompt, /Do not output html, css, script, jsx, class, className, style/u);
+});
+
+void test("buildPageProposalEvidencePacket caps and normalizes existing routes", () => {
+  const packet = buildPageProposalEvidencePacket({
+    projectId,
+    runId: "run-1",
+    generatedAt: "2026-07-07T00:00:00.000Z",
+    opportunity: {
+      id: "opportunity-1",
+      primaryKeyword: "entruempelung dachau"
+    },
+    existingRoutes: ["/b", "/a", "/a", "/c"],
+    registrySummary: Array.from({ length: 90 }, (_, index) => ({ registryKey: `Section.${index}` }))
+  });
+
+  assert.deepEqual(packet.existingRoutes, ["/a", "/b", "/c"]);
+  assert.equal(packet.registrySummary.length, 80);
+});
+
+void test("accepts page proposal output when route and evidence resolve", () => {
+  const output = validPageProposal({
+    evidenceRefs: [{ sourceType: "ranking_proof", sourceId: "proof-1" }]
+  });
+
+  const result = evaluatePageProposalOutput({
+    projectId,
+    opportunityId: "opportunity-1",
+    output,
+    resolvableEvidence: [{ sourceType: "ranking_proof", sourceId: "proof-1" }],
+    existingRoutes: ["/kontakt/"]
+  });
+
+  assert.equal(result.ok, true);
+});
+
+void test("rejects page proposal output when route already exists", () => {
+  const result = evaluatePageProposalOutput({
+    projectId,
+    opportunityId: "opportunity-1",
+    output: validPageProposal(),
+    resolvableEvidence: [],
+    existingRoutes: ["/entruempelung-dachau"]
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.failure.gateId, "route_collision");
+});
+
+void test("rejects page proposal output with unresolved cited evidence", () => {
+  const result = evaluatePageProposalOutput({
+    projectId,
+    opportunityId: "opportunity-1",
+    output: validPageProposal({
+      evidenceRefs: [{ sourceType: "ranking_proof", sourceId: "missing-proof" }]
+    }),
+    resolvableEvidence: []
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.failure.gateId, "evidence_resolution");
 });
 
 void test("accepts empty-evidence scout output as zero persisted briefs", () => {
@@ -806,6 +894,57 @@ function rankingProofEvidence(
     proofTier: "customer_safe_proof",
     ...overrides
   };
+}
+
+function validPageProposal(overrides: Partial<PageProposalJson> = {}): PageProposalJson {
+  return PageProposalJsonSchema.parse({
+    schemaVersion: 1,
+    projectId,
+    opportunityId: "opportunity-1",
+    route: "/entruempelung-dachau/",
+    primaryKeyword: "entruempelung dachau",
+    evidenceRefs: [],
+    proposalRationale: "Dedicated Dachau page separates clear-out intent from the generic service hub.",
+    page: {
+      schemaVersion: 1,
+      route: "/entruempelung-dachau/",
+      pageType: "service_area_page",
+      target: {
+        service: "Entruempelung",
+        location: "Dachau",
+        primaryKeyword: "entruempelung dachau",
+        secondaryKeywords: ["wohnungsaufloesung dachau"]
+      },
+      seo: {
+        title: "Entruempelung Dachau",
+        metaDescription: "Lokale Entruempelung in Dachau mit klarer Beratung und schneller Anfrage.",
+        canonicalPath: "/entruempelung-dachau/",
+        robots: "noindex",
+        jsonLd: [],
+        sitemapReady: true
+      },
+      sections: [
+        {
+          id: "hero-1",
+          type: "Hero",
+          registryKey: "Hero.default",
+          schemaVersion: 1,
+          zone: "hero",
+          order: 0,
+          variant: "default",
+          props: {
+            h1: "Entruempelung in Dachau",
+            lead: "Strukturierte Hilfe fuer Wohnungen, Keller und Haushalte in Dachau."
+          },
+          evidenceRefs: []
+        }
+      ],
+      internalLinks: ["/kontakt/"],
+      evidenceRefs: [],
+      uniquenessRationale: "Dedicated Dachau page separates clear-out intent from the generic service hub."
+    },
+    ...overrides
+  });
 }
 
 function rankingProofResolvable(overrides: { rank?: number; query?: string; pageUrl?: string } = {}) {
