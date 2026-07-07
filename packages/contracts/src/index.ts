@@ -270,6 +270,50 @@ export const releaseCheckResults = ["passed", "failed", "skipped"] as const;
 export const releaseItemActions = ["create", "update", "redirect", "noindex", "remove"] as const;
 export const releaseNoteAudiences = ["internal", "customer"] as const;
 export const customerMembershipRoles = ["owner", "admin", "editor", "viewer"] as const;
+export const pageVersionStatuses = [
+  "draft",
+  "preview",
+  "changes_requested",
+  "approved",
+  "release_candidate",
+  "released",
+  "superseded"
+] as const;
+export const pageZones = [
+  "frame_top",
+  "hero",
+  "body_intro",
+  "body_main",
+  "proof_media",
+  "body_late",
+  "cta_late",
+  "frame_bottom"
+] as const;
+export const pageSectionTypes = [
+  "Header",
+  "Hero",
+  "ServiceIntro",
+  "ProblemSolution",
+  "ServiceDescription",
+  "BenefitsGrid",
+  "BulletList",
+  "ServiceGrid",
+  "ImageText",
+  "Gallery",
+  "Slideshow",
+  "Carousel",
+  "BeforeAfter",
+  "TrustReviews",
+  "References",
+  "FAQ",
+  "AreaMap",
+  "NearbyPlaces",
+  "ServiceAreaList",
+  "InlineCTA",
+  "FinalCTA",
+  "Footer"
+] as const;
+export const pageTypes = ["home_page", "service_page", "service_area_page", "location_page", "landing_page"] as const;
 
 export const ProjectIdSchema = z.string().min(1);
 export const LeadIdSchema = z.string().min(1);
@@ -318,6 +362,11 @@ export const SerpFeatureTypeSchema = z.enum(serpFeatureTypes);
 export const SerpArtifactKindSchema = z.enum(serpArtifactKinds);
 export const SerpScoutFailureCodeSchema = z.enum(serpScoutFailureCodes);
 export const ApprovalStatusSchema = z.enum(approvalStatuses);
+export const ReleaseItemActionSchema = z.enum(releaseItemActions);
+export const PageVersionStatusSchema = z.enum(pageVersionStatuses);
+export const PageZoneSchema = z.enum(pageZones);
+export const PageSectionTypeSchema = z.enum(pageSectionTypes);
+export const PageTypeSchema = z.enum(pageTypes);
 export const CustomerMembershipRoleSchema = z.enum(customerMembershipRoles);
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
@@ -622,14 +671,135 @@ export const TechnicalAuditJobDataSchema = z
   })
   .strict();
 
-export const ApprovedReleaseArtifactPageSchema = z.object({
-  releasePlanItemId: z.string().min(1),
-  pageVersionId: z.string().min(1).nullable(),
-  targetUrl: z.string().min(1),
-  targetSubdomain: z.string().min(1).nullable(),
-  action: z.string().min(1),
-  pageJson: z.record(z.string(), z.unknown())
-});
+export const PagePathSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .refine((value) => value.startsWith("/"), "Page paths must start with '/'.");
+
+export const PageEvidenceRefSchema = z
+  .object({
+    sourceType: EvidenceSourceTypeSchema,
+    sourceId: z.string().trim().min(1).max(200).optional(),
+    locator: z.record(z.string(), z.unknown()).optional(),
+    note: z.string().trim().min(1).max(1_000).optional()
+  })
+  .strict();
+
+export const PageGenerationSchema = z
+  .object({
+    source: z.enum(["human", "agent", "template", "import"]).default("human"),
+    agentRunId: z.string().trim().min(1).max(200).optional(),
+    templateId: z.string().trim().min(1).max(120).optional(),
+    reason: z.string().trim().min(1).max(1_000).optional()
+  })
+  .strict();
+
+export const PageSectionInstanceSchema = z
+  .object({
+    id: z.string().trim().min(1).max(120),
+    type: PageSectionTypeSchema,
+    registryKey: z.string().trim().min(1).max(160),
+    schemaVersion: z.number().int().positive(),
+    zone: PageZoneSchema,
+    order: z.number().int().nonnegative(),
+    variant: z.string().trim().min(1).max(120),
+    props: z.record(z.string(), z.unknown()).default({}),
+    evidenceRefs: z.array(PageEvidenceRefSchema).max(50).default([]),
+    generation: PageGenerationSchema.optional()
+  })
+  .strict();
+
+export const PageJsonSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    route: PagePathSchema,
+    pageType: PageTypeSchema,
+    target: z
+      .object({
+        service: z.string().trim().min(1).max(160),
+        location: z.string().trim().min(1).max(160).optional(),
+        primaryKeyword: z.string().trim().min(1).max(200),
+        secondaryKeywords: z.array(z.string().trim().min(1).max(200)).max(50).default([])
+      })
+      .strict(),
+    seo: z
+      .object({
+        title: z.string().trim().min(1).max(70),
+        metaDescription: z.string().trim().min(1).max(180),
+        canonicalPath: PagePathSchema,
+        robots: z.enum(["index", "noindex"]).default("noindex"),
+        jsonLd: z.array(z.record(z.string(), z.unknown())).max(20).default([]),
+        sitemapReady: z.boolean().default(false)
+      })
+      .strict(),
+    sections: z.array(PageSectionInstanceSchema).min(1).max(80),
+    internalLinks: z.array(PagePathSchema).max(100).default([]),
+    evidenceRefs: z.array(PageEvidenceRefSchema).max(100).default([]),
+    uniquenessRationale: z.string().trim().min(1).max(2_000).optional(),
+    generation: PageGenerationSchema.optional()
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    validatePageJsonSafety(value, ctx);
+    validateUniqueSectionIds(value.sections, ctx);
+  });
+
+export const PageProposalJsonSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    projectId: ProjectIdSchema,
+    opportunityId: z.string().trim().min(1).max(200).optional(),
+    route: PagePathSchema,
+    primaryKeyword: z.string().trim().min(1).max(200),
+    page: PageJsonSchema,
+    evidenceRefs: z.array(PageEvidenceRefSchema).max(100).default([]),
+    proposalRationale: z.string().trim().min(1).max(2_000).optional(),
+    generation: PageGenerationSchema.optional()
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    validatePageJsonSafety(value, ctx);
+
+    if (value.page.route !== value.route) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["page", "route"],
+        message: "PageProposalJson.page.route must match PageProposalJson.route."
+      });
+    }
+
+    if (value.page.target.primaryKeyword !== value.primaryKeyword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["page", "target", "primaryKeyword"],
+        message: "PageProposalJson.page.target.primaryKeyword must match PageProposalJson.primaryKeyword."
+      });
+    }
+  });
+
+const renderableReleaseItemActions = new Set<ReleaseItemAction>(["create", "update"]);
+
+export const ApprovedReleaseArtifactPageSchema = z
+  .object({
+    releasePlanItemId: z.string().min(1),
+    pageVersionId: z.string().min(1).nullable(),
+    targetUrl: z.string().min(1),
+    targetSubdomain: z.string().min(1).nullable(),
+    action: ReleaseItemActionSchema,
+    pageJson: PageJsonSchema.nullable()
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (renderableReleaseItemActions.has(value.action) && value.pageJson === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pageJson"],
+        message: "Renderable release actions require PageJson."
+      });
+    }
+  });
 
 export const ApprovedReleaseArtifactSchema = z.object({
   projectId: ProjectIdSchema,
@@ -651,6 +821,113 @@ export const PageProposalSchema = z.object({
   uniquenessRationale: z.string().min(1),
   sitemapReady: z.boolean().default(false)
 });
+
+const pageJsonForbiddenKeys = new Set([
+  "html",
+  "css",
+  "script",
+  "jsx",
+  "dangerouslysetinnerhtml",
+  "classname",
+  "style",
+  "rawmarkup",
+  "innerhtml",
+  "srcdoc"
+]);
+
+const pageJsonGuardMaxDepth = 32;
+const pageJsonGuardMaxNodes = 5_000;
+
+function validateUniqueSectionIds(sections: readonly PageSectionInstance[], ctx: z.RefinementCtx): void {
+  const seen = new Set<string>();
+
+  sections.forEach((section, index) => {
+    if (seen.has(section.id)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sections", index, "id"],
+        message: `Duplicate PageJson section id '${section.id}'.`
+      });
+      return;
+    }
+
+    seen.add(section.id);
+  });
+}
+
+function validatePageJsonSafety(value: unknown, ctx: z.RefinementCtx): void {
+  const state = { nodes: 0, overflowReported: false };
+  scanPageJsonValue(value, ctx, [], 0, state);
+}
+
+function scanPageJsonValue(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+  depth: number,
+  state: { nodes: number; overflowReported: boolean }
+): void {
+  state.nodes += 1;
+
+  if (state.nodes > pageJsonGuardMaxNodes) {
+    if (!state.overflowReported) {
+      ctx.addIssue({
+        code: "custom",
+        path,
+        message: `PageJson exceeds the safety scan limit of ${pageJsonGuardMaxNodes} nodes.`
+      });
+      state.overflowReported = true;
+    }
+
+    return;
+  }
+
+  if (depth > pageJsonGuardMaxDepth) {
+    ctx.addIssue({
+      code: "custom",
+      path,
+      message: `PageJson exceeds the safety scan depth of ${pageJsonGuardMaxDepth}.`
+    });
+    return;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized.startsWith("javascript:") || normalized.startsWith("data:text/html")) {
+      ctx.addIssue({
+        code: "custom",
+        path,
+        message: "PageJson must not contain javascript: or data:text/html string values."
+      });
+    }
+
+    return;
+  }
+
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => scanPageJsonValue(item, ctx, [...path, index], depth + 1, state));
+    return;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = key.trim().toLowerCase();
+
+    if (pageJsonForbiddenKeys.has(normalizedKey) || /^on[A-Za-z0-9_-]+$/u.test(key)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [...path, key],
+        message: `PageJson must not contain raw markup, styling, script, class, inline-style, or event-handler key '${key}'.`
+      });
+    }
+
+    scanPageJsonValue(nestedValue, ctx, [...path, key], depth + 1, state);
+  }
+}
 
 export const ReleaseCheckSchema = z.object({
   checkKey: z.string().min(1),
@@ -1201,6 +1478,11 @@ export type ReleaseVerificationJobData = z.output<typeof ReleaseVerificationJobD
 export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
 export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
 export type TechnicalAuditJobData = z.output<typeof TechnicalAuditJobDataSchema>;
+export type PageEvidenceRef = z.output<typeof PageEvidenceRefSchema>;
+export type PageGeneration = z.output<typeof PageGenerationSchema>;
+export type PageSectionInstance = z.output<typeof PageSectionInstanceSchema>;
+export type PageJson = z.output<typeof PageJsonSchema>;
+export type PageProposalJson = z.output<typeof PageProposalJsonSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type QueueName = z.output<typeof QueueNameSchema>;
@@ -1309,4 +1591,9 @@ export type SerpFeatureType = z.output<typeof SerpFeatureTypeSchema>;
 export type SerpArtifactKind = z.output<typeof SerpArtifactKindSchema>;
 export type SerpScoutFailureCode = z.output<typeof SerpScoutFailureCodeSchema>;
 export type ApprovalStatus = z.output<typeof ApprovalStatusSchema>;
+export type ReleaseItemAction = z.output<typeof ReleaseItemActionSchema>;
+export type PageVersionStatus = z.output<typeof PageVersionStatusSchema>;
+export type PageZone = z.output<typeof PageZoneSchema>;
+export type PageSectionType = z.output<typeof PageSectionTypeSchema>;
+export type PageType = z.output<typeof PageTypeSchema>;
 export type CustomerMembershipRole = z.output<typeof CustomerMembershipRoleSchema>;

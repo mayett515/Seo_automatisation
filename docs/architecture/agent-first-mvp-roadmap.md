@@ -619,8 +619,8 @@ approved page versions are immutable.
 First implementation order:
 
 ```text
-PageJson/PageProposalJson contracts + page version status vocabulary
--> structured proposal persistence decision, default page_proposals.proposalJson
+PageJson/PageProposalJson contracts + page version status vocabulary (implemented 2026-07-07)
+-> structured proposal persistence decision, default page_proposals.proposalJson (implemented 2026-07-07)
 -> packages/page-registry with a small Local SEO section set
 -> pure page-studio movement and validation helpers
 -> retarget SEO preflight and static rendering to typed PageJson

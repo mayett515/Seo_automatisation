@@ -1,6 +1,11 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { type DeploymentStatus, type ReleasePlanStatus, type ReleaseVerificationStatus } from "@localseo/contracts";
+import {
+  type DeploymentStatus,
+  type PageJson,
+  type ReleasePlanStatus,
+  type ReleaseVerificationStatus
+} from "@localseo/contracts";
 import {
   customers,
   deployments,
@@ -599,7 +604,7 @@ async function createReleaseFixture(
   await db.insert(releasePlanItems).values({
     releasePlanId: releasePlan.id,
     targetUrl: input.targetUrl ?? "/dachreinigung/",
-    action: "publish",
+    action: "noindex",
     status: "deployed"
   });
 
@@ -667,7 +672,7 @@ async function createPageVersionFixture(
       versionNumber: 1,
       status: "approved",
       approvedAt: new Date("2026-06-30T10:00:00.000Z"),
-      pageJson: {}
+      pageJson: pageJson(input.route)
     })
     .returning();
   assert.ok(pageVersion);
@@ -769,19 +774,7 @@ async function createPreflightRollbackFixture(
       versionNumber: 1,
       status: "approved",
       approvedAt: new Date("2026-06-30T10:00:00.000Z"),
-      pageJson: {
-        title: "Dachreinigung Muenchen",
-        metaDescription: "Lokale Dachreinigung in Muenchen.",
-        h1: "Dachreinigung in Muenchen",
-        canonical: "https://customer.example/dachreinigung/",
-        jsonLd: { "@type": "LocalBusiness" },
-        areaServed: ["Muenchen"],
-        internalLinks: ["/dachreinigung/"],
-        localFaq: [{ question: "Wie schnell?", answer: "Nach Absprache." }],
-        cta: { label: "Anfragen" },
-        robots: "noindex,nofollow",
-        sitemapReady: true
-      }
+      pageJson: pageJson("/dachreinigung/")
     })
     .returning();
   assert.ok(pageVersion);
@@ -790,7 +783,7 @@ async function createPreflightRollbackFixture(
     releasePlanId: releasePlan.id,
     pageVersionId: pageVersion.id,
     targetUrl: "/dachreinigung/",
-    action: "publish",
+    action: "create",
     status: "pending"
   });
 
@@ -874,6 +867,53 @@ async function createRollbackPoint(
     .returning();
   assert.ok(rollbackPoint);
   return rollbackPoint.id;
+}
+
+function pageJson(route: string): PageJson {
+  return {
+    schemaVersion: 1,
+    route,
+    pageType: "service_area_page",
+    target: {
+      service: "Dachreinigung",
+      location: "Muenchen",
+      primaryKeyword: "Dachreinigung Muenchen",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Dachreinigung Muenchen",
+      metaDescription: "Lokale Dachreinigung in Muenchen.",
+      canonicalPath: route,
+      robots: "noindex",
+      jsonLd: [
+        {
+          "@context": "https://schema.org",
+          "@type": "LocalBusiness",
+          name: "Dachreinigung Muenchen"
+        }
+      ],
+      sitemapReady: true
+    },
+    sections: [
+      {
+        id: "hero-1",
+        type: "Hero",
+        registryKey: "Hero.default",
+        schemaVersion: 1,
+        zone: "hero",
+        order: 0,
+        variant: "default",
+        props: {
+          h1: "Dachreinigung in Muenchen",
+          body: "Lokale Dachreinigung in Muenchen."
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: ["/dachreinigung/"],
+    evidenceRefs: [],
+    uniquenessRationale: "Dedicated local proof."
+  };
 }
 
 function testDatabaseService(db: DatabaseClient): DatabaseService {

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { ReleaseCheck, ReleasePlan } from "@localseo/contracts";
+import type { PageJson, ReleaseCheck, ReleasePlan } from "@localseo/contracts";
 import {
   buildReleaseDeploymentKey,
   canDeployRelease,
@@ -239,8 +239,8 @@ void describe("renderApprovedReleaseArtifact", () => {
           pageVersionId: "version-1",
           targetUrl: "/dachreinigung-dachau/",
           targetSubdomain: null,
-          action: "publish",
-          pageJson: { title: "Dachreinigung Dachau" }
+          action: "create",
+          pageJson: pageJson()
         }
       ]
     });
@@ -263,12 +263,25 @@ void describe("renderApprovedReleaseArtifact", () => {
           pageVersionId: "version-1",
           targetUrl: "/",
           targetSubdomain: null,
-          action: "publish",
-          pageJson: {
-            title: "<script>alert(1)</script>",
-            description: '"onload=alert(1)',
-            body: "javascript:<img src=x onerror=alert(1)>"
-          }
+          action: "create",
+          pageJson: pageJson({
+            seo: {
+              title: "<script>alert(1)</script>",
+              metaDescription: '"onload=alert(1)',
+              canonicalPath: "/",
+              robots: "noindex",
+              jsonLd: [],
+              sitemapReady: false
+            },
+            sections: [
+              section({
+                props: {
+                  h1: "<script>alert(1)</script>",
+                  body: "javascript:<img src=x onerror=alert(1)>"
+                }
+              })
+            ]
+          })
         }
       ]
     });
@@ -293,27 +306,79 @@ void describe("renderApprovedReleaseArtifact", () => {
           pageVersionId: "version-1",
           targetUrl: "/dachreinigung-dachau/",
           targetSubdomain: null,
-          action: "publish",
-          pageJson: {
-            title: "Dachreinigung Dachau",
-            canonical: "https://example.test/dachreinigung-dachau/",
-            jsonLd: {
-              "@context": "https://schema.org",
-              "@type": "LocalBusiness",
-              name: "Dachreinigung Dachau"
+          action: "create",
+          pageJson: pageJson({
+            seo: {
+              title: "Dachreinigung Dachau",
+              metaDescription: "Lokale Dachreinigung in Dachau.",
+              canonicalPath: "/dachreinigung-dachau/",
+              robots: "noindex",
+              jsonLd: [
+                {
+                  "@context": "https://schema.org",
+                  "@type": "LocalBusiness",
+                  name: "Dachreinigung Dachau"
+                }
+              ],
+              sitemapReady: false
             }
-          }
+          })
         }
       ]
     });
 
     const body = site.files[0]?.body ?? "";
 
-    assert.match(body, /<link rel="canonical" href="https:\/\/example\.test\/dachreinigung-dachau\/">/u);
+    assert.match(body, /<link rel="canonical" href="\/dachreinigung-dachau\/">/u);
     assert.match(body, /<script type="application\/ld\+json">/u);
     assert.match(body, /"@type":"LocalBusiness"/u);
   });
 });
+
+function pageJson(input: Partial<PageJson> = {}): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/dachreinigung-dachau/",
+    pageType: "service_area_page",
+    target: {
+      service: "Dachreinigung",
+      location: "Dachau",
+      primaryKeyword: "Dachreinigung Dachau",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Dachreinigung Dachau",
+      metaDescription: "Lokale Dachreinigung in Dachau.",
+      canonicalPath: "/dachreinigung-dachau/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: false
+    },
+    sections: [section()],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Lokaler Dachau-Bezug.",
+    ...input
+  };
+}
+
+function section(input: Partial<PageJson["sections"][number]> = {}): PageJson["sections"][number] {
+  return {
+    id: "hero-1",
+    type: "Hero",
+    registryKey: "Hero.default",
+    schemaVersion: 1,
+    zone: "hero",
+    order: 0,
+    variant: "default",
+    props: {
+      h1: "Dachreinigung Dachau",
+      body: "Lokale Dachreinigung fuer Dachau."
+    },
+    evidenceRefs: [],
+    ...input
+  };
+}
 
 function releaseCheck(input: Pick<ReleaseCheck, "severity" | "result">): ReleaseCheck {
   return {

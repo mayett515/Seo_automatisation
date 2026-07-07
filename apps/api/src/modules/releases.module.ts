@@ -162,7 +162,7 @@ export class ReleasesService {
           releasePlanId,
           pageVersionId: row.pageVersionId,
           targetUrl: normalizeRelativeReleaseTargetRoute(row.targetUrl),
-          action: "create",
+          action: "create" as const,
           status: "pending"
         }))
       );

@@ -11,7 +11,7 @@ import type {
   UploadDeployFilesResult
 } from "@localseo/adapters";
 import { ProviderRequestError } from "@localseo/adapters";
-import type { DeploymentStatus, DeployJobData, ReleaseVerificationStatus } from "@localseo/contracts";
+import type { DeploymentStatus, DeployJobData, PageJson, ReleaseVerificationStatus } from "@localseo/contracts";
 import {
   approvals,
   customers,
@@ -446,11 +446,7 @@ async function createDeployFixture(db: DatabaseClient, input: { projectName?: st
       versionNumber: 1,
       status: "approved",
       approvedAt: new Date(),
-      pageJson: {
-        title: "Dachreinigung",
-        description: "Dachreinigung vor Ort.",
-        canonical: "https://customer.example/dachreinigung/"
-      }
+      pageJson: pageJson()
     })
     .returning();
   assert.ok(pageVersion);
@@ -475,7 +471,7 @@ async function createDeployFixture(db: DatabaseClient, input: { projectName?: st
     releasePlanId: releasePlan.id,
     pageVersionId: pageVersion.id,
     targetUrl: "/dachreinigung/",
-    action: "publish",
+    action: "create",
     status: "approved"
   });
 
@@ -491,6 +487,47 @@ async function createDeployFixture(db: DatabaseClient, input: { projectName?: st
     releasePlanId: releasePlan.id,
     deploymentKey,
     data
+  };
+}
+
+function pageJson(input: Partial<PageJson> = {}): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/dachreinigung/",
+    pageType: "service_area_page",
+    target: {
+      service: "Dachreinigung",
+      primaryKeyword: "Dachreinigung",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Dachreinigung",
+      metaDescription: "Dachreinigung vor Ort.",
+      canonicalPath: "/dachreinigung/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: true
+    },
+    sections: [
+      {
+        id: "hero-1",
+        type: "Hero",
+        registryKey: "Hero.default",
+        schemaVersion: 1,
+        zone: "hero",
+        order: 0,
+        variant: "default",
+        props: {
+          h1: "Dachreinigung",
+          body: "Dachreinigung vor Ort."
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Local service page.",
+    ...input
   };
 }
 

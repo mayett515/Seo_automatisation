@@ -4,6 +4,7 @@ import type { SearchConsolePort, TokenCipher, VerificationPort } from "@localseo
 import {
   ReleaseCheckSchema,
   ReleaseVerificationSchema,
+  type PageJson,
   type ReleaseVerificationJobData,
   type DeploymentStatus,
   type GscOAuthIntent,
@@ -380,7 +381,7 @@ async function createVerificationFixture(
       versionNumber: 1,
       status: "approved",
       approvedAt: new Date("2026-06-30T10:00:00.000Z"),
-      pageJson: {}
+      pageJson: pageJson()
     })
     .returning();
   assert.ok(pageVersion);
@@ -389,7 +390,7 @@ async function createVerificationFixture(
     releasePlanId: releasePlan.id,
     pageVersionId: pageVersion.id,
     targetUrl: input.targetUrl ?? "/dachreinigung/",
-    action: "publish",
+    action: "create",
     status: "deployed"
   });
 
@@ -438,6 +439,47 @@ async function createVerificationFixture(
     deploymentId: deployment.id,
     verificationId: verification.id,
     data
+  };
+}
+
+function pageJson(input: Partial<PageJson> = {}): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/dachreinigung/",
+    pageType: "service_area_page",
+    target: {
+      service: "Dachreinigung",
+      primaryKeyword: "Dachreinigung",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Dachreinigung",
+      metaDescription: "Lokale Dachreinigung.",
+      canonicalPath: "/dachreinigung/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: true
+    },
+    sections: [
+      {
+        id: "hero-1",
+        type: "Hero",
+        registryKey: "Hero.default",
+        schemaVersion: 1,
+        zone: "hero",
+        order: 0,
+        variant: "default",
+        props: {
+          h1: "Dachreinigung",
+          body: "Lokale Dachreinigung."
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Dedicated local proof.",
+    ...input
   };
 }
 

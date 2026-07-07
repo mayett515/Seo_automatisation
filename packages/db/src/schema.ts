@@ -12,9 +12,11 @@ import {
   gscSyncStatuses,
   jobStatuses,
   providerOperationStatuses,
+  pageVersionStatuses,
   reasoningTasks,
   releaseCheckResults,
   releaseCheckSeverities,
+  releaseItemActions,
   releaseNoteAudiences,
   releasePlanStatuses,
   releaseVerificationStatuses,
@@ -25,7 +27,14 @@ import {
   technicalAuditStatuses,
   websiteImportStatuses
 } from "@localseo/contracts";
-import type { SerpArtifactRef, SerpEngineError, SerpFeature, SerpSearchResult } from "@localseo/contracts";
+import type {
+  PageJson,
+  PageProposalJson,
+  SerpArtifactRef,
+  SerpEngineError,
+  SerpFeature,
+  SerpSearchResult
+} from "@localseo/contracts";
 import {
   boolean,
   doublePrecision,
@@ -68,6 +77,8 @@ export const gscOpportunitySignalStatusEnum = pgEnum("gsc_opportunity_signal_sta
 export const releaseNoteAudienceEnum = pgEnum("release_note_audience", releaseNoteAudiences);
 export const releaseSeverityEnum = pgEnum("release_check_severity", releaseCheckSeverities);
 export const releaseCheckResultEnum = pgEnum("release_check_result", releaseCheckResults);
+export const releaseItemActionEnum = pgEnum("release_item_action", releaseItemActions);
+export const pageVersionStatusEnum = pgEnum("page_version_status", pageVersionStatuses);
 export const approvalStatusEnum = pgEnum("approval_status", approvalStatuses);
 export const customerMembershipRoleEnum = pgEnum("customer_membership_role", customerMembershipRoles);
 
@@ -427,20 +438,25 @@ export const pageProposals = pgTable("page_proposals", {
   uniquenessRationale: text("uniqueness_rationale").notNull(),
   status: text("status").notNull().default("draft"),
   sitemapReady: boolean("sitemap_ready").default(false).notNull(),
+  proposalJson: jsonb("proposal_json").$type<PageProposalJson>(),
   ...timestamps
 });
 
-export const pageVersions = pgTable("page_versions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  pageProposalId: uuid("page_proposal_id")
-    .notNull()
-    .references(() => pageProposals.id),
-  versionNumber: integer("version_number").notNull(),
-  status: text("status").notNull().default("preview"),
-  pageJson: jsonb("page_json").$type<Record<string, unknown>>().notNull(),
-  approvedAt: timestamp("approved_at", { withTimezone: true }),
-  ...timestamps
-});
+export const pageVersions = pgTable(
+  "page_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pageProposalId: uuid("page_proposal_id")
+      .notNull()
+      .references(() => pageProposals.id),
+    versionNumber: integer("version_number").notNull(),
+    status: pageVersionStatusEnum("status").notNull().default("preview"),
+    pageJson: jsonb("page_json").$type<PageJson>().notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [uniqueIndex("page_versions_proposal_version_idx").on(table.pageProposalId, table.versionNumber)]
+);
 
 export const componentTemplates = pgTable("component_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -508,7 +524,7 @@ export const releasePlanItems = pgTable("release_plan_items", {
   pageVersionId: uuid("page_version_id").references(() => pageVersions.id),
   targetUrl: text("target_url").notNull(),
   targetSubdomain: text("target_subdomain"),
-  action: text("action").notNull(),
+  action: releaseItemActionEnum("action").notNull(),
   status: text("status").notNull().default("pending"),
   ...timestamps
 });

@@ -104,9 +104,13 @@ PageSectionInstance
 
 The AI lane may emit only structured `PageProposalJson`/`PageJson` that validates against contracts and registry rules. It must not emit arbitrary HTML, React, CSS, JavaScript, raw markup, class names, inline styles, or freeform layout instructions as product truth.
 
+The first PageJson contract slice enforces this with a recursive forbidden-key and unsafe-string scan in `packages/contracts`. That scan is an interim belt-and-suspenders guard, not the durable registry boundary. The durable boundary is the next registry slice: each section type gets a schema-owned props allow-list and renderer-owned behavior.
+
 Approved page versions are immutable. New AI work creates new proposals or versions.
 
 Structured `PageProposalJson` should persist as a proposal artifact, not only as `agent_runs.outputJson`. The default direction is a future `page_proposals.proposalJson` JSONB column, with existing flat proposal columns treated as query/projection fields. `agent_runs.outputJson` remains reasoning audit, not the UI's proposal source of truth.
+
+`page_versions.pageJson` is a JSONB column whose TypeScript `$type` is only a compile-time hint. Consumers that turn page JSON into release artifacts, previews, deploys, or customer-visible output must parse with `PageJsonSchema` at the boundary.
 
 The current release renderer is a scaffold path. The Page Registry implementation must migrate production rendering so that:
 
@@ -146,9 +150,9 @@ This preserves the current controlled-automation architecture:
 
 It also gives the next implementation slice a concrete target:
 
-1. Add PageJson/PageProposalJson contracts.
-2. Add contracts-owned page version status vocabulary and action-conditional release artifact validation.
-3. Decide and migrate the structured proposal artifact home, defaulting to `page_proposals.proposalJson`.
+1. Add PageJson/PageProposalJson contracts. Done in the first Page Registry slice.
+2. Add contracts-owned page version status vocabulary and action-conditional release artifact validation. Done in the first Page Registry slice.
+3. Decide and migrate the structured proposal artifact home, defaulting to `page_proposals.proposalJson`. Done in the first Page Registry slice.
 4. Create `packages/page-registry` with a small Local SEO section set.
 5. Add pure registry validation and page-studio movement helpers.
 6. Retarget release preflight and static rendering to typed PageJson.

@@ -169,6 +169,13 @@
       "when": 1783422386000,
       "tag": "0023_release_verification_active_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783427378171,
+      "tag": "0024_gifted_vertigo",
+      "breakpoints": true
     }
   ]
 }

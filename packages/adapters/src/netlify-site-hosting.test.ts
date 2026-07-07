@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import type { ApprovedReleaseArtifact } from "@localseo/contracts";
+import type { ApprovedReleaseArtifact, PageJson } from "@localseo/contracts";
 import { renderApprovedReleaseArtifact } from "@localseo/domain";
 import type { ObjectStoragePort } from "./index.js";
 import { NetlifySiteHostingAdapter } from "./netlify-site-hosting.js";
@@ -427,10 +427,51 @@ function artifact(): ApprovedReleaseArtifact {
         pageVersionId: "version-1",
         targetUrl: "/",
         targetSubdomain: null,
-        action: "publish",
-        pageJson: { title: "Home" }
+        action: "create",
+        pageJson: pageJson()
       }
     ]
+  };
+}
+
+function pageJson(input: Partial<PageJson> = {}): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/",
+    pageType: "home_page",
+    target: {
+      service: "Gebaeudeservice",
+      primaryKeyword: "Gebaeudeservice",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Home",
+      metaDescription: "Home page.",
+      canonicalPath: "/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: false
+    },
+    sections: [
+      {
+        id: "hero-1",
+        type: "Hero",
+        registryKey: "Hero.default",
+        schemaVersion: 1,
+        zone: "hero",
+        order: 0,
+        variant: "default",
+        props: {
+          h1: "Home",
+          body: "Home page."
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Home page scaffold.",
+    ...input
   };
 }
 

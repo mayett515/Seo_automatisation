@@ -101,7 +101,7 @@ export type StaticSiteArtifact = {
 
 export function renderApprovedReleaseArtifact(artifact: ApprovedReleaseArtifact): StaticSiteArtifact {
   return {
-    files: artifact.pages.map((page) => ({
+    files: artifact.pages.filter(isRenderableArtifactPage).map((page) => ({
       path: targetUrlToHtmlPath(page.targetUrl),
       body: renderPageHtml(page),
       contentType: "text/html; charset=utf-8"
@@ -109,15 +109,24 @@ export function renderApprovedReleaseArtifact(artifact: ApprovedReleaseArtifact)
   };
 }
 
-function renderPageHtml(page: ApprovedReleaseArtifactPage): string {
+function isRenderableArtifactPage(
+  page: ApprovedReleaseArtifactPage
+): page is ApprovedReleaseArtifactPage & { pageJson: NonNullable<ApprovedReleaseArtifactPage["pageJson"]> } {
+  return (page.action === "create" || page.action === "update") && page.pageJson !== null;
+}
+
+function renderPageHtml(
+  page: ApprovedReleaseArtifactPage & { pageJson: NonNullable<ApprovedReleaseArtifactPage["pageJson"]> }
+): string {
   const record = page.pageJson;
-  const title = pickString(record, ["title", "metaTitle", "seoTitle", "h1"]) ?? page.targetUrl;
-  const description = pickString(record, ["description", "metaDescription", "summary"]) ?? "";
-  const heading = pickString(record, ["h1", "headline", "title"]) ?? title;
-  const body = pickString(record, ["body", "content", "copy"]) ?? JSON.stringify(record, null, 2);
-  const canonical = pickString(record, ["canonical", "canonicalUrl"]);
-  const robots = pickString(record, ["robots"]);
-  const jsonLdScript = renderJsonLdScript(record.jsonLd);
+  const title = record.seo.title;
+  const description = record.seo.metaDescription;
+  // Scaffold only: the page-registry renderer will replace convention-based prop extraction.
+  const heading = sectionString(record, ["h1", "headline", "title"]) ?? record.target.primaryKeyword;
+  const body = sectionString(record, ["body", "content", "copy", "text"]) ?? JSON.stringify(record.sections, null, 2);
+  const canonical = resolveCanonicalUrl(record.seo.canonicalPath, page.targetUrl);
+  const robots = record.seo.robots;
+  const jsonLdScript = renderJsonLdScript(record.seo.jsonLd);
 
   return `<!doctype html>
 <html lang="de">
@@ -150,12 +159,29 @@ function targetUrlToHtmlPath(targetUrl: string): string {
   return /\.[a-z0-9]+$/iu.test(pathname) ? pathname : `${pathname}/index.html`;
 }
 
-function pickString(record: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = record[key];
+function resolveCanonicalUrl(canonicalPath: string, targetUrl: string): string {
+  if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+    const url = new URL(targetUrl);
+    url.pathname = canonicalPath;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  }
 
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value;
+  return canonicalPath;
+}
+
+function sectionString(
+  record: NonNullable<ApprovedReleaseArtifactPage["pageJson"]>,
+  keys: string[]
+): string | undefined {
+  for (const section of record.sections) {
+    for (const key of keys) {
+      const value = section.props[key];
+
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value;
+      }
     }
   }
 

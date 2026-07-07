@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ObjectStoragePort, SiteHostingPort } from "@localseo/adapters";
-import type { DeployJobData, ReleaseCheck } from "@localseo/contracts";
+import type { DeployJobData, PageJson, ReleaseCheck } from "@localseo/contracts";
 import { buildReleaseDeploymentKey } from "@localseo/domain";
 import {
   buildReleaseArtifactKey,
@@ -725,6 +725,56 @@ void describe("executeDeploy", () => {
     assert.equal(repository.failed.length, 1);
   });
 
+  void it("fails closed when a renderable deploy artifact item has no PageJson", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        releaseItems: [releaseArtifactItem({ pageJson: null })]
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not be called"))
+      }),
+      /without pageJson/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.failed.length, 1);
+  });
+
+  void it("fails closed when a renderable deploy artifact item has invalid PageJson", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        releaseItems: [
+          releaseArtifactItem({
+            pageJson: { schemaVersion: 1, route: "/", invalid: true } as unknown as PageJson
+          })
+        ]
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not be called"))
+      }),
+      /invalid pageJson/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.failed.length, 1);
+  });
+
   void it("allows redirect artifact items without a page version", async () => {
     const data = deployJobData();
     const repository = createRepository(
@@ -735,7 +785,7 @@ void describe("executeDeploy", () => {
             pageVersionId: null,
             pageVersionStatus: null,
             pageVersionApprovedAt: null,
-            pageJson: {}
+            pageJson: null
           })
         ]
       })
@@ -956,8 +1006,49 @@ function releaseArtifactItem(
     pageVersionApprovedAt: new Date("2026-06-29T00:00:00.000Z"),
     targetUrl: "/",
     targetSubdomain: null,
-    action: "publish",
-    pageJson: { title: "Home" },
+    action: "create",
+    pageJson: pageJson(),
+    ...input
+  };
+}
+
+function pageJson(input: Partial<PageJson> = {}): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/",
+    pageType: "home_page",
+    target: {
+      service: "Gebaeudeservice",
+      primaryKeyword: "Gebaeudeservice",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Gebaeudeservice",
+      metaDescription: "Lokaler Gebaeudeservice.",
+      canonicalPath: "/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: false
+    },
+    sections: [
+      {
+        id: "hero-1",
+        type: "Hero",
+        registryKey: "Hero.default",
+        schemaVersion: 1,
+        zone: "hero",
+        order: 0,
+        variant: "default",
+        props: {
+          h1: "Gebaeudeservice",
+          body: "Lokaler Gebaeudeservice."
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Homepage scaffold.",
     ...input
   };
 }

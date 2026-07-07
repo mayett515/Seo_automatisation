@@ -10,10 +10,15 @@ import {
 } from "@localseo/adapters";
 import {
   DeployJobDataSchema,
+  PageJsonSchema,
+  ReleaseItemActionSchema,
   type ApprovedReleaseArtifact,
   type DeployJobData,
   type DeploymentStatus,
+  type PageJson,
+  type PageVersionStatus,
   type ReleaseCheck,
+  type ReleaseItemAction,
   type ReleasePlan
 } from "@localseo/contracts";
 import { buildReleaseDeploymentKey, canDeployRelease } from "@localseo/domain";
@@ -48,12 +53,12 @@ export type DeployContext = {
 export type ReleaseArtifactItem = {
   id: string;
   pageVersionId: string | null;
-  pageVersionStatus: string | null;
+  pageVersionStatus: PageVersionStatus | null;
   pageVersionApprovedAt: Date | null;
   targetUrl: string;
   targetSubdomain: string | null;
-  action: string;
-  pageJson: Record<string, unknown>;
+  action: ReleaseItemAction;
+  pageJson: PageJson | null;
 };
 
 export type DeployRepository = {
@@ -1145,21 +1150,29 @@ function mapReleaseArtifactItem(row: {
   pageJson: Record<string, unknown> | null;
 }): ReleaseArtifactItem {
   assertDeployableReleaseArtifactItem(row);
+  const action = ReleaseItemActionSchema.parse(row.action);
+  const pageJson = row.pageJson ? PageJsonSchema.parse(row.pageJson) : null;
 
   return {
     id: row.id,
     pageVersionId: row.pageVersionId,
-    pageVersionStatus: row.pageVersionStatus,
+    pageVersionStatus: toPageVersionStatus(row.pageVersionStatus),
     pageVersionApprovedAt: row.pageVersionApprovedAt,
     targetUrl: row.targetUrl,
     targetSubdomain: row.targetSubdomain,
-    action: row.action,
-    pageJson: row.pageJson ?? {}
+    action,
+    pageJson
   };
 }
 
 function requiresPageVersionArtifact(action: string): boolean {
-  return action !== "redirect" && action !== "remove" && action !== "noindex";
+  const parsed = ReleaseItemActionSchema.safeParse(action);
+
+  if (!parsed.success) {
+    throw new DeployEvidenceError(`Release item action '${action}' is not supported.`);
+  }
+
+  return parsed.data === "create" || parsed.data === "update";
 }
 
 function assertDeployableReleaseArtifactItem(item: {
@@ -1189,6 +1202,32 @@ function assertDeployableReleaseArtifactItem(item: {
   if (!item.pageJson) {
     throw new DeployEvidenceError(`Release item ${item.id} references a page version without pageJson.`);
   }
+
+  const pageJsonResult = PageJsonSchema.safeParse(item.pageJson);
+
+  if (!pageJsonResult.success) {
+    throw new DeployEvidenceError(`Release item ${item.id} references invalid pageJson.`);
+  }
+}
+
+function toPageVersionStatus(status: string | null): PageVersionStatus | null {
+  if (status === null) {
+    return null;
+  }
+
+  if (
+    status === "draft" ||
+    status === "preview" ||
+    status === "changes_requested" ||
+    status === "approved" ||
+    status === "release_candidate" ||
+    status === "released" ||
+    status === "superseded"
+  ) {
+    return status;
+  }
+
+  throw new DeployEvidenceError(`Page version status '${status}' is not supported.`);
 }
 
 function toDeployablePlan(plan: ReleasePlanRow): ReleasePlan | undefined {

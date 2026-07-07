@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import type { PageJson } from "@localseo/contracts";
 import { renderApprovedReleaseArtifact } from "@localseo/domain";
 import {
   HttpReleaseVerificationAdapter,
@@ -348,20 +349,10 @@ void describe("HttpReleaseVerificationAdapter", () => {
         {
           releasePlanItemId: "item-1",
           pageVersionId: "version-1",
-          targetUrl: "/dachreinigung-muenchen/",
+          targetUrl: "https://example.test/dachreinigung-muenchen/",
           targetSubdomain: null,
-          action: "publish",
-          pageJson: {
-            title: "Dachreinigung Muenchen",
-            metaDescription: "Lokale Dachreinigung in Muenchen.",
-            h1: "Dachreinigung in Muenchen",
-            canonical: "https://example.test/dachreinigung-muenchen/",
-            jsonLd: {
-              "@context": "https://schema.org",
-              "@type": "LocalBusiness",
-              name: "Dachreinigung Muenchen"
-            }
-          }
+          action: "create",
+          pageJson: pageJson()
         }
       ]
     });
@@ -454,6 +445,54 @@ function browserRuntimeResult(result: BrowserRuntimeCheckResult): BrowserRuntime
     verifyTracking() {
       return Promise.resolve(result);
     }
+  };
+}
+
+function pageJson(input: Partial<PageJson> = {}): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/dachreinigung-muenchen/",
+    pageType: "service_area_page",
+    target: {
+      service: "Dachreinigung",
+      location: "Muenchen",
+      primaryKeyword: "Dachreinigung Muenchen",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Dachreinigung Muenchen",
+      metaDescription: "Lokale Dachreinigung in Muenchen.",
+      canonicalPath: "/dachreinigung-muenchen/",
+      robots: "index",
+      jsonLd: [
+        {
+          "@context": "https://schema.org",
+          "@type": "LocalBusiness",
+          name: "Dachreinigung Muenchen"
+        }
+      ],
+      sitemapReady: false
+    },
+    sections: [
+      {
+        id: "hero-1",
+        type: "Hero",
+        registryKey: "Hero.default",
+        schemaVersion: 1,
+        zone: "hero",
+        order: 0,
+        variant: "default",
+        props: {
+          h1: "Dachreinigung in Muenchen",
+          body: "Lokale Dachreinigung in Muenchen."
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Muenchen-specific service page.",
+    ...input
   };
 }
 
