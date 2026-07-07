@@ -166,6 +166,16 @@ Page Registry render/preflight boundary
 
 <context>
 ```text
+Page Version immutability
+  Approved, release-candidate, released, and superseded page versions are frozen structural artifacts.
+  Edits after approval must create a new page_versions row with a new versionNumber.
+  The database trigger must reject in-place changes to page_proposal_id, version_number, and page_json for frozen versions.
+```
+
+</context>
+
+<context>
+```text
 Agent constraint policy
   AI may propose; only contracts, QA, approval, workers, and verification can make a proposal real.
   New agent tasks and widened tool access require a named constraint profile.

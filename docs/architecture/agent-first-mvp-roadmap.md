@@ -624,10 +624,9 @@ PageJson/PageProposalJson contracts + page version status vocabulary (implemente
 -> pure page-studio movement/composition helpers (implemented 2026-07-07)
 -> retarget SEO preflight and static rendering to typed PageJson with an internal CSS foundation (implemented 2026-07-07)
 -> preview renderer sharing the static/deploy renderer core and theme tokens (implemented 2026-07-07)
--> project-scoped proposal/version read path
--> section notes anchored to stable section ids
--> approval freezes one concrete pageVersionId
--> release preflight revalidates PageJson and resolved robots before deploy
+-> project-scoped proposal/version read path (implemented 2026-07-07)
+-> section notes anchored to stable section ids (implemented 2026-07-07)
+-> approval freezes one concrete pageVersionId and release preflight revalidates PageJson/resolved robots (implemented 2026-07-07)
 ```
 
 Customer-page style direction:

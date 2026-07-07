@@ -106,7 +106,7 @@ The AI lane may emit only structured `PageProposalJson`/`PageJson` that validate
 
 The first PageJson contract slice enforces this with a recursive forbidden-key and unsafe-string scan in `packages/contracts`. That scan is an interim belt-and-suspenders guard, not the durable registry boundary. The durable boundary is the next registry slice: each section type gets a schema-owned props allow-list and renderer-owned behavior.
 
-Approved page versions are immutable. New AI work creates new proposals or versions.
+Approved page versions are immutable. New AI work creates new proposals or versions. The DB boundary enforces this with a `page_versions_prevent_immutable_update` trigger: once a row is approved, release-candidate, released, or superseded, structural edits to `page_proposal_id`, `version_number`, or `page_json` are rejected.
 
 Structured `PageProposalJson` should persist as a proposal artifact, not only as `agent_runs.outputJson`. The default direction is a future `page_proposals.proposalJson` JSONB column, with existing flat proposal columns treated as query/projection fields. `agent_runs.outputJson` remains reasoning audit, not the UI's proposal source of truth.
 
@@ -174,7 +174,7 @@ It also gives the next implementation slice a concrete target:
 8. Add preview rendering that shares the static renderer core and theme tokens. Done in the fifth Page Registry slice.
 9. Wire project-scoped proposal/version reads and the minimal preview API/UI foundation. Done in the sixth Page Registry slice.
 10. Add section notes anchored to stable section ids. Done in the seventh Page Registry slice.
-11. Freeze approved versions and revalidate PageJson during release preflight.
+11. Freeze approved versions and revalidate PageJson during release preflight. Done in the eighth Page Registry slice.
 
 The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:
 
@@ -192,7 +192,7 @@ Footer
 
 Richer sections such as problem/solution blocks, service grids, trust reviews, galleries, before-after, maps, nearby places, and references can follow after the source-of-truth path is proven and their source data exists.
 
-The first migration in this lane should add a unique index on `(pageProposalId, versionNumber)` and repository tests that approved versions cannot be mutated in place.
+The first migrations in this lane added a unique index on `(pageProposalId, versionNumber)` and the database immutability trigger that prevents approved versions from being structurally mutated in place.
 
 ## Alternatives Considered
 

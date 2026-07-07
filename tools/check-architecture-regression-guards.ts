@@ -232,6 +232,20 @@ requireIncludes(
   "preview rendering must have a deploy parity test"
 );
 
+requireIncludes(
+  "packages/db/migrations/0026_page_version_immutability.sql",
+  "page_versions_prevent_immutable_update",
+  "page-version-immutability",
+  "approved page version immutability must be enforced by a database trigger"
+);
+
+requireIncludes(
+  "packages/db/migrations/0026_page_version_immutability.sql",
+  "OLD.page_json IS DISTINCT FROM NEW.page_json",
+  "page-version-immutability",
+  "approved page version immutability must block in-place PageJson changes"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {
