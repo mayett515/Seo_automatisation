@@ -83,7 +83,7 @@ void describe(
       const queue = new FakeQueue();
       setReleaseVerificationQueue(queueService, queue);
 
-      const result = await service.verify(fixture.projectId, fixture.releasePlanId, "user-1", {});
+      const result = await service.verify(fixture.projectId, fixture.releasePlanId, undefined, {});
 
       assert.equal(result.status, "queued");
       assert.equal(result.type, "release_verification");
@@ -125,7 +125,7 @@ void describe(
         .returning();
       assert.ok(active);
 
-      const result = await service.verify(fixture.projectId, fixture.releasePlanId, "user-1", {});
+      const result = await service.verify(fixture.projectId, fixture.releasePlanId, undefined, {});
 
       assert.equal(result.status, "already_active");
       assert.equal(result.verificationId, active.id);
@@ -138,7 +138,7 @@ void describe(
       setReleaseVerificationQueue(queueService, queue);
 
       await assert.rejects(
-        () => service.verify(fixture.projectId, fixture.releasePlanId, "user-1", {}),
+        () => service.verify(fixture.projectId, fixture.releasePlanId, undefined, {}),
         /redis write failed/u
       );
 
@@ -164,7 +164,7 @@ void describe(
       const projectB = await createReleaseFixture(db, { projectName: "Project B" });
 
       await assert.rejects(
-        () => service.verify(projectA.projectId, projectB.releasePlanId, "user-1", {}),
+        () => service.verify(projectA.projectId, projectB.releasePlanId, undefined, {}),
         /not authorized for this project/u
       );
 
@@ -187,7 +187,7 @@ void describe(
       const queue = new FakeQueue();
       setReleaseVerificationQueue(queueService, queue);
 
-      const result = await service.verify(scoped.projectId, scoped.releasePlanId, "user-1", {});
+      const result = await service.verify(scoped.projectId, scoped.releasePlanId, undefined, {});
 
       assert.equal(result.releasePlanId, scoped.releasePlanId);
 
@@ -206,7 +206,7 @@ void describe(
 
       await assert.rejects(
         () =>
-          service.verify(projectA.projectId, projectA.releasePlanId, "user-1", { deploymentId: projectB.deploymentId }),
+          service.verify(projectA.projectId, projectA.releasePlanId, undefined, { deploymentId: projectB.deploymentId }),
         /No provider-succeeded deployment is available for verification/u
       );
 
