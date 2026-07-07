@@ -30,7 +30,7 @@ import {
   type PageVersionSummary
 } from "@localseo/contracts";
 import { pageProposals, pageVersions, type DatabaseClient } from "@localseo/db";
-import { renderPagePreviewFile } from "@localseo/page-registry";
+import { renderPagePreviewFile, validatePageJsonAgainstRegistry } from "@localseo/page-registry";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -301,6 +301,20 @@ function parseStoredPageJson(row: PageVersionRow): PageJson {
 
   if (parsed.data.route !== row.route) {
     throw new UnprocessableEntityException("Stored PageJson route does not match the page proposal route.");
+  }
+
+  if (parsed.data.target.primaryKeyword !== row.primaryKeyword) {
+    throw new UnprocessableEntityException("Stored PageJson primary keyword does not match the page proposal keyword.");
+  }
+
+  if (parsed.data.seo.canonicalPath !== row.route) {
+    throw new UnprocessableEntityException("Stored PageJson canonical path does not match the page proposal route.");
+  }
+
+  const registryValidation = validatePageJsonAgainstRegistry(parsed.data);
+
+  if (!registryValidation.success) {
+    throw new UnprocessableEntityException("Stored PageJson failed registry validation.");
   }
 
   return parsed.data;

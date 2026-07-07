@@ -157,6 +157,54 @@ void describe(
       assert.equal(row?.pageProposalId, fixture.pageProposalId);
     });
 
+    void it("fails closed when stored PageJson primary keyword differs from the proposal row", async () => {
+      const fixture = await createPageVersionFixture(db, {
+        name: "Keyword mismatch",
+        route: "/keyword-mismatch/",
+        storedPageJson: pageJson("/keyword-mismatch/", { primaryKeyword: "Fensterreinigung Muenchen" })
+      });
+
+      await assert.rejects(
+        () => service.getPageVersion(fixture.projectId, fixture.pageVersionId),
+        /PageJson primary keyword does not match/u
+      );
+    });
+
+    void it("fails closed when stored PageJson canonical path differs from the proposal route", async () => {
+      const fixture = await createPageVersionFixture(db, {
+        name: "Canonical mismatch",
+        route: "/canonical-mismatch/",
+        storedPageJson: pageJson("/canonical-mismatch/", { canonicalPath: "/other-canonical/" })
+      });
+
+      await assert.rejects(
+        () => service.getPageVersion(fixture.projectId, fixture.pageVersionId),
+        /PageJson canonical path does not match/u
+      );
+    });
+
+    void it("fails closed when stored PageJson passes contracts but fails registry validation", async () => {
+      const fixture = await createPageVersionFixture(db, {
+        name: "Registry invalid",
+        route: "/registry-invalid/",
+        storedPageJson: pageJson("/registry-invalid/", {
+          mutate: (value) => {
+            const firstSection = value.sections[0];
+            assert.ok(firstSection);
+            value.sections[0] = {
+              ...firstSection,
+              variant: "unknown"
+            };
+          }
+        })
+      });
+
+      await assert.rejects(
+        () => service.getPageVersion(fixture.projectId, fixture.pageVersionId),
+        /PageJson failed registry validation/u
+      );
+    });
+
     void it("fails closed when stored PageProposalJson no longer matches the contract", async () => {
       const fixture = await createPageVersionFixture(db, {
         name: "Invalid proposal",
@@ -266,21 +314,24 @@ function pageProposalJson(projectId: string, route: string): PageProposalJson {
   };
 }
 
-function pageJson(route: string): PageJson {
-  return {
+function pageJson(
+  route: string,
+  overrides: { primaryKeyword?: string; canonicalPath?: string; mutate?: (value: PageJson) => void } = {}
+): PageJson {
+  const value: PageJson = {
     schemaVersion: 1,
     route,
     pageType: "service_area_page",
     target: {
       service: "Dachreinigung",
       location: "Muenchen",
-      primaryKeyword: "Dachreinigung Muenchen",
+      primaryKeyword: overrides.primaryKeyword ?? "Dachreinigung Muenchen",
       secondaryKeywords: []
     },
     seo: {
       title: "Dachreinigung Muenchen",
       metaDescription: "Lokale Dachreinigung in Muenchen.",
-      canonicalPath: route,
+      canonicalPath: overrides.canonicalPath ?? route,
       robots: "noindex",
       jsonLd: [],
       sitemapReady: true
@@ -351,6 +402,10 @@ function pageJson(route: string): PageJson {
     evidenceRefs: [],
     uniquenessRationale: "Dedicated local proof."
   };
+
+  overrides.mutate?.(value);
+
+  return value;
 }
 
 function testDatabaseService(db: DatabaseClient): DatabaseService {

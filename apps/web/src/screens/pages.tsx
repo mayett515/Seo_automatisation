@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import {
   PageProposalListResponseSchema,
@@ -10,8 +10,8 @@ import {
 } from "@localseo/contracts";
 import { getJson } from "../lib/api";
 
-export function PagesScreen() {
-  const projectId = useProjectId();
+export function PagesScreen(props: { projectId: string }) {
+  const projectId = props.projectId;
   const proposals = useQuery({
     queryKey: ["page-proposals", projectId],
     queryFn: () => getJson(projectApiPath(projectId, "/pages/proposals"), PageProposalListResponseSchema),
@@ -83,9 +83,9 @@ export function PagesScreen() {
   );
 }
 
-export function PagePreviewScreen() {
-  const projectId = useProjectId();
-  const pageVersionId = usePageVersionId();
+export function PagePreviewScreen(props: { projectId: string; pageVersionId: string }) {
+  const projectId = props.projectId;
+  const pageVersionId = props.pageVersionId;
   const preview = useQuery({
     queryKey: ["page-version-preview", projectId, pageVersionId],
     queryFn: () =>
@@ -194,16 +194,6 @@ function pageVersionTone(status: PageVersionSummary["status"]): "neutral" | "suc
   }
 
   return "neutral";
-}
-
-function useProjectId(): string {
-  const params = useParams({ strict: false });
-  return typeof params.projectId === "string" ? params.projectId : "demo-project";
-}
-
-function usePageVersionId(): string {
-  const params = useParams({ strict: false });
-  return typeof params.pageId === "string" ? params.pageId : "";
 }
 
 function projectApiPath(projectId: string, suffix: string): string {

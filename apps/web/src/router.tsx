@@ -163,6 +163,18 @@ const projectRoute = createRoute({
   component: ProjectDashboardScreen
 });
 
+const projectPagesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/pages",
+  component: PagesRouteComponent
+});
+
+const projectPagePreviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/pages/$pageId/preview",
+  component: PagePreviewRouteComponent
+});
+
 const projectChildRoutes = [
   createRoute({
     getParentRoute: () => rootRoute,
@@ -179,16 +191,8 @@ const projectChildRoutes = [
     path: "/projects/$projectId/opportunities",
     component: OpportunityExplorerScreen
   }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/projects/$projectId/pages",
-    component: PagesScreen
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/projects/$projectId/pages/$pageId/preview",
-    component: PagePreviewScreen
-  }),
+  projectPagesRoute,
+  projectPagePreviewRoute,
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/approvals",
@@ -250,6 +254,16 @@ const projectChildRoutes = [
     component: () => <PlaceholderScreen title="Google Lagebericht" />
   })
 ];
+
+function PagesRouteComponent() {
+  const params = projectPagesRoute.useParams();
+  return <PagesScreen projectId={params.projectId} />;
+}
+
+function PagePreviewRouteComponent() {
+  const params = projectPagePreviewRoute.useParams();
+  return <PagePreviewScreen pageVersionId={params.pageId} projectId={params.projectId} />;
+}
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
