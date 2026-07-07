@@ -125,6 +125,19 @@ Provider adapters must not import `packages/page-registry`, `packages/domain` re
 
 Preview and deploy must share the same rendering core. Approval must approve the same structural page and renderer output that deploy will ship.
 
+Customer-page rendering uses a small internal CSS/theme system owned by the page-registry lane. It does not use Next.js or Tailwind as the customer-page runtime/style source for MVP. The operator application may continue to use React and TanStack for control surfaces, but approved customer pages are deterministic static HTML/CSS emitted from PageJson and registry entries.
+
+The renderer owns CSS class names, CSS custom properties, data attributes, and layout primitives. PageJson stores structured business/content/style choices only, such as section type, registry key, variant, zone, order, media references, CTA emphasis, density, and future theme preset identifiers. PageJson must not store utility classes, Tailwind classes, arbitrary tokens, inline styles, raw CSS, or framework component references.
+
+The first renderer/theme implementation should stay inside `packages/page-registry` until static deploy rendering, preview rendering, and Page Studio all need a shared public style API. A future `packages/page-theme` split is acceptable only after that duplication exists. The CSS foundation should favor standards-based primitives:
+
+```text
+CSS custom properties for semantic tokens
+cascade layers for reset/tokens/base/primitives/components/sections/variants
+small internal layout primitives such as stack, cluster, container, grid, sidebar, frame, and bleed
+renderer-owned data attributes for validated section variants and states
+```
+
 `packages/seo` remains the page-level QA/preflight owner, but it must consume parsed PageJson and registry-derived facts instead of loose key duck-typing. Preflight and rendering must agree on the same resolved values for title, canonical, robots, JSON-LD, H1, FAQ, area served, internal links, sitemap readiness, and uniqueness.
 
 Robots/indexability is resolved at release time. PageJson may carry content intent, but the final rendered robots value is owned by the release action and deploy context:
@@ -156,8 +169,8 @@ It also gives the next implementation slice a concrete target:
 4. Create `packages/page-registry` with a small Local SEO section set. Done in the second Page Registry slice.
 5. Add pure registry validation. Done in the second Page Registry slice.
 6. Add page-studio movement and composition helpers: required frame sections, legal ordering, legal movement, replacement, and variant switching.
-7. Retarget release preflight and static rendering to typed PageJson.
-8. Add preview rendering that shares the static renderer core.
+7. Retarget release preflight and static rendering to typed PageJson, including the internal CSS foundation.
+8. Add preview rendering that shares the static renderer core and theme tokens.
 9. Wire project-scoped proposal/version reads.
 10. Add section notes anchored to stable section ids.
 11. Freeze approved versions and revalidate PageJson during release preflight.
@@ -200,6 +213,14 @@ This rejection includes the existing dormant `component_templates` table. Do not
 
 Rejected. Agent-generated HTML/CSS/React cannot be safely validated against local SEO, approval, release, and rollback rules. The model must operate inside structured contracts.
 
+### Tailwind Or Next.js Customer-Page Runtime
+
+Rejected for MVP. Tailwind is useful for application UI speed, and Next.js is useful for app and site runtimes, but the customer-page lane needs deterministic deploy artifacts, registry-owned rendering, stable CSS output, preview/deploy parity, and no utility-class vocabulary in PageJson. The internal renderer should emit static HTML/CSS from typed PageJson and code-owned registry entries. A future ADR may revisit the runtime if customer-page needs outgrow static rendering.
+
+### Runtime CSS-In-JS For Customer Pages
+
+Rejected for MVP. Runtime CSS-in-JS would couple the deploy artifact to a JavaScript runtime and make renderer/preflight parity harder. Customer pages should ship static CSS generated from code-owned tokens, section prop schemas, variants, and renderer-owned data attributes.
+
 ## Regression Guard
 
 Future work must not:
@@ -209,10 +230,12 @@ Future work must not:
 - populate `component_templates` as registry truth,
 - mutate an approved `page_versions.pageJson` in place,
 - accept raw HTML, React, CSS, JavaScript, class names, or inline styles from model output,
+- store Tailwind/utility classes, runtime CSS-in-JS rules, arbitrary theme tokens, or user/model CSS in PageJson,
 - store page truth in rendered markup or comments,
 - attach notes to unstable section order,
 - bypass registry validation during preview, approval, release preflight, or deploy,
 - let provider adapters render page HTML,
+- make customer-page deploy artifacts depend on Next.js, Tailwind, or a browser-side styling runtime without superseding this ADR,
 - let preflight accept SEO evidence that the renderer does not emit.
 
 ## Related Files
@@ -225,3 +248,7 @@ Future work must not:
 - `packages/contracts/src/index.ts`
 - `packages/seo/src/index.ts`
 - `C:/big eater/page-registry-page-studio-stealer-findings-2026-07-06.md`
+- `C:/big eater/page-studio/business-site-pattern-mining-findings-2026-07-07.md`
+- `C:/big eater/page-studio/internal-css-theme-decision-2026-07-07.md`
+- `C:/big eater/page-studio/business-site-deep-mining-pattern-cards-2026-07-07.md`
+- `C:/big eater/css-system-pattern-mining/css-system-stealer-findings-2026-07-07.md`

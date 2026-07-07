@@ -179,6 +179,18 @@ component_instances    = optional projection or note-anchor data
 component_notes        = comments anchored to stable section ids/fields
 ```
 
+The operator UI and customer-page renderer are separate design systems:
+
+```text
+operator app
+  React + TanStack control surfaces, dense workflow UI, release status, approvals, notes
+
+customer pages
+  deterministic static HTML/CSS emitted from PageJson and code-owned registry entries
+```
+
+Do not make customer pages depend on the operator app's component library, Next.js, Tailwind, runtime CSS-in-JS, or browser-side rendering. The customer-page renderer owns CSS class names, CSS custom properties, data attributes, and layout primitives. PageJson stores structured choices only: section type, registry key, variant, zone, order, media references, CTA emphasis, density, proof visibility, and future theme preset identifiers.
+
 `component_instances` must not become a competing renderer source. If the UI needs component rows for notes, outlines, or search, they should be generated from `pageJson` and treated as projection data.
 
 Do not populate `component_templates` as runtime registry truth for MVP. Registry definitions stay code-owned unless a future ADR explicitly introduces editable tenant-specific registry entries.
@@ -256,7 +268,7 @@ packages/contracts
   PageJson/PageProposalJson schemas, section types, zones, DTOs
 
 packages/page-registry
-  registry entries, prop schemas, variants, preview/static renderers
+  registry entries, prop schemas, variants, internal CSS foundation, preview/static renderers
 
 packages/domain/src/page-studio
   canMoveSection, canSwitchVariant, canReplaceSectionType, publish readiness
@@ -268,6 +280,17 @@ packages/ai
 Every page section needs a stable section instance id so notes, validation errors, diffs, and future AI patches remain attached when the section moves.
 
 Preview and deploy must share the same renderer core. The future static release renderer belongs in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON.
+
+The first renderer CSS foundation should stay inside `packages/page-registry`:
+
+```text
+CSS custom properties for semantic tokens
+cascade layers for reset/tokens/base/primitives/components/sections/variants
+small layout primitives such as stack, cluster, container, grid, sidebar, frame, and bleed
+renderer-owned data attributes for validated section variants and states
+```
+
+Only split a separate `packages/page-theme` after static deploy rendering, preview rendering, and Page Studio need shared theme APIs. Until then, keeping CSS/theme code in the registry prevents a premature package boundary and keeps rendering behavior close to section prop schemas.
 
 ## Page Studio MVP
 

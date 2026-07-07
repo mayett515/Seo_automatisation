@@ -582,6 +582,15 @@ Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](d
 
 Source finding: `C:/big eater/page-registry-page-studio-stealer-findings-2026-07-06.md`.
 
+Additional Page Studio and CSS/theme findings:
+
+```text
+C:/big eater/page-studio/business-site-pattern-mining-findings-2026-07-07.md
+C:/big eater/page-studio/internal-css-theme-decision-2026-07-07.md
+C:/big eater/page-studio/business-site-deep-mining-pattern-cards-2026-07-07.md
+C:/big eater/css-system-pattern-mining/css-system-stealer-findings-2026-07-07.md
+```
+
 The implemented MVP registry starts with a small deployable Local SEO service-area skeleton:
 
 ```text
@@ -613,13 +622,25 @@ PageJson/PageProposalJson contracts + page version status vocabulary (implemente
 -> structured proposal persistence decision, default page_proposals.proposalJson (implemented 2026-07-07)
 -> packages/page-registry with a small Local SEO section set (implemented 2026-07-07)
 -> pure page-studio movement/composition helpers
--> retarget SEO preflight and static rendering to typed PageJson
--> preview renderer sharing the static/deploy renderer core
+-> retarget SEO preflight and static rendering to typed PageJson with an internal CSS foundation
+-> preview renderer sharing the static/deploy renderer core and theme tokens
 -> project-scoped proposal/version read path
 -> section notes anchored to stable section ids
 -> approval freezes one concrete pageVersionId
 -> release preflight revalidates PageJson and resolved robots before deploy
 ```
+
+Customer-page style direction:
+
+```text
+operator app = React/TanStack control surface
+customer pages = deterministic static HTML/CSS from PageJson and registry entries
+renderer owns class names, CSS variables, layout primitives, and data attributes
+PageJson stores structured choices only: section, variant, zone, density, media, CTA emphasis, future theme preset
+no Tailwind classes, inline styles, arbitrary CSS, raw tokens, CSS-in-JS runtime, or Next.js runtime dependency in customer-page artifacts for MVP
+```
+
+The internal CSS system should start inside `packages/page-registry` during renderer migration. It should use semantic CSS custom properties, cascade layers, small layout primitives, and registry-owned section variants. Split a separate `packages/page-theme` only after static deploy rendering, preview rendering, and Page Studio share enough duplicated theme APIs to justify the package boundary.
 
 Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
@@ -652,6 +673,7 @@ left/right variant arrows
 legal up/down movement arrows
 Generate Text / Generate FAQ / Generate CTA actions
 structured Edit and Media controls
+theme preset, density, media placement, proof visibility, and CTA emphasis controls
 customer notes on sections
 approval for one concrete version
 ```
