@@ -88,7 +88,7 @@ void describe(
     });
 
     void it("persists healthy verification evidence and projects the release plan as live", async () => {
-      const fixture = await createReleaseFixture(db);
+      const fixture = await createReleaseFixture(db, { releasePlanStatus: "deploying" });
       verifier.mode = "healthy";
 
       const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
@@ -116,10 +116,11 @@ void describe(
 
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "live");
+      assert.equal(releasePlan?.deployedAt?.toISOString(), "2026-06-30T12:00:00.000Z");
     });
 
     void it("persists rollback recommendation details while projecting the release plan as failed", async () => {
-      const fixture = await createReleaseFixture(db);
+      const fixture = await createReleaseFixture(db, { releasePlanStatus: "deploying" });
       verifier.mode = "rollback";
 
       const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
@@ -150,7 +151,7 @@ void describe(
     });
 
     void it("persists execution-failed verification evidence when the verifier throws", async () => {
-      const fixture = await createReleaseFixture(db);
+      const fixture = await createReleaseFixture(db, { releasePlanStatus: "deploying" });
       verifier.mode = "throw";
 
       const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
@@ -162,7 +163,8 @@ void describe(
       assert.equal(deployment?.verificationStatus, "execution_failed");
 
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
-      assert.equal(releasePlan?.status, "live");
+      assert.equal(releasePlan?.status, "deploying");
+      assert.equal(releasePlan?.deployedAt, null);
 
       const [verification] = await db
         .select()

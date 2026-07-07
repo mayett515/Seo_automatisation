@@ -241,7 +241,7 @@ void describe("executeDeploy", () => {
     assert.equal(repository.failed.length, 0);
   });
 
-  void it("replays an already successful deployment without creating another provider deploy", async () => {
+  void it("replays a provider-succeeded deployment without projecting the release live", async () => {
     const data = deployJobData();
     const repository = createRepository(
       deployContext({
@@ -251,6 +251,31 @@ void describe("executeDeploy", () => {
         })
       })
     );
+    const result = await executeDeploy({
+      data,
+      jobId: data.deploymentKey,
+      objectStorage: createObjectStorage(),
+      repository,
+      siteHosting: createSiteHosting(new Error("provider should not be called"))
+    });
+
+    assert.equal(result.status, "already_deployed");
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.releaseLiveCount, 0);
+  });
+
+  void it("replays a verified healthy deployment and projects the release live", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        existingDeployment: deploymentRow({
+          status: "live_healthy",
+          verificationStatus: "live_healthy",
+          providerDeployId: "provider-deploy-1"
+        })
+      })
+    );
+
     const result = await executeDeploy({
       data,
       jobId: data.deploymentKey,
@@ -753,7 +778,7 @@ void describe("executeDeploy", () => {
     assert.equal(result.status, "already_deployed");
     assert.equal(repository.started.length, 1);
     assert.equal(repository.providerSucceeded.length, 0);
-    assert.equal(repository.releaseLiveCount, 1);
+    assert.equal(repository.releaseLiveCount, 0);
   });
 
   void it("does not project rollback-recommended start conflicts live", async () => {

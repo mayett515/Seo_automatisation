@@ -96,7 +96,8 @@ void describe(
       assert.equal(deployment?.providerDeployId, "provider-deploy-1");
 
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
-      assert.equal(releasePlan?.status, "live");
+      assert.equal(releasePlan?.status, "deploying");
+      assert.equal(releasePlan?.deployedAt, null);
     });
 
     void it("allows deploys without rollback evidence when prior deployments are unsafe rollback sources", async () => {

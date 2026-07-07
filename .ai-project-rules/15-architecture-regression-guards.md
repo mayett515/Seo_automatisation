@@ -92,13 +92,20 @@ Use this shard when a task touches a seam previously found by review: persisted 
 These are not acceptable end states; they are tracked exceptions until the next release-spine hardening slices land.
 
 ```text
-release status hardening
-  provider_succeeded still projects releasePlans.status = live in the deploy worker.
-  Target fix: only post-deploy verification may project releasePlans.status = live.
-
 GSC verify workerization
   POST /verify still submits sitemap / Search Console handoff inline.
   Target fix: API enqueues a verification worker job; worker owns provider mutations.
+```
+
+</context>
+
+<context>
+Recently fixed seams now enforced by `corepack pnpm text:check`:
+
+```text
+release status hardening
+  provider_succeeded must not project releasePlans.status = live.
+  Only live_healthy/live_with_warnings verification outcomes may project releasePlans.status = live.
 ```
 
 </context>

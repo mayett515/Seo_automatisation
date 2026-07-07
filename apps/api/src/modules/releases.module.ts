@@ -1474,6 +1474,7 @@ async function persistReleaseVerification(
         .update(releasePlans)
         .set({
           status: nextReleasePlanStatus,
+          ...(nextReleasePlanStatus === "live" ? { deployedAt: checkedAt } : {}),
           updatedAt: new Date()
         })
         .where(and(eq(releasePlans.id, verification.releasePlanId), eq(releasePlans.projectId, projectId)));

@@ -30,14 +30,14 @@ function warnIfIncludes(path: string, text: string, category: string, message: s
   }
 }
 
-function warnIfRegex(path: string, pattern: RegExp, category: string, message: string): void {
-  if (pattern.test(read(path))) {
-    warnings.push({ category, message: `${path}: ${message}` });
+function requireRegex(path: string, pattern: RegExp, category: string, message: string): void {
+  if (!pattern.test(read(path))) {
+    failures.push({ category, message: `${path}: ${message}` });
   }
 }
 
-function requireRegex(path: string, pattern: RegExp, category: string, message: string): void {
-  if (!pattern.test(read(path))) {
+function requireNotRegex(path: string, pattern: RegExp, category: string, message: string): void {
+  if (pattern.test(read(path))) {
     failures.push({ category, message: `${path}: ${message}` });
   }
 }
@@ -140,18 +140,18 @@ warnIfIncludes(
   "GSC sitemap submission is still inline in POST /verify; planned fix is worker-owned verification"
 );
 
-warnIfIncludes(
+requireNotIncludes(
   "apps/worker/src/handlers/deploy.ts",
   "const releaseLiveProjectableDeploymentStatusValues = rollbackSourceDeploymentStatusValues",
-  "known-open-release-live-truth",
-  "provider_succeeded still participates in release-live projection; planned fix is verification-only live projection"
+  "release-live-truth",
+  "provider_succeeded must not participate in release-live projection"
 );
 
-warnIfRegex(
+requireNotRegex(
   "apps/worker/src/handlers/deploy.ts",
-  /async markProviderSucceeded[\s\S]*?releasePlans[\s\S]*?status: "live"/u,
-  "known-open-release-live-truth",
-  "provider success still writes releasePlans.status = live; planned fix is verification-only live projection"
+  /async markProviderSucceeded[\s\S]*?releasePlans[\s\S]*?status: "live"[\s\S]*?async markProviderPending/u,
+  "release-live-truth",
+  "provider success must not write releasePlans.status = live"
 );
 
 if (warnings.length > 0) {

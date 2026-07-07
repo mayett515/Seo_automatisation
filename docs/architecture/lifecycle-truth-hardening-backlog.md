@@ -119,7 +119,7 @@ Why: route/auth regressions are runtime-sensitive and should not rely on TypeScr
 
 ### Release Plan Status Should Eventually Split By Ownership
 
-`releasePlans.status` is currently a coarse projection that covers approval, deploy, health, failure, and rollback concepts. The detail records already preserve the precise truth, but future UI/reporting will be simpler and safer if these responsibilities are separated.
+`releasePlans.status` is currently a coarse projection that covers approval, deploy, health, failure, and rollback concepts. Provider success no longer projects this status to `live`; only post-deploy verification outcomes do. The detail records already preserve the precise truth, but future UI/reporting will be simpler and safer if these responsibilities are separated.
 
 Follow-up direction:
 

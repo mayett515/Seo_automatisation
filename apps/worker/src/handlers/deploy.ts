@@ -108,9 +108,12 @@ const rollbackSourceDeploymentStatusValues = [
   "live_healthy",
   "live_with_warnings"
 ] as const satisfies DeploymentStatus[];
-const releaseLiveProjectableDeploymentStatusValues = rollbackSourceDeploymentStatusValues;
+const releaseLiveProjectableDeploymentStatusValues = [
+  "live_healthy",
+  "live_with_warnings"
+] as const satisfies DeploymentStatus[];
 const replayableProviderDeploymentStatusValues = [
-  ...releaseLiveProjectableDeploymentStatusValues,
+  ...rollbackSourceDeploymentStatusValues,
   "verifying",
   "rollback_recommended",
   "rolled_back"
@@ -618,15 +621,6 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         if (!deployment) {
           throw new Error("Failed to update deployment provider result");
         }
-
-        await tx
-          .update(releasePlans)
-          .set({
-            status: "live",
-            deployedAt: new Date(),
-            updatedAt: new Date()
-          })
-          .where(and(eq(releasePlans.id, input.data.releasePlanId), eq(releasePlans.projectId, input.data.projectId)));
 
         return deployment;
       });

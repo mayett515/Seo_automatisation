@@ -230,7 +230,7 @@ This keeps integration tests close to production schema behavior without using p
 
 ## Coarse Release Plan Projection
 
-`releasePlans.status = "live"` and `releasePlans.status = "failed"` are currently coarse projections. `live` can mean the provider deploy succeeded before post-deploy verification has run. `failed` can mean the deploy itself failed, or it can mean the provider deploy succeeded but post-deploy verification found a rollback-level blocker.
+`releasePlans.status = "live"` and `releasePlans.status = "failed"` are currently coarse projections. `live` is projected only after post-deploy verification reports `live_healthy` or `live_with_warnings`; provider success alone remains deployment transport truth (`deployments.status = "provider_succeeded"`). `failed` can mean the deploy itself failed, or it can mean the provider deploy succeeded but post-deploy verification found a rollback-level blocker.
 
 Verifier infrastructure errors are now separate from observed live-page failures: `deployments.verificationStatus = "execution_failed"` and the matching `release_verifications` row mean the verifier did not complete, not that the page was proven broken.
 
