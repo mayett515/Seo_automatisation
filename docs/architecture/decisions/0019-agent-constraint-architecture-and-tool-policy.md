@@ -131,6 +131,7 @@ implemented 2026-07-07
   apps/worker/src/reasoning-policy.ts owns policyForReasoningTask(task)
   Opportunity Scout consumes policyForReasoningTask("opportunity_scout")
   Page Proposal consumes policyForReasoningTask("page_brief_draft")
+  Page Proposal active-run idempotency is keyed by project + task + opportunity subject
   Page Proposal persists only page_proposals.status = draft and page_versions.status = preview
   Page Proposal worker gates output through PageProposalJsonSchema, deterministic QA,
     registry validation, Page Studio publish-readiness, and shared preview rendering

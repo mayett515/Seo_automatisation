@@ -1133,6 +1133,33 @@ void describe("executePageProposal", () => {
     assert.equal(repository.persistedOutput, undefined);
   });
 
+  void it("marks preview render failures failed before persistence", async () => {
+    const repository = new FakePageProposalRepository();
+
+    await assert.rejects(
+      executePageProposal({
+        data: { projectId: "project-1", runId: "run-1", opportunityId: "opportunity-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: true,
+          provider: "mock",
+          model: "mock-page-proposal",
+          outputJson: validPageProposalJson(),
+          diagnostics: { latencyMs: 5 }
+        }),
+        objectStorage: new MemoryObjectStorage(),
+        renderPreview: () => {
+          throw new Error("preview render failed");
+        }
+      }),
+      /qa_rejected:preview_render/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "qa_rejected");
+    assert.equal(recordFromUnknown(repository.failed?.diagnostics).gateId, "preview_render");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
   void it("marks missing reasoning provider config as a terminal page proposal failure", async () => {
     const repository = new FakePageProposalRepository();
 
@@ -1219,6 +1246,7 @@ class FakeOpportunityScoutRepository implements OpportunityScoutRepository {
   run: FakeAgentRun = {
     id: "run-1",
     projectId: "project-1",
+    subjectId: null,
     task: "opportunity_scout",
     status: "queued",
     failureCode: null,
@@ -1291,6 +1319,7 @@ class FakePageProposalRepository implements PageProposalRepository {
   run: FakeAgentRun = {
     id: "run-1",
     projectId: "project-1",
+    subjectId: "opportunity-1",
     task: "page_brief_draft",
     status: "queued",
     failureCode: null,

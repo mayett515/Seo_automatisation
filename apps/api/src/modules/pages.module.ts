@@ -162,7 +162,7 @@ export class PagesService {
     const db = this.database.requireDb();
     await assertOpportunityForPageProposal(db, projectId, input.opportunityId);
 
-    const activeRun = await findActivePageProposalRun(db, projectId);
+    const activeRun = await findActivePageProposalRun(db, projectId, input.opportunityId);
     if (activeRun) {
       return activePageProposalResponse(activeRun);
     }
@@ -173,6 +173,7 @@ export class PagesService {
       await db.insert(agentRuns).values({
         id: runId,
         projectId,
+        subjectId: input.opportunityId,
         task: "page_brief_draft",
         status: "queued",
         diagnosticsJson: {
@@ -181,7 +182,7 @@ export class PagesService {
       });
     } catch (error) {
       if (isDatabaseUniqueViolation(error)) {
-        const conflictingRun = await findActivePageProposalRun(db, projectId);
+        const conflictingRun = await findActivePageProposalRun(db, projectId, input.opportunityId);
         if (conflictingRun) {
           return activePageProposalResponse(conflictingRun);
         }
@@ -509,7 +510,7 @@ async function assertOpportunityForPageProposal(db: Db, projectId: string, oppor
   }
 }
 
-async function findActivePageProposalRun(db: Db, projectId: string) {
+async function findActivePageProposalRun(db: Db, projectId: string, opportunityId: string) {
   const [run] = await db
     .select()
     .from(agentRuns)
@@ -517,6 +518,7 @@ async function findActivePageProposalRun(db: Db, projectId: string) {
       and(
         eq(agentRuns.projectId, projectId),
         eq(agentRuns.task, "page_brief_draft"),
+        eq(agentRuns.subjectId, opportunityId),
         inArray(agentRuns.status, ["queued", "running"])
       )
     )
@@ -528,16 +530,17 @@ async function findActivePageProposalRun(db: Db, projectId: string) {
 
 function activePageProposalResponse(run: typeof agentRuns.$inferSelect): PageProposalQueueResponse {
   const diagnostics = recordFromUnknown(run.diagnosticsJson);
+  const opportunityId = run.subjectId ?? stringFromUnknown(diagnostics.opportunityId);
 
   return PageProposalQueueResponseSchema.parse({
     jobId: run.id,
     projectId: run.projectId,
     runId: run.id,
-    opportunityId: stringFromUnknown(diagnostics.opportunityId),
+    opportunityId,
     type: "page_generation",
     status: "already_active",
     inputRef: run.inputRef ?? run.id,
-    message: "A page proposal run is already queued or running for this project.",
+    message: "A page proposal run is already queued or running for this opportunity.",
     createdAt: run.createdAt.toISOString()
   });
 }

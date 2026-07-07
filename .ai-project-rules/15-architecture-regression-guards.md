@@ -183,6 +183,7 @@ Agent constraint policy
   New agent tasks and widened tool access require a named constraint profile.
   Opportunity Scout remains read_evidence + analyze only.
   Page Proposal runs through the named page_brief_draft policy profile.
+  Page Proposal active-run idempotency is scoped to one queued/running run per opportunity subject, not one run for the whole project.
   Page Proposal may draft structured PageProposalJson only after contracts, registry, Page Studio composition, and preview gates pass.
   Page Proposal may persist draft page_proposals and preview page_versions only; it must not create approved page versions or enqueue deploy.
   Agent/session/tool approval is not product approval; product approval must be durable.

@@ -167,6 +167,7 @@ async function createPageProposalFixture(db: DatabaseClient): Promise<PagePropos
     .insert(agentRuns)
     .values({
       projectId: project.id,
+      subjectId: opportunity.id,
       task: "page_brief_draft",
       status: "queued",
       diagnosticsJson: { opportunityId: opportunity.id }

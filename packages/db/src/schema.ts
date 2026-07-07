@@ -333,6 +333,7 @@ export const agentRuns = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id),
+    subjectId: uuid("subject_id"),
     task: agentTaskEnum("task").notNull(),
     status: agentRunStatusEnum("status").notNull().default("queued"),
     failureCode: text("failure_code"),
@@ -349,9 +350,19 @@ export const agentRuns = pgTable(
   },
   (table) => [
     index("agent_runs_project_task_status_idx").on(table.projectId, table.task, table.status, table.createdAt),
-    uniqueIndex("agent_runs_active_per_project_task_idx")
+    index("agent_runs_project_task_subject_status_idx").on(
+      table.projectId,
+      table.task,
+      table.subjectId,
+      table.status,
+      table.createdAt
+    ),
+    uniqueIndex("agent_runs_active_per_project_task_subject_idx")
+      .on(table.projectId, table.task, table.subjectId)
+      .where(sql`${table.status} in ('queued', 'running') and ${table.subjectId} is not null`),
+    uniqueIndex("agent_runs_active_per_project_task_null_subject_idx")
       .on(table.projectId, table.task)
-      .where(sql`${table.status} in ('queued', 'running')`)
+      .where(sql`${table.status} in ('queued', 'running') and ${table.subjectId} is null`)
   ]
 );
 

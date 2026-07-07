@@ -98,6 +98,7 @@ export async function executePageProposal(input: {
   repository: PageProposalRepository;
   reasoning: AiReasoningPort;
   objectStorage: ObjectStoragePort;
+  renderPreview?: typeof renderPagePreviewFile;
   reasoningTimeoutMs?: number;
 }): Promise<Record<string, unknown>> {
   const run = await input.repository.loadRun(input.data);
@@ -108,6 +109,9 @@ export async function executePageProposal(input: {
 
   if (run.task !== "page_brief_draft") {
     throw new PageProposalEvidenceError(`Agent run ${input.data.runId} is not a page_brief_draft run.`);
+  }
+  if (run.subjectId !== input.data.opportunityId) {
+    throw new PageProposalEvidenceError(`Agent run ${input.data.runId} is not scoped to this opportunity.`);
   }
 
   if (run.status === "succeeded") {
@@ -219,12 +223,25 @@ export async function executePageProposal(input: {
     throw new PageProposalWorkflowError("qa_rejected:page_studio_composition");
   }
 
-  renderPagePreviewFile({
-    pageJson: qaResult.output.page,
-    targetUrl: qaResult.output.route,
-    mode: "editor",
-    previewId: input.data.runId
-  });
+  try {
+    const renderPreview = input.renderPreview ?? renderPagePreviewFile;
+    renderPreview({
+      pageJson: qaResult.output.page,
+      targetUrl: qaResult.output.route,
+      mode: "editor",
+      previewId: input.data.runId
+    });
+  } catch (error) {
+    await markWorkflowFailure(input.repository, input.data, reasoningResult, {
+      failureCode: "qa_rejected",
+      diagnostics: {
+        gateId: "preview_render",
+        message: normalizePreviewRenderFailure(error)
+      },
+      outputJson: compactOutputJson(qaResult.output)
+    });
+    throw new PageProposalWorkflowError("qa_rejected:preview_render", { cause: error });
+  }
 
   let persisted: PersistedPageProposal;
   try {
@@ -569,6 +586,11 @@ function compactDiagnostics(value: Record<string, unknown>): Record<string, unkn
 
 function compactOutputJson(value: unknown): Record<string, unknown> {
   return truncateRecord({ raw: value }, 64_000);
+}
+
+function normalizePreviewRenderFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Page proposal preview render failed.";
+  return message.slice(0, 500);
 }
 
 function truncateRecord(value: Record<string, unknown>, maxLength: number): Record<string, unknown> {

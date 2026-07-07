@@ -380,6 +380,20 @@ requireIncludes(
 );
 
 requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "eq(agentRuns.subjectId, opportunityId)",
+  "page-proposal-worker",
+  "Page Proposal active-run guard must be scoped to the opportunity subject"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  "agent_runs_active_per_project_task_subject_idx",
+  "page-proposal-worker",
+  "Page Proposal active-run DB guard must support subject-scoped agent runs"
+);
+
+requireIncludes(
   "packages/db/src/schema.ts",
   "page_proposals_project_route_idx",
   "page-proposal-worker",

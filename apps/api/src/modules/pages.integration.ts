@@ -116,6 +116,7 @@ void describe(
 
       const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, result.runId));
       assert.equal(run?.projectId, fixture.projectId);
+      assert.equal(run?.subjectId, fixture.opportunityId);
       assert.equal(run?.task, "page_brief_draft");
       assert.equal(run?.status, "queued");
       assert.deepEqual(run?.diagnosticsJson, { opportunityId: fixture.opportunityId });
@@ -156,6 +157,7 @@ void describe(
       await db.insert(agentRuns).values({
         id: "44444444-4444-4444-8444-444444444444",
         projectId: fixture.projectId,
+        subjectId: fixture.opportunityId,
         task: "page_brief_draft",
         status: "running",
         inputRef: "agent-runs/page-proposal-input.json",
@@ -169,6 +171,39 @@ void describe(
       assert.equal(result.opportunityId, fixture.opportunityId);
       assert.equal(result.inputRef, "agent-runs/page-proposal-input.json");
       assert.equal(queue.addCalls.length, 0);
+    });
+
+    void it("allows a separate active page proposal run for a different opportunity in the same project", async () => {
+      const fixture = await createOpportunityFixture(db, { name: "Proposal active separate" });
+      const otherOpportunityId = await createOpportunityForProject(db, fixture.projectId, {
+        service: "Fensterreinigung",
+        primaryKeyword: "fensterreinigung muenchen",
+        suggestedRoute: "/fensterreinigung-muenchen/"
+      });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setPageGenerationQueue(queueService, queue);
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      await db.insert(agentRuns).values({
+        id: "55555555-5555-4555-8555-555555555555",
+        projectId: fixture.projectId,
+        subjectId: fixture.opportunityId,
+        task: "page_brief_draft",
+        status: "running",
+        diagnosticsJson: { opportunityId: fixture.opportunityId }
+      });
+
+      const result = await service.queuePageProposal(fixture.projectId, { opportunityId: otherOpportunityId });
+
+      assert.equal(result.status, "queued");
+      assert.equal(result.opportunityId, otherOpportunityId);
+      assert.ok(result.runId);
+      assert.notEqual(result.runId, "55555555-5555-4555-8555-555555555555");
+      assert.equal(queue.addCalls.length, 1);
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, result.runId));
+      assert.equal(run?.subjectId, otherOpportunityId);
     });
 
     void it("returns a parsed page proposal only for its owning project", async () => {
@@ -562,33 +597,51 @@ async function createOpportunityFixture(db: DatabaseClient, input: { name: strin
   assert.ok(project);
 
   const userId = "22222222-2222-4222-8222-222222222222";
+  const opportunityId = await createOpportunityForProject(db, project.id, {
+    service: "Dachreinigung",
+    primaryKeyword: "dachreinigung muenchen",
+    suggestedRoute: "/dachreinigung-muenchen/"
+  });
+
+  return {
+    projectId: project.id,
+    userId,
+    opportunityId
+  };
+}
+
+async function createOpportunityForProject(
+  db: DatabaseClient,
+  projectId: string,
+  input: { service: string; primaryKeyword: string; suggestedRoute: string }
+): Promise<string> {
   const [opportunity] = await db
     .insert(opportunities)
     .values({
-      projectId: project.id,
+      projectId,
       classification: "near_term_target",
-      primaryKeyword: "dachreinigung muenchen",
+      primaryKeyword: input.primaryKeyword,
       score: 72,
       status: "new",
       evidenceJson: OpportunityBriefSchema.parse({
-        projectId: project.id,
+        projectId,
         classification: "near_term_target",
-        service: "Dachreinigung",
+        service: input.service,
         location: {
           name: "Muenchen",
           kind: "city",
           adjacencyReason: "manual_seed",
           existingClusterStrength: "weak"
         },
-        primaryKeyword: "dachreinigung muenchen",
-        secondaryKeywords: ["dach reinigen muenchen"],
-        suggestedRoute: "/dachreinigung-muenchen/",
+        primaryKeyword: input.primaryKeyword,
+        secondaryKeywords: [],
+        suggestedRoute: input.suggestedRoute,
         suggestedPageType: "normal_page",
         evidence: [],
         competitorObservations: [],
         groupHints: [],
         hubSpokeRole: "standalone",
-        uniquenessRationale: "A dedicated Muenchen page can address local Dachreinigung intent.",
+        uniquenessRationale: `A dedicated Muenchen page can address local ${input.service} intent.`,
         cannibalizationRisk: { level: "low", conflictingRoutes: [] },
         missingEvidence: [],
         confidence: 0.72,
@@ -597,12 +650,7 @@ async function createOpportunityFixture(db: DatabaseClient, input: { name: strin
     })
     .returning();
   assert.ok(opportunity);
-
-  return {
-    projectId: project.id,
-    userId,
-    opportunityId: opportunity.id
-  };
+  return opportunity.id;
 }
 
 async function approvePageVersion(db: DatabaseClient, pageVersionId: string): Promise<Date> {
