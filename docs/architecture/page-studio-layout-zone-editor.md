@@ -234,11 +234,17 @@ packages/contracts
 
 packages/domain/src/page-studio
   pure movement and validation decisions:
-    canMoveSection
-    moveSection
-    canReplaceSectionType
-    canSwitchVariant
-    validateTemplateStructure
+    validatePageStudioComposition
+    decidePageStudioPublishReadiness
+    decideMovePageSection
+    movePageSection
+    decideReplacePageSection
+    replacePageSection
+    decideSwitchPageSectionVariant
+    switchPageSectionVariant
+    getPageStudioSectionCapabilities
+
+Implemented 2026-07-07 as pure domain helpers in `packages/domain/src/page-studio.ts`. The helpers accept parsed `PageJson` plus registry summary-shaped metadata and return typed decisions for composition, publish-readiness, movement, variant switching, replacement, and UI capabilities. They do not validate section props, render HTML/CSS, import React, or access persistence.
 
 packages/page-registry
   component prop schemas

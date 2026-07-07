@@ -9,6 +9,8 @@ import type {
   WebsiteImportRun
 } from "@localseo/contracts";
 
+export * from "./page-studio.js";
+
 export type DeployDecision =
   | { kind: "blocked"; blockerCount: number; warnings: ReleaseCheck[] }
   | { kind: "ready"; warnings: ReleaseCheck[] }

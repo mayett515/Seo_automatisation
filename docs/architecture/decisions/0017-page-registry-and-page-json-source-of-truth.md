@@ -168,7 +168,7 @@ It also gives the next implementation slice a concrete target:
 3. Decide and migrate the structured proposal artifact home, defaulting to `page_proposals.proposalJson`. Done in the first Page Registry slice.
 4. Create `packages/page-registry` with a small Local SEO section set. Done in the second Page Registry slice.
 5. Add pure registry validation. Done in the second Page Registry slice.
-6. Add page-studio movement and composition helpers: required frame sections, legal ordering, legal movement, replacement, and variant switching.
+6. Add page-studio movement and composition helpers: required frame sections, legal ordering, legal movement, replacement, and variant switching. Done in the third Page Registry slice.
 7. Retarget release preflight and static rendering to typed PageJson, including the internal CSS foundation.
 8. Add preview rendering that shares the static renderer core and theme tokens.
 9. Wire project-scoped proposal/version reads.

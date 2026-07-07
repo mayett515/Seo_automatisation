@@ -621,7 +621,7 @@ First implementation order:
 PageJson/PageProposalJson contracts + page version status vocabulary (implemented 2026-07-07)
 -> structured proposal persistence decision, default page_proposals.proposalJson (implemented 2026-07-07)
 -> packages/page-registry with a small Local SEO section set (implemented 2026-07-07)
--> pure page-studio movement/composition helpers
+-> pure page-studio movement/composition helpers (implemented 2026-07-07)
 -> retarget SEO preflight and static rendering to typed PageJson with an internal CSS foundation
 -> preview renderer sharing the static/deploy renderer core and theme tokens
 -> project-scoped proposal/version read path
