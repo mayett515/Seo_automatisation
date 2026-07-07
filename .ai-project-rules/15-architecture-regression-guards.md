@@ -57,7 +57,7 @@ Use this shard when a task touches a seam previously found by review: persisted 
 <pre-flight-checklist>
 1. [ ] Does this code call a provider method that mutates remote state or credentials?
 2. [ ] If yes, is it in a worker handler with job/run audit, retries, and idempotency?
-3. [ ] If it remains in an API route temporarily, is it recorded as a known-open seam with a follow-up slice?
+3. [ ] If it remains in an API route temporarily, is it read-only; otherwise stop and workerize it before adding new product surface.
 4. [ ] Are transient and terminal provider failures classified separately?
 </pre-flight-checklist>
 
@@ -86,22 +86,22 @@ Use this shard when a task touches a seam previously found by review: persisted 
 3. [ ] Did ADR regression guards gain concrete wording when a review found a new failure mode?
 </pre-flight-checklist>
 
-## 4. Current Known Open Seams
+## 4. Fixed Seams To Guard
 
 <context>
-These are not acceptable end states; they are tracked exceptions until the next release-spine hardening slices land.
+Recently fixed seams now enforced by `corepack pnpm text:check`:
 
 ```text
 GSC verify workerization
-  POST /verify still submits sitemap / Search Console handoff inline.
-  Target fix: API creates/reuses a durable running verification row and enqueues a verification worker job; worker owns provider mutations and release-health projection.
+  POST /verify must not call VerificationPort.verifyRelease(...) inline.
+  POST /verify must not submit sitemap / Search Console handoff inline.
+  API creates/reuses a durable running verification row and enqueues a verification worker job.
+  Worker owns provider mutations and release-health projection.
 ```
 
 </context>
 
 <context>
-Recently fixed seams now enforced by `corepack pnpm text:check`:
-
 ```text
 release status hardening
   provider_succeeded must not project releasePlans.status = live.

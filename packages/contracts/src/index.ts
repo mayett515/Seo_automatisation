@@ -23,6 +23,7 @@ export const jobTypes = [
   "seo_qa",
   "deployment_agent_preflight",
   "deploy",
+  "release_verification",
   "gsc_sync",
   "analytics",
   "report",
@@ -41,6 +42,7 @@ export const queueNames = [
   "seo-qa",
   "deploy",
   "rollback",
+  "release-verification",
   "gsc-sync",
   "analytics",
   "report",
@@ -138,6 +140,7 @@ export const gscOpportunitySignalTypes = [
 ] as const;
 
 export const gscOpportunitySignalStatuses = ["internal_radar", "near_term_target", "rejected", "promoted"] as const;
+export const releaseVerificationQueueStatuses = [...jobStatuses, "already_active"] as const;
 
 export const reasoningTasks = [
   "opportunity_scout",
@@ -279,6 +282,7 @@ export const ReleasePlanStatusSchema = z.enum(releasePlanStatuses);
 export const DeploymentStatusSchema = z.enum(deploymentStatuses);
 export const ProviderOperationStatusSchema = z.enum(providerOperationStatuses);
 export const ReleaseVerificationStatusSchema = z.enum(releaseVerificationStatuses);
+export const ReleaseVerificationQueueStatusSchema = z.enum(releaseVerificationQueueStatuses);
 export const GscConnectionStatusSchema = z.enum(gscConnectionStatuses);
 export const GscSyncStatusSchema = z.enum(gscSyncStatuses);
 export const WebsiteImportStatusSchema = z.enum(websiteImportStatuses);
@@ -555,6 +559,19 @@ export const RollbackJobDataSchema = z.object({
   triggeredByUserId: z.string().min(1).nullable().optional(),
   triggerSource: z.string().min(1).optional()
 });
+
+export const ReleaseVerificationJobDataSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    releasePlanId: z.string().min(1),
+    deploymentId: z.string().min(1),
+    verificationId: z.string().min(1),
+    maxAttempts: z.number().int().positive().optional(),
+    jobRunId: z.string().min(1).optional(),
+    triggeredByUserId: z.string().min(1).nullable().optional(),
+    triggerSource: z.string().min(1).optional()
+  })
+  .strict();
 
 export const WebsiteImportJobDataSchema = z.object({
   projectId: ProjectIdSchema,
@@ -1087,6 +1104,11 @@ export const TechnicalAuditQueueResponseSchema = QueueJobSchema.extend({
   auditRunId: z.string().min(1).optional(),
   sourceUrl: WebsiteImportSourceUrlSchema.optional()
 });
+export const ReleaseVerificationQueueResponseSchema = QueueJobSchema.extend({
+  status: ReleaseVerificationQueueStatusSchema,
+  deploymentId: z.string().min(1).optional(),
+  verificationId: z.string().min(1).optional()
+});
 
 export const RankingProofSchema = z.object({
   id: z.string().min(1),
@@ -1175,6 +1197,7 @@ export type MainPreview = z.output<typeof MainPreviewSchema>;
 export type QueueJob = z.output<typeof QueueJobSchema>;
 export type DeployJobData = z.output<typeof DeployJobDataSchema>;
 export type RollbackJobData = z.output<typeof RollbackJobDataSchema>;
+export type ReleaseVerificationJobData = z.output<typeof ReleaseVerificationJobDataSchema>;
 export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
 export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
 export type TechnicalAuditJobData = z.output<typeof TechnicalAuditJobDataSchema>;
@@ -1239,12 +1262,14 @@ export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueRespo
 export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
 export type SerpScoutQueueResponse = z.output<typeof SerpScoutQueueResponseSchema>;
 export type TechnicalAuditQueueResponse = z.output<typeof TechnicalAuditQueueResponseSchema>;
+export type ReleaseVerificationQueueResponse = z.output<typeof ReleaseVerificationQueueResponseSchema>;
 export type RankingProof = z.output<typeof RankingProofSchema>;
 export type RankingProofListResponse = z.output<typeof RankingProofListResponseSchema>;
 export type AiReasoningEnqueueFailureCode = z.output<typeof AiReasoningEnqueueFailureCodeSchema>;
 export type AgentRunFailureCode = z.output<typeof AgentRunFailureCodeSchema>;
 export type OpportunityLifecycleStatus = z.output<typeof OpportunityLifecycleStatusSchema>;
 export type OpportunityScoutQueueStatus = z.output<typeof OpportunityScoutQueueStatusSchema>;
+export type ReleaseVerificationQueueStatus = z.output<typeof ReleaseVerificationQueueStatusSchema>;
 export type OpportunityExplorerOpportunity = z.output<typeof OpportunityExplorerOpportunitySchema>;
 export type OpportunityExplorerListResponse = z.output<typeof OpportunityExplorerListResponseSchema>;
 export type AgentRunFailureSummary = z.output<typeof AgentRunFailureSummarySchema>;

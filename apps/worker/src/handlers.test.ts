@@ -50,6 +50,10 @@ import {
   type TechnicalAuditRepository
 } from "./handlers/technical-audit.js";
 import {
+  ReleaseVerificationConfigurationError,
+  ReleaseVerificationEvidenceError
+} from "./handlers/release-verification.js";
+import {
   executeWebsiteImport,
   parseWebsiteImportJobData,
   WebsiteImportConfigurationError,
@@ -60,6 +64,7 @@ import {
   createReasoningAdapter,
   isTerminalWorkerError,
   parseGscSyncJobData,
+  parseReleaseVerificationJobData,
   routeJob,
   toWorkerRethrowError
 } from "./handlers.js";
@@ -225,6 +230,38 @@ void describe("parseSerpScoutJobData", () => {
 
   void it("rejects missing SERP scout identifiers", () => {
     assert.throws(() => parseSerpScoutJobData({ projectId: "project-1" }), /require projectId, snapshotId, and query/u);
+  });
+});
+
+void describe("parseReleaseVerificationJobData", () => {
+  void it("accepts valid release verification job data", () => {
+    assert.deepEqual(
+      parseReleaseVerificationJobData({
+        projectId: "project-1",
+        releasePlanId: "release-1",
+        deploymentId: "deployment-1",
+        verificationId: "verification-1",
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }),
+      {
+        projectId: "project-1",
+        releasePlanId: "release-1",
+        deploymentId: "deployment-1",
+        verificationId: "verification-1",
+        jobRunId: "job-run-1",
+        triggeredByUserId: "user-1",
+        triggerSource: "user_action"
+      }
+    );
+  });
+
+  void it("rejects missing release verification identifiers", () => {
+    assert.throws(
+      () => parseReleaseVerificationJobData({ projectId: "project-1" }),
+      /require projectId, releasePlanId, deploymentId, and verificationId/u
+    );
   });
 });
 
@@ -425,6 +462,8 @@ void describe("isTerminalWorkerError", () => {
     assert.equal(isTerminalWorkerError(new SerpScoutProviderError("provider_timeout")), false);
     assert.equal(isTerminalWorkerError(new TechnicalAuditConfigurationError("missing database")), true);
     assert.equal(isTerminalWorkerError(new TechnicalAuditEvidenceError("missing audit run")), true);
+    assert.equal(isTerminalWorkerError(new ReleaseVerificationConfigurationError("missing database")), true);
+    assert.equal(isTerminalWorkerError(new ReleaseVerificationEvidenceError("missing verification run")), true);
     assert.equal(
       isTerminalWorkerError(new GscSyncFailureError("google_refresh_token_invalid", { reconnectRequired: true })),
       true
@@ -448,6 +487,10 @@ void describe("isTerminalWorkerError", () => {
     assert.ok(toWorkerRethrowError(new OpportunityScoutWorkflowError("qa_rejected")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new SerpScoutTerminalError("captcha_blocked")) instanceof UnrecoverableError);
     assert.ok(toWorkerRethrowError(new TechnicalAuditEvidenceError("missing audit run")) instanceof UnrecoverableError);
+    assert.ok(
+      toWorkerRethrowError(new ReleaseVerificationEvidenceError("missing verification run")) instanceof
+        UnrecoverableError
+    );
     assert.equal(toWorkerRethrowError(new Error("provider timeout")) instanceof UnrecoverableError, false);
     assert.equal(
       toWorkerRethrowError(new OpportunityScoutProviderError("provider_timeout")) instanceof UnrecoverableError,

@@ -75,18 +75,25 @@ Harness:
 
 - [integration-database.ts](/C:/localseoproject/packages/db/test-support/integration-database.ts)
 
-Implemented tests:
+Implemented API tests:
 
-1. Healthy verification persists a `release_verifications` row, persists child `release_verification_checks`, updates `deployments.status` and `deployments.verificationStatus` to `live_healthy`, and projects `releasePlans.status` to `live`.
-2. Rollback-level verification persists blocker details, updates the deployment to `rollback_recommended`, and projects the release plan to the current coarse `failed` state.
-3. Verifier execution failure is persisted as `execution_failed` evidence without marking the deployment or release plan as observed failed health; it must not leave the deployment in `verifying` or `running`.
+1. `POST /verify` creates a `release_verifications.status = running` row and enqueues `release-verification` with `jobId = verificationId`.
+2. A second verify request for the same deployment returns `already_active` without enqueuing duplicate work.
+3. Queue enqueue failure marks the pre-created verification `execution_failed` and writes a `verification_queue_check`.
 4. Cross-project verification is rejected and writes no verification rows for the other project.
-5. Adapter-returned release-plan identity is ignored during persistence; the project-scoped route `releasePlanId` owns the verification row.
+5. The queued verification row uses the project-scoped route `releasePlanId`.
 6. A deployment id from another release plan or project is rejected and writes no verification rows.
-7. Absolute verification target routes are rejected before the verifier adapter can fetch them.
-8. Absolute page proposal routes are rejected when release plan items are created.
+7. Absolute page proposal routes are rejected when release plan items are created.
 
-This file contributes 7 rollback-preflight tests, 8 release verification tests, and 5 rollback queueing tests. The full API integration command also runs queue/job audit and tracking ingestion integration tests.
+Implemented worker tests:
+
+1. Healthy verification persists child `release_verification_checks`, updates `deployments.status` and `deployments.verificationStatus` to `live_healthy`, and projects `releasePlans.status` to `live`.
+2. GSC sitemap handoff failure stays warning-level and projects `live_with_warnings`, not `rollback_recommended`.
+3. Verifier infrastructure errors remain retryable before the final BullMQ attempt.
+4. Final verifier infrastructure failure is persisted as `execution_failed` evidence without marking the deployment or release plan as observed failed health.
+5. Absolute verification target routes are rejected in the worker execution path before the verifier adapter can fetch them.
+
+This file contributes 7 rollback-preflight tests, 7 API release verification queueing tests, 5 worker release verification projection tests, and 5 rollback queueing tests. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
 
 ### Rollback Queueing
 

@@ -7,7 +7,6 @@ import {
   Inject,
   Injectable,
   Module,
-  Optional,
   Param,
   Post,
   Req,
@@ -22,8 +21,8 @@ import {
   ReleaseCheckSchema,
   ReleaseNoteSchema,
   ReleasePlanSchema,
-  ReleaseVerificationCheckSchema,
-  ReleaseVerificationSchema,
+  ReleaseVerificationJobDataSchema,
+  ReleaseVerificationQueueResponseSchema,
   RollbackJobDataSchema,
   RollbackPointSchema,
   VerifyReleaseRequestSchema,
@@ -31,31 +30,16 @@ import {
   type ReleasePlan,
   type ReleaseCheck,
   type ReleaseNote,
-  type ReleasePlanStatus,
-  type ReleaseVerification,
   type ReleaseVerificationStatus,
+  type ReleaseVerificationQueueResponse,
   type RollbackPoint
 } from "@localseo/contracts";
-import {
-  AesGcmTokenCipher,
-  GoogleSearchConsoleAdapter,
-  HttpReleaseVerificationAdapter,
-  PlaywrightBrowserRuntimeVerifier,
-  isProviderRequestError,
-  type VerificationPort
-} from "@localseo/adapters";
-import { parseAppEnv } from "@localseo/config";
-import {
-  buildReleaseDeploymentKey,
-  canDeployRelease,
-  decideReleaseReadiness,
-  decideReleaseVerificationStatus
-} from "@localseo/domain";
+import { buildReleaseDeploymentKey, canDeployRelease, decideReleaseReadiness } from "@localseo/domain";
 import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "@localseo/seo";
 import {
   approvals,
   deployments,
-  gscConnections,
+  isDatabaseUniqueViolation,
   pageProposals,
   pageVersions,
   projectTrackingKeys,
@@ -77,7 +61,6 @@ import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
-const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type Db = DatabaseClient;
@@ -104,8 +87,8 @@ const deployJobAttempts = 20;
 const deployJobBackoffDelayMs = 15_000;
 const rollbackJobAttempts = 5;
 const rollbackJobBackoffDelayMs = 15_000;
-const maxGscInspectionUrlsPerVerification = 10;
-export const RELEASE_VERIFICATION_PORT = Symbol("RELEASE_VERIFICATION_PORT");
+const releaseVerificationJobAttempts = 3;
+const releaseVerificationJobBackoffDelayMs = 10_000;
 
 @Injectable()
 export class ReleasesService {
@@ -113,10 +96,7 @@ export class ReleasesService {
     @Inject(QueueProducerService)
     private readonly queues: QueueProducerService,
     @Inject(DatabaseService)
-    private readonly database: DatabaseService,
-    @Optional()
-    @Inject(RELEASE_VERIFICATION_PORT)
-    private readonly verification: VerificationPort = createReleaseVerificationAdapter()
+    private readonly database: DatabaseService
   ) {}
 
   async createPlan(projectId: string, body: unknown): Promise<ReleasePlan> {
@@ -451,82 +431,139 @@ export class ReleasesService {
   async verify(
     projectId: string,
     releasePlanId: string,
+    userId: string | undefined,
     body: unknown
-  ): Promise<ReleaseVerification & { projectId: string }> {
+  ): Promise<ReleaseVerificationQueueResponse> {
     await this.assertReleasePlanForProject(projectId, releasePlanId);
     const input = VerifyReleaseRequestSchema.parse(body ?? {});
     const db = this.database.db;
 
     if (!db || !isPersistedId(releasePlanId)) {
-      return {
+      return ReleaseVerificationQueueResponseSchema.parse({
+        jobId: `release-verification:${releasePlanId}:dry-run`,
         projectId,
-        ...ReleaseVerificationSchema.parse({
-          releasePlanId,
-          deploymentId: input.deploymentId,
-          verificationStatus: "execution_failed",
-          summary: "Release persistence is required before post-deploy verification can run.",
-          checkedAt: new Date().toISOString(),
-          checks: [
-            ReleaseCheckSchema.parse({
-              checkKey: "verification_persistence_check",
-              scope: "project",
-              severity: "warning",
-              result: "skipped",
-              message: "Release persistence is required before post-deploy verification can run."
-            })
-          ]
-        })
-      };
+        releasePlanId,
+        deploymentId: input.deploymentId,
+        type: "release_verification",
+        status: "dry_run",
+        message: "Release persistence is required before post-deploy verification can run.",
+        createdAt: new Date().toISOString()
+      });
     }
 
     const deployment = await loadDeploymentForVerification(db, projectId, releasePlanId, input.deploymentId);
-    const targetUrls = await loadVerificationTargetUrls(db, releasePlanId, deployment);
-    const trackingExpected = await hasActiveTrackingKey(db, projectId);
+    const active = await findActiveReleaseVerification(db, deployment.id);
 
-    const verification = await this.verification
-      .verifyRelease({
+    if (active) {
+      return ReleaseVerificationQueueResponseSchema.parse({
+        jobId: active.id,
+        projectId,
         releasePlanId,
         deploymentId: deployment.id,
-        liveUrls: targetUrls,
-        trackingExpected
-      })
-      .catch((error: unknown) =>
-        verificationExecutionFailureResult({
+        verificationId: active.id,
+        type: "release_verification",
+        status: "already_active",
+        inputRef: active.id,
+        message: "Release verification is already running for this deployment.",
+        createdAt: active.createdAt.toISOString()
+      });
+    }
+
+    const verificationId = randomUUID();
+    const jobId = verificationId;
+
+    try {
+      await db.insert(releaseVerifications).values({
+        id: verificationId,
+        releasePlanId,
+        deploymentId: deployment.id,
+        status: "running",
+        summary: "Post-deploy verification is queued.",
+        evidenceJson: {
+          source: "release_verify_endpoint",
+          state: "queued"
+        }
+      });
+    } catch (error) {
+      if (isDatabaseUniqueViolation(error)) {
+        const conflictingRun = await findActiveReleaseVerification(db, deployment.id);
+        if (conflictingRun) {
+          return ReleaseVerificationQueueResponseSchema.parse({
+            jobId: conflictingRun.id,
+            projectId,
+            releasePlanId,
+            deploymentId: deployment.id,
+            verificationId: conflictingRun.id,
+            type: "release_verification",
+            status: "already_active",
+            inputRef: conflictingRun.id,
+            message: "Release verification is already running for this deployment.",
+            createdAt: conflictingRun.createdAt.toISOString()
+          });
+        }
+      }
+
+      throw error;
+    }
+
+    let enqueued: boolean;
+
+    try {
+      enqueued = await this.queues.enqueue({
+        queueName: "release-verification",
+        jobName: "release_verification",
+        jobId,
+        data: ReleaseVerificationJobDataSchema.parse({
+          projectId,
           releasePlanId,
           deploymentId: deployment.id,
-          error
-        })
-      );
-    const gscChecks = await buildGscPostDeployChecks(db, projectId, targetUrls);
-    const checks = [...verification.checks, ...gscChecks];
-    const verificationStatus =
-      verification.verificationStatus === "execution_failed"
-        ? verification.verificationStatus
-        : decideReleaseVerificationStatus(checks);
+          verificationId,
+          triggeredByUserId: userId ?? null,
+          triggerSource: "user_action"
+        }),
+        options: {
+          attempts: releaseVerificationJobAttempts,
+          backoff: {
+            type: "exponential",
+            delay: releaseVerificationJobBackoffDelayMs
+          }
+        },
+        audit: {
+          projectId,
+          type: "release_verification",
+          inputRef: verificationId,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
+        }
+      });
+    } catch (error) {
+      await markReleaseVerificationQueueFailure(db, verificationId, normalizeQueueFailureMessage(error));
+      throw error;
+    }
 
-    const persisted = await persistReleaseVerification(db, projectId, deployment.id, {
-      ...verification,
+    if (!enqueued) {
+      await markReleaseVerificationQueueFailure(
+        db,
+        verificationId,
+        "Release verification queue was not configured after run creation."
+      );
+    }
+
+    return ReleaseVerificationQueueResponseSchema.parse({
+      jobId,
+      projectId,
       releasePlanId,
       deploymentId: deployment.id,
-      verificationStatus,
-      summary:
-        verificationStatus === "execution_failed"
-          ? verification.summary
-          : verificationSummaryFromStatus(verificationStatus),
-      checks
+      verificationId,
+      type: "release_verification",
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: verificationId,
+      message: enqueued
+        ? undefined
+        : "Release verification queue is not configured. This is an explicit dry-run response.",
+      createdAt: new Date().toISOString()
     });
-
-    return {
-      projectId,
-      ...ReleaseVerificationSchema.parse({
-        releasePlanId,
-        deploymentId: persisted.deploymentId ?? undefined,
-        verificationStatus: persisted.verificationStatus,
-        summary: persisted.summary,
-        checkedAt: persisted.checkedAt,
-        checks: persisted.checks
-      })
-    };
   }
 
   async listNotes(
@@ -685,8 +722,13 @@ class ReleasesController {
 
   @Post("projects/:projectId/releases/:releasePlanId/verify")
   @RequireProjectPermission("release:verify")
-  verify(@Param("projectId") projectId: string, @Param("releasePlanId") releasePlanId: string, @Body() body: unknown) {
-    return this.releases.verify(projectId, releasePlanId, body);
+  verify(
+    @Param("projectId") projectId: string,
+    @Param("releasePlanId") releasePlanId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.releases.verify(projectId, releasePlanId, request.auth?.user.id, body);
   }
 
   @Get("projects/:projectId/releases/:releasePlanId/notes")
@@ -702,26 +744,9 @@ class ReleasesController {
 
 @Module({
   controllers: [ReleasesController],
-  providers: [
-    ReleasesService,
-    {
-      provide: RELEASE_VERIFICATION_PORT,
-      useFactory: () => createReleaseVerificationAdapter()
-    }
-  ]
+  providers: [ReleasesService]
 })
 export class ReleasesModule {}
-
-function createReleaseVerificationAdapter(): VerificationPort {
-  return new HttpReleaseVerificationAdapter({
-    browserCheckTimeoutMs: env.RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS,
-    browserRuntime: env.RELEASE_BROWSER_VERIFICATION_ENABLED
-      ? new PlaywrightBrowserRuntimeVerifier({
-          executablePath: env.RELEASE_BROWSER_VERIFICATION_EXECUTABLE_PATH
-        })
-      : undefined
-  });
-}
 
 async function persistReleaseChecks(db: Db, releasePlanId: string, checks: ReleaseCheck[]): Promise<void> {
   await db.transaction(async (tx) => {
@@ -1061,38 +1086,6 @@ async function loadDeploymentForVerification(
   return deployment;
 }
 
-async function loadVerificationTargetUrls(
-  db: Db,
-  releasePlanId: string,
-  deployment: typeof deployments.$inferSelect
-): Promise<string[]> {
-  const baseLiveUrl = liveUrlsFromDeployment(deployment)[0];
-  const itemRows = await db
-    .select({
-      targetUrl: releasePlanItems.targetUrl
-    })
-    .from(releasePlanItems)
-    .where(eq(releasePlanItems.releasePlanId, releasePlanId));
-
-  if (!baseLiveUrl || itemRows.length === 0) {
-    return liveUrlsFromDeployment(deployment);
-  }
-
-  return [...new Set(itemRows.map((row) => resolveVerificationTargetUrl(row.targetUrl, baseLiveUrl)))];
-}
-
-function resolveVerificationTargetUrl(targetUrl: string, baseLiveUrl: string): string {
-  const route = normalizeRelativeReleaseTargetRoute(targetUrl);
-  const base = new URL(baseLiveUrl);
-  const resolved = new URL(route, base);
-
-  if (resolved.origin !== base.origin) {
-    throw new BadRequestException("Release verification target routes must stay on the deployment host.");
-  }
-
-  return resolved.toString();
-}
-
 function normalizeRelativeReleaseTargetRoute(targetUrl: string): string {
   const trimmed = targetUrl.trim();
 
@@ -1108,491 +1101,57 @@ function normalizeRelativeReleaseTargetRoute(targetUrl: string): string {
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
-async function buildGscPostDeployChecks(db: Db, projectId: string, targetUrls: string[]): Promise<ReleaseCheck[]> {
-  const connection = await loadLatestGscConnection(db, projectId);
-  const propertyUrl = connection?.propertyUrl ?? undefined;
-  const firstTargetUrl = targetUrls[0];
-
-  if (!connection || connection.status !== "connected" || !connection.encryptedRefreshToken || !propertyUrl) {
-    return [
-      gscCheck({
-        checkKey: "gsc_connection_check",
-        result: "skipped",
-        message: "Google Search Console handoff skipped because no connected property is available.",
-        evidence: {
-          observed: {
-            connectionStatus: connection?.status ?? "missing"
-          }
-        }
-      })
-    ];
-  }
-
-  const searchConsole = createSearchConsoleForHandoff();
-  const tokenCipher = env.GSC_TOKEN_ENCRYPTION_KEY ? new AesGcmTokenCipher(env.GSC_TOKEN_ENCRYPTION_KEY) : undefined;
-
-  if (!searchConsole || !tokenCipher) {
-    return [
-      gscCheck({
-        checkKey: "gsc_connection_check",
-        result: "skipped",
-        message: "Google Search Console handoff skipped because OAuth runtime configuration is incomplete.",
-        evidence: {
-          observed: { connectionStatus: "connected", runtimeConfigured: false }
-        }
-      })
-    ];
-  }
-
-  let refreshToken: string;
-  let accessToken: string;
-
-  try {
-    refreshToken = tokenCipher.decrypt(connection.encryptedRefreshToken);
-  } catch {
-    const reason = "refresh_token_decrypt_failed";
-    await markGscConnectionError(db, connection.id, reason);
-
-    return [
-      gscCheck({
-        checkKey: "gsc_connection_check",
-        result: "failed",
-        message: "Google Search Console handoff could not decrypt the stored refresh token. Reconnect Search Console.",
-        evidence: {
-          observed: {
-            reason,
-            reconnectRequired: true
-          }
-        }
-      })
-    ];
-  }
-
-  try {
-    const tokens = await searchConsole.refreshAccessToken({ refreshToken });
-    accessToken = tokens.accessToken;
-  } catch (error) {
-    const reason = classifyGscHandoffAuthFailure(error);
-
-    if (reason.reconnectRequired) {
-      await markGscConnectionError(db, connection.id, reason.reason);
-    }
-
-    return [
-      gscCheck({
-        checkKey: "gsc_connection_check",
-        result: "failed",
-        message: "Google Search Console handoff could not refresh access. Reconnect Search Console.",
-        evidence: {
-          observed: {
-            reason: reason.reason,
-            reconnectRequired: reason.reconnectRequired,
-            provider: providerDiagnostic(error)
-          }
-        }
-      })
-    ];
-  }
-
-  const checks: ReleaseCheck[] = [
-    gscCheck({
-      checkKey: "gsc_connection_check",
-      result: "passed",
-      message: "Google Search Console connection is ready for post-deploy handoff.",
-      evidence: {
-        observed: {
-          propertyUrl
-        }
-      }
-    })
-  ];
-
-  if (firstTargetUrl) {
-    const sitemapUrl = new URL("/sitemap.xml", firstTargetUrl).toString();
-
-    try {
-      await searchConsole.submitSitemap({
-        accessToken,
-        projectId,
-        propertyUrl,
-        sitemapUrl
-      });
-      checks.push(
-        gscCheck({
-          checkKey: "gsc_sitemap_submission_check",
-          result: "passed",
-          message: "Sitemap was submitted to Google Search Console.",
-          evidence: {
-            targetUrl: sitemapUrl,
-            observed: { propertyUrl, sitemapUrl }
-          }
-        })
-      );
-    } catch (error) {
-      checks.push(
-        gscCheck({
-          checkKey: "gsc_sitemap_submission_check",
-          result: "failed",
-          message: "Sitemap submission to Google Search Console failed.",
-          evidence: {
-            targetUrl: sitemapUrl,
-            observed: {
-              propertyUrl,
-              provider: providerDiagnostic(error)
-            }
-          }
-        })
-      );
-    }
-  }
-
-  for (const inspectionUrl of targetUrls.slice(0, maxGscInspectionUrlsPerVerification)) {
-    try {
-      const inspection = await searchConsole.inspectUrl({
-        accessToken,
-        siteUrl: propertyUrl,
-        inspectionUrl
-      });
-      checks.push(
-        gscCheck({
-          checkKey: "gsc_url_inspection_check",
-          result: "passed",
-          message: "Google Search Console URL Inspection returned indexing diagnostics.",
-          evidence: {
-            targetUrl: inspectionUrl,
-            observed: {
-              siteUrl: inspection.siteUrl,
-              inspectionUrl: inspection.inspectionUrl,
-              verdict: inspection.verdict ?? null,
-              coverageState: inspection.coverageState ?? null,
-              checkedAt: inspection.checkedAt
-            }
-          }
-        })
-      );
-    } catch (error) {
-      checks.push(
-        gscCheck({
-          checkKey: "gsc_url_inspection_check",
-          result: "failed",
-          message: "Google Search Console URL Inspection failed.",
-          evidence: {
-            targetUrl: inspectionUrl,
-            observed: {
-              propertyUrl,
-              provider: providerDiagnostic(error)
-            }
-          }
-        })
-      );
-    }
-  }
-
-  if (targetUrls.length > maxGscInspectionUrlsPerVerification) {
-    checks.push(
-      gscCheck({
-        checkKey: "gsc_url_inspection_limit_check",
-        result: "skipped",
-        message: "Additional URLs were not inspected because the post-deploy GSC handoff batch is bounded.",
-        evidence: {
-          observed: {
-            inspectedUrlCount: maxGscInspectionUrlsPerVerification,
-            skippedUrlCount: targetUrls.length - maxGscInspectionUrlsPerVerification
-          }
-        }
-      })
-    );
-  }
-
-  return checks;
-}
-
-async function loadLatestGscConnection(db: Db, projectId: string) {
-  const [connection] = await db
-    .select()
-    .from(gscConnections)
-    .where(eq(gscConnections.projectId, projectId))
-    .orderBy(desc(gscConnections.createdAt))
-    .limit(1);
-
-  return connection;
-}
-
-function createSearchConsoleForHandoff() {
-  const redirectUri = env.GOOGLE_OAUTH_REDIRECT_URI ?? `${env.API_PUBLIC_URL}/gsc/callback`;
-  const stateSecret = env.GSC_OAUTH_STATE_SECRET ?? env.BETTER_AUTH_SECRET;
-
-  if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !stateSecret) {
-    return undefined;
-  }
-
-  return new GoogleSearchConsoleAdapter({
-    clientId: env.GOOGLE_OAUTH_CLIENT_ID,
-    clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
-    redirectUri,
-    stateSecret
-  });
-}
-
-async function markGscConnectionError(db: Db, connectionId: string, reason: string): Promise<void> {
-  await db
-    .update(gscConnections)
-    .set({
-      status: "error",
-      failureJson: { reason },
-      updatedAt: new Date()
-    })
-    .where(eq(gscConnections.id, connectionId));
-}
-
-function classifyGscHandoffAuthFailure(error: unknown): { reason: string; reconnectRequired: boolean } {
-  if (
-    isProviderRequestError(error) &&
-    (error.providerReasonCode === "invalid_grant" ||
-      error.providerReasonCode === "invalid_client" ||
-      error.statusCode === 400 ||
-      error.statusCode === 401 ||
-      error.statusCode === 403)
-  ) {
-    return { reason: "google_refresh_token_invalid", reconnectRequired: true };
-  }
-
-  return { reason: "google_oauth_refresh_failed", reconnectRequired: false };
-}
-
-function providerDiagnostic(error: unknown): Record<string, unknown> {
-  if (!isProviderRequestError(error)) {
-    return { reason: error instanceof Error ? error.name : "unknown_error" };
-  }
-
-  return {
-    provider: error.provider,
-    operation: error.operation,
-    reasonCode: error.reasonCode,
-    statusCode: error.statusCode ?? null,
-    providerReasonCode: error.providerReasonCode ?? null
-  };
-}
-
-function gscCheck(input: Omit<ReleaseCheck, "scope" | "severity">): ReleaseCheck {
-  return ReleaseCheckSchema.parse({
-    ...input,
-    scope: "gsc",
-    severity: "warning"
-  });
-}
-
-function verificationSummaryFromStatus(status: ReleaseVerificationStatus): string {
-  return status === "live_healthy"
-    ? "Post-deploy verification passed."
-    : "Post-deploy verification completed with issues.";
-}
-
-async function hasActiveTrackingKey(db: Db, projectId: string): Promise<boolean> {
+async function findActiveReleaseVerification(db: Db, deploymentId: string) {
   const [row] = await db
-    .select({ id: projectTrackingKeys.id })
-    .from(projectTrackingKeys)
-    .where(
-      and(
-        eq(projectTrackingKeys.projectId, projectId),
-        eq(projectTrackingKeys.status, "active"),
-        isNull(projectTrackingKeys.revokedAt)
-      )
-    )
+    .select()
+    .from(releaseVerifications)
+    .where(and(eq(releaseVerifications.deploymentId, deploymentId), eq(releaseVerifications.status, "running")))
     .limit(1);
 
-  return Boolean(row);
+  return row;
 }
 
-async function persistReleaseVerification(
-  db: Db,
-  projectId: string,
-  deploymentId: string,
-  verification: ReleaseVerification
-): Promise<ReleaseVerification> {
-  const checkedAt = new Date(verification.checkedAt);
-  const verificationStatus = verification.verificationStatus;
+async function markReleaseVerificationQueueFailure(db: Db, verificationId: string, message: string): Promise<void> {
+  const checkedAt = new Date();
 
-  return db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(releaseVerifications)
-      .values({
-        releasePlanId: verification.releasePlanId,
-        deploymentId,
-        status: verificationStatus,
-        summary: verification.summary,
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(releaseVerifications)
+      .set({
+        status: "execution_failed",
+        summary: "Post-deploy verification could not be queued.",
         checkedAt,
         evidenceJson: {
           source: "release_verify_endpoint",
-          checkCount: verification.checks.length
-        }
-      })
-      .returning();
-
-    if (!created) {
-      throw new Error("Failed to persist release verification");
-    }
-
-    if (verification.checks.length > 0) {
-      await tx.insert(releaseVerificationChecks).values(
-        verification.checks.map((check) => {
-          const evidence = recordFromUnknown(check.evidence);
-
-          return {
-            verificationId: created.id,
-            checkKey: check.checkKey,
-            scope: check.scope,
-            targetUrl: stringFromUnknown(evidence.targetUrl),
-            severity: check.severity,
-            result: check.result,
-            message: check.message,
-            expectedJson: recordOrUndefined(evidence.expected),
-            observedJson: recordOrUndefined(evidence.observed),
-            evidenceJson: check.evidence,
-            checkedAt
-          };
-        })
-      );
-    }
-
-    const nextDeploymentStatus = deploymentStatusFromVerification(verificationStatus);
-
-    await tx
-      .update(deployments)
-      .set({
-        ...(nextDeploymentStatus ? { status: nextDeploymentStatus } : {}),
-        verificationStatus,
-        verifiedAt: checkedAt,
+          queueFailure: { message }
+        },
         updatedAt: new Date()
       })
-      .where(and(eq(deployments.id, deploymentId), eq(deployments.projectId, projectId)));
+      .where(and(eq(releaseVerifications.id, verificationId), eq(releaseVerifications.status, "running")))
+      .returning({ id: releaseVerifications.id });
 
-    const nextReleasePlanStatus = releasePlanStatusFromVerification(verificationStatus);
-
-    if (nextReleasePlanStatus) {
-      await tx
-        .update(releasePlans)
-        .set({
-          status: nextReleasePlanStatus,
-          ...(nextReleasePlanStatus === "live" ? { deployedAt: checkedAt } : {}),
-          updatedAt: new Date()
-        })
-        .where(and(eq(releasePlans.id, verification.releasePlanId), eq(releasePlans.projectId, projectId)));
+    if (!updated) {
+      return;
     }
 
-    return ReleaseVerificationSchema.parse({
-      releasePlanId: created.releasePlanId,
-      deploymentId: created.deploymentId ?? undefined,
-      verificationStatus: created.status,
-      summary: created.summary,
-      checkedAt: created.checkedAt.toISOString(),
-      checks: verification.checks.map((check) =>
-        ReleaseVerificationCheckSchema.parse({
-          ...check,
-          checkedAt: verification.checkedAt
-        })
-      )
+    await tx.insert(releaseVerificationChecks).values({
+      verificationId,
+      checkKey: "verification_queue_check",
+      scope: "project",
+      severity: "warning",
+      result: "failed",
+      message: "Post-deploy verification could not be queued.",
+      evidenceJson: {
+        queueFailure: { message }
+      },
+      checkedAt
     });
   });
 }
 
-function deploymentStatusFromVerification(status: ReleaseVerificationStatus): DeploymentStatus | undefined {
-  if (status === "live_healthy" || status === "live_with_warnings" || status === "rollback_recommended") {
-    return status;
-  }
-
-  if (status === "running") {
-    return "verifying";
-  }
-
-  if (status === "execution_failed" || status === "not_started") {
-    return undefined;
-  }
-
-  return "failed";
-}
-
-function releasePlanStatusFromVerification(status: ReleaseVerificationStatus): ReleasePlanStatus | undefined {
-  if (status === "live_healthy" || status === "live_with_warnings") {
-    return "live";
-  }
-
-  if (status === "rollback_recommended" || status === "failed") {
-    return "failed";
-  }
-
-  return undefined;
-}
-
-function verificationExecutionFailureResult(input: {
-  releasePlanId: string;
-  deploymentId: string;
-  error: unknown;
-}): ReleaseVerification {
-  const message = normalizeFailureMessage(input.error);
-
-  return ReleaseVerificationSchema.parse({
-    releasePlanId: input.releasePlanId,
-    deploymentId: input.deploymentId,
-    verificationStatus: "execution_failed",
-    summary: "Post-deploy verification did not complete.",
-    checkedAt: new Date().toISOString(),
-    checks: [
-      ReleaseCheckSchema.parse({
-        checkKey: "verification_execution_error",
-        scope: "project",
-        severity: "warning",
-        result: "skipped",
-        message: "Post-deploy verification did not complete.",
-        evidence: {
-          executionFailure: { message }
-        }
-      })
-    ]
-  });
-}
-
-function liveUrlsFromDeployment(deployment: typeof deployments.$inferSelect): string[] {
-  const evidence = recordFromUnknown(deployment.evidenceJson);
-  const provider = recordFromUnknown(evidence.provider);
-  const providerLiveUrls = Array.isArray(provider.liveUrls)
-    ? provider.liveUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
-    : [];
-  const urls = deployment.liveUrl ? [deployment.liveUrl, ...providerLiveUrls] : providerLiveUrls;
-
-  return [...new Set(urls)].sort(compareLiveUrlsForVerification);
-}
-
-function compareLiveUrlsForVerification(left: string, right: string): number {
-  return liveUrlVerificationScore(left) - liveUrlVerificationScore(right);
-}
-
-function liveUrlVerificationScore(value: string): number {
-  try {
-    const url = new URL(value);
-    const previewPenalty = url.hostname.includes("--") ? 10 : 0;
-    const insecurePenalty = url.protocol === "https:" ? 0 : 1;
-    return previewPenalty + insecurePenalty;
-  } catch {
-    return 100;
-  }
-}
-
-function recordFromUnknown(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function recordOrUndefined(value: unknown): Record<string, unknown> | undefined {
-  const record = recordFromUnknown(value);
-  return Object.keys(record).length > 0 ? record : undefined;
-}
-
-function stringFromUnknown(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function normalizeFailureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "verification_failed";
+function normalizeQueueFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "queue_enqueue_failed";
+  return message.slice(0, 500);
 }
 
 async function hasApprovedRelease(db: Db, releasePlanId: string): Promise<boolean> {

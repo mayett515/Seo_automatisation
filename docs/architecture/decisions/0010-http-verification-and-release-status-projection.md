@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-Foundation Milestone 2 replaced the synthetic release `verify()` response with an HTTP-first verifier. The API now persists `release_verifications` and `release_verification_checks`, updates `deployments.status` and `deployments.verificationStatus`, and projects the result back onto `releasePlans.status`.
+Foundation Milestone 2 replaced the synthetic release `verify()` response with an HTTP-first verifier. The follow-up release-spine hardening moved verifier execution and Google Search Console handoff out of the API request path and into a BullMQ worker. The API now creates or reuses a durable `release_verifications.status = running` row and enqueues `release-verification`; the worker persists `release_verification_checks`, updates `deployments.status` and `deployments.verificationStatus`, and projects the result back onto `releasePlans.status`.
 
 The current `releasePlanStatuses` enum is intentionally coarse:
 
@@ -56,6 +56,7 @@ What becomes safer:
 - A release plan no longer overclaims `live` after verification finds blockers.
 - Customer-facing surfaces have a simple top-level "not healthy/live" signal.
 - The exact verification evidence remains append-only and auditable in verification records.
+- Provider mutations and token refreshes happen in the worker lane with queue audit and retry semantics, not inside the HTTP request lifecycle.
 
 Trade-offs:
 
@@ -90,6 +91,7 @@ Rejected. Verification is evidence-rich and route/check-specific. Collapsing it 
 - Do not project `releasePlans.status = "live"` from `deployments.status = "provider_succeeded"`; only post-deploy verification outcomes may project the coarse release plan to `live`.
 - Do not add UI/reporting copy that ignores `release_verification_checks` evidence when verification exists.
 - Do not replace detailed verification evidence with a single release-plan status.
+- Do not call `VerificationPort.verifyRelease(...)` or `SearchConsolePort.submitSitemap(...)` from the API `verify()` path; API starts/reuses the durable verification run, worker executes it.
 
 ## Related Files
 

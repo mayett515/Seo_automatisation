@@ -1,18 +1,24 @@
 import {
+  AesGcmTokenCipher,
   FileSystemObjectStorageAdapter,
+  GoogleSearchConsoleAdapter,
   HttpWebsiteCrawlerAdapter,
+  HttpReleaseVerificationAdapter,
   MockReasoningAdapter,
   MockSerpScoutAdapter,
   NetlifySiteHostingAdapter,
   NotConfiguredReasoningAdapter,
   NotConfiguredSiteHostingAdapter,
   OpenCodeGoReasoningAdapter,
+  PlaywrightBrowserRuntimeVerifier,
   type CrawlerPort,
   type AiReasoningPort,
   S3ObjectStorageAdapter,
   type ObjectStoragePort,
+  type SearchConsolePort,
   type SerpScoutPort,
-  type SiteHostingPort
+  type SiteHostingPort,
+  type VerificationPort
 } from "@localseo/adapters";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { createDatabaseClient } from "@localseo/db";
@@ -39,6 +45,12 @@ import {
   RollbackEvidenceError,
   RollbackProviderFailedError
 } from "./handlers/rollback.js";
+import {
+  handleReleaseVerificationJob,
+  parseReleaseVerificationJobData,
+  ReleaseVerificationConfigurationError,
+  ReleaseVerificationEvidenceError
+} from "./handlers/release-verification.js";
 import {
   handleSerpScoutJob,
   SerpScoutConfigurationError,
@@ -70,6 +82,11 @@ const sharedSiteHosting = createSiteHostingAdapter(env.NETLIFY_AUTH_TOKEN, share
 const sharedCrawler = createCrawlerAdapter(sharedObjectStorage);
 const sharedReasoning = createReasoningAdapter(env);
 const sharedSerpScout = createSerpScoutAdapter();
+const sharedReleaseVerification = createReleaseVerificationAdapter(env);
+const sharedSearchConsole = createSearchConsoleAdapter(env);
+const sharedTokenCipher = env.GSC_TOKEN_ENCRYPTION_KEY
+  ? new AesGcmTokenCipher(env.GSC_TOKEN_ENCRYPTION_KEY)
+  : undefined;
 
 export async function handleJob(job: Job): Promise<Record<string, unknown>> {
   await markJobRunRunning(sharedDbHandle?.db, job);
@@ -159,6 +176,14 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
 
+  if (job.queueName === "release-verification" || job.name === "release_verification") {
+    return handleReleaseVerificationJob(job, sharedDbHandle, {
+      verification: sharedReleaseVerification,
+      searchConsole: sharedSearchConsole,
+      tokenCipher: sharedTokenCipher
+    });
+  }
+
   throw new Error(`Worker job is not implemented: ${job.queueName}:${job.name}`);
 }
 
@@ -167,6 +192,7 @@ export { parseOpportunityScoutJobData } from "./handlers/opportunity-scout.js";
 export { parseSerpScoutJobData } from "./handlers/serp-scout.js";
 export { parseTechnicalAuditJobData } from "./handlers/technical-audit.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
+export { parseReleaseVerificationJobData };
 
 export function isTerminalWorkerError(error: unknown): boolean {
   return (
@@ -187,6 +213,8 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof SerpScoutTerminalError ||
     error instanceof TechnicalAuditConfigurationError ||
     error instanceof TechnicalAuditEvidenceError ||
+    error instanceof ReleaseVerificationConfigurationError ||
+    error instanceof ReleaseVerificationEvidenceError ||
     isTerminalGscSyncFailure(error)
   );
 }
@@ -256,4 +284,48 @@ export function createReasoningAdapter(
 
 function createSerpScoutAdapter(): SerpScoutPort {
   return new MockSerpScoutAdapter();
+}
+
+function createReleaseVerificationAdapter(
+  input: Pick<
+    AppEnv,
+    | "RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS"
+    | "RELEASE_BROWSER_VERIFICATION_ENABLED"
+    | "RELEASE_BROWSER_VERIFICATION_EXECUTABLE_PATH"
+  >
+): VerificationPort {
+  return new HttpReleaseVerificationAdapter({
+    browserCheckTimeoutMs: input.RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS,
+    browserRuntime: input.RELEASE_BROWSER_VERIFICATION_ENABLED
+      ? new PlaywrightBrowserRuntimeVerifier({
+          executablePath: input.RELEASE_BROWSER_VERIFICATION_EXECUTABLE_PATH
+        })
+      : undefined
+  });
+}
+
+function createSearchConsoleAdapter(
+  input: Pick<
+    AppEnv,
+    | "GOOGLE_OAUTH_CLIENT_ID"
+    | "GOOGLE_OAUTH_CLIENT_SECRET"
+    | "GOOGLE_OAUTH_REDIRECT_URI"
+    | "API_PUBLIC_URL"
+    | "GSC_OAUTH_STATE_SECRET"
+    | "BETTER_AUTH_SECRET"
+  >
+): SearchConsolePort | undefined {
+  const redirectUri = input.GOOGLE_OAUTH_REDIRECT_URI ?? `${input.API_PUBLIC_URL}/gsc/callback`;
+  const stateSecret = input.GSC_OAUTH_STATE_SECRET ?? input.BETTER_AUTH_SECRET;
+
+  if (!input.GOOGLE_OAUTH_CLIENT_ID || !input.GOOGLE_OAUTH_CLIENT_SECRET || !stateSecret) {
+    return undefined;
+  }
+
+  return new GoogleSearchConsoleAdapter({
+    clientId: input.GOOGLE_OAUTH_CLIENT_ID,
+    clientSecret: input.GOOGLE_OAUTH_CLIENT_SECRET,
+    redirectUri,
+    stateSecret
+  });
 }

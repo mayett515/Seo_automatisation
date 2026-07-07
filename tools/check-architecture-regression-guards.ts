@@ -24,12 +24,6 @@ function requireNotIncludes(path: string, text: string, category: string, messag
   }
 }
 
-function warnIfIncludes(path: string, text: string, category: string, message: string): void {
-  if (read(path).includes(text)) {
-    warnings.push({ category, message: `${path}: ${message}` });
-  }
-}
-
 function requireRegex(path: string, pattern: RegExp, category: string, message: string): void {
   if (!pattern.test(read(path))) {
     failures.push({ category, message: `${path}: ${message}` });
@@ -133,11 +127,32 @@ requireRegex(
   "deploy tests must cover missing approvedAt evidence"
 );
 
-warnIfIncludes(
+requireNotIncludes(
   "apps/api/src/modules/releases.module.ts",
   ".submitSitemap(",
-  "known-open-provider-mutation",
-  "GSC sitemap submission is still inline in POST /verify; planned fix is worker-owned verification"
+  "worker-owned-release-verification",
+  "POST /verify must not submit sitemaps inline; release verification worker owns GSC handoff"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  ".verifyRelease(",
+  "worker-owned-release-verification",
+  "POST /verify must not run release verification inline; release verification worker owns execution"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.ts",
+  'source: "release_verify_worker"',
+  "worker-owned-release-verification",
+  "release verification worker must own persisted verification provenance"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  "release_verifications_active_deployment_idx",
+  "worker-owned-release-verification",
+  "release verification must keep a Postgres one-active-run guard per deployment"
 );
 
 requireNotIncludes(

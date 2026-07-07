@@ -149,6 +149,15 @@ Follow-up direction:
 
 Why: workflow engines converge on durable run records, named child steps, idempotent one-active execution, status/conclusion separation, and persisted evidence before projection. This repo already has the primitives; adding a full workflow engine now would add runtime surface without improving the product invariant.
 
+Implementation note, 2026-07-07:
+
+- `release-verification` is now a first-class queue/job type.
+- `release_verifications_active_deployment_idx` enforces at most one running verification per deployment.
+- `POST /verify` creates/reuses the durable running row and enqueues with `jobId = verificationId`.
+- Queue enqueue failure marks the running verification `execution_failed` with a queue check.
+- The worker owns verifier execution, GSC handoff, child check persistence, and deployment/release projection.
+- `corepack pnpm text:check` now fails if the API `verify()` path calls verifier execution or sitemap submission inline.
+
 ### Restore In-Flight Orphan Sweep
 
 `restore_in_flight` is intentionally owned by rollback job retry, not the periodic rollback reconciler. A hard crash or lost job before the final retry can still strand rollback intent evidence in JSON while no periodic worker polls it.

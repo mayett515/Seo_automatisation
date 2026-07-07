@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "release_verifications_active_deployment_idx" ON "release_verifications" USING btree ("deployment_id") WHERE "release_verifications"."status" = 'running';

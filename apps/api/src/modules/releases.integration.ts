@@ -1,15 +1,6 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { VerificationPort } from "@localseo/adapters";
-import {
-  ReleaseCheckSchema,
-  ReleaseVerificationSchema,
-  type DeploymentStatus,
-  type ReleaseCheck,
-  type ReleasePlanStatus,
-  type ReleaseVerification,
-  type ReleaseVerificationStatus
-} from "@localseo/contracts";
+import { type DeploymentStatus, type ReleasePlanStatus, type ReleaseVerificationStatus } from "@localseo/contracts";
 import {
   customers,
   deployments,
@@ -68,7 +59,7 @@ void describe(
   () => {
     let handle: IntegrationDatabase;
     let db: DatabaseClient;
-    let verifier: FakeVerificationPort;
+    let queueService: QueueProducerService;
     let service: ReleasesService;
 
     before(async () => {
@@ -79,92 +70,77 @@ void describe(
 
     beforeEach(async () => {
       await truncateIntegrationTables(handle.sql);
-      verifier = new FakeVerificationPort();
-      service = new ReleasesService({} as QueueProducerService, testDatabaseService(db), verifier);
+      queueService = new QueueProducerService(testDatabaseService(db));
+      service = new ReleasesService(queueService, testDatabaseService(db));
     });
 
     after(async () => {
       await handle?.close();
     });
 
-    void it("persists healthy verification evidence and projects the release plan as live", async () => {
+    void it("creates a running verification row and enqueues the worker job", async () => {
       const fixture = await createReleaseFixture(db, { releasePlanStatus: "deploying" });
-      verifier.mode = "healthy";
+      const queue = new FakeQueue();
+      setReleaseVerificationQueue(queueService, queue);
 
-      const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
+      const result = await service.verify(fixture.projectId, fixture.releasePlanId, "user-1", {});
 
-      assert.equal(result.verificationStatus, "live_healthy");
-      assert.deepEqual(verifier.requests[0]?.liveUrls, ["https://customer.example/dachreinigung/"]);
+      assert.equal(result.status, "queued");
+      assert.equal(result.type, "release_verification");
+      assert.equal(result.deploymentId, fixture.deploymentId);
+      assert.equal(result.jobId, result.verificationId);
+      assert.equal(queue.addCalls.length, 1);
+      assert.equal(queue.addCalls[0]?.name, "release_verification");
+      assert.equal(queue.addCalls[0]?.data.projectId, fixture.projectId);
+      assert.equal(queue.addCalls[0]?.data.releasePlanId, fixture.releasePlanId);
+      assert.equal(queue.addCalls[0]?.data.deploymentId, fixture.deploymentId);
+      assert.equal(queue.addCalls[0]?.data.verificationId, result.verificationId);
 
       const [verification] = await db
         .select()
         .from(releaseVerifications)
-        .where(eq(releaseVerifications.deploymentId, fixture.deploymentId));
-      assert.equal(verification?.status, "live_healthy");
+        .where(eq(releaseVerifications.id, result.verificationId ?? ""));
+      assert.equal(verification?.status, "running");
+      assert.equal(verification?.deploymentId, fixture.deploymentId);
 
-      const checks = await db
-        .select()
-        .from(releaseVerificationChecks)
-        .where(eq(releaseVerificationChecks.verificationId, verification?.id ?? ""));
-      assert.equal(checks.length, 2);
-      assert.equal(checks.find((check) => check.checkKey === "http_status_check")?.result, "passed");
-      assert.equal(checks.find((check) => check.checkKey === "gsc_connection_check")?.result, "skipped");
-
-      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
-      assert.equal(deployment?.status, "live_healthy");
-      assert.equal(deployment?.verificationStatus, "live_healthy");
-
-      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
-      assert.equal(releasePlan?.status, "live");
-      assert.equal(releasePlan?.deployedAt?.toISOString(), "2026-06-30T12:00:00.000Z");
+      const jobRows = await db.select().from(jobRuns).where(eq(jobRuns.queueName, "release-verification"));
+      assert.equal(jobRows.length, 1);
+      assert.equal(jobRows[0]?.status, "queued");
+      assert.equal(jobRows[0]?.type, "release_verification");
+      assert.equal(jobRows[0]?.inputRef, result.verificationId);
     });
 
-    void it("persists rollback recommendation details while projecting the release plan as failed", async () => {
+    void it("returns already_active when a verification is already running for the deployment", async () => {
       const fixture = await createReleaseFixture(db, { releasePlanStatus: "deploying" });
-      verifier.mode = "rollback";
+      const queue = new FakeQueue();
+      setReleaseVerificationQueue(queueService, queue);
+      const [active] = await db
+        .insert(releaseVerifications)
+        .values({
+          releasePlanId: fixture.releasePlanId,
+          deploymentId: fixture.deploymentId,
+          status: "running",
+          summary: "Post-deploy verification is already running."
+        })
+        .returning();
+      assert.ok(active);
 
-      const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
+      const result = await service.verify(fixture.projectId, fixture.releasePlanId, "user-1", {});
 
-      assert.equal(result.verificationStatus, "rollback_recommended");
-
-      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
-      assert.equal(deployment?.status, "rollback_recommended");
-      assert.equal(deployment?.verificationStatus, "rollback_recommended");
-
-      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
-      assert.equal(releasePlan?.status, "failed");
-
-      const [verification] = await db
-        .select()
-        .from(releaseVerifications)
-        .where(eq(releaseVerifications.deploymentId, fixture.deploymentId));
-      const checks = await db
-        .select()
-        .from(releaseVerificationChecks)
-        .where(eq(releaseVerificationChecks.verificationId, verification?.id ?? ""));
-
-      assert.equal(verification?.status, "rollback_recommended");
-      assert.equal(checks[0]?.checkKey, "canonical_trailing_slash_check");
-      assert.equal(checks[0]?.severity, "blocker");
-      assert.equal(checks[0]?.result, "failed");
-      assert.equal(checks[0]?.targetUrl, "https://customer.example/dachreinigung/");
+      assert.equal(result.status, "already_active");
+      assert.equal(result.verificationId, active.id);
+      assert.equal(queue.addCalls.length, 0);
     });
 
-    void it("persists execution-failed verification evidence when the verifier throws", async () => {
+    void it("marks the verification terminal when queue enqueue fails after row creation", async () => {
       const fixture = await createReleaseFixture(db, { releasePlanStatus: "deploying" });
-      verifier.mode = "throw";
+      const queue = new FakeQueue(new Error("redis write failed"));
+      setReleaseVerificationQueue(queueService, queue);
 
-      const result = await service.verify(fixture.projectId, fixture.releasePlanId, {});
-
-      assert.equal(result.verificationStatus, "execution_failed");
-
-      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
-      assert.equal(deployment?.status, "provider_succeeded");
-      assert.equal(deployment?.verificationStatus, "execution_failed");
-
-      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
-      assert.equal(releasePlan?.status, "deploying");
-      assert.equal(releasePlan?.deployedAt, null);
+      await assert.rejects(
+        () => service.verify(fixture.projectId, fixture.releasePlanId, "user-1", {}),
+        /redis write failed/u
+      );
 
       const [verification] = await db
         .select()
@@ -176,12 +152,11 @@ void describe(
         .where(eq(releaseVerificationChecks.verificationId, verification?.id ?? ""));
 
       assert.equal(verification?.status, "execution_failed");
-      assert.equal(checks[0]?.checkKey, "verification_execution_error");
+      assert.equal(checks.length, 1);
+      assert.equal(checks[0]?.checkKey, "verification_queue_check");
       assert.equal(checks[0]?.severity, "warning");
-      assert.equal(checks[0]?.result, "skipped");
-      assert.deepEqual(checks[0]?.evidenceJson?.executionFailure, { message: "verifier network failure" });
-      assert.notEqual(deployment?.status, "verifying");
-      assert.notEqual(deployment?.verificationStatus, "running");
+      assert.equal(checks[0]?.result, "failed");
+      assert.deepEqual(checks[0]?.evidenceJson?.queueFailure, { message: "redis write failed" });
     });
 
     void it("rejects verification for a release plan outside the project scope", async () => {
@@ -189,7 +164,7 @@ void describe(
       const projectB = await createReleaseFixture(db, { projectName: "Project B" });
 
       await assert.rejects(
-        () => service.verify(projectA.projectId, projectB.releasePlanId, {}),
+        () => service.verify(projectA.projectId, projectB.releasePlanId, "user-1", {}),
         /not authorized for this project/u
       );
 
@@ -206,12 +181,13 @@ void describe(
       assert.equal(rows.length, 0);
     });
 
-    void it("persists the scoped release plan id instead of adapter-returned identity", async () => {
+    void it("persists the scoped release plan id in the queued verification row", async () => {
       const scoped = await createReleaseFixture(db, { projectName: "Scoped Project" });
       const other = await createReleaseFixture(db, { projectName: "Other Project" });
-      verifier.releasePlanIdOverride = other.releasePlanId;
+      const queue = new FakeQueue();
+      setReleaseVerificationQueue(queueService, queue);
 
-      const result = await service.verify(scoped.projectId, scoped.releasePlanId, {});
+      const result = await service.verify(scoped.projectId, scoped.releasePlanId, "user-1", {});
 
       assert.equal(result.releasePlanId, scoped.releasePlanId);
 
@@ -229,7 +205,8 @@ void describe(
       const projectB = await createReleaseFixture(db, { projectName: "Project B" });
 
       await assert.rejects(
-        () => service.verify(projectA.projectId, projectA.releasePlanId, { deploymentId: projectB.deploymentId }),
+        () =>
+          service.verify(projectA.projectId, projectA.releasePlanId, "user-1", { deploymentId: projectB.deploymentId }),
         /No provider-succeeded deployment is available for verification/u
       );
 
@@ -237,24 +214,6 @@ void describe(
         .select()
         .from(releaseVerifications)
         .where(eq(releaseVerifications.deploymentId, projectB.deploymentId));
-
-      assert.equal(rows.length, 0);
-    });
-
-    void it("rejects absolute verification target routes before calling the verifier", async () => {
-      const fixture = await createReleaseFixture(db, { targetUrl: "https://attacker.example/dachreinigung/" });
-
-      await assert.rejects(
-        () => service.verify(fixture.projectId, fixture.releasePlanId, {}),
-        /Release verification target routes must be relative paths/u
-      );
-
-      assert.equal(verifier.requests.length, 0);
-
-      const rows = await db
-        .select()
-        .from(releaseVerifications)
-        .where(eq(releaseVerifications.deploymentId, fixture.deploymentId));
 
       assert.equal(rows.length, 0);
     });
@@ -282,7 +241,7 @@ void describe(
       const queueService = new QueueProducerService(testDatabaseService(db));
       const queue = new FakeQueue();
       setRollbackQueue(queueService, queue);
-      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+      service = new ReleasesService(queueService, testDatabaseService(db));
 
       const result = await service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, {
         rollbackPointId
@@ -322,7 +281,7 @@ void describe(
       const queueService = new QueueProducerService(testDatabaseService(db));
       const queue = new FakeQueue();
       setRollbackQueue(queueService, queue);
-      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+      service = new ReleasesService(queueService, testDatabaseService(db));
 
       await assert.rejects(
         () =>
@@ -343,7 +302,7 @@ void describe(
       const queueService = new QueueProducerService(testDatabaseService(db));
       const queue = new FakeQueue();
       setRollbackQueue(queueService, queue);
-      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+      service = new ReleasesService(queueService, testDatabaseService(db));
 
       await assert.rejects(
         () => service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, { rollbackPointId }),
@@ -365,7 +324,7 @@ void describe(
       const queueService = new QueueProducerService(testDatabaseService(db));
       const queue = new FakeQueue();
       setRollbackQueue(queueService, queue);
-      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+      service = new ReleasesService(queueService, testDatabaseService(db));
 
       await assert.rejects(
         () => service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, { rollbackPointId }),
@@ -386,7 +345,7 @@ void describe(
       const queueService = new QueueProducerService(testDatabaseService(db));
       const queue = new FakeQueue();
       setRollbackQueue(queueService, queue);
-      service = new ReleasesService(queueService, testDatabaseService(db), verifier);
+      service = new ReleasesService(queueService, testDatabaseService(db));
 
       await assert.rejects(
         () => service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, { rollbackPointId }),
@@ -595,68 +554,6 @@ void describe(
     });
   }
 );
-
-class FakeVerificationPort implements VerificationPort {
-  mode: "healthy" | "rollback" | "throw" = "healthy";
-  releasePlanIdOverride: string | undefined;
-  readonly requests: Array<{
-    releasePlanId: string;
-    deploymentId?: string;
-    liveUrls: string[];
-    trackingExpected?: boolean;
-  }> = [];
-
-  verifyRelease(input: {
-    releasePlanId: string;
-    deploymentId?: string;
-    liveUrls: string[];
-    trackingExpected?: boolean;
-  }): Promise<ReleaseVerification> {
-    this.requests.push(input);
-
-    if (this.mode === "throw") {
-      return Promise.reject(new Error("verifier network failure"));
-    }
-
-    const check =
-      this.mode === "rollback"
-        ? releaseCheck({
-            checkKey: "canonical_trailing_slash_check",
-            scope: "page",
-            severity: "blocker",
-            result: "failed",
-            message: "Canonical URL does not match the intended live route.",
-            evidence: {
-              targetUrl: input.liveUrls[0],
-              expected: { canonicalUrl: input.liveUrls[0] },
-              observed: { canonicalUrl: "https://customer.example/" }
-            }
-          })
-        : releaseCheck({
-            checkKey: "http_status_check",
-            scope: "domain",
-            severity: "blocker",
-            result: "passed",
-            message: "Live route returned a successful HTTP response.",
-            evidence: {
-              targetUrl: input.liveUrls[0],
-              observed: { statusCode: 200 }
-            }
-          });
-
-    return Promise.resolve(
-      ReleaseVerificationSchema.parse({
-        releasePlanId: this.releasePlanIdOverride ?? input.releasePlanId,
-        deploymentId: input.deploymentId,
-        verificationStatus: this.mode === "rollback" ? "rollback_recommended" : "live_healthy",
-        summary:
-          this.mode === "rollback" ? "Post-deploy verification found blockers." : "Post-deploy verification passed.",
-        checkedAt: "2026-06-30T12:00:00.000Z",
-        checks: [check]
-      })
-    );
-  }
-}
 
 async function createReleaseFixture(
   db: DatabaseClient,
@@ -977,10 +874,6 @@ async function createRollbackPoint(
   return rollbackPoint.id;
 }
 
-function releaseCheck(input: ReleaseCheck): ReleaseCheck {
-  return ReleaseCheckSchema.parse(input);
-}
-
 function testDatabaseService(db: DatabaseClient): DatabaseService {
   return {
     get db() {
@@ -997,9 +890,15 @@ function setRollbackQueue(service: QueueProducerService, queue: FakeQueue): void
   (service as unknown as { queues: { rollback?: unknown } }).queues.rollback = queue;
 }
 
+function setReleaseVerificationQueue(service: QueueProducerService, queue: FakeQueue): void {
+  (service as unknown as { queues: { "release-verification"?: unknown } }).queues["release-verification"] = queue;
+}
+
 class FakeQueue {
   readonly addCalls: QueueAddCall[] = [];
   private existingJob: FakeJob | undefined;
+
+  constructor(private readonly addError?: Error) {}
 
   getJob(): Promise<FakeJob | undefined> {
     return Promise.resolve(this.existingJob);
@@ -1010,6 +909,10 @@ class FakeQueue {
     data: Record<string, unknown>,
     options: Record<string, unknown>
   ): Promise<{ id: string | undefined }> {
+    if (this.addError) {
+      return Promise.reject(this.addError);
+    }
+
     this.addCalls.push({ name, data, options });
     this.existingJob = new FakeJob();
     return Promise.resolve({ id: typeof options.jobId === "string" ? options.jobId : undefined });

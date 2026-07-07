@@ -564,18 +564,26 @@ export const deployments = pgTable(
   ]
 );
 
-export const releaseVerifications = pgTable("release_verifications", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  releasePlanId: uuid("release_plan_id")
-    .notNull()
-    .references(() => releasePlans.id),
-  deploymentId: uuid("deployment_id").references(() => deployments.id),
-  status: releaseVerificationStatusEnum("status").notNull().default("not_started"),
-  summary: text("summary").notNull(),
-  checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
-  evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
-  ...timestamps
-});
+export const releaseVerifications = pgTable(
+  "release_verifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    releasePlanId: uuid("release_plan_id")
+      .notNull()
+      .references(() => releasePlans.id),
+    deploymentId: uuid("deployment_id").references(() => deployments.id),
+    status: releaseVerificationStatusEnum("status").notNull().default("not_started"),
+    summary: text("summary").notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("release_verifications_active_deployment_idx")
+      .on(table.deploymentId)
+      .where(sql`${table.status} = 'running'`)
+  ]
+);
 
 export const releaseVerificationChecks = pgTable(
   "release_verification_checks",
