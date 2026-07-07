@@ -59,3 +59,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0015 - No Paid SERP API Proof Strategy](0015-no-paid-serp-api-proof-strategy.md)
 - [0016 - Markdown Context Records And Retrieval Boundary](0016-markdown-context-records-and-retrieval-boundary.md)
 - [0017 - Page Registry And PageJson Source Of Truth](0017-page-registry-and-page-json-source-of-truth.md)
+- [0018 - DB-Before-Queue Work Recovery Policy](0018-db-before-queue-work-recovery-policy.md)

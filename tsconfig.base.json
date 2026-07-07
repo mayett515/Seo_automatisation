@@ -22,6 +22,7 @@
       "@localseo/contracts": ["packages/contracts/src/index.ts"],
       "@localseo/db": ["packages/db/src/index.ts"],
       "@localseo/domain": ["packages/domain/src/index.ts"],
+      "@localseo/page-registry": ["packages/page-registry/src/index.ts"],
       "@localseo/adapters": ["packages/adapters/src/index.ts"],
       "@localseo/seo": ["packages/seo/src/index.ts"],
       "@localseo/ai": ["packages/ai/src/index.ts"],

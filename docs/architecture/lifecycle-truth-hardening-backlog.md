@@ -158,6 +158,63 @@ Implementation note, 2026-07-07:
 - The worker owns verifier execution, GSC handoff, child check persistence, and deployment/release projection.
 - `corepack pnpm text:check` now fails if the API `verify()` path calls verifier execution or sitemap submission inline.
 
+### DB-Before-Queue Work Recovery Policy
+
+The 2026-07-07 stuck-job recovery research pass extends the release-verification workflow lesson to all durable worker lanes. Keep BullMQ + Postgres; do not adopt another queue or workflow runtime now. The missing production companion is a small recovery policy over durable product rows, not a new executor.
+
+Core policy:
+
+- Postgres durable rows record work intent and product truth.
+- BullMQ transports work and provides retry mechanics.
+- `job_runs` is queue/audit telemetry, not product truth.
+- Workers project product truth in guarded transactions.
+- Recovery controllers repair DB/queue gaps and stale active rows.
+
+Every durable workflow must define how it recovers from:
+
+- row exists but enqueue failed;
+- row exists and the Redis job is missing;
+- worker marked the row running but stopped making progress;
+- worker crashed after an external provider mutation may have happened;
+- queue retries exhausted while product truth remains non-terminal.
+
+Recovery categories:
+
+- read/analyze work, such as Opportunity Scout or technical audit, may re-enqueue the same run id/job id when stale if terminal persistence is idempotent;
+- artifact capture work, such as website import or SERP snapshots, may re-enqueue only when artifacts are run-id scoped and writes are idempotent;
+- provider handoff warning work, such as GSC sitemap submission inside release verification, may retry boundedly or record warning evidence, but it must not create rollback truth by itself;
+- provider mutation work, such as deploy and rollback, must route to provider-state reconciliation or manual reconciliation, never generic repeat mutation.
+
+Domain logic extracted from the recovery research:
+
+```text
+stale work input
+  durable row status
+  job_runs status
+  BullMQ job presence/state
+  worker freshness
+  recovery count
+  workflow category
+  provider mutation uncertainty
+
+-> pure recovery decision
+   noop
+   reenqueue same deterministic job id
+   mark execution_failed / failed
+   reconcile provider state
+   require manual reconciliation
+```
+
+The recovery scanner should be a procedural shell around that pure decision. It reads Postgres/BullMQ state, calls the classifier, then applies the effect with guarded updates. The classifier must never call Redis, Postgres, or providers.
+
+Follow-up direction:
+
+- Start with a release-verification recovery controller: scan stale running `release_verifications`, compare durable row plus `job_runs` plus BullMQ state, re-add the same `jobId = verificationId` when safe, and mark `execution_failed` after bounded recovery.
+- Apply the same policy to `agent_runs` before adding the Page Proposal worker lane: stale read-only AI runs can be re-enqueued by run id, and duplicate persistence must remain guarded.
+- Add an operator-facing active/dead-work view later rather than a generic retry button.
+
+Why: Redis can lose or stall transport work independently of Postgres truth. Workflow systems solve this with leases, claimed work, visibility timeouts, dead letters, idempotency keys, and recovery scans. This repo already has the right primitives; the next hardening step is to make recovery explicit per workflow.
+
 ### Restore In-Flight Orphan Sweep
 
 `restore_in_flight` is intentionally owned by rollback job retry, not the periodic rollback reconciler. A hard crash or lost job before the final retry can still strand rollback intent evidence in JSON while no periodic worker polls it.

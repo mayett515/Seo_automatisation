@@ -16,7 +16,7 @@ priority_schema: "critical > strong > guideline"
 # Domain Execution Contract: Architecture Regression Guards
 
 <meta-instruction>
-Use this shard when a task touches a seam previously found by review: persisted JSON contracts, release/deploy/verify truth, provider mutations, evidence proof tiers, roadmap implemented/deferred lists, or PageJson/Page Registry source-of-truth work.
+Use this shard when a task touches a seam previously found by review: persisted JSON contracts, release/deploy/verify truth, provider mutations, durable worker recovery, evidence proof tiers, roadmap implemented/deferred lists, or PageJson/Page Registry source-of-truth work.
 </meta-instruction>
 
 ## 1. Guard Categories
@@ -28,6 +28,7 @@ Use this shard when a task touches a seam previously found by review: persisted 
 - Keep known-open seams visible in `docs/progress/` until fixed; do not hide them in a broad roadmap.
 - When a worker writes JSON that an API reads through a strict schema, add a writer-to-reader round-trip assertion or an equivalent strict parse test.
 - When an API route touches a provider port, classify the call as read-only, write/mutation, token/state mutation, or queue enqueue before accepting it.
+- When a workflow persists a durable run row and enqueues BullMQ work, define DB/queue-gap recovery before treating the lane as production-ready.
 </positive-directives>
 
 ## 2. Hard Regression Prohibitions
@@ -39,6 +40,8 @@ Use this shard when a task touches a seam previously found by review: persisted 
 - DO NOT project `releasePlans.status = "live"` from provider success alone.
 - DO NOT rely on preflight checks alone for deploy artifacts; the deploy worker must re-check page-version approval evidence at artifact-build time.
 - DO NOT mark shipped UI/API/worker features as deferred in roadmap docs after the same commit ships them.
+- DO NOT treat Redis/BullMQ job state as product truth; Postgres durable rows own product state and recovery decisions.
+- DO NOT re-post provider mutations from a generic recovery scanner; provider-mutation recovery must reconcile or require manual review.
 </absolute-constraints>
 
 ## 3. Category Checklists
@@ -78,6 +81,17 @@ Use this shard when a task touches a seam previously found by review: persisted 
 3. [ ] Are missing/unapproved approval cases tested?
 </pre-flight-checklist>
 
+### DB-Before-Queue Recovery
+
+<pre-flight-checklist>
+1. [ ] Which Postgres row owns durable product truth for this workflow?
+2. [ ] What deterministic operation key / BullMQ job id maps to that row?
+3. [ ] What Postgres guard prevents duplicate active work?
+4. [ ] What happens when the row exists but enqueue fails or the Redis job disappears?
+5. [ ] Can stale work be safely re-enqueued, or must it reconcile provider state / mark manual review?
+6. [ ] Is recovery exhaustion visible in product state, not only logs or Redis dead-letter state?
+</pre-flight-checklist>
+
 ### Roadmap Drift
 
 <pre-flight-checklist>
@@ -106,6 +120,17 @@ GSC verify workerization
 release status hardening
   provider_succeeded must not project releasePlans.status = live.
   Only live_healthy/live_with_warnings verification outcomes may project releasePlans.status = live.
+```
+
+</context>
+
+<context>
+```text
+DB-before-queue recovery policy
+  BullMQ is transport, not product truth.
+  Durable run rows must define active guards, terminal states, and stale recovery behavior.
+  Read/analyze work may be re-enqueued by deterministic job id when safe.
+  Provider mutation work must reconcile by provider reads or mark manual reconciliation.
 ```
 
 </context>

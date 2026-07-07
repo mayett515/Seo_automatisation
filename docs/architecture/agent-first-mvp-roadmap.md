@@ -582,31 +582,21 @@ Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](d
 
 Source finding: `C:/big eater/page-registry-page-studio-stealer-findings-2026-07-06.md`.
 
-MVP registry can start with a small subset, but the target taxonomy must support richer section families:
+The implemented MVP registry starts with a small deployable Local SEO service-area skeleton:
 
 ```text
+Header
 Hero
 ServiceIntro
 ServiceDescription
-ServiceGrid
 BenefitsGrid
-BulletList
-ImageText
-Gallery
-Slideshow
-Carousel
-BeforeAfter
-TrustReviews
-References
 FAQ
-ContactCTA
-AreaMap
-NearbyPlaces
 ServiceAreaList
+FinalCTA
 Footer
 ```
 
-Each component needs a prop schema, variants, allowed tokens, preview renderer, validation errors, customer note anchors, layout zone metadata, and legal movement rules.
+The target taxonomy still needs to support richer section families later, including service grids, bullet lists, image/text, gallery, slideshow, carousel, before-after, trust reviews, references, area maps, nearby places, and inline CTAs. Each registered component needs a prop schema, variants, allowed tokens, preview renderer, validation errors, customer note anchors, layout zone metadata, and legal movement rules.
 
 Source-of-truth rule:
 
@@ -621,8 +611,8 @@ First implementation order:
 ```text
 PageJson/PageProposalJson contracts + page version status vocabulary (implemented 2026-07-07)
 -> structured proposal persistence decision, default page_proposals.proposalJson (implemented 2026-07-07)
--> packages/page-registry with a small Local SEO section set
--> pure page-studio movement and validation helpers
+-> packages/page-registry with a small Local SEO section set (implemented 2026-07-07)
+-> pure page-studio movement/composition helpers
 -> retarget SEO preflight and static rendering to typed PageJson
 -> preview renderer sharing the static/deploy renderer core
 -> project-scoped proposal/version read path

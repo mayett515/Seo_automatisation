@@ -153,31 +153,30 @@ It also gives the next implementation slice a concrete target:
 1. Add PageJson/PageProposalJson contracts. Done in the first Page Registry slice.
 2. Add contracts-owned page version status vocabulary and action-conditional release artifact validation. Done in the first Page Registry slice.
 3. Decide and migrate the structured proposal artifact home, defaulting to `page_proposals.proposalJson`. Done in the first Page Registry slice.
-4. Create `packages/page-registry` with a small Local SEO section set.
-5. Add pure registry validation and page-studio movement helpers.
-6. Retarget release preflight and static rendering to typed PageJson.
-7. Add preview rendering that shares the static renderer core.
-8. Wire project-scoped proposal/version reads.
-9. Add section notes anchored to stable section ids.
-10. Freeze approved versions and revalidate PageJson during release preflight.
+4. Create `packages/page-registry` with a small Local SEO section set. Done in the second Page Registry slice.
+5. Add pure registry validation. Done in the second Page Registry slice.
+6. Add page-studio movement and composition helpers: required frame sections, legal ordering, legal movement, replacement, and variant switching.
+7. Retarget release preflight and static rendering to typed PageJson.
+8. Add preview rendering that shares the static renderer core.
+9. Wire project-scoped proposal/version reads.
+10. Add section notes anchored to stable section ids.
+11. Freeze approved versions and revalidate PageJson during release preflight.
 
-The first registry can be small:
+The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:
 
 ```text
 Header
 Hero
 ServiceIntro
-ProblemSolution
 ServiceDescription
 BenefitsGrid
-TrustReviews
 FAQ
 ServiceAreaList
 FinalCTA
 Footer
 ```
 
-Richer sections such as galleries, before-after, maps, nearby places, and references can follow after the source-of-truth path is proven.
+Richer sections such as problem/solution blocks, service grids, trust reviews, galleries, before-after, maps, nearby places, and references can follow after the source-of-truth path is proven and their source data exists.
 
 The first migration in this lane should add a unique index on `(pageProposalId, versionNumber)` and repository tests that approved versions cannot be mutated in place.
 
