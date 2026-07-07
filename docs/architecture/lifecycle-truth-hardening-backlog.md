@@ -128,6 +128,27 @@ Follow-up direction:
 
 Why: avoid overloading one column with several meanings and reduce the chance that UI/reporting treats provider success as verified health.
 
+### Release Verification Workerization Should Steal Workflow Semantics, Not A Workflow Runtime
+
+The 2026-07-07 workflow-engine research pass supports keeping the existing BullMQ + Postgres worker stack for release verification. Do not adopt Temporal, Inngest, Trigger.dev, Argo, Airflow, Conductor, or another workflow runtime for this slice. Steal the semantics instead:
+
+- `release_verifications` is the durable parent run.
+- `release_verification_checks` are named child check records and the audit trail.
+- `job_runs` is queue execution telemetry, not product truth.
+- the API creates or reuses a running verification row, enqueues work, and returns queued/already-active state;
+- the worker is the single writer for release verification projection across `release_verifications`, `release_verification_checks`, `deployments`, and `releasePlans`;
+- there must be at most one active verification per deployment/check plan, owned by Postgres first and mirrored by BullMQ `jobId`/dedupe only as transport protection;
+- retry should happen at the smallest safe boundary. Do not retry the whole verification indefinitely only because GSC handoff timed out;
+- GSC sitemap/URL Inspection handoff remains warning-level provider evidence and cannot by itself create `rollback_recommended`.
+
+Follow-up direction:
+
+- Start with the existing verification/check tables plus `job_runs`; add a separate verification-attempt table only if retries become hard to explain operationally.
+- Preserve the status/conclusion split: job completed is not release healthy, and GSC handoff completed is not live health.
+- After workerization, tighten the executable regression guard so API `verify()` cannot call `VerificationPort.verifyRelease(...)` or `SearchConsolePort.submitSitemap(...)` inline.
+
+Why: workflow engines converge on durable run records, named child steps, idempotent one-active execution, status/conclusion separation, and persisted evidence before projection. This repo already has the primitives; adding a full workflow engine now would add runtime surface without improving the product invariant.
+
 ### Restore In-Flight Orphan Sweep
 
 `restore_in_flight` is intentionally owned by rollback job retry, not the periodic rollback reconciler. A hard crash or lost job before the final retry can still strand rollback intent evidence in JSON while no periodic worker polls it.

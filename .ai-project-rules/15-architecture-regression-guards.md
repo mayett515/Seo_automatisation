@@ -94,7 +94,7 @@ These are not acceptable end states; they are tracked exceptions until the next 
 ```text
 GSC verify workerization
   POST /verify still submits sitemap / Search Console handoff inline.
-  Target fix: API enqueues a verification worker job; worker owns provider mutations.
+  Target fix: API creates/reuses a durable running verification row and enqueues a verification worker job; worker owns provider mutations and release-health projection.
 ```
 
 </context>
