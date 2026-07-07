@@ -1,11 +1,9 @@
+import { ReleaseCheckSchema, type PageJson, type ReleaseCheck, type ReleaseItemAction } from "@localseo/contracts";
 import {
-  PageJsonSchema,
-  ReleaseCheckSchema,
-  type PageJson,
-  type ReleaseCheck,
-  type ReleaseItemAction
-} from "@localseo/contracts";
-import { derivePageRegistrySeoFacts, resolveRenderedRobots } from "@localseo/page-registry";
+  derivePageRegistrySeoFacts,
+  resolveRenderedRobots,
+  validatePageJsonAgainstRegistry
+} from "@localseo/page-registry";
 
 export type LocalPageQaInput = {
   invalidPageJson?: boolean;
@@ -74,6 +72,7 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
   const missingApproval = renderablePages.filter((page) => !page.pageVersionId || !page.approvedAt);
   const missingNoindex = renderablePages.filter((page) => !hasNoindexEvidence(page.pageJson));
   const unresolvedLiveRobots = evidence.pages.filter((page) => !hasResolvedRobotsForAction(page.action));
+  const unmaterializedActions = evidence.pages.filter((page) => !hasMaterializedReleaseAction(page.action));
   const pageQaResults = renderablePages.map((page) => ({
     pageVersionId: page.pageVersionId,
     targetUrl: page.targetUrl,
@@ -145,6 +144,24 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
           robots: resolveRenderedRobots(page.action) ?? null
         })),
         unresolvedTargets: unresolvedLiveRobots.map((page) => page.targetUrl)
+      }
+    }),
+    ReleaseCheckSchema.parse({
+      checkKey: "release_action_materialization_check",
+      scope: "domain",
+      severity: "blocker",
+      result: releaseItemCount > 0 && unmaterializedActions.length === 0 ? "passed" : "failed",
+      message:
+        releaseItemCount > 0 && unmaterializedActions.length === 0
+          ? "Every release action materializes to a rendered page artifact."
+          : "Non-rendering release actions require directive artifact support before deploy approval.",
+      evidence: {
+        releaseItemCount,
+        unmaterializedActionCount: unmaterializedActions.length,
+        unmaterializedTargets: unmaterializedActions.map((page) => ({
+          action: page.action,
+          targetUrl: page.targetUrl
+        }))
       }
     }),
     ReleaseCheckSchema.parse({
@@ -260,9 +277,13 @@ function hasResolvedRobotsForAction(action: ReleaseItemAction): boolean {
   return action === "redirect" || action === "remove" || resolveRenderedRobots(action) !== undefined;
 }
 
+function hasMaterializedReleaseAction(action: ReleaseItemAction): boolean {
+  return action === "create" || action === "update";
+}
+
 function parsePageJson(input: unknown): PageJson | undefined {
-  const parsed = PageJsonSchema.safeParse(input);
-  return parsed.success ? parsed.data : undefined;
+  const validation = validatePageJsonAgainstRegistry(input);
+  return validation.success ? validation.pageJson : undefined;
 }
 
 export const customerReportMetricBans = ["impressions", "ctr", "average_position", "averagePosition"] as const;

@@ -140,8 +140,10 @@ DB-before-queue recovery policy
 Page Registry render/preflight boundary
   Worker renders approved PageJson into StaticSiteArtifact before provider handoff.
   Provider adapters upload bytes only and must not import page-registry/domain renderers.
-  Release preflight consumes parsed PageJson and registry-derived SEO facts, not loose key duck typing.
+  Release preflight consumes registry-validated PageJson and registry-derived SEO facts, not loose key duck typing or contract-only parsing.
   Renderer and preflight must agree on release-resolved robots values.
+  Release preflight blocks actions that do not yet materialize to rendered files or explicit directive artifacts.
+  PageJson safety guards reject raw markup, scripts, event handlers, inline styles, className, and literal class keys.
 ```
 
 </context>

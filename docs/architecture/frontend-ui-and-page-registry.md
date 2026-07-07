@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry is a future package for deployable page sections. It should be schema-first and controlled.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, and deterministic static rendering/CSS for approved PageJson. Preview rendering, Page Studio UI integration, richer section families, and note/approval surfaces remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -219,7 +219,7 @@ ServiceAreaList
 Footer
 ```
 
-Each registry component should define:
+Each registry component should define or move toward:
 
 ```text
 component type
@@ -236,28 +236,25 @@ customer note anchors
 approval/versioning constraints
 ```
 
-Suggested future package shape:
+Current/future package shape:
 
 ```text
 packages/page-registry/src/
-  registry.ts
-  types.ts
-  tokens.ts
+  index.ts              # current compact baseline: registry, validation, facts, renderer, CSS
+  registry.ts           # future split when the compact file becomes too dense
   validation.ts
-  renderers/
+  seo-facts.ts
+  renderer/
+  css/
   components/
     Hero/
       schema.ts
       variants.ts
-      Preview.tsx
-    ServiceDescription/
-    ServiceGrid/
-    TrustReviews/
-    FAQ/
-    ContactCTA/
-    AreaMap/
-    Footer/
+      render.ts
+      Preview.tsx       # future operator/editor preview, sharing renderer semantics
 ```
+
+Keep the split pressure pragmatic: move out of `index.ts` when a section family, renderer, or preview surface needs independent tests and ownership. Do not split just to mirror a design-system folder shape.
 
 The registry should produce controlled page JSON. It must not accept arbitrary agent-generated HTML, unvalidated props, illegal movement, or silent mutation of an approved page version.
 

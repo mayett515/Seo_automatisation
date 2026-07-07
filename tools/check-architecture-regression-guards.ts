@@ -197,6 +197,27 @@ requireIncludes(
   "release preflight must use registry-derived typed PageJson facts"
 );
 
+requireIncludes(
+  "packages/seo/src/index.ts",
+  "validatePageJsonAgainstRegistry",
+  "page-registry-renderer-boundary",
+  "release preflight must validate PageJson against the registry before deriving facts"
+);
+
+requireIncludes(
+  "packages/seo/src/index.ts",
+  "release_action_materialization_check",
+  "page-registry-renderer-boundary",
+  "release preflight must block actions that do not yet materialize to rendered files or directive artifacts"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  '"class"',
+  "page-json-safety-boundary",
+  "PageJson safety scan must reject literal class keys, not only className"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

@@ -30,6 +30,7 @@ void describe("PageJsonSchema", () => {
               nested: [
                 {
                   content: {
+                    class: "hero-card",
                     style: "color:red",
                     onClick: "alert(1)"
                   }
@@ -43,6 +44,7 @@ void describe("PageJsonSchema", () => {
 
     assert.equal(result.success, false);
     const messages = result.error.issues.map((issue) => issue.message).join("\n");
+    assert.match(messages, /class/u);
     assert.match(messages, /style/u);
     assert.match(messages, /onClick/u);
   });

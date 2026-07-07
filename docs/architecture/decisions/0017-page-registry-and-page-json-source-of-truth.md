@@ -138,18 +138,18 @@ small internal layout primitives such as stack, cluster, container, grid, sideba
 renderer-owned data attributes for validated section variants and states
 ```
 
-`packages/seo` remains the page-level QA/preflight owner, but it must consume parsed PageJson and registry-derived facts instead of loose key duck-typing. Preflight and rendering must agree on the same resolved values for title, canonical, robots, JSON-LD, H1, FAQ, area served, internal links, sitemap readiness, and uniqueness.
+`packages/seo` remains the page-level QA/preflight owner, but it must consume registry-validated PageJson and registry-derived facts instead of loose key duck-typing or contract-only parsing. Preflight and rendering must agree on the same resolved values for title, canonical, robots, JSON-LD, H1, FAQ, area served, internal links, sitemap readiness, and uniqueness.
 
 Robots/indexability is resolved at release time. PageJson may carry content intent, but the final rendered robots value is owned by the release action and deploy context:
 
 ```text
 preview/staging    -> noindex
 live create/update -> index only after approval and release preflight allow it
-noindex action     -> noindex
-redirect/remove    -> no page render required
+noindex action     -> requires explicit directive artifact support before production use
+redirect/remove    -> requires explicit directive artifact support before production use
 ```
 
-Release preflight validates the resolved robots value, and render parity tests must prove the renderer emits the value preflight accepted.
+Release preflight validates the resolved robots value and also blocks release actions that do not yet materialize to rendered page files or explicit directive artifacts. Render parity tests must prove the renderer emits the values preflight accepted.
 
 ## Consequences
 
@@ -170,6 +170,7 @@ It also gives the next implementation slice a concrete target:
 5. Add pure registry validation. Done in the second Page Registry slice.
 6. Add page-studio movement and composition helpers: required frame sections, legal ordering, legal movement, replacement, and variant switching. Done in the third Page Registry slice.
 7. Retarget release preflight and static rendering to typed PageJson, including the internal CSS foundation. Done in the fourth Page Registry slice.
+   7a. Harden preflight/render parity after review: preflight must call registry validation before deriving facts; literal `class` keys are rejected by the PageJson safety scan; non-rendering actions are blocked until directive artifacts exist. Done in the fourth Page Registry hardening slice.
 8. Add preview rendering that shares the static renderer core and theme tokens.
 9. Wire project-scoped proposal/version reads.
 10. Add section notes anchored to stable section ids.
@@ -234,6 +235,8 @@ Future work must not:
 - store page truth in rendered markup or comments,
 - attach notes to unstable section order,
 - bypass registry validation during preview, approval, release preflight, or deploy,
+- let release preflight pass a registry-validity failure that the renderer would reject,
+- let `noindex`, `redirect`, or `remove` actions pass production preflight before their directive artifacts exist,
 - let provider adapters render page HTML,
 - make customer-page deploy artifacts depend on Next.js, Tailwind, or a browser-side styling runtime without superseding this ADR,
 - let preflight accept SEO evidence that the renderer does not emit.

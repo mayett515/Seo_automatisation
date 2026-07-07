@@ -847,6 +847,7 @@ const pageJsonForbiddenKeys = new Set([
   "script",
   "jsx",
   "dangerouslysetinnerhtml",
+  "class",
   "classname",
   "style",
   "rawmarkup",

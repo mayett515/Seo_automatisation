@@ -1,6 +1,6 @@
 # Backend Foundation Status
 
-Current baseline: after deploy provider-operation hardening, HTTP-first post-deploy verification, lifecycle integration coverage, and the rollback restore execution baseline.
+Current baseline: after deploy provider-operation hardening, release-verification workerization, typed PageJson/Page Registry validation, static rendering migration, lifecycle integration coverage, and the rollback restore execution baseline.
 
 This page records what the backend foundation now enforces, what is still intentionally incomplete, and where the next serious foundation items sit on the roadmap.
 
@@ -73,11 +73,13 @@ stateDiagram-v2
   Ready --> ApprovedForDeploy: customer approval persisted
   ReadyWithWarnings --> ApprovedForDeploy: customer approval persisted
   ApprovedForDeploy --> Deploying: deploy job enqueued
-  Deploying --> Live: deploy reconciler gets provider success
+  Deploying --> ProviderSucceeded: provider reports ready
   Deploying --> Failed: deploy worker fails
-  Live --> LiveHealthy: real verification passes
-  Live --> LiveWithWarnings: real verification warnings
-  Live --> RollbackRecommended: verification blocker
+  ProviderSucceeded --> Verifying: release-verification job
+  Verifying --> LiveHealthy: verification passes
+  Verifying --> LiveWithWarnings: verification warnings
+  Verifying --> RollbackRecommended: verification blocker
+  Verifying --> ExecutionFailed: verifier infrastructure exhausted
   RollbackRecommended --> RolledBack: rollback worker executes
 
   note right of Deploying
@@ -102,13 +104,24 @@ stateDiagram-v2
     enqueued and audited.
   end note
 
-  note right of Live
-    verify() now runs HTTP,
-    browser tracking, and GSC
-    diagnostic checks, then persists
-    evidence. Browser/GSC failures are
-    warning or skipped evidence, not
-    rollback blockers.
+  note right of ProviderSucceeded
+    Provider success is not live truth.
+    releasePlans.status becomes live
+    only after persisted verification
+    decides live_healthy or
+    live_with_warnings.
+  end note
+
+  note right of Verifying
+    The API creates or reuses a durable
+    release_verifications row and
+    enqueues work. The worker runs HTTP,
+    browser tracking, and GSC diagnostic
+    checks, persists evidence, and
+    projects truth transactionally.
+    Browser/GSC failures are warning
+    or skipped evidence, not rollback
+    blockers.
   end note
 
   note right of RollbackRecommended
@@ -119,7 +132,7 @@ stateDiagram-v2
   end note
 ```
 
-How to read this: the preflight, approval, deploy enqueue, deploy worker, HTTP/browser/GSC verification baseline, rollback point preparation, and rollback execution state transitions are now real enough to trust as backend control flow. Productive hosting has a Netlify adapter baseline, approved-artifact handoff, async required-file upload handling, persisted provider IDs before upload, recorded provider-deploy and provider-rollback reconcilers, persisted post-deploy verification evidence, source-filtered and duplicate-guarded preflight rollback points, provider-native rollback restore, browser tracking smoke checks, and GSC sitemap/URL Inspection handoff. It is still not customer-facing production-complete because rollback trigger policy is manual-only for MVP by ADR 0014, the tiny provider-create window before provider ID persistence still escalates to manual reconciliation rather than automatic lookup, and future UI/reporting still needs to read detailed lifecycle evidence instead of coarse status alone.
+How to read this: the preflight, approval, deploy enqueue, deploy worker, release-verification worker, rollback point preparation, and rollback execution state transitions are now real enough to trust as backend control flow. Productive hosting has a Netlify adapter baseline, approved structural artifact handoff, rendered static-site artifact handoff, async required-file upload handling, persisted provider IDs before upload, recorded provider-deploy and provider-rollback reconcilers, persisted post-deploy verification evidence, source-filtered and duplicate-guarded preflight rollback points, provider-native rollback restore, browser tracking smoke checks, and GSC sitemap/URL Inspection handoff. Provider success is only provider truth; live release truth is projected after persisted verification. It is still not customer-facing production-complete because rollback trigger policy is manual-only for MVP by ADR 0014, the tiny provider-create window before provider ID persistence still escalates to manual reconciliation rather than automatic lookup, non-rendering release actions still need directive-artifact policy before broad use, and future UI/reporting still needs to read detailed lifecycle evidence instead of coarse status alone.
 
 Important UI/reporting interpretation: `releasePlans.status = "failed"` is a coarse "do not present this release as healthy/live" projection. It can mean the provider deploy failed, or it can mean the provider deploy succeeded but post-deploy verification found a blocker and wrote `deployments.status = "rollback_recommended"` or `deployments.verificationStatus = "failed"`. UI, reports, release notes, and customer-facing explanations must read the deployment and verification detail rows before explaining why a release is failed or rollback-recommended.
 
@@ -226,17 +239,17 @@ How to read this: Mastra proposes strategy, content, layout, and design choices.
 
 The corrected MVP roadmap is agent-first: website import, GSC, tracking, SERP, competitor, and field evidence feed an AI Opportunity Scout, then the platform validates and previews controlled proposals. See [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md) and [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
-| Slice                             | Status  | Purpose                                                                                                                                              |
-| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AI reasoning port                 | Done    | `AiReasoningPort.runStructured` exists in `packages/adapters`; contracts own tasks/failure codes; the worker calls it behind the Opportunity Scout.  |
-| Website understanding workflow    | Planned | Convert imported website evidence into structured business, service, area, tone, color, layout, and CTA facts.                                       |
-| Opportunity scout workflow        | Backend | Worker/API baseline uses website, GSC, tracking, existing-route, and open-opportunity evidence to persist validated OpportunityBriefs.               |
-| Component registry                | Planned | Define which frontend/site components Mastra may choose, including prop schemas, allowed style/theme tokens, layout zones, and legal movement rules. |
-| Page proposal workflow            | Planned | Produce route, page purpose, sections, component props, draft copy, metadata, schema, FAQ, CTA, and internal-link suggestions.                       |
-| Page Studio                       | Planned | Provide the constrained layout-zone editor for variant switching, legal section movement, text/media edits, notes, and approval.                     |
-| Validation pipeline               | Partial | Opportunity Scout output already passes Zod, evidence resolution, proof containment, duplicate/cannibalization gates, and deterministic scoring.     |
-| Preview and approval UI           | Planned | Render structured proposals for editing, notes, and persisted approval before release.                                                               |
-| Release/report narrative workflow | Planned | Draft release notes and customer-safe report language; deterministic guards block forbidden proof claims.                                            |
+| Slice                             | Status          | Purpose                                                                                                                                                                                                                                                                          |
+| --------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AI reasoning port                 | Done            | `AiReasoningPort.runStructured` exists in `packages/adapters`; contracts own tasks/failure codes; the worker calls it behind the Opportunity Scout.                                                                                                                              |
+| Website understanding workflow    | Planned         | Convert imported website evidence into structured business, service, area, tone, color, layout, and CTA facts.                                                                                                                                                                   |
+| Opportunity scout workflow        | Backend         | Worker/API baseline uses website, GSC, tracking, existing-route, and open-opportunity evidence to persist validated OpportunityBriefs.                                                                                                                                           |
+| Component registry                | Baseline        | `packages/page-registry` defines the first Local SEO section set, strict prop schemas, registry validation, SEO fact derivation, release-action robots resolution, and static rendering/CSS ownership.                                                                           |
+| Page proposal workflow            | Planned         | Produce route, page purpose, sections, component props, draft copy, metadata, schema, FAQ, CTA, and internal-link suggestions.                                                                                                                                                   |
+| Page Studio                       | Domain baseline | Pure movement/composition helpers exist for required sections, singleton counts, legal ordering, movement, variants, replacement, and publish-readiness. UI, notes, and approval flows remain planned.                                                                           |
+| Validation pipeline               | Partial         | Opportunity Scout output already passes Zod, evidence resolution, proof containment, duplicate/cannibalization gates, and deterministic scoring. PageJson now passes contract safety, registry prop validation, and page-studio composition checks before it becomes deployable. |
+| Preview and approval UI           | Planned         | Render structured proposals for editing, notes, and persisted approval before release.                                                                                                                                                                                           |
+| Release/report narrative workflow | Planned         | Draft release notes and customer-safe report language; deterministic guards block forbidden proof claims.                                                                                                                                                                        |
 
 ### Mastra Can Suggest
 
@@ -288,7 +301,7 @@ Programming-wise, the backend foundation is set for continued product build and 
 - DB/Redis ownership is consolidated,
 - worker jobs have baseline lifecycle audit.
 
-It is not yet set for fully automated customer-facing production deploys. The deploy reconciler worker, rollback reconciler worker, approved-artifact handoff, durable production artifact storage, Netlify adapter baseline, typed provider-operation state, manual reconciliation stop state, HTTP/browser/GSC verification baseline, lifecycle integration coverage baseline, and manual-only MVP rollback trigger policy now exist. Future automatic rollback opt-in gates, richer lifecycle UI/reporting projections, and the remaining recovery polish items are still deferred by ADR/backlog trigger. The Mastra creative assembly lane is also not product-integrated yet; it is planned as the proposal layer for site strategy, copy, layout, and design, not as an execution bypass. Until customer-facing UI/reporting consumes detailed verification/rollback evidence and the remaining recovery paths are exercised in production-like infrastructure, deploy success and live health must not be treated as broad customer-safe production facts.
+It is not yet set for fully automated customer-facing production deploys. The deploy reconciler worker, release-verification worker, rollback reconciler worker, approved-artifact and static-site-artifact handoff, durable production artifact storage, Netlify adapter baseline, typed provider-operation state, manual reconciliation stop state, HTTP/browser/GSC verification baseline, lifecycle integration coverage baseline, typed PageJson/Page Registry validation, static renderer baseline, and manual-only MVP rollback trigger policy now exist. Future automatic rollback opt-in gates, richer lifecycle UI/reporting projections, non-rendering action directive artifacts, and the remaining recovery polish items are still deferred by ADR/backlog trigger. The Mastra creative assembly lane is also not product-integrated yet; it is planned as the proposal layer for site strategy, copy, layout, and design, not as an execution bypass. Until customer-facing UI/reporting consumes detailed verification/rollback evidence and the remaining recovery paths are exercised in production-like infrastructure, deploy success and live health must not be treated as broad customer-safe production facts.
 
 ## Pattern Mining Checkpoint
 
