@@ -8,6 +8,7 @@ import type {
 } from "@localseo/contracts";
 
 export * from "./page-studio.js";
+export * from "./work-recovery.js";
 
 export type DeployDecision =
   | { kind: "blocked"; blockerCount: number; warnings: ReleaseCheck[] }

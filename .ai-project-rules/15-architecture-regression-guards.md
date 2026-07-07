@@ -144,6 +144,7 @@ release status hardening
 DB-before-queue recovery policy
   BullMQ is transport, not product truth.
   Durable run rows must define active guards, terminal states, and stale recovery behavior.
+  Recovery decisions belong in pure domain policy; recovery controllers are procedural shells.
   Read/analyze work may be re-enqueued by deterministic job id when safe.
   Provider mutation work must reconcile by provider reads or mark manual reconciliation.
 ```

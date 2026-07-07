@@ -207,6 +207,12 @@ stale work input
 
 The recovery scanner should be a procedural shell around that pure decision. It reads Postgres/BullMQ state, calls the classifier, then applies the effect with guarded updates. The classifier must never call Redis, Postgres, or providers.
 
+Implementation note, 2026-07-07:
+
+- `packages/domain/src/work-recovery.ts` now implements the pure recovery classifier for the policy above.
+- The implemented classifier is intentionally not a scheduler: it produces `noop`, `reenqueue`, `mark_execution_failed`, `record_warning`, `reconcile_provider`, or `manual_reconciliation` decisions from durable state, transport state, worker freshness, recovery count, workflow category, and idempotency/provider-uncertainty facts.
+- Recovery controllers remain future procedural shells. They must translate lane-specific Postgres/BullMQ observations into classifier input and apply the decision with guarded DB updates.
+
 Follow-up direction:
 
 - Start with a release-verification recovery controller: scan stale running `release_verifications`, compare durable row plus `job_runs` plus BullMQ state, re-add the same `jobId = verificationId` when safe, and mark `execution_failed` after bounded recovery.

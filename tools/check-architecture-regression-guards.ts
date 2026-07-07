@@ -260,6 +260,34 @@ requireIncludes(
   "immutable page version rows must not be deleted"
 );
 
+requireIncludes(
+  "packages/domain/src/work-recovery.ts",
+  "classifyWorkRecovery",
+  "db-before-queue-recovery",
+  "DB-before-queue recovery policy must stay encoded as a pure domain classifier"
+);
+
+requireIncludes(
+  "packages/domain/src/work-recovery.ts",
+  "reconcile_provider",
+  "db-before-queue-recovery",
+  "provider mutation uncertainty must route to provider reconciliation instead of generic re-enqueue"
+);
+
+requireIncludes(
+  "packages/domain/src/work-recovery.ts",
+  "artifactWritesAreIdempotent",
+  "db-before-queue-recovery",
+  "artifact capture recovery must keep explicit idempotency input before re-enqueue"
+);
+
+requireIncludes(
+  "packages/domain/src/work-recovery.test.ts",
+  "routes provider mutation uncertainty to provider reconciliation instead of re-enqueue",
+  "db-before-queue-recovery",
+  "recovery tests must prove provider mutation uncertainty does not generic re-enqueue"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

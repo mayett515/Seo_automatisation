@@ -45,14 +45,23 @@ The reusable domain model is a recovery decision, not a queue command. Implement
 
 ```ts
 type WorkRecoveryDecision =
-  | { kind: "noop"; reason: "terminal" | "fresh_worker" | "job_still_active" }
-  | { kind: "reenqueue"; jobId: string; reason: "missing_transport" | "stale_running" }
-  | { kind: "mark_execution_failed"; reason: "recovery_exhausted" | "enqueue_gap_exhausted" }
+  | { kind: "noop"; reason: "terminal" | "fresh_worker" | "transport_job_active" }
+  | { kind: "reenqueue"; jobId: string; reason: "missing_transport" | "stale_running" | "transport_failed" }
+  | { kind: "mark_execution_failed"; reason: "recovery_exhausted" | "transport_completed_without_product_truth" }
+  | { kind: "record_warning"; reason: "provider_handoff_recovery_exhausted" }
   | { kind: "reconcile_provider"; reason: "provider_mutation_uncertain" }
   | { kind: "manual_reconciliation"; reason: string };
 ```
 
 That decision shape keeps product policy separate from Redis/BullMQ calls. It also prevents the most dangerous drift: treating a missing queue job as permission to repeat a provider mutation.
+
+Implementation note, 2026-07-07:
+
+- `packages/domain/src/work-recovery.ts` now contains the pure `classifyWorkRecovery(...)` policy skeleton.
+- The classifier has no Postgres, Redis, BullMQ, provider, or worker dependencies.
+- It distinguishes read/analyze, artifact capture, provider handoff warning, provider mutation, and projection/approval categories.
+- It permits deterministic re-enqueue only for safe/idempotent categories, routes provider mutation uncertainty to provider reconciliation/manual handling, and keeps projection/approval recovery manual.
+- A future recovery scanner remains the procedural shell: it will read durable rows plus queue telemetry, call the classifier, and apply the selected effect with guarded updates.
 
 ## Consequences
 
