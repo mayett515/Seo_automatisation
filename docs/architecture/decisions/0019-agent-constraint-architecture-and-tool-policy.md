@@ -139,7 +139,7 @@ implemented 2026-07-07
   Opportunity Explorer can trigger Page Proposal runs through the API queue endpoint only
   Page Proposal UI status reads subject-scoped page_brief_draft agent runs
   Page version review API owns durable approval/request-changes with actor audit
-  unresolved approval_blocker notes block approval
+  unresolved approval_blocker notes block approval and serialize against approval
 
 still deferred
   release/deploy enqueue from approved page versions

@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, approves or requests changes on preview versions, blocks approval on unresolved `approval_blocker` notes, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. Full Page Studio editing and richer section families remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, approves or requests changes on preview versions, blocks approval on unresolved `approval_blocker` notes with DB-backed serialization against concurrent blocker creation, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. Full Page Studio editing and richer section families remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -292,7 +292,7 @@ Page version approval is a durable API decision, not a local UI flag:
 POST /projects/:projectId/pages/:pageVersionId/review
   decision = approve | request_changes
   page:approve permission required
-  unresolved approval_blocker notes block approve
+  unresolved approval_blocker notes block approve and serialize against approval
   approvals row records actor, decision, note, timestamp
   approved versions become immutable through the DB trigger
 ```

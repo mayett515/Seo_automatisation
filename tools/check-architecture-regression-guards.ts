@@ -457,6 +457,13 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/db/migrations/0030_page_section_note_approval_blocker_lock.sql",
+  "FOR UPDATE",
+  "page-version-approval",
+  "Approval blocker note trigger must lock the parent page version row"
+);
+
+requireIncludes(
   "apps/api/src/modules/pages.module.ts",
   ".insert(approvals)",
   "page-version-approval",

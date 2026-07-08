@@ -702,7 +702,8 @@ implemented now
   Opportunity Explorer status reads subject-scoped page_brief_draft agent runs
   page:approve permission for page version review
   POST /projects/:projectId/pages/:pageVersionId/review
-  approval blocks unresolved approval_blocker section notes
+  approval locks the page version and blocks unresolved approval_blocker section notes
+  unresolved approval_blocker note creation is DB-guarded against non-reviewable page versions
   approval updates one preview/changes_requested page version to approved with approvedAt
   request_changes moves the page version and proposal projection to changes_requested
   approvals audit row records actor, decision, note, and timestamp
@@ -747,7 +748,7 @@ approved versions are not silently mutated
 new agent runs create new proposals or versions
 customer notes attach to preview/component anchors
 approval freezes the deployable version
-unresolved approval_blocker notes block approval
+unresolved approval_blocker notes block approval and cannot race onto approved versions
 request changes records a rejected approval event without approving the version
 ```
 
