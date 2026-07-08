@@ -149,7 +149,16 @@ async function createPageProposalFixture(db: DatabaseClient): Promise<PagePropos
         secondaryKeywords: ["dach reinigen muenchen"],
         suggestedRoute: "/dachreinigung-muenchen/",
         suggestedPageType: "normal_page",
-        evidence: [],
+        evidence: [
+          {
+            sourceType: "gsc_signal",
+            sourceId: "page-proposal-integration-gsc-signal",
+            locator: { query: "dachreinigung muenchen", route: "/dachreinigung-muenchen/" },
+            summary: "GSC shows local Dachreinigung intent for Muenchen.",
+            strength: "medium",
+            proofTier: "internal_signal"
+          }
+        ],
         competitorObservations: [],
         groupHints: [],
         hubSpokeRole: "standalone",
