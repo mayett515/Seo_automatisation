@@ -297,7 +297,7 @@ POST /projects/:projectId/pages/:pageVersionId/review
   approved versions become immutable through the DB trigger
 ```
 
-The first preview screen owns this review decision and, after approval, can create a draft release plan from the approved page version through the release planning API. It does not approve deploy, enqueue deploy, or mutate providers.
+The first preview screen owns this review decision and, after approval, can create a draft release plan from the approved page version through the release planning API. A release detail panel then reads the persisted release plan, runs release preflight, displays check results, saves deploy approval, and queues deploy through the existing release APIs. It does not mutate providers directly or mark a release live; deploy workers and verification remain the owners of provider mutation and live truth.
 
 Preview and deploy must share the same renderer core. The static release renderer now lives in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON. The pure preview renderer reuses that same core: editor/staging preview emits `noindex`, while deploy-preview mode is byte-identical to the deploy static artifact for the same PageJson and target URL.
 

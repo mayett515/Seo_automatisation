@@ -1164,6 +1164,20 @@ export const ReleasePlanSchema = z.object({
   warningCount: z.number().int().nonnegative()
 });
 
+export const ReleasePreflightResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  releasePlanId: z.string().min(1),
+  readiness: ReleasePlanStatusSchema.extract(["ready", "ready_with_warnings", "blocked"]),
+  checks: z.array(ReleaseCheckSchema)
+});
+
+export const ReleaseDeployApprovalResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  releasePlanId: z.string().min(1),
+  status: z.literal("approved_for_deploy"),
+  approvedAt: z.string().datetime()
+});
+
 export const ReleaseVerificationSchema = z.object({
   releasePlanId: z.string().min(1),
   deploymentId: z.string().min(1).optional(),
@@ -1731,6 +1745,8 @@ export type QueueName = z.output<typeof QueueNameSchema>;
 export type PageProposal = z.output<typeof PageProposalSchema>;
 export type ReleaseCheck = z.output<typeof ReleaseCheckSchema>;
 export type ReleasePlan = z.output<typeof ReleasePlanSchema>;
+export type ReleasePreflightResponse = z.output<typeof ReleasePreflightResponseSchema>;
+export type ReleaseDeployApprovalResponse = z.output<typeof ReleaseDeployApprovalResponseSchema>;
 export type ReleaseVerification = z.output<typeof ReleaseVerificationSchema>;
 export type ReleaseVerificationCheck = z.output<typeof ReleaseVerificationCheckSchema>;
 export type ReleaseNote = z.output<typeof ReleaseNoteSchema>;

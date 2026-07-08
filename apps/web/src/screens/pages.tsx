@@ -12,6 +12,7 @@ import {
   PageVersionReviewResponseSchema,
   ReleasePlanSchema,
   ReviewPageVersionRequestSchema,
+  CreatePageSectionNoteRequestSchema,
   CreateReleasePlanRequestSchema,
   pageSectionNoteInstructionTypes,
   type PageProposalSummary,
@@ -24,6 +25,7 @@ import {
   type ReleasePlan
 } from "@localseo/contracts";
 import { getJson, patchJson, postJson } from "../lib/api";
+import { ReleaseLifecyclePanel } from "./release-detail";
 
 export function PagesScreen(props: { projectId: string }) {
   const projectId = props.projectId;
@@ -238,6 +240,13 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
             pageVersion={version.data}
             onCreate={() => createReleasePlan.mutate()}
           />
+          {latestReleasePlan ? (
+            <ReleaseLifecyclePanel
+              initialPlan={latestReleasePlan}
+              projectId={projectId}
+              releasePlanId={latestReleasePlan.releasePlanId}
+            />
+          ) : null}
 
           <iframe className="preview-frame" sandbox="" srcDoc={preview.data.file.body} title="Page preview" />
           <PageSectionNotesPanel pageVersionId={pageVersionId} projectId={projectId} />
@@ -376,16 +385,19 @@ function PageSectionNotesPanel(props: { projectId: string; pageVersionId: string
     retry: false
   });
   const createNote = useMutation({
-    mutationFn: () =>
-      postJson(
+    mutationFn: () => {
+      const body = CreatePageSectionNoteRequestSchema.parse({
+        sectionId,
+        instructionType,
+        note
+      });
+
+      return postJson(
         projectApiPath(props.projectId, `/pages/${encodeURIComponent(props.pageVersionId)}/notes`),
-        {
-          sectionId,
-          instructionType,
-          note
-        },
+        body,
         PageSectionNoteSchema
-      ),
+      );
+    },
     onSuccess: async () => {
       setNote("");
       await queryClient.invalidateQueries({ queryKey: notesQueryKey });

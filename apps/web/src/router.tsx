@@ -19,6 +19,7 @@ import { PagePreviewScreen, PagesScreen } from "./screens/pages";
 import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
 import { ProjectDashboardScreen } from "./screens/project-dashboard";
+import { ReleaseDetailScreen } from "./screens/release-detail";
 import { TrackingKeysScreen } from "./screens/tracking-keys";
 
 function RootLayout() {
@@ -181,6 +182,12 @@ const projectPagePreviewRoute = createRoute({
   component: PagePreviewRouteComponent
 });
 
+const projectReleaseDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/releases/$releasePlanId",
+  component: ReleaseDetailRouteComponent
+});
+
 const projectChildRoutes = [
   createRoute({
     getParentRoute: () => rootRoute,
@@ -205,11 +212,7 @@ const projectChildRoutes = [
     path: "/projects/$projectId/releases",
     component: () => <PlaceholderScreen title="Release Queue" />
   }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/projects/$projectId/releases/$releasePlanId",
-    component: () => <PlaceholderScreen title="Release Detail" />
-  }),
+  projectReleaseDetailRoute,
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/releases/$releasePlanId/checks",
@@ -270,6 +273,11 @@ function OpportunitiesRouteComponent() {
 function PagePreviewRouteComponent() {
   const params = projectPagePreviewRoute.useParams();
   return <PagePreviewScreen pageVersionId={params.pageId} projectId={params.projectId} />;
+}
+
+function ReleaseDetailRouteComponent() {
+  const params = projectReleaseDetailRoute.useParams();
+  return <ReleaseDetailScreen projectId={params.projectId} releasePlanId={params.releasePlanId} />;
 }
 
 const routeTree = rootRoute.addChildren([

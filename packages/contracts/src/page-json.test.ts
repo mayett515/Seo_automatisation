@@ -5,6 +5,8 @@ import {
   CreateReleasePlanRequestSchema,
   PageJsonSchema,
   PageProposalJsonSchema,
+  ReleaseDeployApprovalResponseSchema,
+  ReleasePreflightResponseSchema,
   ReviewPageVersionRequestSchema,
   type PageJson
 } from "./index.js";
@@ -210,6 +212,40 @@ void describe("CreateReleasePlanRequestSchema", () => {
     assert.equal(
       CreateReleasePlanRequestSchema.safeParse({
         pageVersionIds: ["11111111-1111-4111-8111-111111111111"]
+      }).success,
+      true
+    );
+  });
+});
+
+void describe("Release action response schemas", () => {
+  void it("parses release preflight checks and readiness", () => {
+    assert.equal(
+      ReleasePreflightResponseSchema.safeParse({
+        projectId: "11111111-1111-4111-8111-111111111111",
+        releasePlanId: "plan-1",
+        readiness: "ready_with_warnings",
+        checks: [
+          {
+            checkKey: "tracking_ready",
+            scope: "tracking",
+            severity: "warning",
+            result: "failed",
+            message: "Tracking key is not configured."
+          }
+        ]
+      }).success,
+      true
+    );
+  });
+
+  void it("parses release deploy approval evidence", () => {
+    assert.equal(
+      ReleaseDeployApprovalResponseSchema.safeParse({
+        projectId: "11111111-1111-4111-8111-111111111111",
+        releasePlanId: "plan-1",
+        status: "approved_for_deploy",
+        approvedAt: "2026-07-08T12:00:00.000Z"
       }).success,
       true
     );

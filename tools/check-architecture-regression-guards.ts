@@ -591,9 +591,58 @@ requireIncludes(
 
 requireIncludes(
   "apps/web/src/screens/pages.tsx",
+  "CreatePageSectionNoteRequestSchema.parse",
+  "page-version-approval",
+  "Page section-note UI must parse create-note requests through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
   '"/releases/plan"',
   "page-release-planning",
   "Page preview UI must create release plans through the durable release planning API"
+);
+
+requireIncludes(
+  "apps/web/src/screens/release-detail.tsx",
+  "}/preflight",
+  "page-release-planning",
+  "Release detail UI must run release preflight through the durable release API"
+);
+
+requireIncludes(
+  "apps/web/src/screens/release-detail.tsx",
+  "ReleasePreflightResponseSchema",
+  "page-release-planning",
+  "Release detail UI must parse release preflight responses through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/release-detail.tsx",
+  "}/approve-deploy",
+  "page-release-planning",
+  "Release detail UI must save deploy approval through the durable release API"
+);
+
+requireIncludes(
+  "apps/web/src/screens/release-detail.tsx",
+  "ReleaseDeployApprovalResponseSchema",
+  "page-release-planning",
+  "Release detail UI must parse deploy approval responses through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/release-detail.tsx",
+  "}/deploy",
+  "page-release-planning",
+  "Release detail UI must enqueue deploy through the durable release API"
+);
+
+requireIncludes(
+  "apps/web/src/screens/release-detail.tsx",
+  "QueueJobSchema",
+  "page-release-planning",
+  "Release detail UI must parse deploy queue responses through the shared queue contract"
 );
 
 if (warnings.length > 0) {

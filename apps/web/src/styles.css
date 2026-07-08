@@ -507,12 +507,14 @@ a {
 }
 
 .note-form,
-.note-list {
+.note-list,
+.release-check-list {
   display: grid;
   gap: 10px;
 }
 
-.note-item {
+.note-item,
+.release-check-item {
   display: grid;
   gap: 8px;
   border: 1px solid #e0e4dc;
@@ -521,8 +523,14 @@ a {
   background: #fbfcfa;
 }
 
-.note-item p {
+.note-item p,
+.release-check-item p {
   margin: 0;
+}
+
+.release-check-item {
+  grid-template-columns: minmax(0, 1fr) minmax(84px, max-content);
+  align-items: center;
 }
 
 .preview-frame {
@@ -569,7 +577,8 @@ a {
   .decision-button-row,
   .metric-row--compact,
   .metric-row--three,
-  .run-item {
+  .run-item,
+  .release-check-item {
     grid-template-columns: 1fr;
   }
 
