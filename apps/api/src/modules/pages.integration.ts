@@ -811,6 +811,15 @@ async function createPageVersionFixture(
 }
 
 async function createOpportunityFixture(db: DatabaseClient, input: { name: string }): Promise<OpportunityFixture> {
+  const [user] = await db
+    .insert(users)
+    .values({
+      email: `${input.name.toLowerCase().replaceAll(" ", "-")}@example.com`,
+      name: `${input.name} Operator`
+    })
+    .returning();
+  assert.ok(user);
+
   const [customer] = await db
     .insert(customers)
     .values({ name: `${input.name} Customer` })
@@ -826,7 +835,6 @@ async function createOpportunityFixture(db: DatabaseClient, input: { name: strin
     .returning();
   assert.ok(project);
 
-  const userId = "22222222-2222-4222-8222-222222222222";
   const opportunityId = await createOpportunityForProject(db, project.id, {
     service: "Dachreinigung",
     primaryKeyword: "dachreinigung muenchen",
@@ -835,7 +843,7 @@ async function createOpportunityFixture(db: DatabaseClient, input: { name: strin
 
   return {
     projectId: project.id,
-    userId,
+    userId: user.id,
     opportunityId
   };
 }
