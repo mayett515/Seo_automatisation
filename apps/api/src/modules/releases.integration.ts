@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   type DeploymentStatus,
   type PageJson,
+  type PageVersionStatus,
   type ReleasePlanStatus,
   type ReleaseVerificationStatus
 } from "@localseo/contracts";
@@ -222,6 +223,75 @@ void describe(
         .from(releaseVerifications)
         .where(eq(releaseVerifications.deploymentId, projectB.deploymentId));
 
+      assert.equal(rows.length, 0);
+    });
+
+    void it("creates a draft release plan from approved page versions", async () => {
+      const fixture = await createPageVersionFixture(db);
+
+      const result = await service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] });
+
+      assert.equal(result.projectId, fixture.projectId);
+      assert.equal(result.status, "draft");
+      assert.equal(result.blockerCount, 0);
+      assert.equal(result.warningCount, 0);
+
+      const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, result.releasePlanId));
+      assert.equal(plan?.status, "draft");
+      assert.equal(plan?.approvedAt, null);
+      assert.match(plan?.summary ?? "", /approved page version/u);
+
+      const items = await db
+        .select()
+        .from(releasePlanItems)
+        .where(eq(releasePlanItems.releasePlanId, result.releasePlanId));
+      assert.equal(items.length, 1);
+      assert.equal(items[0]?.pageVersionId, fixture.pageVersionId);
+      assert.equal(items[0]?.targetUrl, "/dachreinigung/");
+      assert.equal(items[0]?.action, "create");
+      assert.equal(items[0]?.status, "pending");
+
+      const deploymentRows = await db
+        .select()
+        .from(deployments)
+        .where(eq(deployments.releasePlanId, result.releasePlanId));
+      assert.equal(deploymentRows.length, 0);
+    });
+
+    void it("rejects release plan creation for preview page versions", async () => {
+      const fixture = await createPageVersionFixture(db, { status: "preview", approvedAt: null });
+
+      await assert.rejects(
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        /only include approved page versions/u
+      );
+
+      const rows = await db.select().from(releasePlanItems);
+      assert.equal(rows.length, 0);
+    });
+
+    void it("rejects release plan creation for non-approved immutable page versions", async () => {
+      const fixture = await createPageVersionFixture(db, { status: "release_candidate" });
+
+      await assert.rejects(
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        /only include approved page versions/u
+      );
+
+      const rows = await db.select().from(releasePlanItems);
+      assert.equal(rows.length, 0);
+    });
+
+    void it("rejects page versions outside the project scope when creating release plans", async () => {
+      const projectA = await createPageVersionFixture(db, { projectName: "Project A" });
+      const projectB = await createPageVersionFixture(db, { projectName: "Project B" });
+
+      await assert.rejects(
+        () => service.createPlan(projectA.projectId, { pageVersionIds: [projectB.pageVersionId] }),
+        /Every release page version must belong to this project/u
+      );
+
+      const rows = await db.select().from(releasePlanItems);
       assert.equal(rows.length, 0);
     });
 
@@ -638,8 +708,14 @@ async function createReleaseFixture(
 
 async function createPageVersionFixture(
   db: DatabaseClient,
-  input: { route: string } = { route: "/dachreinigung/" }
+  input: {
+    approvedAt?: Date | null;
+    projectName?: string;
+    route?: string;
+    status?: PageVersionStatus;
+  } = {}
 ): Promise<PageVersionFixture> {
+  const route = input.route ?? "/dachreinigung/";
   const [customer] = await db.insert(customers).values({ name: "Plan Route Customer" }).returning();
   assert.ok(customer);
 
@@ -647,7 +723,7 @@ async function createPageVersionFixture(
     .insert(projects)
     .values({
       customerId: customer.id,
-      name: "Plan Route Project"
+      name: input.projectName ?? "Plan Route Project"
     })
     .returning();
   assert.ok(project);
@@ -656,10 +732,10 @@ async function createPageVersionFixture(
     .insert(pageProposals)
     .values({
       projectId: project.id,
-      route: input.route,
+      route,
       primaryKeyword: "Dachreinigung",
       uniquenessRationale: "Dedicated local proof.",
-      status: "approved",
+      status: input.status === "changes_requested" || input.status === "preview" ? "draft" : "approved",
       sitemapReady: true
     })
     .returning();
@@ -670,9 +746,9 @@ async function createPageVersionFixture(
     .values({
       pageProposalId: proposal.id,
       versionNumber: 1,
-      status: "approved",
-      approvedAt: new Date("2026-06-30T10:00:00.000Z"),
-      pageJson: pageJson(input.route)
+      status: input.status ?? "approved",
+      approvedAt: input.approvedAt === undefined ? new Date("2026-06-30T10:00:00.000Z") : input.approvedAt,
+      pageJson: pageJson(route)
     })
     .returning();
   assert.ok(pageVersion);

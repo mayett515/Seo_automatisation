@@ -109,7 +109,7 @@ export class ReleasesService {
       projectId,
       status: "draft",
       riskLevel: "low",
-      blockerCount: requestedPageVersionIds.length === 0 ? 1 : 0,
+      blockerCount: 0,
       warningCount: 0
     });
 
@@ -124,13 +124,35 @@ export class ReleasesService {
     }
 
     const insertedPlan = await db.transaction(async (tx) => {
+      const pageVersionRows = await tx
+        .select({
+          pageVersionId: pageVersions.id,
+          pageVersionStatus: pageVersions.status,
+          pageVersionApprovedAt: pageVersions.approvedAt,
+          targetUrl: pageProposals.route
+        })
+        .from(pageVersions)
+        .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+        .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, requestedPageVersionIds)));
+
+      if (pageVersionRows.length !== requestedPageVersionIds.length) {
+        throw new BadRequestException("Every release page version must belong to this project.");
+      }
+
+      const unapprovedRow = pageVersionRows.find(
+        (row) => row.pageVersionStatus !== "approved" || !row.pageVersionApprovedAt
+      );
+      if (unapprovedRow) {
+        throw new BadRequestException("Release plans can only include approved page versions with approval evidence.");
+      }
+
       const [createdPlan] = await tx
         .insert(releasePlans)
         .values({
           id: releasePlanId,
           projectId,
           status: "draft",
-          summary: `Release plan for ${requestedPageVersionIds.length} page version(s).`,
+          summary: `Release plan for ${requestedPageVersionIds.length} approved page version(s).`,
           riskLevel: "low",
           blockerCount: plan.blockerCount,
           warningCount: 0
@@ -141,25 +163,8 @@ export class ReleasesService {
         throw new Error("Failed to persist release plan");
       }
 
-      if (requestedPageVersionIds.length === 0) {
-        return createdPlan;
-      }
-
-      const rows = await tx
-        .select({
-          pageVersionId: pageVersions.id,
-          targetUrl: pageProposals.route
-        })
-        .from(pageVersions)
-        .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-        .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, requestedPageVersionIds)));
-
-      if (rows.length !== requestedPageVersionIds.length) {
-        throw new BadRequestException("Every release page version must belong to this project.");
-      }
-
       await tx.insert(releasePlanItems).values(
-        rows.map((row) => ({
+        pageVersionRows.map((row) => ({
           releasePlanId,
           pageVersionId: row.pageVersionId,
           targetUrl: normalizeRelativeReleaseTargetRoute(row.targetUrl),

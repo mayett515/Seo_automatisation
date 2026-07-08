@@ -498,6 +498,48 @@ requireIncludes(
   "Page preview UI must post review decisions through the API review endpoint"
 );
 
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "pageVersionIds: z.array(z.string().min(1)).min(1)",
+  "page-release-planning",
+  "Release-plan creation requests must include at least one page version id"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  'row.pageVersionStatus !== "approved" || !row.pageVersionApprovedAt',
+  "page-release-planning",
+  "Release-plan creation must require approved page versions with approval evidence"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "creates a draft release plan from approved page versions",
+  "page-release-planning",
+  "Release-plan integration tests must prove approved page versions can create draft plans"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "rejects release plan creation for preview page versions",
+  "page-release-planning",
+  "Release-plan integration tests must reject unapproved page versions"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "CreateReleasePlanRequestSchema",
+  "page-release-planning",
+  "Page preview UI must parse release-plan creation requests through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  '"/releases/plan"',
+  "page-release-planning",
+  "Page preview UI must create release plans through the durable release planning API"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

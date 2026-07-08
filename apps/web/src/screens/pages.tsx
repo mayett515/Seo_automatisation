@@ -10,7 +10,9 @@ import {
   PageVersionListResponseSchema,
   PageVersionPreviewResponseSchema,
   PageVersionReviewResponseSchema,
+  ReleasePlanSchema,
   ReviewPageVersionRequestSchema,
+  CreateReleasePlanRequestSchema,
   pageSectionNoteInstructionTypes,
   type PageProposalSummary,
   type PageSectionNote,
@@ -18,7 +20,8 @@ import {
   type PageVersionDetail,
   type PageVersionReviewDecision,
   type PageVersionReviewResponse,
-  type PageVersionSummary
+  type PageVersionSummary,
+  type ReleasePlan
 } from "@localseo/contracts";
 import { getJson, patchJson, postJson } from "../lib/api";
 
@@ -101,6 +104,7 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
   const queryClient = useQueryClient();
   const [decisionNote, setDecisionNote] = useState("");
   const [latestReview, setLatestReview] = useState<PageVersionReviewResponse | undefined>();
+  const [latestReleasePlan, setLatestReleasePlan] = useState<ReleasePlan | undefined>();
   const version = useQuery({
     queryKey: ["page-version-detail", projectId, pageVersionId],
     queryFn: () =>
@@ -144,6 +148,16 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
       ]);
     }
   });
+  const createReleasePlan = useMutation({
+    mutationFn: () => {
+      const body = CreateReleasePlanRequestSchema.parse({ pageVersionIds: [pageVersionId] });
+
+      return postJson(projectApiPath(projectId, "/releases/plan"), body, ReleasePlanSchema);
+    },
+    onSuccess: (response) => {
+      setLatestReleasePlan(response);
+    }
+  });
 
   return (
     <section className="screen-grid">
@@ -176,6 +190,22 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
           {errorMessage(reviewVersion.error, "Page version review could not be saved.")}
         </div>
       ) : null}
+      {createReleasePlan.isError ? (
+        <div className="notice notice--danger">
+          {errorMessage(createReleasePlan.error, "Release plan could not be created.")}
+        </div>
+      ) : null}
+      {latestReleasePlan ? (
+        <div className="notice notice--neutral">
+          Release plan created:{" "}
+          <Link
+            to="/projects/$projectId/releases/$releasePlanId"
+            params={{ projectId, releasePlanId: latestReleasePlan.releasePlanId }}
+          >
+            Open release plan
+          </Link>
+        </div>
+      ) : null}
 
       {preview.data && version.data ? (
         <section className="preview-layout">
@@ -202,6 +232,11 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
             projectId={projectId}
             onDecisionNoteChange={setDecisionNote}
             onReview={(decision) => reviewVersion.mutate(decision)}
+          />
+          <PageVersionReleasePlanPanel
+            isPending={createReleasePlan.isPending}
+            pageVersion={version.data}
+            onCreate={() => createReleasePlan.mutate()}
           />
 
           <iframe className="preview-frame" sandbox="" srcDoc={preview.data.file.body} title="Page preview" />
@@ -286,6 +321,41 @@ function PageVersionReviewPanel(props: {
           Request changes
         </button>
       </div>
+    </article>
+  );
+}
+
+function PageVersionReleasePlanPanel(props: {
+  isPending: boolean;
+  pageVersion: PageVersionDetail;
+  onCreate: () => void;
+}) {
+  const canCreateReleasePlan = props.pageVersion.status === "approved" && Boolean(props.pageVersion.approvedAt);
+
+  return (
+    <article className="detail-panel review-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Release planning</h2>
+          <p>{props.pageVersion.route}</p>
+        </div>
+        <StatusPill tone={canCreateReleasePlan ? "success" : "neutral"}>
+          {canCreateReleasePlan ? "approved" : "not ready"}
+        </StatusPill>
+      </div>
+
+      {!canCreateReleasePlan ? (
+        <div className="notice notice--neutral">Approve this page version before creating a release plan.</div>
+      ) : null}
+
+      <button
+        className="button-primary"
+        disabled={!canCreateReleasePlan || props.isPending}
+        type="button"
+        onClick={props.onCreate}
+      >
+        {props.isPending ? "Creating" : "Create release plan"}
+      </button>
     </article>
   );
 }

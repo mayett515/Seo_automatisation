@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   ApprovedReleaseArtifactPageSchema,
+  CreateReleasePlanRequestSchema,
   PageJsonSchema,
   PageProposalJsonSchema,
   ReviewPageVersionRequestSchema,
@@ -165,6 +166,23 @@ void describe("ReviewPageVersionRequestSchema", () => {
 
   void it("allows approval without a decision note", () => {
     assert.equal(ReviewPageVersionRequestSchema.safeParse({ decision: "approve" }).success, true);
+  });
+});
+
+void describe("CreateReleasePlanRequestSchema", () => {
+  void it("requires at least one page version id", () => {
+    const result = CreateReleasePlanRequestSchema.safeParse({ pageVersionIds: [] });
+
+    assert.equal(result.success, false);
+  });
+
+  void it("accepts approved page-version candidates by id", () => {
+    assert.equal(
+      CreateReleasePlanRequestSchema.safeParse({
+        pageVersionIds: ["11111111-1111-4111-8111-111111111111"]
+      }).success,
+      true
+    );
   });
 });
 

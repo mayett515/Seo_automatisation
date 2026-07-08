@@ -710,6 +710,7 @@ implemented now
 
 still deferred
   release-plan creation from approved versions
+    implemented: draft release plans/items can be created only from approved page versions with approval evidence
   agent_run_events streaming timeline
 ```
 

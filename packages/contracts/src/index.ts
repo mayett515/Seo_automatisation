@@ -1528,7 +1528,7 @@ export const CreateTrackingKeyResponseSchema = TrackingKeySummarySchema.extend({
 });
 
 export const CreateReleasePlanRequestSchema = z.object({
-  pageVersionIds: z.array(z.string().min(1)).default([])
+  pageVersionIds: z.array(z.string().min(1)).min(1).max(50)
 });
 
 export const VerifyReleaseRequestSchema = z.object({
