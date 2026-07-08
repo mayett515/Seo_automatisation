@@ -349,7 +349,7 @@ void describe(
             instructionType: "approval_blocker",
             note: "This blocker is too late."
           }),
-        /Approval blocker notes can only be open on reviewable page versions/u
+        matchesErrorMessage(/Approval blocker notes can only be open on reviewable page versions/u)
       );
     });
 
@@ -869,7 +869,7 @@ async function createOpportunityForProject(
         suggestedPageType: "normal_page",
         evidence: [
           {
-            sourceType: "gsc_query",
+            sourceType: "gsc_signal",
             sourceId: "pages-integration-gsc-signal",
             locator: { query: input.primaryKeyword, route: input.suggestedRoute },
             summary: `Integration fixture signal for ${input.primaryKeyword}.`,
