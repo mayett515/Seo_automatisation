@@ -14,12 +14,17 @@ const migrationsDir = resolve(dirname(fileURLToPath(import.meta.url)), "../migra
 
 export async function createIntegrationTestDatabase(databaseUrl: string): Promise<DatabaseHandle> {
   assertDisposableDatabaseUrl(databaseUrl);
-  const handle = createDatabaseClient(databaseUrl, { max: 1, idleTimeoutSeconds: 5, connectTimeoutSeconds: 5 });
+  const handle = createIntegrationDatabaseClient(databaseUrl);
 
   await resetPublicSchema(handle.sql);
   await applyMigrations(handle.sql);
 
   return handle;
+}
+
+export function createIntegrationDatabaseClient(databaseUrl: string): DatabaseHandle {
+  assertDisposableDatabaseUrl(databaseUrl);
+  return createDatabaseClient(databaseUrl, { max: 1, idleTimeoutSeconds: 5, connectTimeoutSeconds: 5 });
 }
 
 export async function truncateIntegrationTables(sql: SqlClient): Promise<void> {

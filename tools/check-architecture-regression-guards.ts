@@ -478,6 +478,13 @@ requireIncludes(
 );
 
 requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "does not approve when an approval_blocker insert is concurrently open",
+  "page-version-approval",
+  "Pages integration tests must prove approval cannot race concurrent approval_blocker creation"
+);
+
+requireIncludes(
   "apps/web/src/screens/pages.tsx",
   "ReviewPageVersionRequestSchema",
   "page-version-approval",

@@ -18,11 +18,14 @@ import { DatabaseService } from "../database/database.service.js";
 import { QueueProducerService } from "../queue-producer.js";
 import { PagesService } from "./pages.module.js";
 import {
+  createIntegrationDatabaseClient,
   createIntegrationTestDatabase,
   truncateIntegrationTables
 } from "../../../../packages/db/test-support/integration-database.js";
 
 type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDatabase>>;
+type DatabaseHandle = ReturnType<typeof createIntegrationDatabaseClient>;
+type SqlClient = DatabaseHandle["sql"];
 
 type PageVersionFixture = {
   projectId: string;
@@ -409,6 +412,91 @@ void describe(
       );
 
       assert.equal(reviewed.pageVersion.status, "approved");
+    });
+
+    void it("does not approve when an approval_blocker insert is concurrently open", async () => {
+      assert.ok(testDatabaseUrl);
+      const fixture = await createPageVersionFixture(db, {
+        name: "Approval blocker race",
+        route: "/approval-blocker-race/"
+      });
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const approvalHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const approvalService = new PagesService(
+        testDatabaseService(approvalHandle.db),
+        new QueueProducerService(testDatabaseService(approvalHandle.db))
+      );
+      let heldInsert: HeldApprovalBlockerInsert | undefined;
+      let approvalSettled = false;
+
+      try {
+        heldInsert = await startHeldApprovalBlockerInsert(blockerHandle.sql, fixture);
+        const approvalPid = await backendPid(approvalHandle.sql);
+        const approvalOutcome = approvalService
+          .reviewPageVersion(fixture.projectId, fixture.pageVersionId, { decision: "approve" }, fixture.userId)
+          .then(
+            () => ({ ok: true as const }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            approvalSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: approvalPid,
+          blockingPid: heldInsert.pid,
+          isSettled: () => approvalSettled
+        });
+        heldInsert.commit();
+        await heldInsert.done;
+
+        const outcome = await approvalOutcome;
+        assert.equal(outcome.ok, false);
+        if (!outcome.ok) {
+          assert.match(errorMessage(outcome.error), /unresolved approval blocker/u);
+        }
+
+        const [version] = await handle.sql<{ status: string; approved_at: Date | null }[]>`
+          SELECT "status"::text, "approved_at"
+          FROM "page_versions"
+          WHERE "id" = ${fixture.pageVersionId}
+        `;
+        assert.equal(version?.status, "preview");
+        assert.equal(version?.approved_at, null);
+
+        const [approvalCount] = await handle.sql<{ count: number }[]>`
+          SELECT count(*)::int AS "count"
+          FROM "approvals"
+          WHERE "page_version_id" = ${fixture.pageVersionId}
+        `;
+        assert.equal(approvalCount?.count, 0);
+
+        const [blockerCount] = await handle.sql<{ count: number }[]>`
+          SELECT count(*)::int AS "count"
+          FROM "page_section_notes"
+          WHERE "page_version_id" = ${fixture.pageVersionId}
+            AND "instruction_type" = 'approval_blocker'
+            AND "resolved_at" IS NULL
+        `;
+        assert.equal(blockerCount?.count, 1);
+
+        const [invalidStateCount] = await handle.sql<{ count: number }[]>`
+          SELECT count(*)::int AS "count"
+          FROM "page_versions"
+          INNER JOIN "page_section_notes"
+            ON "page_section_notes"."page_version_id" = "page_versions"."id"
+          WHERE "page_versions"."id" = ${fixture.pageVersionId}
+            AND "page_versions"."status" = 'approved'
+            AND "page_section_notes"."instruction_type" = 'approval_blocker'
+            AND "page_section_notes"."resolved_at" IS NULL
+        `;
+        assert.equal(invalidStateCount?.count, 0);
+      } finally {
+        heldInsert?.rollback();
+        await heldInsert?.done.catch(() => undefined);
+        await blockerHandle.close();
+        await approvalHandle.close();
+      }
     });
 
     void it("requests changes without approving the page version", async () => {
@@ -799,6 +887,101 @@ async function approvePageVersion(db: DatabaseClient, pageVersionId: string): Pr
   const approvedAt = new Date("2026-07-07T10:00:00.000Z");
   await db.update(pageVersions).set({ status: "approved", approvedAt }).where(eq(pageVersions.id, pageVersionId));
   return approvedAt;
+}
+
+type HeldApprovalBlockerInsert = {
+  pid: number;
+  done: Promise<void>;
+  commit: () => void;
+  rollback: () => void;
+};
+
+async function startHeldApprovalBlockerInsert(
+  sql: SqlClient,
+  fixture: PageVersionFixture
+): Promise<HeldApprovalBlockerInsert> {
+  const inserted = deferred<{ pid: number }>();
+  const finish = deferred<"commit" | "rollback">();
+  const done = sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`;
+    const pid = await backendPid(tx);
+
+    await tx`
+      INSERT INTO "page_section_notes" ("page_version_id", "section_id", "instruction_type", "note")
+      VALUES (${fixture.pageVersionId}, 'hero-1', 'approval_blocker', 'Concurrent blocker before approval.')
+    `;
+
+    inserted.resolve({ pid });
+
+    if ((await finish.promise) === "rollback") {
+      throw new Error("Rollback held approval blocker insert.");
+    }
+  });
+
+  void done.catch((error: unknown) => {
+    inserted.reject(error);
+  });
+
+  const { pid } = await inserted.promise;
+
+  return {
+    pid,
+    done,
+    commit: () => finish.resolve("commit"),
+    rollback: () => finish.resolve("rollback")
+  };
+}
+
+async function backendPid(sql: SqlClient): Promise<number> {
+  const [row] = await sql<{ pid: number }[]>`SELECT pg_backend_pid()::int AS "pid"`;
+  assert.ok(row);
+  return row.pid;
+}
+
+async function waitForBlockingPid(
+  sql: SqlClient,
+  input: { blockedPid: number; blockingPid: number; isSettled: () => boolean }
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+
+  while (Date.now() < deadline) {
+    if (input.isSettled()) {
+      throw new Error("Approval review settled before the lock wait was observed.");
+    }
+
+    const [row] = await sql<{ blocking_pids: number[] }[]>`
+      SELECT pg_blocking_pids(${input.blockedPid}) AS "blocking_pids"
+    `;
+
+    if (row?.blocking_pids.includes(input.blockingPid)) {
+      return;
+    }
+
+    await delay(25);
+  }
+
+  throw new Error(`Timed out waiting for backend ${input.blockedPid} to be blocked by ${input.blockingPid}.`);
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (error: unknown) => void = () => undefined;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
 }
 
 function resolveStoredProposalJson(
