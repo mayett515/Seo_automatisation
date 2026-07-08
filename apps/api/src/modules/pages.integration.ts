@@ -326,19 +326,28 @@ void describe(
       assert.equal(resolvedAgain.resolvedAt, resolved.resolvedAt);
     });
 
-    void it("allows notes on approved page versions without mutating the frozen artifact", async () => {
+    void it("allows general notes but rejects open approval blockers on approved page versions", async () => {
       const fixture = await createPageVersionFixture(db, { name: "Approved note", route: "/approved-note/" });
       await approvePageVersion(db, fixture.pageVersionId);
 
       const note = await service.createPageSectionNote(fixture.projectId, fixture.pageVersionId, {
         sectionId: "hero-1",
-        instructionType: "approval_blocker",
         note: "Review this approved version before release."
       });
 
       assert.equal(note.status, "open");
       assert.equal(note.sectionId, "hero-1");
-      assert.equal(note.instructionType, "approval_blocker");
+      assert.equal(note.instructionType, "general");
+
+      await assert.rejects(
+        () =>
+          service.createPageSectionNote(fixture.projectId, fixture.pageVersionId, {
+            sectionId: "hero-1",
+            instructionType: "approval_blocker",
+            note: "This blocker is too late."
+          }),
+        /Approval blocker notes can only be open on reviewable page versions/u
+      );
     });
 
     void it("approves preview page versions and records durable approval audit", async () => {

@@ -200,6 +200,7 @@ Page Version approval
   The approval endpoint must require explicit page:approve permission.
   Approval must parse and registry-validate the stored PageJson before state transition.
   Approval must block while unresolved approval_blocker notes exist for that page version.
+  Approval and unresolved approval_blocker note creation must serialize on the same page version row.
   Approval must write an approvals audit row tied to actor, page version, timestamp, decision, and note.
   Approval may move preview/changes_requested versions to approved; request-changes may move them to changes_requested.
   Approval must not enqueue deploy or mutate providers; release planning/preflight/deploy remain separate deterministic steps.

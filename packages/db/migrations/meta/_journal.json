@@ -211,6 +211,13 @@
       "when": 1783456924183,
       "tag": "0029_quiet_deadpool",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783460400000,
+      "tag": "0030_page_section_note_approval_blocker_lock",
+      "breakpoints": true
     }
   ]
 }

@@ -79,6 +79,7 @@ type PageSectionNoteRow = Awaited<ReturnType<typeof selectPageSectionNoteRows>>[
 type PageVersionRow = Awaited<ReturnType<typeof selectPageVersionRows>>[number];
 type PageVersionApprovalRow = typeof approvals.$inferSelect;
 type ApprovalBlockerReader = Pick<DatabaseClient, "select">;
+type PageVersionLockClient = Pick<DatabaseClient, "execute">;
 
 @Injectable()
 export class PagesService {
@@ -417,6 +418,8 @@ export class PagesService {
     let approval: PageVersionApprovalRow | undefined;
 
     await db.transaction(async (tx) => {
+      await lockPageVersionForReview(tx, row.id);
+
       if (input.decision === "approve") {
         const openBlockerCount = await countOpenApprovalBlockers(tx, row.id);
         if (openBlockerCount > 0) {
@@ -748,6 +751,10 @@ async function countOpenApprovalBlockers(db: ApprovalBlockerReader, pageVersionI
     );
 
   return row?.count ?? 0;
+}
+
+async function lockPageVersionForReview(db: PageVersionLockClient, pageVersionId: string): Promise<void> {
+  await db.execute(sql`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`);
 }
 
 async function selectPageVersionRows(

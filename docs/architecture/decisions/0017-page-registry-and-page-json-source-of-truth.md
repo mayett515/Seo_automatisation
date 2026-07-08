@@ -108,7 +108,7 @@ The first PageJson contract slice enforces this with a recursive forbidden-key a
 
 Approved page versions are immutable. New AI work creates new proposals or versions. The DB boundary enforces this with `page_versions_prevent_immutable_update`, `page_versions_prevent_immutable_delete`, and an approval-evidence CHECK constraint: once a row is approved, release-candidate, released, or superseded, structural edits to `page_proposal_id`, `version_number`, or `page_json` are rejected, the frozen artifact cannot be deleted, and frozen statuses require `approved_at`.
 
-Page version approval is a durable human/operator decision on one concrete `pageVersionId`. The API owns the transition from `preview` or `changes_requested` to `approved` or back to `changes_requested`, requires `page:approve`, parses and registry-validates the stored PageJson, blocks approval while unresolved `approval_blocker` section notes exist, sets `page_versions.approvedAt` only on approval, and writes an `approvals` audit row. Approval does not enqueue deploy or mutate providers; release planning, release preflight, deploy, and verification remain separate deterministic steps.
+Page version approval is a durable human/operator decision on one concrete `pageVersionId`. The API owns the transition from `preview` or `changes_requested` to `approved` or back to `changes_requested`, requires `page:approve`, parses and registry-validates the stored PageJson, blocks approval while unresolved `approval_blocker` section notes exist, sets `page_versions.approvedAt` only on approval, and writes an `approvals` audit row. Approval and unresolved `approval_blocker` note creation serialize on the same page-version row so approval cannot race with a new blocker. Approval does not enqueue deploy or mutate providers; release planning, release preflight, deploy, and verification remain separate deterministic steps.
 
 Structured `PageProposalJson` should persist as a proposal artifact, not only as `agent_runs.outputJson`. The default direction is a future `page_proposals.proposalJson` JSONB column, with existing flat proposal columns treated as query/projection fields. `agent_runs.outputJson` remains reasoning audit, not the UI's proposal source of truth.
 
@@ -234,6 +234,7 @@ Future work must not:
 - let `component_instances` become a second source of render truth,
 - populate `component_templates` as registry truth,
 - mutate an approved `page_versions.pageJson` in place,
+- allow unresolved `approval_blocker` notes to race with or appear on approved page versions,
 - accept raw HTML, React, CSS, JavaScript, class names, or inline styles from model output,
 - store Tailwind/utility classes, runtime CSS-in-JS rules, arbitrary theme tokens, or user/model CSS in PageJson,
 - store page truth in rendered markup or comments,

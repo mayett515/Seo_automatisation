@@ -444,6 +444,20 @@ requireIncludes(
 
 requireIncludes(
   "apps/api/src/modules/pages.module.ts",
+  "FOR UPDATE",
+  "page-version-approval",
+  "Page version approval must lock the page version row before counting approval_blocker notes"
+);
+
+requireIncludes(
+  "packages/db/migrations/0030_page_section_note_approval_blocker_lock.sql",
+  "page_section_notes_prevent_unreviewable_approval_blocker",
+  "page-version-approval",
+  "Open approval_blocker notes must be DB-guarded against non-reviewable page versions"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
   ".insert(approvals)",
   "page-version-approval",
   "Page version review must persist a durable approval audit row"
