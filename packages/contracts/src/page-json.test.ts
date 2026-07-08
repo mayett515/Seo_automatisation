@@ -250,6 +250,18 @@ void describe("Release action response schemas", () => {
       true
     );
   });
+
+  void it("rejects non-readiness statuses for release preflight responses", () => {
+    assert.equal(
+      ReleasePreflightResponseSchema.safeParse({
+        projectId: "11111111-1111-4111-8111-111111111111",
+        releasePlanId: "plan-1",
+        readiness: "approved_for_deploy",
+        checks: []
+      }).success,
+      false
+    );
+  });
 });
 
 function validPageJson(input: Partial<PageJson> = {}): PageJson {

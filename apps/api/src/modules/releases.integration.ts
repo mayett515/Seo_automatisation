@@ -689,6 +689,32 @@ void describe(
       const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
       assert.equal(approvalRows.length, 0);
     });
+
+    void it("requires fresh deploy approval after preflight is rerun", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      const user = await createTestUser(db, "release-reapproval@example.test");
+
+      assert.equal((await service.preflight(fixture.projectId, fixture.releasePlanId)).readiness, "ready");
+      assert.equal(
+        (await service.approveDeploy(fixture.projectId, fixture.releasePlanId, user.id)).status,
+        "approved_for_deploy"
+      );
+
+      const rerunPreflight = await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      assert.equal(rerunPreflight.readiness, "ready");
+
+      const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(plan?.status, "ready");
+
+      const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
+      assert.equal(approvalRows.length, 1);
+
+      await assert.rejects(
+        () => service.deploy(fixture.projectId, fixture.releasePlanId, user.id),
+        /Release must pass preflight and be approved before deploy/u
+      );
+    });
   }
 );
 

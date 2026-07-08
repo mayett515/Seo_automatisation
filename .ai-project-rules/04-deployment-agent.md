@@ -70,6 +70,9 @@ THEN load the release plan and release checks from persistence, verify `canDeplo
 IF approval is granted:
 THEN persist the approving actor, decision timestamp, release status, and approval record before returning success.
 
+IF release preflight is rerun after deploy approval:
+THEN treat the new preflight result as current release readiness and require a fresh deploy approval before deploy enqueue.
+
 IF release/deploy infrastructure is not wired yet:
 THEN return an explicit `dry_run`, `not_configured`, `pending`, or `blocked` state instead of a production-success-looking response.
 </conditional-logic>

@@ -645,6 +645,20 @@ requireIncludes(
   "Release detail UI must parse deploy queue responses through the shared queue contract"
 );
 
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "requires fresh deploy approval after preflight is rerun",
+  "page-release-planning",
+  "Release integration tests must prove rerunning preflight invalidates current deploy approval"
+);
+
+requireIncludes(
+  ".ai-project-rules/04-deployment-agent.md",
+  "require a fresh deploy approval",
+  "page-release-planning",
+  "Deployment-agent rules must document re-preflight requiring fresh deploy approval"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

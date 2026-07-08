@@ -54,6 +54,8 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
         ReleasePreflightResponseSchema
       ),
     onSuccess: async () => {
+      approveDeploy.reset();
+      deployRelease.reset();
       await queryClient.invalidateQueries({ queryKey: releasePlanQueryKey });
     }
   });
@@ -65,6 +67,8 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
         ReleaseDeployApprovalResponseSchema
       ),
     onSuccess: async () => {
+      preflight.reset();
+      deployRelease.reset();
       await queryClient.invalidateQueries({ queryKey: releasePlanQueryKey });
     }
   });
@@ -76,6 +80,8 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
         QueueJobSchema
       ),
     onSuccess: async () => {
+      preflight.reset();
+      approveDeploy.reset();
       await queryClient.invalidateQueries({ queryKey: releasePlanQueryKey });
     }
   });

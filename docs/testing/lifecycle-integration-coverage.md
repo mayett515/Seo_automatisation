@@ -65,6 +65,18 @@ Implemented tests:
 
 The deploy worker also counts only provider-backed rollback points as usable rollback evidence, so bypassing API preflight cannot treat placeholder rollback rows as deploy-safe.
 
+### Release Deploy Approval
+
+File:
+
+- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+
+Implemented tests:
+
+1. Deploy approval records persisted actor evidence and moves the release plan to `approved_for_deploy`.
+2. Missing persisted actor evidence is rejected and writes no approval rows.
+3. Rerunning preflight after deploy approval demotes the plan back to the latest readiness state and deploy is rejected until a fresh deploy approval is recorded.
+
 ### Release Plan Creation From Approved Page Versions
 
 File:
@@ -110,7 +122,7 @@ Implemented worker tests:
 4. Final verifier infrastructure failure is persisted as `execution_failed` evidence without marking the deployment or release plan as observed failed health.
 5. Absolute verification target routes are rejected in the worker execution path before the verifier adapter can fetch them.
 
-This file contributes 6 release-plan creation tests, 9 rollback-preflight/deploy-approval tests, 7 API release verification queueing tests, 5 worker release verification projection tests, and 5 rollback queueing tests. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
+This file contributes 6 release-plan creation tests, 10 rollback-preflight/deploy-approval tests, 7 API release verification queueing tests, 5 worker release verification projection tests, and 5 rollback queueing tests. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
 
 ### Rollback Queueing
 
