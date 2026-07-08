@@ -582,7 +582,7 @@ void describe(
               })
             })
             .where(eq(pageVersions.id, fixture.pageVersionId)),
-        /immutable|PageJson|page versions/u
+        matchesErrorMessage(/immutable|PageJson|page versions/u)
       );
     });
 
@@ -592,7 +592,7 @@ void describe(
 
       await assert.rejects(
         () => db.update(pageVersions).set({ status: "preview" }).where(eq(pageVersions.id, fixture.pageVersionId)),
-        /editable statuses|page versions/u
+        matchesErrorMessage(/editable statuses|page versions/u)
       );
     });
 
@@ -601,7 +601,7 @@ void describe(
 
       await assert.rejects(
         () => db.update(pageVersions).set({ status: "approved" }).where(eq(pageVersions.id, fixture.pageVersionId)),
-        /approved_at|approval evidence|check constraint/u
+        matchesErrorMessage(/approved_at|approval evidence|check constraint/u)
       );
       await assert.rejects(
         () =>
@@ -611,7 +611,7 @@ void describe(
             status: "approved",
             pageJson: pageJson(fixture.route)
           }),
-        /approved_at|approval evidence|check constraint/u
+        matchesErrorMessage(/approved_at|approval evidence|check constraint/u)
       );
     });
 
@@ -626,7 +626,7 @@ void describe(
 
       await assert.rejects(
         () => db.delete(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId)),
-        /cannot be deleted|page versions/u
+        matchesErrorMessage(/cannot be deleted|page versions/u)
       );
     });
 
@@ -867,7 +867,16 @@ async function createOpportunityForProject(
         secondaryKeywords: [],
         suggestedRoute: input.suggestedRoute,
         suggestedPageType: "normal_page",
-        evidence: [],
+        evidence: [
+          {
+            sourceType: "gsc_query",
+            sourceId: "pages-integration-gsc-signal",
+            locator: { query: input.primaryKeyword, route: input.suggestedRoute },
+            summary: `Integration fixture signal for ${input.primaryKeyword}.`,
+            strength: "medium",
+            proofTier: "internal_signal"
+          }
+        ],
         competitorObservations: [],
         groupHints: [],
         hubSpokeRole: "standalone",
@@ -971,6 +980,19 @@ async function delay(ms: number): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function matchesErrorMessage(pattern: RegExp): (error: unknown) => boolean {
+  return (error: unknown) => errorMessageChain(error).some((message) => pattern.test(message));
+}
+
+function errorMessageChain(error: unknown): string[] {
+  const message = errorMessage(error);
+  if (!error || typeof error !== "object" || !("cause" in error)) {
+    return [message];
+  }
+
+  return [message, ...errorMessageChain((error as { cause?: unknown }).cause)];
 }
 
 function deferred<T>() {

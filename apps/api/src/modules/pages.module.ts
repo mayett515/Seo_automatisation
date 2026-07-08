@@ -71,7 +71,7 @@ import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/iu;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type Db = DatabaseClient;
 type PageProposalRow = Awaited<ReturnType<typeof selectPageProposalRows>>[number];
