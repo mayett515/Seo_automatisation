@@ -75,6 +75,35 @@ void describe("PageJsonSchema", () => {
     assert.match(result.error.issues.map((issue) => issue.message).join("\n"), /javascript: or data:text\/html/u);
   });
 
+  void it("rejects protocol-relative and backslash page paths", () => {
+    const result = PageJsonSchema.safeParse(
+      validPageJson({
+        seo: {
+          title: "Entruempelung Dachau",
+          metaDescription: "Entruempelung in Dachau mit lokaler Erfahrung.",
+          canonicalPath: "//evil.example/entruempelung-dachau/",
+          robots: "noindex",
+          jsonLd: [],
+          sitemapReady: false
+        },
+        internalLinks: ["/kontakt\\evil"],
+        sections: [
+          section({
+            props: {
+              h1: "Entruempelung Dachau",
+              primaryCtaHref: "//evil.example/kontakt/"
+            }
+          })
+        ]
+      })
+    );
+
+    assert.equal(result.success, false);
+    const messages = result.error.issues.map((issue) => issue.message).join("\n");
+    assert.match(messages, /protocol-relative/u);
+    assert.match(messages, /backslashes/u);
+  });
+
   void it("rejects pathologically deep PageJson props", () => {
     const result = PageJsonSchema.safeParse(
       validPageJson({

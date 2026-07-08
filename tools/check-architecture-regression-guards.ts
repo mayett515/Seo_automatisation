@@ -520,6 +520,13 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/contracts/src/index.ts",
+  "Page paths must not be protocol-relative URLs.",
+  "page-json-safety",
+  "Page paths must not allow protocol-relative off-site URLs"
+);
+
+requireIncludes(
   "packages/page-registry/src/index.ts",
   "Header phoneHref must be a tel: or mailto: link.",
   "page-json-safety",

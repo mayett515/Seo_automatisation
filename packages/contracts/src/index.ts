@@ -707,7 +707,9 @@ export const PagePathSchema = z
   .trim()
   .min(1)
   .max(300)
-  .refine((value) => value.startsWith("/"), "Page paths must start with '/'.");
+  .refine((value) => value.startsWith("/"), "Page paths must start with '/'.")
+  .refine((value) => !value.startsWith("//"), "Page paths must not be protocol-relative URLs.")
+  .refine((value) => !value.includes("\\"), "Page paths must not contain backslashes.");
 
 export const PageEvidenceRefSchema = z
   .object({
