@@ -65,6 +65,24 @@ Implemented tests:
 
 The deploy worker also counts only provider-backed rollback points as usable rollback evidence, so bypassing API preflight cannot treat placeholder rollback rows as deploy-safe.
 
+### Release Plan Creation From Approved Page Versions
+
+File:
+
+- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+
+Implemented tests:
+
+1. Approved page versions with `approvedAt` evidence can create a `draft` release plan and `pending` `create` release items.
+2. Release-plan creation records the persisted creating user on `release_plans.created_by_user_id`.
+3. Preview page versions are rejected.
+4. Non-approved immutable page versions such as `release_candidate` are rejected.
+5. Page versions from another project are rejected.
+6. Absolute page proposal routes are rejected before release items are persisted.
+7. Missing persisted actor evidence is rejected and writes no release plan or items.
+
+These tests prove release planning is a durable planning action only: it selects already approved artifacts, writes draft plan/item rows, and does not approve deploy, enqueue deploy, or mutate providers.
+
 ### Release Verification
 
 File:
@@ -83,7 +101,7 @@ Implemented API tests:
 4. Cross-project verification is rejected and writes no verification rows for the other project.
 5. The queued verification row uses the project-scoped route `releasePlanId`.
 6. A deployment id from another release plan or project is rejected and writes no verification rows.
-7. Absolute page proposal routes are rejected when release plan items are created.
+7. Release verification queueing stays scoped to an authorized release plan and provider-backed deployment.
 
 Implemented worker tests:
 
@@ -93,7 +111,7 @@ Implemented worker tests:
 4. Final verifier infrastructure failure is persisted as `execution_failed` evidence without marking the deployment or release plan as observed failed health.
 5. Absolute verification target routes are rejected in the worker execution path before the verifier adapter can fetch them.
 
-This file contributes 7 rollback-preflight tests, 7 API release verification queueing tests, 5 worker release verification projection tests, and 5 rollback queueing tests. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
+This file contributes 7 release-plan creation tests, 9 rollback-preflight/deploy-approval tests, 7 API release verification queueing tests, 5 worker release verification projection tests, and 5 rollback queueing tests. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
 
 ### Rollback Queueing
 

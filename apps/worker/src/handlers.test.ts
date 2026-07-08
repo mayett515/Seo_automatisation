@@ -38,6 +38,7 @@ import {
   executePageProposal,
   PageProposalConfigurationError,
   PageProposalEvidenceError,
+  PageProposalPersistenceEligibilityError,
   PageProposalWorkflowError,
   parsePageProposalJobData,
   type PageProposalRepository
@@ -1160,6 +1161,33 @@ void describe("executePageProposal", () => {
     assert.equal(repository.persistedOutput, undefined);
   });
 
+  void it("marks late opportunity lifecycle conflicts failed without persisting proposals", async () => {
+    const repository = new FakePageProposalRepository();
+    repository.persistSuccessError = new PageProposalPersistenceEligibilityError(
+      "Opportunity is no longer eligible for page proposal persistence."
+    );
+
+    await assert.rejects(
+      executePageProposal({
+        data: { projectId: "project-1", runId: "run-1", opportunityId: "opportunity-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: true,
+          provider: "mock",
+          model: "mock-page-proposal",
+          outputJson: validPageProposalJson(),
+          diagnostics: { latencyMs: 5 }
+        }),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      /qa_rejected:opportunity_lifecycle/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "qa_rejected");
+    assert.equal(recordFromUnknown(repository.failed?.diagnostics).gateId, "opportunity_lifecycle");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
   void it("marks missing reasoning provider config as a terminal page proposal failure", async () => {
     const repository = new FakePageProposalRepository();
 
@@ -1338,6 +1366,7 @@ class FakePageProposalRepository implements PageProposalRepository {
 
   existingRoutes: string[] = [];
   persistedOutput: Parameters<PageProposalRepository["persistSuccess"]>[0]["output"] | undefined;
+  persistSuccessError: Error | undefined;
   failed: Parameters<PageProposalRepository["markFailed"]>[0] | undefined;
 
   loadRun(): Promise<FakeAgentRun> {
@@ -1383,6 +1412,10 @@ class FakePageProposalRepository implements PageProposalRepository {
     route: string;
     versionNumber: number;
   }> {
+    if (this.persistSuccessError) {
+      return Promise.reject(this.persistSuccessError);
+    }
+
     this.persistedOutput = input.output;
     this.run.status = "succeeded";
     return Promise.resolve({

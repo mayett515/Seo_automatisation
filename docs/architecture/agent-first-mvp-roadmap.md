@@ -645,7 +645,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, UI trigger/status, and durable page-version approval/request-changes flow are implemented. Release-plan creation from approved versions is still deferred.
+Status: worker foundation, UI trigger/status, durable page-version approval/request-changes flow, and release-plan creation from approved page versions are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -707,10 +707,11 @@ implemented now
   approval updates one preview/changes_requested page version to approved with approvedAt
   request_changes moves the page version and proposal projection to changes_requested
   approvals audit row records actor, decision, note, and timestamp
+  release-plan creation selects approved page versions with approvedAt evidence only
+  release-plan creation records the creating persisted user and creates draft release plans/items only
 
 still deferred
-  release-plan creation from approved versions
-    implemented: draft release plans/items can be created only from approved page versions with approval evidence
+  release preflight/approval/deploy UI wiring from the page preview surface
   agent_run_events streaming timeline
 ```
 

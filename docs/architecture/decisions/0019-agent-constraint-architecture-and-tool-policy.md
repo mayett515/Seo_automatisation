@@ -140,10 +140,10 @@ implemented 2026-07-07
   Page Proposal UI status reads subject-scoped page_brief_draft agent runs
   Page version review API owns durable approval/request-changes with actor audit
   unresolved approval_blocker notes block approval and serialize against approval
-  release-plan creation selects approved page versions and creates draft release items
+  release-plan creation selects approved page versions, records actor evidence, and creates draft release items
 
 still deferred
-  release preflight, release deploy approval, and deploy enqueue from approved release plans
+  page-lane UI wiring for release preflight, release deploy approval, and deploy enqueue from approved release plans
   agent_run_events timeline
 ```
 

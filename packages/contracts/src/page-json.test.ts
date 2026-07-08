@@ -63,7 +63,8 @@ void describe("PageJsonSchema", () => {
           section({
             props: {
               ctaHref: "javascript:alert(1)",
-              iframeSource: "data:text/html,<script>alert(1)</script>"
+              iframeSource: "data:text/html,<script>alert(1)</script>",
+              obfuscatedHref: "java\tscript:alert(1)"
             }
           })
         ]

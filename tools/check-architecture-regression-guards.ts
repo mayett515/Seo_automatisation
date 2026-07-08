@@ -366,6 +366,13 @@ requireIncludes(
 );
 
 requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  'ne(opportunities.status, "rejected")',
+  "page-proposal-worker",
+  "Page Proposal worker must not overwrite rejected opportunities during success persistence"
+);
+
+requireIncludes(
   "apps/api/src/modules/pages.module.ts",
   "jobId: runId",
   "page-proposal-worker",
@@ -506,10 +513,52 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/contracts/src/index.ts",
+  "normalizePotentiallyDangerousUrl",
+  "page-json-safety",
+  "PageJson safety scans must normalize control characters before checking dangerous URL schemes"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  "Header phoneHref must be a tel: or mailto: link.",
+  "page-json-safety",
+  "Header phoneHref must be constrained to safe contact link schemes"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  "function orderedSections(pageJson: PageJson)",
+  "page-registry-renderer",
+  "Static page rendering must render sections by PageJson order rather than raw array position"
+);
+
+requireIncludes(
   "apps/api/src/modules/releases.module.ts",
   'row.pageVersionStatus !== "approved" || !row.pageVersionApprovedAt',
   "page-release-planning",
   "Release-plan creation must require approved page versions with approval evidence"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "createdByUserId",
+  "page-release-planning",
+  "Release-plan creation must persist actor evidence"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "rejects release plan creation without persisted actor evidence",
+  "page-release-planning",
+  "Release-plan integration tests must reject plan creation without persisted actor evidence"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "local-scaffold-user",
+  "page-release-planning",
+  "Release deploy approval must not fall back to a scaffold user"
 );
 
 requireIncludes(

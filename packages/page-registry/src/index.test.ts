@@ -89,6 +89,42 @@ void describe("page registry", () => {
     assertIssue(result, "invalid_props");
   });
 
+  void it("allows only contact-safe header phone links", () => {
+    const valid = validatePageJsonAgainstRegistry(
+      pageJson({
+        sections: [
+          headerSection({
+            props: {
+              brandName: "Dach Service",
+              phoneLabel: "Anrufen",
+              phoneHref: "tel:+4989123456"
+            }
+          }),
+          heroSection({ order: 1 }),
+          faqSection({ order: 2 })
+        ]
+      })
+    );
+    const invalid = validatePageJsonAgainstRegistry(
+      pageJson({
+        sections: [
+          headerSection({
+            props: {
+              brandName: "Dach Service",
+              phoneLabel: "Anrufen",
+              phoneHref: "https://example.test"
+            }
+          }),
+          heroSection({ order: 1 }),
+          faqSection({ order: 2 })
+        ]
+      })
+    );
+
+    assert.equal(valid.success, true);
+    assertIssue(invalid, "invalid_props");
+  });
+
   void it("runs the PageJson safety guard before registry validation", () => {
     const result = validatePageJsonAgainstRegistry(
       pageJson({
@@ -100,6 +136,26 @@ void describe("page registry", () => {
               onClick: "alert(1)"
             }
           })
+        ]
+      })
+    );
+
+    assertIssue(result, "invalid_page_json");
+  });
+
+  void it("rejects control-character-obfuscated unsafe header phone links at the PageJson boundary", () => {
+    const result = validatePageJsonAgainstRegistry(
+      pageJson({
+        sections: [
+          headerSection({
+            props: {
+              brandName: "Dach Service",
+              phoneLabel: "Anrufen",
+              phoneHref: "java\tscript:alert(1)"
+            }
+          }),
+          heroSection({ order: 1 }),
+          faqSection({ order: 2 })
         ]
       })
     );
@@ -154,6 +210,40 @@ void describe("page registry", () => {
       site.files.map((file) => file.path),
       ["/dachreinigung-dachau/index.html"]
     );
+  });
+
+  void it("renders sections by PageJson order instead of array position", () => {
+    const site = renderApprovedReleaseArtifact({
+      projectId: "project-1",
+      releasePlanId: "release-1",
+      deploymentKey: "release_plan:release-1",
+      createdAt: "2026-06-29T00:00:00.000Z",
+      pages: [
+        {
+          releasePlanItemId: "item-1",
+          pageVersionId: "version-1",
+          targetUrl: "/",
+          targetSubdomain: null,
+          action: "create",
+          pageJson: pageJson({
+            sections: [
+              faqSection({ order: 1 }),
+              heroSection({
+                order: 0,
+                props: {
+                  h1: "Ordered Hero",
+                  lead: "This hero is first by order."
+                }
+              })
+            ]
+          })
+        }
+      ]
+    });
+
+    const body = site.files[0]?.body ?? "";
+
+    assert.ok(body.indexOf("Ordered Hero") < body.indexOf("Haeufige Fragen"));
   });
 
   void it("escapes PageJson values before writing HTML", () => {
@@ -355,6 +445,23 @@ function pageJson(input: Partial<PageJson> = {}): PageJson {
     internalLinks: [],
     evidenceRefs: [],
     uniquenessRationale: "Dachau-specific service page.",
+    ...input
+  };
+}
+
+function headerSection(input: Partial<PageJson["sections"][number]> = {}): PageJson["sections"][number] {
+  return {
+    id: "header-1",
+    type: "Header",
+    registryKey: "Header.default",
+    schemaVersion: 1,
+    zone: "frame_top",
+    order: 0,
+    variant: "default",
+    props: {
+      brandName: "Dach Service"
+    },
+    evidenceRefs: [],
     ...input
   };
 }

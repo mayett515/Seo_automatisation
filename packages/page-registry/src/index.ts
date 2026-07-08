@@ -84,6 +84,29 @@ const linkSchema = z
   })
   .strict();
 
+const phoneHrefSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .refine((value) => !hasAsciiControlCharacters(value), "Header phoneHref must not contain control characters.")
+  .refine(
+    (value) => /^(?:tel:\+?[0-9][0-9 .()/-]{2,}|mailto:[^\s@]+@[^\s@]+\.[^\s@]+)$/iu.test(value),
+    "Header phoneHref must be a tel: or mailto: link."
+  );
+
+function hasAsciiControlCharacters(value: string): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+
+    if ((code >= 0 && code <= 31) || code === 127) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 const faqItemSchema = z
   .object({
     question: textMedium,
@@ -119,7 +142,7 @@ export const pageRegistryEntries = [
         brandName: textShort,
         navItems: z.array(linkSchema).max(8).default([]),
         phoneLabel: textShort.optional(),
-        phoneHref: z.string().trim().min(1).max(80).optional()
+        phoneHref: phoneHrefSchema.optional()
       })
       .strict(),
     seoCapabilities: { canProvideInternalLinks: true }
@@ -391,6 +414,7 @@ type RenderableArtifactPage = ApprovedReleaseArtifactPage & {
 
 export function derivePageRegistrySeoFacts(pageJson: PageJson): PageRegistrySeoFacts {
   const internalLinks = collectInternalLinks(pageJson);
+  const sections = orderedSections(pageJson);
 
   return {
     title: pageJson.seo.title,
@@ -399,14 +423,12 @@ export function derivePageRegistrySeoFacts(pageJson: PageJson): PageRegistrySeoF
     canonicalPath: pageJson.seo.canonicalPath,
     robotsIntent: pageJson.seo.robots,
     hasJsonLd: pageJson.seo.jsonLd.length > 0,
-    hasAreaServed: pageJson.sections.some(
+    hasAreaServed: sections.some(
       (section) => section.type === "ServiceAreaList" && arrayProp(section.props, "areas").length > 0
     ),
     hasInternalLinks: internalLinks.length > 0,
-    hasLocalFaq: pageJson.sections.some(
-      (section) => section.type === "FAQ" && arrayProp(section.props, "items").length > 0
-    ),
-    hasVisibleCta: pageJson.sections.some((section) => {
+    hasLocalFaq: sections.some((section) => section.type === "FAQ" && arrayProp(section.props, "items").length > 0),
+    hasVisibleCta: sections.some((section) => {
       const props = asRecord(section.props);
       return (
         stringProp(props, "primaryCtaHref") !== undefined ||
@@ -521,6 +543,7 @@ function renderPageHtml(
   const canonical = resolveCanonicalUrl(facts.canonicalPath, page.targetUrl);
   const robots = robotsOverride ?? resolveRenderedRobots(page.action) ?? facts.robotsIntent;
   const jsonLdScript = renderJsonLdScript(pageJson.seo.jsonLd);
+  const sections = orderedSections(pageJson);
 
   return `<!doctype html>
 <html lang="de">
@@ -535,7 +558,7 @@ ${jsonLdScript ? `  ${jsonLdScript}\n` : ""}  <style>${customerPageCss}</style>
 </head>
 <body>
   <main class="ls-page" data-page-type="${escapeHtml(pageJson.pageType)}">
-${pageJson.sections.map(renderSection).join("\n")}
+${sections.map(renderSection).join("\n")}
   </main>
 </body>
 </html>`;
@@ -700,10 +723,17 @@ function sectionClass(type: PageSectionType): string {
   return `ls-section-${type.replace(/[A-Z]/gu, (letter, offset) => `${offset > 0 ? "-" : ""}${letter.toLowerCase()}`)}`;
 }
 
+function orderedSections(pageJson: PageJson): PageJson["sections"] {
+  return pageJson.sections
+    .map((section, index) => ({ section, index }))
+    .sort((left, right) => left.section.order - right.section.order || left.index - right.index)
+    .map(({ section }) => section);
+}
+
 function collectInternalLinks(pageJson: PageJson): string[] {
   const links = new Set<string>(pageJson.internalLinks);
 
-  for (const section of pageJson.sections) {
+  for (const section of orderedSections(pageJson)) {
     collectInternalLinksFromValue(section.props, links);
   }
 
@@ -731,7 +761,7 @@ function collectInternalLinksFromValue(value: unknown, links: Set<string>): void
 }
 
 function firstSectionString(pageJson: PageJson, keys: readonly string[]): string | undefined {
-  for (const section of pageJson.sections) {
+  for (const section of orderedSections(pageJson)) {
     const props = asRecord(section.props);
 
     for (const key of keys) {

@@ -1087,7 +1087,7 @@ function scanPageJsonValue(
   }
 
   if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
+    const normalized = normalizePotentiallyDangerousUrl(value);
 
     if (normalized.startsWith("javascript:") || normalized.startsWith("data:text/html")) {
       ctx.addIssue({
@@ -1122,6 +1122,26 @@ function scanPageJsonValue(
 
     scanPageJsonValue(nestedValue, ctx, [...path, key], depth + 1, state);
   }
+}
+
+function normalizePotentiallyDangerousUrl(value: string): string {
+  return stripAsciiControlCharacters(value.trim()).toLowerCase();
+}
+
+function stripAsciiControlCharacters(value: string): string {
+  let result = "";
+
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+
+    if ((code >= 0 && code <= 31) || code === 127) {
+      continue;
+    }
+
+    result += character;
+  }
+
+  return result;
 }
 
 export const ReleaseCheckSchema = z.object({

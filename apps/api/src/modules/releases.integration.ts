@@ -8,6 +8,7 @@ import {
   type ReleaseVerificationStatus
 } from "@localseo/contracts";
 import {
+  approvals,
   customers,
   deployments,
   jobRuns,
@@ -20,6 +21,7 @@ import {
   releaseVerificationChecks,
   releaseVerifications,
   rollbackPoints,
+  users,
   type DatabaseClient
 } from "@localseo/db";
 import { and, eq } from "drizzle-orm";
@@ -48,6 +50,7 @@ type PreflightRollbackFixture = {
 type PageVersionFixture = {
   projectId: string;
   pageVersionId: string;
+  userId: string;
 };
 
 type QueueAddCall = {
@@ -229,7 +232,11 @@ void describe(
     void it("creates a draft release plan from approved page versions", async () => {
       const fixture = await createPageVersionFixture(db);
 
-      const result = await service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] });
+      const result = await service.createPlan(
+        fixture.projectId,
+        { pageVersionIds: [fixture.pageVersionId] },
+        fixture.userId
+      );
 
       assert.equal(result.projectId, fixture.projectId);
       assert.equal(result.status, "draft");
@@ -239,6 +246,7 @@ void describe(
       const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, result.releasePlanId));
       assert.equal(plan?.status, "draft");
       assert.equal(plan?.approvedAt, null);
+      assert.equal(plan?.createdByUserId, fixture.userId);
       assert.match(plan?.summary ?? "", /approved page version/u);
 
       const items = await db
@@ -262,7 +270,7 @@ void describe(
       const fixture = await createPageVersionFixture(db, { status: "preview", approvedAt: null });
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
         /only include approved page versions/u
       );
 
@@ -274,7 +282,7 @@ void describe(
       const fixture = await createPageVersionFixture(db, { status: "release_candidate" });
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
         /only include approved page versions/u
       );
 
@@ -287,7 +295,7 @@ void describe(
       const projectB = await createPageVersionFixture(db, { projectName: "Project B" });
 
       await assert.rejects(
-        () => service.createPlan(projectA.projectId, { pageVersionIds: [projectB.pageVersionId] }),
+        () => service.createPlan(projectA.projectId, { pageVersionIds: [projectB.pageVersionId] }, projectA.userId),
         /Every release page version must belong to this project/u
       );
 
@@ -299,12 +307,26 @@ void describe(
       const fixture = await createPageVersionFixture(db, { route: "https://attacker.example/dachreinigung/" });
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
         /Release verification target routes must be relative paths/u
       );
 
       const rows = await db.select().from(releasePlanItems);
       assert.equal(rows.length, 0);
+    });
+
+    void it("rejects release plan creation without persisted actor evidence", async () => {
+      const fixture = await createPageVersionFixture(db);
+
+      await assert.rejects(
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        /requires an authenticated persisted user id/u
+      );
+
+      const plans = await db.select().from(releasePlans);
+      const items = await db.select().from(releasePlanItems);
+      assert.equal(plans.length, 0);
+      assert.equal(items.length, 0);
     });
 
     void it("queues rollback execution for a scoped rollback point", async () => {
@@ -629,6 +651,44 @@ void describe(
       assert.equal(rows.length, 1);
       assert.equal(rows[0]?.providerDeployId, null);
     });
+
+    void it("records actor evidence when approving release deploy", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      const user = await createTestUser(db, "release-approver@example.test");
+      const preflight = await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      assert.equal(preflight.readiness, "ready");
+
+      const result = await service.approveDeploy(fixture.projectId, fixture.releasePlanId, user.id);
+
+      assert.equal(result.status, "approved_for_deploy");
+
+      const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(plan?.status, "approved_for_deploy");
+
+      const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
+      assert.equal(approvalRows.length, 1);
+      assert.equal(approvalRows[0]?.userId, user.id);
+      assert.equal(approvalRows[0]?.status, "approved");
+    });
+
+    void it("rejects release deploy approval without persisted actor evidence", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      const preflight = await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      assert.equal(preflight.readiness, "ready");
+
+      await assert.rejects(
+        () => service.approveDeploy(fixture.projectId, fixture.releasePlanId),
+        /requires an authenticated persisted user id/u
+      );
+
+      const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(plan?.status, "ready");
+
+      const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
+      assert.equal(approvalRows.length, 0);
+    });
   }
 );
 
@@ -716,6 +776,8 @@ async function createPageVersionFixture(
   } = {}
 ): Promise<PageVersionFixture> {
   const route = input.route ?? "/dachreinigung/";
+  const user = await createTestUser(db, `release-plan-${input.projectName ?? "default"}@example.test`);
+
   const [customer] = await db.insert(customers).values({ name: "Plan Route Customer" }).returning();
   assert.ok(customer);
 
@@ -755,8 +817,15 @@ async function createPageVersionFixture(
 
   return {
     projectId: project.id,
-    pageVersionId: pageVersion.id
+    pageVersionId: pageVersion.id,
+    userId: user.id
   };
+}
+
+async function createTestUser(db: DatabaseClient, email: string): Promise<typeof users.$inferSelect> {
+  const [user] = await db.insert(users).values({ email }).returning();
+  assert.ok(user);
+  return user;
 }
 
 async function createPreflightRollbackFixture(

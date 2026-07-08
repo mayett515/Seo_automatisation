@@ -1073,6 +1073,7 @@ function releasePlanRow(input: Partial<ReleasePlanRow> = {}): ReleasePlanRow {
     id: "release-1",
     projectId: "project-1",
     createdByAgentId: null,
+    createdByUserId: null,
     status: "approved_for_deploy",
     summary: "Release plan",
     riskLevel: "low",

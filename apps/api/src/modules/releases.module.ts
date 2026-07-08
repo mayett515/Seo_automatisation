@@ -10,6 +10,7 @@ import {
   Param,
   Post,
   Req,
+  ServiceUnavailableException,
   UnauthorizedException,
   UseGuards
 } from "@nestjs/common";
@@ -100,23 +101,22 @@ export class ReleasesService {
     private readonly database: DatabaseService
   ) {}
 
-  async createPlan(projectId: string, body: unknown): Promise<ReleasePlan> {
+  async createPlan(projectId: string, body: unknown, createdByUserId?: string): Promise<ReleasePlan> {
     const input = CreateReleasePlanRequestSchema.parse(body ?? {});
     const requestedPageVersionIds = [...new Set(input.pageVersionIds)];
     const releasePlanId = randomUUID();
-    const plan = ReleasePlanSchema.parse({
-      releasePlanId,
-      projectId,
-      status: "draft",
-      riskLevel: "low",
-      blockerCount: 0,
-      warningCount: 0
-    });
-
     const db = this.database.db;
 
-    if (!db || !isPersistedId(projectId)) {
-      return plan;
+    if (!db) {
+      throw new ServiceUnavailableException("Release persistence is required to create release plans.");
+    }
+
+    if (!isPersistedId(projectId)) {
+      throw new BadRequestException("Release plans require a persisted project id.");
+    }
+
+    if (!createdByUserId || !isPersistedId(createdByUserId)) {
+      throw new BadRequestException("Release plan creation requires an authenticated persisted user id.");
     }
 
     if (requestedPageVersionIds.some((pageVersionId) => !isPersistedId(pageVersionId))) {
@@ -151,10 +151,11 @@ export class ReleasesService {
         .values({
           id: releasePlanId,
           projectId,
+          createdByUserId,
           status: "draft",
           summary: `Release plan for ${requestedPageVersionIds.length} approved page version(s).`,
           riskLevel: "low",
-          blockerCount: plan.blockerCount,
+          blockerCount: 0,
           warningCount: 0
         })
         .returning();
@@ -238,47 +239,58 @@ export class ReleasesService {
     };
   }
 
-  async approveDeploy(projectId: string, releasePlanId: string, userId: string) {
-    await this.assertReleasePlanForProject(projectId, releasePlanId);
-
+  async approveDeploy(projectId: string, releasePlanId: string, userId?: string) {
     const db = this.database.db;
 
-    if (db && isPersistedId(releasePlanId)) {
-      const plan = await this.loadReleasePlanForProject(projectId, releasePlanId);
-
-      if (!approvableReleaseStatuses.has(plan.status)) {
-        throw new BadRequestException("Release plan is not in an approvable state.");
-      }
-
-      const checks = await loadReleaseChecks(db, releasePlanId);
-
-      if (checks.length === 0 || decideReleaseReadiness(checks).kind === "blocked") {
-        throw new BadRequestException("Release preflight must pass before approval.");
-      }
-
-      await db.transaction(async (tx) => {
-        await tx
-          .update(releasePlans)
-          .set({
-            status: "approved_for_deploy",
-            approvedAt: new Date(),
-            updatedAt: new Date()
-          })
-          .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
-        await tx.insert(approvals).values({
-          releasePlanId,
-          userId,
-          status: "approved",
-          decidedAt: new Date()
-        });
-      });
+    if (!db) {
+      throw new ServiceUnavailableException("Release persistence is required to approve release deploys.");
     }
+
+    if (!isPersistedId(releasePlanId)) {
+      throw new BadRequestException("Release deploy approval requires a persisted release plan id.");
+    }
+
+    if (!userId || !isPersistedId(userId)) {
+      throw new BadRequestException("Release deploy approval requires an authenticated persisted user id.");
+    }
+
+    await this.assertReleasePlanForProject(projectId, releasePlanId);
+    const plan = await this.loadReleasePlanForProject(projectId, releasePlanId);
+
+    if (!approvableReleaseStatuses.has(plan.status)) {
+      throw new BadRequestException("Release plan is not in an approvable state.");
+    }
+
+    const checks = await loadReleaseChecks(db, releasePlanId);
+
+    if (checks.length === 0 || decideReleaseReadiness(checks).kind === "blocked") {
+      throw new BadRequestException("Release preflight must pass before approval.");
+    }
+
+    const approvedAt = new Date();
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(releasePlans)
+        .set({
+          status: "approved_for_deploy",
+          approvedAt,
+          updatedAt: approvedAt
+        })
+        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+      await tx.insert(approvals).values({
+        releasePlanId,
+        userId,
+        status: "approved",
+        decidedAt: approvedAt
+      });
+    });
 
     return {
       projectId,
       releasePlanId,
       status: "approved_for_deploy",
-      approvedAt: new Date().toISOString()
+      approvedAt: approvedAt.toISOString()
     };
   }
 
@@ -680,8 +692,8 @@ class ReleasesController {
 
   @Post("projects/:projectId/releases/plan")
   @RequireProjectPermission("release:plan")
-  createPlan(@Param("projectId") projectId: string, @Body() body: unknown) {
-    return this.releases.createPlan(projectId, body);
+  createPlan(@Param("projectId") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
+    return this.releases.createPlan(projectId, body, persistedActorUserId(request));
   }
 
   @Get("projects/:projectId/releases/:releasePlanId")
@@ -702,7 +714,7 @@ class ReleasesController {
     @Param("releasePlanId") releasePlanId: string,
     @Req() request: RequestWithAuth
   ) {
-    return this.releases.approveDeploy(projectId, releasePlanId, request.auth?.user.id ?? "local-scaffold-user");
+    return this.releases.approveDeploy(projectId, releasePlanId, persistedActorUserId(request));
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/deploy")
@@ -1189,4 +1201,9 @@ function rollbackJobId(releasePlanId: string, rollbackPointId: string): string {
 
 function isPersistedId(value: string): boolean {
   return uuidPattern.test(value);
+}
+
+function persistedActorUserId(request: RequestWithAuth): string | undefined {
+  const userId = request.auth?.user.id;
+  return userId && isPersistedId(userId) ? userId : undefined;
 }

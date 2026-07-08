@@ -552,6 +552,7 @@ export const releasePlans = pgTable("release_plans", {
     .notNull()
     .references(() => projects.id),
   createdByAgentId: text("created_by_agent_id"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
   status: releaseStatusEnum("status").notNull().default("draft"),
   summary: text("summary").notNull(),
   riskLevel: text("risk_level").notNull().default("low"),
@@ -927,6 +928,7 @@ export const rankingProofRelations = relations(rankingProofs, ({ one }) => ({
 
 export const releasePlanRelations = relations(releasePlans, ({ many, one }) => ({
   project: one(projects, { fields: [releasePlans.projectId], references: [projects.id] }),
+  createdBy: one(users, { fields: [releasePlans.createdByUserId], references: [users.id] }),
   items: many(releasePlanItems),
   checks: many(releaseChecks),
   notes: many(releaseNotes),

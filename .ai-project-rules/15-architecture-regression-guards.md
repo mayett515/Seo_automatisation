@@ -205,7 +205,9 @@ Page Version approval
   Approval may move preview/changes_requested versions to approved; request-changes may move them to changes_requested.
   Approval must not enqueue deploy or mutate providers; release planning/preflight/deploy remain separate deterministic steps.
   Release-plan creation may select only approved page versions with approval evidence.
+  Release-plan creation must persist actor evidence and must not return success-shaped plans without persistence.
   Release-plan creation must create draft release plans/items only; preflight, deploy approval, deploy, and verification remain separate steps.
+  Release deploy approval must require a persisted actor and must not fall back to scaffold users.
 ```
 
 </context>

@@ -69,6 +69,7 @@ export class PageProposalConfigurationError extends Error {}
 export class PageProposalEvidenceError extends Error {}
 export class PageProposalProviderError extends Error {}
 export class PageProposalWorkflowError extends Error {}
+export class PageProposalPersistenceEligibilityError extends Error {}
 class PageProposalPersistenceConflictError extends Error {}
 
 export async function handlePageProposalJob(
@@ -268,6 +269,18 @@ export async function executePageProposal(input: {
       throw new PageProposalWorkflowError("qa_rejected:route_collision");
     }
 
+    if (error instanceof PageProposalPersistenceEligibilityError) {
+      await markWorkflowFailure(input.repository, input.data, reasoningResult, {
+        failureCode: "qa_rejected",
+        diagnostics: {
+          gateId: "opportunity_lifecycle",
+          message: error.message
+        },
+        outputJson: compactOutputJson(qaResult.output)
+      });
+      throw new PageProposalWorkflowError("qa_rejected:opportunity_lifecycle", { cause: error });
+    }
+
     throw error;
   }
 
@@ -425,15 +438,26 @@ export function createDrizzlePageProposalRepository(db: WorkerDb): PageProposalR
             throw new PageProposalEvidenceError("Failed to persist page proposal version.");
           }
 
-          await tx
+          const [updatedOpportunity] = await tx
             .update(opportunities)
             .set({
               status: "brief_created",
               updatedAt: now
             })
             .where(
-              and(eq(opportunities.id, input.data.opportunityId), eq(opportunities.projectId, input.data.projectId))
+              and(
+                eq(opportunities.id, input.data.opportunityId),
+                eq(opportunities.projectId, input.data.projectId),
+                ne(opportunities.status, "rejected")
+              )
+            )
+            .returning({ id: opportunities.id });
+
+          if (!updatedOpportunity) {
+            throw new PageProposalPersistenceEligibilityError(
+              "Opportunity is no longer eligible for page proposal persistence."
             );
+          }
 
           return {
             pageProposalId: proposal.id,
