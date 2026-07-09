@@ -10,7 +10,7 @@ export async function demoteReleaseCandidatePageVersionsForPlan(
   await db.execute(sql`
     UPDATE "page_versions" pv
     SET "status" = 'approved',
-        "updated_at" = ${input.updatedAt}
+        "updated_at" = ${input.updatedAt.toISOString()}::timestamptz
     FROM "release_plan_items" rpi
     INNER JOIN "release_plans" rp ON rp."id" = rpi."release_plan_id"
     WHERE rpi."page_version_id" = pv."id"
