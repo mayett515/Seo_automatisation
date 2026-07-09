@@ -2,7 +2,7 @@
 description: "Nest guard rules for authentication, project authorization, tenant ownership, and route-level access control"
 globs: "apps/api/src/**/*.{ts,tsx}, packages/db/src/**/*.{ts,tsx}, **/*auth*.md, **/*tenant*.md"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -13,6 +13,7 @@ dependencies:
   - "https://better-auth.com/docs/plugins/organization"
   - ".ai-stealer-findings/2026-06-25-production-auth-tenancy.md"
 priority_schema: "critical > strong > guideline"
+rule_budget: "guard-exception"
 ---
 
 # Guards, Auth, And Tenancy

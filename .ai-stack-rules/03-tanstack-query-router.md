@@ -2,7 +2,7 @@
 description: "TanStack Query and Router guardrails for query states, keys, invalidation, params, and route-safe API calls"
 globs: "apps/web/src/**/*.{ts,tsx}, packages/ui/src/**/*.{ts,tsx}, **/*.md"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -12,6 +12,7 @@ dependencies:
   - "https://tanstack.com/router/latest/docs/guide/path-params"
   - ".ai-stack-rules/09-tanstack-ecosystem-schema.md"
 priority_schema: "critical > strong > guideline"
+rule_budget: "guard-exception"
 ---
 
 # TanStack Query And Router

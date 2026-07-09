@@ -44,6 +44,20 @@ requireIncludes(
 );
 
 requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  'rule_budget: "guard-exception"',
+  "rule-routing",
+  "rule 15 must declare its intentional guard-exception rule budget"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  'anti_regression_mode: "hybrid-boundary"',
+  "rule-routing",
+  "rule 15 must declare its intentional hybrid anti-regression mode"
+);
+
+requireIncludes(
   "docs/architecture/decisions/0010-http-verification-and-release-status-projection.md",
   'Do not project `releasePlans.status = "live"` from `deployments.status = "provider_succeeded"`',
   "release-live-truth",

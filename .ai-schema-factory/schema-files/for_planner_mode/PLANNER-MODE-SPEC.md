@@ -38,4 +38,4 @@ Upon receiving explicit approval from the user, apply the cascade routing rules 
 
 Only when the user signals to proceed after Phase 3, compile the final markdown configurations for every file mapped in the AI Rules directory tree.
 
-Every single generated file MUST perfectly adhere to the 15-rule limit, U-shaped attention structure, strict atomic XML logic gates, and pre-flight self-verification checklists detailed in your layout specifications (`SPEC-01-SCHEMA-GENERATION.md`). Provide the raw markdown code blocks cleanly without conversational filler.
+Every generated file MUST adhere to the default 15-rule budget or explicitly declare a router/guard/guardrail/anti-regression exception, U-shaped attention structure, strict atomic XML logic gates, and pre-flight self-verification checklists detailed in your layout specifications (`SPEC-01-SCHEMA-GENERATION.md`). Provide the raw markdown code blocks cleanly without conversational filler.

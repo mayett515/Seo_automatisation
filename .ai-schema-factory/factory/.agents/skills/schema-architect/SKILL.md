@@ -86,7 +86,7 @@ APPROVED
 - DO NOT skip directory mapping.
 - DO NOT forget Codex-native integration.
 - DO NOT collapse unrelated cognitive modes into one shard.
-- DO NOT create huge files that exceed the 15-rule ceiling.
+- DO NOT create huge normal domain files; split horizontally or use an explicit `rule_budget: "guard-exception"` only for router, guard, guardrail, or anti-regression shards.
 </absolute-constraints>
 
 </skill_contract>

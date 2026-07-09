@@ -2,7 +2,7 @@
 description: "Planning, schema factory, context sharding, and Markdown generation router"
 globs: "**/*.{md,json,mmd,toml,yml,yaml}"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
@@ -37,7 +37,7 @@ THEN check `.ai-schema-factory/schema-files/CONTEXT SHARDING/ADVANCED-CONTEXT-SH
 <absolute-constraints>
 - DO NOT generate a hidden-folder rule system before a blueprint is approved.
 - DO NOT create deep nested active rule folders.
-- DO NOT put more than 15 behavioral rules in one rule file.
+- DO NOT exceed the default 15-rule budget unless a router, guard, guardrail, or anti-regression shard explicitly declares `rule_budget: "guard-exception"`.
 - DO NOT edit frozen reference folders for project-specific behavior.
 - DO NOT duplicate the TypeScript schema into other shards.
 </absolute-constraints>

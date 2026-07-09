@@ -19,8 +19,8 @@ When generating any rule file, you must strictly assign data types to their opti
 
 ## 2. Operational Generation Boundaries
 
-### Rule 1: The 15-Rule Ceiling & Horizontal Splitting
-Never generate more than 15 total rules or constraints within a single file. Exceeding this limit triggers attention dilution, causing the target model to ignore rules entirely. Keep rules dense, sharp, and brief. **CRITICAL:** If a domain requires more than 15 rules, DO NOT omit or delete rules to fit the limit. Instead, split the domain horizontally into multiple sibling files (e.g., `01A-core-logic.md`, `01B-core-data.md`) so all rules are preserved.
+### Rule 1: The Default 15-Rule Budget & Horizontal Splitting
+Normal domain files should stay at or below 15 total atomic behavioral rules inside `<positive-directives>` and `<absolute-constraints>`. Exceeding this budget can trigger attention dilution, so keep rules dense, sharp, and brief. **CRITICAL:** If a domain requires more than 15 rules, DO NOT omit or delete rules to fit the budget. Instead, split the domain horizontally into multiple sibling files (e.g., `01A-core-logic.md`, `01B-core-data.md`) so all rules are preserved. Router, guard, guardrail, and anti-regression shards may exceed the default only when frontmatter declares `rule_budget: "guard-exception"` and splitting would make routing or enforcement weaker. Even exception shards should split when `<absolute-constraints>` alone grows beyond roughly 20 rules.
 
 ### Rule 2: Absolute Constraint Atomicity
 Prohibitions inside `<absolute-constraints>` must be strictly atomic. Write **one distinct prohibition per bullet point, one behavior per line**. Never combine multiple constraints into compound, conversational prose.
@@ -32,10 +32,10 @@ Position YAML, meta-instructions, and routing logic at the absolute top. Positio
 Structure execution blocks to allow the target model to reason step-by-step in natural language *before* it compiles its final code output.
 
 ### Rule 5: Few-Shot Example Anchoring
-Every generated domain reference file must contain a `<context>` block hosting exactly one compliant (`// Good`) code snippet and one non-compliant (`// Bad`) code snippet.
+Generated implementation/domain reference files should contain a `<context>` block with one concise compliant (`// Good`) code snippet and one non-compliant (`// Bad`) code snippet when they teach implementation behavior. Router, index, guard, guardrail, and anti-regression shards are exempt from mandatory Good/Bad snippets; they should instead provide concrete routing conditions, incident reports, seam descriptions, or executable guard references.
 
 ### Rule 6: Protocol & Tool Future-Proofing
 Every generated YAML frontmatter MUST carry a "triple version": schema version, target model family, and protocol compatibility (e.g., `protocol_compat: "mcp: 2026-05"`). Declare external tools explicitly in a `dependencies` array.
 
 ### Rule 7: The Anti-Regression Strategy ("Via Negativa")
-When creating an Anti-Regression file, do not use `<positive-directives>`. Rely entirely on `<incident-reports>` to provide historical context, and map those directly to `<absolute-constraints>` to explicitly ban the LLM from recreating past architectural drift.
+Anti-regression files default to via-negativa: use `<incident-reports>` for historical context and map those reports directly to `<absolute-constraints>`. A hybrid anti-regression file may use `<positive-directives>` only when frontmatter declares `anti_regression_mode: "hybrid-boundary"` and every positive directive is tied to a repeated finding, accepted architecture decision, source-of-truth seam, or executable guard. Hybrid files may substitute `<context>` seam blocks for incident reports when those seams are pinned by tests or guard scripts.

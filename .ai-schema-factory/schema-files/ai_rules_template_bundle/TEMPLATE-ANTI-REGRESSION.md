@@ -2,10 +2,12 @@
 description: "Strict prohibition gates preventing the reintroduction of historical bugs for [DOMAIN]"
 globs: "[INSERT RELEVANT GLOBS]"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
 priority_schema: "critical > strong > guideline"
+rule_budget: "default"
+anti_regression_mode: "via-negativa"
 ---
 
 # Anti-Regression Contract: [DOMAIN]
@@ -20,6 +22,16 @@ You have been routed here because you are modifying stable systems or fixing bug
 - Incident [ID]: [DESCRIBE THE PAST BUG OR ARCHITECTURAL FAILURE].
 - Incident [ID]: [DESCRIBE ANOTHER PAST BUG].
 </incident-reports>
+
+<!-- Optional only when anti_regression_mode: "hybrid-boundary". -->
+<positive-directives>
+- ALWAYS preserve [REQUIRED ARCHITECTURE SEAM OR SOURCE-OF-TRUTH BEHAVIOR].
+</positive-directives>
+
+<!-- Hybrid boundary files may use concrete seam descriptions when executable guards pin the seams. -->
+<context>
+- Seam [ID]: [DESCRIBE THE BOUNDARY], pinned by [TEST OR GUARD SCRIPT].
+</context>
 
 ## 2. Hard Regression Bans (The "Via Negativa")
 

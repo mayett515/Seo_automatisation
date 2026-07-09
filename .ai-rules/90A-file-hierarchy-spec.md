@@ -2,7 +2,7 @@
 description: "Specification for flat horizontal file hierarchy in .ai-rules"
 globs: ".ai-rules/**/*.md"
 alwaysApply: false
-version: "3.0.0"
+version: "3.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
@@ -28,7 +28,7 @@ Use this file to maintain the `.ai-rules` ecosystem. The rule system is flat by 
 
 <positive-directives>
 - Use `00-system-index.md` as the only master router.
-- Use horizontal splitting with numeric/letter prefixes when a domain exceeds the 15-rule ceiling.
+- Use horizontal splitting with numeric/letter prefixes when a normal domain exceeds the default 15-rule budget.
 - Keep every rule file directly inside `.ai-rules/`.
 - Reference sibling files with exact flat paths.
 - Keep templates and specs flat too.
@@ -43,8 +43,11 @@ Use this file to maintain the `.ai-rules` ecosystem. The rule system is flat by 
 </absolute-constraints>
 
 <conditional-logic>
-IF a domain file grows beyond the rule ceiling:
+IF a normal domain file grows beyond the default rule budget:
 THEN split horizontally as `02A-*`, `02B-*`, not into a subfolder.
+
+IF a router, guard, guardrail, or anti-regression shard intentionally exceeds the default rule budget:
+THEN declare `rule_budget: "guard-exception"` in frontmatter and keep the file directly routable and scannable.
 
 IF a human wants a tree view:
 THEN generate it externally from the flat manifest.

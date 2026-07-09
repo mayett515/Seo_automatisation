@@ -75,7 +75,7 @@ Use:
 - DO NOT make `AGENTS.md` huge.
 - DO NOT make skills generic.
 - DO NOT bury hard constraints in prose.
-- DO NOT exceed 15 atomic rules in one constraint block.
+- DO NOT exceed the default 15-rule budget unless a router, guard, guardrail, or anti-regression shard explicitly declares `rule_budget: "guard-exception"`.
 - DO NOT generate nested active rule folders without explicit context-sharding reason.
 </absolute-constraints>
 

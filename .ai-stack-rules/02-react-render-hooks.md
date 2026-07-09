@@ -2,7 +2,7 @@
 description: "React render and hooks guardrails for pure rendering, error states, and non-throwing UI helpers"
 globs: "apps/web/src/**/*.{ts,tsx}, packages/ui/src/**/*.{ts,tsx}, **/*.md"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -14,6 +14,7 @@ dependencies:
   - "C:\\total typescript\\total_typescript_learning_path\\modules\\07_react_with_typescript\\index.md"
   - "C:\\total typescript\\total_typescript_learning_path\\modules\\08_advanced_react_with_typescript\\index.md"
 priority_schema: "critical > strong > guideline"
+rule_budget: "guard-exception"
 ---
 
 # React Render And Hooks

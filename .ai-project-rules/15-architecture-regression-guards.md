@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -11,6 +11,8 @@ dependencies:
   - ".ai-project-rules/11-reporting-anti-regression.md"
   - ".ai-project-rules/14-architecture-direction.md"
 priority_schema: "critical > strong > guideline"
+rule_budget: "guard-exception"
+anti_regression_mode: "hybrid-boundary"
 ---
 
 # Domain Execution Contract: Architecture Regression Guards

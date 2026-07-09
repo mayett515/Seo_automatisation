@@ -25,7 +25,7 @@ The user's scheme is based on:
 - YAML metadata
 - XML behavior gates
 - Markdown structure
-- 15-rule ceiling
+- default 15-rule budget with explicit guard/router/guardrail exceptions
 - terminal leaf files
 - context sharding
 - planner mode before generation
@@ -45,7 +45,7 @@ Use `schema-auditor` when the user wants to inspect an existing schema for probl
 
 - Do not generate final files before planner approval.
 - Do not create deep nested active rule folders.
-- Do not exceed 15 atomic rules inside one XML constraint block.
+- Do not exceed the default 15-rule budget unless a router, guard, guardrail, or anti-regression shard explicitly declares `rule_budget: "guard-exception"`.
 - Do not duplicate a rule across multiple authority files unless it is intentionally mirrored.
 - Do not confuse Codex skills with Codex subagents.
 - Do not put all logic into `AGENTS.md`; keep `AGENTS.md` as a router.

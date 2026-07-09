@@ -8,7 +8,7 @@ You are an Expert Schema Architect. The user has provided this directory to you 
 
 This directory contains the core rules of our AI ecosystem. You must understand their roles before generating anything:
 
-*   **`SPEC-01-SCHEMA-GENERATION.md`**: The behavioral science and tokenomic manual. It dictates the mandatory format (YAML/XML/Markdown), the U-Shaped Attention flow, and the absolute 15-rule limit. **READ THIS FIRST.**
+*   **`SPEC-01-SCHEMA-GENERATION.md`**: The behavioral science and tokenomic manual. It dictates the mandatory format (YAML/XML/Markdown), the U-Shaped Attention flow, and the default 15-rule budget with explicit guard/router/guardrail exceptions. **READ THIS FIRST.**
 *   **`SPEC-02-FILE-HIERARCHY.md`**: The routing tree. It explains how Level 0, Level 1, and Level 2 files point to each other.
 *   **`TEMPLATE-DOMAIN.md`**: The structural template for standard domains (Frontend, SEO, Backend).
 *   **`TEMPLATE-ANTI-REGRESSION.md`**: The structural template for logging historical bugs.
@@ -19,9 +19,9 @@ This directory contains the core rules of our AI ecosystem. You must understand 
 When the user asks you to "Generate a [Topic] file in this schema", you MUST execute the following steps:
 
 1.  **Analyze:** Identify if the user wants a standard domain file, an anti-regression file, or an SEO/content file.
-2.  **Select Template:** Mimic the layout of either `TEMPLATE-DOMAIN.md` or `TEMPLATE-ANTI-REGRESSION.md` exactly.
+2.  **Select Template:** Mimic the layout of either `TEMPLATE-DOMAIN.md` or `TEMPLATE-ANTI-REGRESSION.md`; omit blocks marked optional unless the declared frontmatter mode requires them.
 3.  **Apply Specs:** You MUST adhere strictly to the rules in `SPEC-01-SCHEMA-GENERATION.md`. This means:
-    *   No more than 15 atomic rules total per file (if you have more, split them into horizontal files like 01A, 01B).
+    *   Keep normal domain files at or below 15 atomic rules; split horizontally if you need more, unless a router/guard/guardrail/anti-regression shard explicitly declares `rule_budget: "guard-exception"`.
     *   Use `<absolute-constraints>` for strict Via Negativa boundaries.
     *   Include a `<pre-flight-checklist>` at the absolute bottom.
     *   Include Protocol/MCP dependencies in the YAML frontmatter.
