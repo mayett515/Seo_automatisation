@@ -645,7 +645,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, and release preflight/approval/deploy UI wiring are implemented.
+Status: worker foundation, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, and page-version lifecycle projection are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -714,6 +714,9 @@ implemented now
   release detail UI can run release preflight and display check results
   release detail UI can approve deploy after a ready/ready_with_warnings preflight state
   release detail UI can enqueue deploy after approved_for_deploy
+  deploy approval moves included approved page versions to release_candidate
+  live verification moves included page versions to released and supersedes older released versions for the same proposal
+  failed, rolled-back, or cancelled release plans restore release_candidate page versions to approved for replanning
 
 still deferred
   agent_run_events streaming timeline

@@ -211,6 +211,12 @@ Page Version approval
   Release-plan creation must persist actor evidence and must not return success-shaped plans without persistence.
   Release-plan creation must create draft release plans/items only; preflight, deploy approval, deploy, and verification remain separate steps.
   Release deploy approval must require a persisted actor and must not fall back to scaffold users.
+  Release deploy approval projects included approved page versions to release_candidate.
+  Deploy artifact build may use approved or release_candidate page versions only, and must still require approval evidence.
+  Live verification projects included page versions to released and supersedes older released versions for the same proposal.
+  Failed or rollback-recommended verification must not mark page versions as released.
+  Failed, rolled-back, or cancelled release plans must restore included release_candidate page versions to approved so they can be replanned.
+  Release-plan cancellation must require a persisted actor and write an audit row so routine cancellation is distinguishable from provider or verification failure.
 ```
 
 </context>

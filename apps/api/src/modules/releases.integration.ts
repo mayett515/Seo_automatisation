@@ -44,6 +44,7 @@ type ReleaseFixture = {
 type PreflightRollbackFixture = {
   projectId: string;
   releasePlanId: string;
+  pageVersionId: string;
   previousDeploymentId: string;
 };
 
@@ -264,6 +265,23 @@ void describe(
         .from(deployments)
         .where(eq(deployments.releasePlanId, result.releasePlanId));
       assert.equal(deploymentRows.length, 0);
+    });
+
+    void it("rejects release plan creation for page versions already in an active release plan", async () => {
+      const fixture = await createPageVersionFixture(db);
+
+      await service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId);
+
+      await assert.rejects(
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
+        /already in an active release plan/u
+      );
+
+      const items = await db
+        .select()
+        .from(releasePlanItems)
+        .where(eq(releasePlanItems.pageVersionId, fixture.pageVersionId));
+      assert.equal(items.length, 1);
     });
 
     void it("rejects release plan creation for preview page versions", async () => {
@@ -666,10 +684,46 @@ void describe(
       const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(plan?.status, "approved_for_deploy");
 
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "release_candidate");
+
       const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
       assert.equal(approvalRows.length, 1);
       assert.equal(approvalRows[0]?.userId, user.id);
       assert.equal(approvalRows[0]?.status, "approved");
+    });
+
+    void it("cancels pending release plans and restores candidate page versions for replanning", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      const user = await createTestUser(db, "release-cancel@example.test");
+
+      assert.equal((await service.preflight(fixture.projectId, fixture.releasePlanId)).readiness, "ready");
+      assert.equal(
+        (await service.approveDeploy(fixture.projectId, fixture.releasePlanId, user.id)).status,
+        "approved_for_deploy"
+      );
+
+      const cancelled = await service.cancelPlan(fixture.projectId, fixture.releasePlanId, user.id);
+
+      assert.equal(cancelled.status, "failed");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "approved");
+
+      const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
+      const cancellationAudit = approvalRows.find((approval) => approval.decisionNote === "release_plan_cancelled");
+      assert.ok(cancellationAudit);
+      assert.equal(cancellationAudit.userId, user.id);
+      assert.equal(cancellationAudit.status, "rejected");
+
+      const replanned = await service.createPlan(
+        fixture.projectId,
+        { pageVersionIds: [fixture.pageVersionId] },
+        user.id
+      );
+
+      assert.equal(replanned.status, "draft");
+      assert.notEqual(replanned.releasePlanId, fixture.releasePlanId);
     });
 
     void it("rejects release deploy approval without persisted actor evidence", async () => {
@@ -967,6 +1021,7 @@ async function createPreflightRollbackFixture(
   return {
     projectId: project.id,
     releasePlanId: releasePlan.id,
+    pageVersionId: pageVersion.id,
     previousDeploymentId: previousDeployment.id
   };
 }

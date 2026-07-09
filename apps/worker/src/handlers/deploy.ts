@@ -25,6 +25,7 @@ import { buildReleaseDeploymentKey, canDeployRelease } from "@localseo/domain";
 import { renderApprovedReleaseArtifact } from "@localseo/page-registry";
 import {
   approvals,
+  demoteReleaseCandidatePageVersionsForPlan,
   deployments,
   mainWebsites,
   pageVersions,
@@ -952,6 +953,12 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
             updatedAt: new Date()
           })
           .where(and(eq(releasePlans.id, data.releasePlanId), eq(releasePlans.projectId, data.projectId)));
+
+        await demoteReleaseCandidatePageVersionsForPlan(tx, {
+          projectId: data.projectId,
+          releasePlanId: data.releasePlanId,
+          updatedAt: new Date()
+        });
       });
     }
   };
@@ -1191,6 +1198,8 @@ function requiresPageVersionArtifact(action: string): boolean {
   return parsed.data === "create" || parsed.data === "update";
 }
 
+const deployablePageVersionStatuses = new Set<string>(["approved", "release_candidate"]);
+
 function assertDeployableReleaseArtifactItem(item: {
   id: string;
   pageVersionId: string | null;
@@ -1207,7 +1216,7 @@ function assertDeployableReleaseArtifactItem(item: {
     throw new DeployEvidenceError(`Release item ${item.id} is missing a page version.`);
   }
 
-  if (item.pageVersionStatus !== "approved") {
+  if (!deployablePageVersionStatuses.has(item.pageVersionStatus ?? "")) {
     throw new DeployEvidenceError(`Release item ${item.id} references an unapproved page version.`);
   }
 

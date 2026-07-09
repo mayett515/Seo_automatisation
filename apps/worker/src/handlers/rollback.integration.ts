@@ -9,12 +9,15 @@ import type {
   SiteHostingPort,
   UploadDeployFilesResult
 } from "@localseo/adapters";
-import type { RollbackJobData } from "@localseo/contracts";
+import type { PageJson, RollbackJobData } from "@localseo/contracts";
 import {
   customers,
   deployments,
   mainWebsites,
+  pageProposals,
+  pageVersions,
   projects,
+  releasePlanItems,
   releasePlans,
   rollbackPoints,
   type DatabaseClient
@@ -41,6 +44,7 @@ type RollbackFixture = {
   projectId: string;
   releasePlanId: string;
   deploymentId: string;
+  pageVersionId: string;
   rollbackPointId: string;
   data: RollbackJobData;
 };
@@ -106,6 +110,9 @@ void describe(
 
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "rolled_back");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "approved");
 
       const [rollbackPoint] = await db
         .select()
@@ -709,6 +716,39 @@ async function createRollbackFixture(
     .returning();
   assert.ok(releasePlan);
 
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId: project.id,
+      route: "/dachreinigung/",
+      primaryKeyword: "Dachreinigung",
+      uniquenessRationale: "Dedicated local proof.",
+      status: "approved",
+      sitemapReady: true
+    })
+    .returning();
+  assert.ok(proposal);
+
+  const [pageVersion] = await db
+    .insert(pageVersions)
+    .values({
+      pageProposalId: proposal.id,
+      versionNumber: 1,
+      status: "release_candidate",
+      approvedAt: new Date("2026-06-30T10:00:00.000Z"),
+      pageJson: pageJson()
+    })
+    .returning();
+  assert.ok(pageVersion);
+
+  await db.insert(releasePlanItems).values({
+    releasePlanId: releasePlan.id,
+    pageVersionId: pageVersion.id,
+    targetUrl: "/dachreinigung/",
+    action: "create",
+    status: "deployed"
+  });
+
   const [deployment] = await db
     .insert(deployments)
     .values({
@@ -767,6 +807,7 @@ async function createRollbackFixture(
     projectId: project.id,
     releasePlanId: releasePlan.id,
     deploymentId: deployment.id,
+    pageVersionId: pageVersion.id,
     rollbackPointId: rollbackPoint.id,
     data: {
       projectId: project.id,
@@ -774,6 +815,47 @@ async function createRollbackFixture(
       deploymentId: deployment.id,
       rollbackPointId: rollbackPoint.id
     }
+  };
+}
+
+function pageJson(input: Partial<PageJson> = {}): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/dachreinigung/",
+    pageType: "service_area_page",
+    target: {
+      service: "Dachreinigung",
+      primaryKeyword: "Dachreinigung",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Dachreinigung",
+      metaDescription: "Lokale Dachreinigung.",
+      canonicalPath: "/dachreinigung/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: true
+    },
+    sections: [
+      {
+        id: "hero-1",
+        type: "Hero",
+        registryKey: "Hero.default",
+        schemaVersion: 1,
+        zone: "hero",
+        order: 0,
+        variant: "default",
+        props: {
+          h1: "Dachreinigung",
+          body: "Lokale Dachreinigung."
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Dedicated local proof.",
+    ...input
   };
 }
 

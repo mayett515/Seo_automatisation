@@ -56,6 +56,7 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
     onSuccess: async () => {
       approveDeploy.reset();
       deployRelease.reset();
+      cancelPlan.reset();
       await queryClient.invalidateQueries({ queryKey: releasePlanQueryKey });
     }
   });
@@ -69,6 +70,7 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
     onSuccess: async () => {
       preflight.reset();
       deployRelease.reset();
+      cancelPlan.reset();
       await queryClient.invalidateQueries({ queryKey: releasePlanQueryKey });
     }
   });
@@ -82,6 +84,21 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
     onSuccess: async () => {
       preflight.reset();
       approveDeploy.reset();
+      cancelPlan.reset();
+      await queryClient.invalidateQueries({ queryKey: releasePlanQueryKey });
+    }
+  });
+  const cancelPlan = useMutation({
+    mutationFn: () =>
+      postJson(
+        projectApiPath(props.projectId, `/releases/${encodeURIComponent(props.releasePlanId)}/cancel`),
+        {},
+        ReleasePlanSchema
+      ),
+    onSuccess: async () => {
+      preflight.reset();
+      approveDeploy.reset();
+      deployRelease.reset();
       await queryClient.invalidateQueries({ queryKey: releasePlanQueryKey });
     }
   });
@@ -92,12 +109,14 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
   const status =
     authoritativeProgressStatus ??
     queuedDeployStatus ??
+    cancelPlan.data?.status ??
     approveDeploy.data?.status ??
     preflight.data?.readiness ??
     plan?.status;
   const canApproveDeploy = status === "ready" || status === "ready_with_warnings";
   const canDeploy = status === "approved_for_deploy";
-  const pending = preflight.isPending || approveDeploy.isPending || deployRelease.isPending;
+  const canCancel = isCancellableReleasePlanStatus(status);
+  const pending = preflight.isPending || approveDeploy.isPending || deployRelease.isPending || cancelPlan.isPending;
 
   return (
     <article className="detail-panel review-panel">
@@ -148,6 +167,14 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
         >
           {deployRelease.isPending ? "Queueing deploy" : "Queue deploy"}
         </button>
+        <button
+          className="button-secondary"
+          disabled={pending || !canCancel}
+          type="button"
+          onClick={() => cancelPlan.mutate()}
+        >
+          {cancelPlan.isPending ? "Cancelling" : "Cancel plan"}
+        </button>
       </div>
 
       {preflight.isError ? (
@@ -161,9 +188,15 @@ export function ReleaseLifecyclePanel(props: { initialPlan?: ReleasePlan; projec
       {deployRelease.isError ? (
         <div className="notice notice--danger">{errorMessage(deployRelease.error, "Deploy could not be queued.")}</div>
       ) : null}
+      {cancelPlan.isError ? (
+        <div className="notice notice--danger">
+          {errorMessage(cancelPlan.error, "Release plan could not be cancelled.")}
+        </div>
+      ) : null}
       {preflight.data ? <PreflightResult result={preflight.data} /> : null}
       {approveDeploy.data ? <DeployApprovalResult approval={approveDeploy.data} /> : null}
       {deployRelease.data ? <DeployQueueResult job={deployRelease.data} /> : null}
+      {cancelPlan.data ? <div className="notice notice--neutral">Release plan cancelled.</div> : null}
 
       {!canApproveDeploy && status === "blocked" ? (
         <div className="notice notice--danger">Resolve blocker checks before deploy approval.</div>
@@ -264,6 +297,16 @@ function releaseCheckTone(check: ReleaseCheck): "neutral" | "success" | "warning
 
 function isReleaseProgressStatus(status: ReleasePlan["status"] | undefined): boolean {
   return status === "deploying" || status === "live" || status === "failed" || status === "rolled_back";
+}
+
+function isCancellableReleasePlanStatus(status: ReleasePlan["status"] | undefined): boolean {
+  return (
+    status === "draft" ||
+    status === "ready" ||
+    status === "ready_with_warnings" ||
+    status === "blocked" ||
+    status === "approved_for_deploy"
+  );
 }
 
 function releasePlanDetailQueryKey(projectId: string, releasePlanId: string) {

@@ -44,6 +44,8 @@ type VerificationFixture = {
   releasePlanId: string;
   deploymentId: string;
   verificationId: string;
+  pageProposalId: string;
+  pageVersionId: string;
   data: ReleaseVerificationJobData;
 };
 
@@ -109,6 +111,9 @@ void describe(
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "live");
       assert.equal(releasePlan?.deployedAt?.toISOString(), "2026-06-30T12:00:00.000Z");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "released");
     });
 
     void it("keeps GSC handoff failures warning-level and projects live_with_warnings", async () => {
@@ -150,6 +155,39 @@ void describe(
 
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "live");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "released");
+    });
+
+    void it("supersedes older released page versions for the same proposal", async () => {
+      const fixture = await createVerificationFixture(db, { releasePlanStatus: "deploying" });
+      const [olderVersion] = await db
+        .insert(pageVersions)
+        .values({
+          pageProposalId: fixture.pageProposalId,
+          versionNumber: 0,
+          status: "released",
+          approvedAt: new Date("2026-06-29T10:00:00.000Z"),
+          pageJson: pageJson()
+        })
+        .returning();
+      assert.ok(olderVersion);
+
+      const result = await executeReleaseVerification({
+        data: fixture.data,
+        db,
+        dependencies: { verification: new FakeVerificationPort() },
+        isFinalAttempt: true
+      });
+
+      assert.equal(result.verificationStatus, "live_healthy");
+
+      const [current] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      const [older] = await db.select().from(pageVersions).where(eq(pageVersions.id, olderVersion.id));
+
+      assert.equal(current?.status, "released");
+      assert.equal(older?.status, "superseded");
     });
 
     void it("retries verifier infrastructure errors before terminal projection", async () => {
@@ -280,6 +318,10 @@ void describe(
 
     void it("projects failed blocker checks to rollback_recommended and failed release state", async () => {
       const fixture = await createVerificationFixture(db, { releasePlanStatus: "deploying" });
+      await db
+        .update(pageVersions)
+        .set({ status: "release_candidate" })
+        .where(eq(pageVersions.id, fixture.pageVersionId));
       const verifier = new FakeVerificationPort();
       verifier.mode = "blocker";
 
@@ -306,6 +348,9 @@ void describe(
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "failed");
       assert.equal(releasePlan?.deployedAt, null);
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "approved");
     });
 
     void it("rejects unsafe verification target routes in the worker path", async () => {
@@ -438,6 +483,8 @@ async function createVerificationFixture(
     releasePlanId: releasePlan.id,
     deploymentId: deployment.id,
     verificationId: verification.id,
+    pageProposalId: proposal.id,
+    pageVersionId: pageVersion.id,
     data
   };
 }

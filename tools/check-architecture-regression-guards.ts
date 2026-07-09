@@ -101,9 +101,23 @@ requireIncludes(
 
 requireIncludes(
   "apps/worker/src/handlers/deploy.ts",
-  'item.pageVersionStatus !== "approved"',
+  "deployablePageVersionStatuses",
   "deploy-artifact-approval",
-  "deploy artifact guard must require approved page versions"
+  "deploy artifact guard must use the named approved/release-candidate lifecycle status set"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  '"release_candidate"',
+  "deploy-artifact-approval",
+  "deploy artifact guard must accept release-candidate page versions after deploy approval"
+);
+
+requireIncludes(
+  "packages/db/src/release-lifecycle.ts",
+  "demoteReleaseCandidatePageVersionsForPlan",
+  "deploy-artifact-approval",
+  "Release lifecycle helper must restore stranded release-candidate page versions"
 );
 
 requireIncludes(
@@ -591,6 +605,34 @@ requireIncludes(
 
 requireIncludes(
   "apps/api/src/modules/releases.integration.ts",
+  "already in an active release plan",
+  "page-release-planning",
+  "Release-plan integration tests must prevent duplicate active planning for the same page version"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "FOR UPDATE OF pv",
+  "page-release-planning",
+  "Release-plan creation must lock requested page versions before checking active plan membership"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "releasePlanId/cancel",
+  "page-release-planning",
+  "Release planning API must expose a cancel path for not-yet-deployed plans"
+);
+
+requireIncludes(
+  "apps/web/src/screens/release-detail.tsx",
+  "/cancel",
+  "page-release-planning",
+  "Release detail UI must expose the durable cancel path for abandoned plans"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
   "rejects release plan creation for preview page versions",
   "page-release-planning",
   "Release-plan integration tests must reject unapproved page versions"
@@ -664,6 +706,83 @@ requireIncludes(
   "requires fresh deploy approval after preflight is rerun",
   "page-release-planning",
   "Release integration tests must prove rerunning preflight invalidates current deploy approval"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  'status: "release_candidate"',
+  "page-version-lifecycle",
+  "Release deploy approval must project included approved page versions to release_candidate"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "records actor evidence when approving release deploy",
+  "page-version-lifecycle",
+  "Release integration tests must cover deploy-approval page-version lifecycle projection"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.ts",
+  'status: "released"',
+  "page-version-lifecycle",
+  "Live verification must project included page versions to released"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.ts",
+  'status: "superseded"',
+  "page-version-lifecycle",
+  "Live verification must supersede older released page versions for the same proposal"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.integration.ts",
+  "supersedes older released page versions for the same proposal",
+  "page-version-lifecycle",
+  "Release verification integration tests must prove older released page versions are superseded"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.integration.ts",
+  "deploys release-candidate page versions produced by deploy approval",
+  "page-version-lifecycle",
+  "Deploy integration tests must prove release-candidate page versions remain deployable"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "cancels pending release plans and restores candidate page versions for replanning",
+  "page-version-lifecycle",
+  "Release integration tests must prove cancel restores release-candidate versions for replanning"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "release_plan_cancelled",
+  "page-version-lifecycle",
+  "Release cancellation must persist actor audit evidence"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "release_plan_cancelled",
+  "page-version-lifecycle",
+  "Release integration tests must prove cancellation audit evidence is persisted"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.integration.ts",
+  "demotes release-candidate page versions when deploy fails",
+  "page-version-lifecycle",
+  "Deploy integration tests must prove failed deploys restore release candidates"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/rollback.integration.ts",
+  'pageVersion?.status, "approved"',
+  "page-version-lifecycle",
+  "Rollback integration tests must prove rolled-back plans restore release candidates"
 );
 
 requireIncludes(

@@ -7,7 +7,13 @@ import {
   type RollbackJobData
 } from "@localseo/contracts";
 import { classifyRollbackReconciliation } from "@localseo/domain";
-import { deployments, mainWebsites, releasePlans, rollbackPoints } from "@localseo/db";
+import {
+  demoteReleaseCandidatePageVersionsForPlan,
+  deployments,
+  mainWebsites,
+  releasePlans,
+  rollbackPoints
+} from "@localseo/db";
 import { and, eq, inArray, not } from "drizzle-orm";
 import type { Job } from "bullmq";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
@@ -770,6 +776,12 @@ export function createDrizzleRollbackRepository(db: WorkerDb): RollbackRepositor
         if (!releasePlan) {
           throw new RollbackEvidenceError("Release plan changed before rollback state could be persisted");
         }
+
+        await demoteReleaseCandidatePageVersionsForPlan(tx, {
+          projectId: input.data.projectId,
+          releasePlanId: input.data.releasePlanId,
+          updatedAt: executedAt
+        });
 
         return deployment;
       });

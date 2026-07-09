@@ -18,8 +18,11 @@ import {
 } from "@localseo/contracts";
 import { decideReleaseVerificationStatus } from "@localseo/domain";
 import {
+  demoteReleaseCandidatePageVersionsForPlan,
   deployments,
   gscConnections,
+  pageProposals,
+  pageVersions,
   projectTrackingKeys,
   releasePlanItems,
   releasePlans,
@@ -27,7 +30,7 @@ import {
   releaseVerifications
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, not } from "drizzle-orm";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 const maxGscInspectionUrlsPerVerification = 10;
@@ -635,6 +638,57 @@ async function persistReleaseVerificationResult(
           updatedAt: new Date()
         })
         .where(and(eq(releasePlans.id, verification.releasePlanId), eq(releasePlans.projectId, projectId)));
+
+      if (nextReleasePlanStatus === "live") {
+        const releasedItemRows = await tx
+          .select({
+            pageVersionId: pageVersions.id,
+            pageProposalId: pageVersions.pageProposalId
+          })
+          .from(releasePlanItems)
+          .innerJoin(pageVersions, eq(releasePlanItems.pageVersionId, pageVersions.id))
+          .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+          .where(
+            and(eq(releasePlanItems.releasePlanId, verification.releasePlanId), eq(pageProposals.projectId, projectId))
+          );
+        const releasedPageVersionIds = releasedItemRows.map((row) => row.pageVersionId);
+        const releasedPageProposalIds = [...new Set(releasedItemRows.map((row) => row.pageProposalId))];
+
+        if (releasedPageVersionIds.length > 0) {
+          await tx
+            .update(pageVersions)
+            .set({
+              status: "superseded",
+              updatedAt: checkedAt
+            })
+            .where(
+              and(
+                inArray(pageVersions.pageProposalId, releasedPageProposalIds),
+                eq(pageVersions.status, "released"),
+                not(inArray(pageVersions.id, releasedPageVersionIds))
+              )
+            );
+
+          await tx
+            .update(pageVersions)
+            .set({
+              status: "released",
+              updatedAt: checkedAt
+            })
+            .where(
+              and(
+                inArray(pageVersions.id, releasedPageVersionIds),
+                inArray(pageVersions.status, ["approved", "release_candidate"])
+              )
+            );
+        }
+      } else if (nextReleasePlanStatus === "failed") {
+        await demoteReleaseCandidatePageVersionsForPlan(tx, {
+          projectId,
+          releasePlanId: verification.releasePlanId,
+          updatedAt: checkedAt
+        });
+      }
     }
 
     return ReleaseVerificationSchema.parse({

@@ -41,6 +41,7 @@ import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "@loc
 import {
   approvals,
   deployments,
+  demoteReleaseCandidatePageVersionsForPlan,
   isDatabaseUniqueViolation,
   pageProposals,
   pageVersions,
@@ -53,7 +54,7 @@ import {
   rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -68,6 +69,22 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 type Db = DatabaseClient;
 
 const approvableReleaseStatuses = new Set<ReleasePlan["status"]>(["ready", "ready_with_warnings"]);
+const cancellableReleasePlanStatuses = [
+  "draft",
+  "ready",
+  "ready_with_warnings",
+  "blocked",
+  "approved_for_deploy"
+] as const satisfies ReleasePlan["status"][];
+const activeReleasePlanStatuses = [
+  "draft",
+  "ready",
+  "ready_with_warnings",
+  "blocked",
+  "approved_for_deploy",
+  "deploying",
+  "live"
+] as const satisfies ReleasePlan["status"][];
 const rollbackVerifiedSourceDeploymentStatuses = [
   "live_healthy",
   "live_with_warnings"
@@ -124,6 +141,17 @@ export class ReleasesService {
     }
 
     const insertedPlan = await db.transaction(async (tx) => {
+      for (const pageVersionId of [...requestedPageVersionIds].sort()) {
+        await tx.execute(sql`
+          SELECT pv."id"
+          FROM "page_versions" pv
+          INNER JOIN "page_proposals" pp ON pv."page_proposal_id" = pp."id"
+          WHERE pp."project_id" = ${projectId}
+            AND pv."id" = ${pageVersionId}
+          FOR UPDATE OF pv
+        `);
+      }
+
       const pageVersionRows = await tx
         .select({
           pageVersionId: pageVersions.id,
@@ -144,6 +172,27 @@ export class ReleasesService {
       );
       if (unapprovedRow) {
         throw new BadRequestException("Release plans can only include approved page versions with approval evidence.");
+      }
+
+      const activePlanRows = await tx
+        .select({
+          pageVersionId: releasePlanItems.pageVersionId,
+          releasePlanId: releasePlanItems.releasePlanId
+        })
+        .from(releasePlanItems)
+        .innerJoin(releasePlans, eq(releasePlanItems.releasePlanId, releasePlans.id))
+        .where(
+          and(
+            eq(releasePlans.projectId, projectId),
+            inArray(releasePlanItems.pageVersionId, requestedPageVersionIds),
+            inArray(releasePlans.status, activeReleasePlanStatuses)
+          )
+        );
+
+      if (activePlanRows.length > 0) {
+        throw new BadRequestException(
+          "Approved page versions already in an active release plan cannot be planned again."
+        );
       }
 
       const [createdPlan] = await tx
@@ -284,6 +333,24 @@ export class ReleasesService {
         status: "approved",
         decidedAt: approvedAt
       });
+
+      const releaseItemRows = await tx
+        .select({ pageVersionId: releasePlanItems.pageVersionId })
+        .from(releasePlanItems)
+        .where(and(eq(releasePlanItems.releasePlanId, releasePlanId), isNotNull(releasePlanItems.pageVersionId)));
+      const releasePageVersionIds = releaseItemRows
+        .map((row) => row.pageVersionId)
+        .filter((pageVersionId): pageVersionId is string => Boolean(pageVersionId));
+
+      if (releasePageVersionIds.length > 0) {
+        await tx
+          .update(pageVersions)
+          .set({
+            status: "release_candidate",
+            updatedAt: approvedAt
+          })
+          .where(and(inArray(pageVersions.id, releasePageVersionIds), eq(pageVersions.status, "approved")));
+      }
     });
 
     return {
@@ -292,6 +359,63 @@ export class ReleasesService {
       status: "approved_for_deploy",
       approvedAt: approvedAt.toISOString()
     };
+  }
+
+  async cancelPlan(projectId: string, releasePlanId: string, userId?: string): Promise<ReleasePlan> {
+    const db = this.database.db;
+
+    if (!db) {
+      throw new ServiceUnavailableException("Release persistence is required to cancel release plans.");
+    }
+
+    if (!isPersistedId(releasePlanId)) {
+      throw new BadRequestException("Release cancellation requires a persisted release plan id.");
+    }
+
+    if (!userId || !isPersistedId(userId)) {
+      throw new BadRequestException("Release cancellation requires an authenticated persisted user id.");
+    }
+
+    const cancelledAt = new Date();
+
+    const cancelledPlan = await db.transaction(async (tx) => {
+      const [updatedPlan] = await tx
+        .update(releasePlans)
+        .set({
+          status: "failed",
+          updatedAt: cancelledAt
+        })
+        .where(
+          and(
+            eq(releasePlans.id, releasePlanId),
+            eq(releasePlans.projectId, projectId),
+            inArray(releasePlans.status, cancellableReleasePlanStatuses)
+          )
+        )
+        .returning();
+
+      if (!updatedPlan) {
+        throw new BadRequestException("Release plan is not cancellable.");
+      }
+
+      await tx.insert(approvals).values({
+        releasePlanId,
+        userId,
+        status: "rejected",
+        decisionNote: "release_plan_cancelled",
+        decidedAt: cancelledAt
+      });
+
+      await demoteReleaseCandidatePageVersionsForPlan(tx, {
+        projectId,
+        releasePlanId,
+        updatedAt: cancelledAt
+      });
+
+      return updatedPlan;
+    });
+
+    return mapReleasePlan(cancelledPlan);
   }
 
   async deploy(projectId: string, releasePlanId: string, userId?: string) {
@@ -715,6 +839,16 @@ class ReleasesController {
     @Req() request: RequestWithAuth
   ) {
     return this.releases.approveDeploy(projectId, releasePlanId, persistedActorUserId(request));
+  }
+
+  @Post("projects/:projectId/releases/:releasePlanId/cancel")
+  @RequireProjectPermission("release:plan")
+  cancelPlan(
+    @Param("projectId") projectId: string,
+    @Param("releasePlanId") releasePlanId: string,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.releases.cancelPlan(projectId, releasePlanId, persistedActorUserId(request));
   }
 
   @Post("projects/:projectId/releases/:releasePlanId/deploy")

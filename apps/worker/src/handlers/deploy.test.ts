@@ -711,6 +711,31 @@ void describe("executeDeploy", () => {
     assert.equal(repository.failed.length, 1);
   });
 
+  void it("accepts release-candidate page versions after deploy approval", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        releaseItems: [releaseArtifactItem({ pageVersionStatus: "release_candidate" })]
+      })
+    );
+
+    const result = await executeDeploy({
+      data,
+      jobId: data.deploymentKey,
+      objectStorage: createObjectStorage(),
+      repository,
+      siteHosting: createSiteHosting({
+        status: "ready",
+        providerDeployId: "provider-deploy-1",
+        liveUrls: ["https://example.test/"]
+      })
+    });
+
+    assert.equal(result.status, "provider_succeeded");
+    assert.equal(repository.providerSucceeded.length, 1);
+    assert.equal(repository.failed.length, 0);
+  });
+
   void it("fails closed when a deploy artifact item lacks approval evidence", async () => {
     const data = deployJobData();
     const repository = createRepository(

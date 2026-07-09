@@ -43,6 +43,7 @@ type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDataba
 type DeployFixture = {
   projectId: string;
   releasePlanId: string;
+  pageVersionId: string;
   deploymentKey: string;
   data: DeployJobData;
 };
@@ -98,6 +99,27 @@ void describe(
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "deploying");
       assert.equal(releasePlan?.deployedAt, null);
+    });
+
+    void it("deploys release-candidate page versions produced by deploy approval", async () => {
+      const fixture = await createDeployFixture(db, { pageVersionStatus: "release_candidate" });
+      const hosting = new StatefulSiteHosting({
+        snapshots: [providerSnapshot("provider-deploy-1", "ready")]
+      });
+
+      const result = await executeDeploy({
+        data: fixture.data,
+        jobId: fixture.deploymentKey,
+        objectStorage: new MemoryObjectStorage(),
+        repository: createDrizzleDeployRepository(db),
+        siteHosting: hosting
+      });
+
+      assert.equal(result.status, "provider_succeeded");
+      assert.equal(hosting.beginCalls.length, 1);
+
+      const deployment = await selectDeployment(db, fixture.deploymentKey);
+      assert.equal(deployment?.status, "provider_succeeded");
     });
 
     void it("preserves deployedAt when replaying an already verified live deployment", async () => {
@@ -304,6 +326,18 @@ void describe(
       assert.equal(releasePlan?.status, "approved_for_deploy");
     });
 
+    void it("demotes release-candidate page versions when deploy fails", async () => {
+      const fixture = await createDeployFixture(db, { pageVersionStatus: "release_candidate" });
+
+      await createDrizzleDeployRepository(db).markFailed(fixture.data, new Error("final attempt failed"));
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "failed");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "approved");
+    });
+
     void it("keeps pending provider deploys reconcilable", async () => {
       const fixture = await createDeployFixture(db);
       await insertDeployment(db, fixture, {
@@ -390,7 +424,10 @@ void describe(
   }
 );
 
-async function createDeployFixture(db: DatabaseClient, input: { projectName?: string } = {}): Promise<DeployFixture> {
+async function createDeployFixture(
+  db: DatabaseClient,
+  input: { projectName?: string; pageVersionStatus?: "approved" | "release_candidate" } = {}
+): Promise<DeployFixture> {
   const [customer] = await db
     .insert(customers)
     .values({ name: `${input.projectName ?? "Deploy"} Customer` })
@@ -444,7 +481,7 @@ async function createDeployFixture(db: DatabaseClient, input: { projectName?: st
     .values({
       pageProposalId: proposal.id,
       versionNumber: 1,
-      status: "approved",
+      status: input.pageVersionStatus ?? "approved",
       approvedAt: new Date(),
       pageJson: pageJson()
     })
@@ -485,6 +522,7 @@ async function createDeployFixture(db: DatabaseClient, input: { projectName?: st
   return {
     projectId: project.id,
     releasePlanId: releasePlan.id,
+    pageVersionId: pageVersion.id,
     deploymentKey,
     data
   };
