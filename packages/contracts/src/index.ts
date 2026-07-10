@@ -163,6 +163,7 @@ export const aiReasoningAdapterFailureCodes = [
 
 export const aiReasoningWorkflowFailureCodes = ["output_schema_mismatch", "qa_rejected"] as const;
 export const aiReasoningEnqueueFailureCodes = ["queue_enqueue_failed", "queue_not_configured"] as const;
+export const aiReasoningRecoveryFailureCodes = ["work_recovery_exhausted", "work_transport_inconsistent"] as const;
 
 export const opportunityClassifications = ["proven_win", "near_term_target", "internal_radar", "rejected"] as const;
 export const opportunityLifecycleStatuses = ["new", "monitoring", "held", "rejected", "brief_created"] as const;
@@ -1651,7 +1652,8 @@ export const RankingProofListResponseSchema = z.object({
 export const AgentRunFailureCodeSchema = z.union([
   AiReasoningAdapterFailureCodeSchema,
   AiReasoningWorkflowFailureCodeSchema,
-  AiReasoningEnqueueFailureCodeSchema
+  AiReasoningEnqueueFailureCodeSchema,
+  z.enum(aiReasoningRecoveryFailureCodes)
 ]);
 
 export const OpportunityExplorerOpportunitySchema = z.object({

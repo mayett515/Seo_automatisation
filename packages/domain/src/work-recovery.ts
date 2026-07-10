@@ -12,7 +12,10 @@ export type WorkRecoveryTransportState = "active" | "missing" | "failed" | "comp
 export type WorkRecoveryWorkerFreshness = "fresh" | "stale" | "unknown";
 
 export type WorkRecoveryDecision =
-  | { kind: "noop"; reason: "terminal" | "fresh_worker" | "transport_job_active" }
+  | {
+      kind: "noop";
+      reason: "terminal" | "fresh_worker" | "transport_job_active" | "transport_state_unknown";
+    }
   | { kind: "reenqueue"; jobId: string; reason: "missing_transport" | "stale_running" | "transport_failed" }
   | {
       kind: "mark_execution_failed";
@@ -52,6 +55,10 @@ export function classifyWorkRecovery(input: WorkRecoveryInput): WorkRecoveryDeci
 
   if (input.transportState === "active") {
     return { kind: "noop", reason: "transport_job_active" };
+  }
+
+  if (input.transportState === "unknown") {
+    return { kind: "noop", reason: "transport_state_unknown" };
   }
 
   if (input.workflowCategory === "provider_mutation" || input.providerMutationUncertain) {

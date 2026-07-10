@@ -52,6 +52,13 @@ export const AppEnvSchema = z.object({
   AI_REASONING_OPENCODE_GO_API_KEY: z.string().min(1).optional(),
   AI_REASONING_OPENCODE_GO_ENDPOINT: z.string().url().default("https://opencode.ai/zen/go/v1/chat/completions"),
   AI_REASONING_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  WORK_RECOVERY_STALE_AFTER_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15 * 60_000),
+  WORK_RECOVERY_MAX_COUNT: z.coerce.number().int().positive().default(3),
+  WORK_RECOVERY_BATCH_SIZE: z.coerce.number().int().positive().max(100).default(25),
   BETTER_AUTH_SECRET: z.string().min(32).optional(),
   BETTER_AUTH_URL: z.string().url().optional()
 });

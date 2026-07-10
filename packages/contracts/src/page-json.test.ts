@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  AgentRunFailureCodeSchema,
   ApprovedReleaseArtifactPageSchema,
   CreateReleasePlanRequestSchema,
   PageJsonSchema,
@@ -10,6 +11,13 @@ import {
   ReviewPageVersionRequestSchema,
   type PageJson
 } from "./index.js";
+
+void describe("AgentRunFailureCodeSchema", () => {
+  void it("accepts visible bounded-recovery terminal failure codes", () => {
+    assert.equal(AgentRunFailureCodeSchema.parse("work_recovery_exhausted"), "work_recovery_exhausted");
+    assert.equal(AgentRunFailureCodeSchema.parse("work_transport_inconsistent"), "work_transport_inconsistent");
+  });
+});
 
 void describe("PageJsonSchema", () => {
   void it("parses a structured v1 page", () => {

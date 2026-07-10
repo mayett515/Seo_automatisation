@@ -80,6 +80,12 @@ import {
   markJobRunRetrying,
   markJobRunRunning
 } from "./job-run.js";
+import {
+  emptyWorkRecoveryScanResult,
+  scanStaleWork,
+  type WorkRecoveryQueues,
+  type WorkRecoveryScanResult
+} from "./work-recovery.js";
 
 const env = parseAppEnv(process.env);
 const sharedDbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
@@ -148,6 +154,20 @@ export async function reconcileRollbacks(): Promise<Record<string, unknown>> {
   return reconcilePendingRollbacks({
     db: sharedDbHandle.db,
     siteHosting: sharedSiteHosting
+  });
+}
+
+export async function recoverStaleWork(queues: WorkRecoveryQueues): Promise<WorkRecoveryScanResult> {
+  if (!sharedDbHandle) {
+    return emptyWorkRecoveryScanResult();
+  }
+
+  return scanStaleWork({
+    db: sharedDbHandle.db,
+    queues,
+    staleAfterMs: env.WORK_RECOVERY_STALE_AFTER_MS,
+    maxRecoveryCount: env.WORK_RECOVERY_MAX_COUNT,
+    batchSize: env.WORK_RECOVERY_BATCH_SIZE
   });
 }
 

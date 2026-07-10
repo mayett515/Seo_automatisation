@@ -854,6 +854,33 @@ viewer, but this repo should not create `.ai-context-db` or a vector index until
 one of the retrieval triggers above is real and a blueprint is approved.
 ```
 
+### 14. Bounded DB-Before-Queue Recovery
+
+Status: first procedural scanner implemented.
+
+The worker host now scans stale Page Proposal `agent_runs` and running `release_verifications` after a configurable age. It compares Postgres product truth, `job_runs` audit state, and BullMQ transport state, then calls the pure ADR 0018 classifier.
+
+Implemented boundary:
+
+```text
+same deterministic job id on safe re-enqueue
+durable recovery_count and last_recovery_at on owning rows
+guarded claims so competing scanners cannot duplicate recovery
+visible Page Proposal failure after bounded exhaustion
+release-verification execution_failed + warning evidence after bounded exhaustion
+unknown transport state is a no-op
+deploy and rollback queues are excluded
+```
+
+Still deferred:
+
+```text
+Opportunity Scout and other safe-lane scanner expansion
+operator active/dead-work UI
+provider-mutation recovery beyond existing deploy/rollback reconcilers
+generic retry buttons
+```
+
 ## MVP Non-Goals
 
 ```text

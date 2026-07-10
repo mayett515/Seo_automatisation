@@ -1,8 +1,15 @@
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import { Worker } from "bullmq";
-import { closeWorkerResources, handleJob, reconcileDeployments, reconcileRollbacks } from "./handlers.js";
+import { Queue, Worker } from "bullmq";
+import {
+  closeWorkerResources,
+  handleJob,
+  reconcileDeployments,
+  reconcileRollbacks,
+  recoverStaleWork
+} from "./handlers.js";
 import { queueNames } from "./queue-names.js";
+import type { WorkRecoveryQueues } from "./work-recovery.js";
 
 const env = parseAppEnv(process.env);
 const lifecycleReconcileIntervalMs = 60_000;
@@ -14,6 +21,10 @@ if (!env.REDIS_URL) {
 }
 
 const connection = createRedisConnection(env.REDIS_URL);
+const recoveryQueues: WorkRecoveryQueues = {
+  "page-generation": new Queue("page-generation", { connection }),
+  "release-verification": new Queue("release-verification", { connection })
+};
 
 const workers = queueNames.map(
   (queueName) =>
@@ -35,7 +46,12 @@ const lifecycleReconcileInterval = setInterval(() => {
   }
 
   isReconcilingLifecycle = true;
-  void Promise.all([reconcileDeployments(), reconcileRollbacks()])
+  void Promise.all([reconcileDeployments(), reconcileRollbacks(), recoverStaleWork(recoveryQueues)])
+    .then(([, , recovery]) => {
+      if (recovery.checked > 0 || recovery.errors > 0) {
+        console.log("Bounded work recovery scan completed", recovery);
+      }
+    })
     .catch((error) => {
       console.error("Lifecycle reconciliation failed", normalizeWorkerError(error));
     })
@@ -60,7 +76,10 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
   try {
     clearInterval(lifecycleReconcileInterval);
-    await Promise.all(workers.map((worker) => worker.close()));
+    await Promise.all([
+      ...workers.map((worker) => worker.close()),
+      ...Object.values(recoveryQueues).map((queue) => queue.close())
+    ]);
     await closeWorkerResources();
     console.log("Worker host shutdown completed.");
     process.exit(0);

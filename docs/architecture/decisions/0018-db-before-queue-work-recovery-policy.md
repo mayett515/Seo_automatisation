@@ -61,20 +61,23 @@ Implementation note, 2026-07-07:
 - The classifier has no Postgres, Redis, BullMQ, provider, or worker dependencies.
 - It distinguishes read/analyze, artifact capture, provider handoff warning, provider mutation, and projection/approval categories.
 - It permits deterministic re-enqueue only for safe/idempotent categories, routes provider mutation uncertainty to provider reconciliation/manual handling, and keeps projection/approval recovery manual.
-- A future recovery scanner remains the procedural shell: it will read durable rows plus queue telemetry, call the classifier, and apply the selected effect with guarded updates.
+- `apps/worker/src/work-recovery.ts` is now the first procedural scanner around that policy. It reads stale Page Proposal `agent_runs` and `release_verifications`, combines durable `job_runs` evidence with BullMQ state, calls the classifier, and applies guarded effects.
+- Recovery attempts are counted on the owning durable row, audited as system-triggered `job_runs`, and re-enqueued with the original deterministic run/verification id.
+- Competing scanners claim an attempt through recovery-count and stale-timestamp predicates. A lost claim is a stale no-op, not a second enqueue.
+- Unknown transport state is conservative `noop`. Completed transport without terminal product truth becomes a visible failure instead of an automatic replay.
+- The scanner deliberately registers only `page-generation` and `release-verification`; deploy and rollback remain owned by provider-state reconcilers/manual reconciliation.
 
 ## Consequences
 
 This gives the project the useful durability semantics of workflow engines without introducing a second runtime model.
 
-Future recovery implementation should start small:
+The first recovery implementation stays intentionally small:
 
-- add a recovery scanner/controller for release verification or another already-workerized lane;
-- scan stale durable rows by workflow type;
-- compare durable row state with `job_runs` and BullMQ state where available;
-- re-add the same deterministic job id only for safe categories;
-- mark bounded exhaustion as visible product failure or manual reconciliation;
-- add an operator-facing active/dead-work view later.
+- Page Proposal read/analyze work may re-add `jobId = runId` after a guarded claim;
+- release verification may re-add `jobId = verificationId` because its provider handoff is warning-level/idempotent and its final product projection is transaction-guarded;
+- bounded Page Proposal exhaustion becomes a visible failed agent run;
+- bounded release-verification exhaustion becomes `execution_failed` plus warning evidence without claiming observed bad page health;
+- an operator-facing active/dead-work view and additional safe workflow lanes remain later slices.
 
 The project accepts that BullMQ enqueue is not transactional with Postgres. That gap is handled explicitly by durable run rows, enqueue-failure cleanup, and recovery scans.
 
@@ -110,9 +113,12 @@ When a workflow is fixed or hardened, add tests for DB/queue gaps:
 
 - `apps/api/src/queue-producer.ts`
 - `apps/worker/src/job-run.ts`
+- `apps/worker/src/work-recovery.ts`
+- `apps/worker/src/work-recovery.integration.ts`
 - `apps/worker/src/handlers/release-verification.ts`
 - `apps/worker/src/handlers/deploy.ts`
 - `apps/worker/src/handlers/rollback.ts`
 - `packages/db/src/schema.ts`
+- `packages/db/migrations/0032_low_boom_boom.sql`
 - `docs/architecture/lifecycle-truth-hardening-backlog.md`
 - `C:\big eater\db-backed-work-recovery\stuck-job-recovery-stealer-findings-2026-07-07.md`

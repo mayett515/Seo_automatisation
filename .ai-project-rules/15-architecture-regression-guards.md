@@ -148,6 +148,11 @@ DB-before-queue recovery policy
   Durable run rows must define active guards, terminal states, and stale recovery behavior.
   Recovery decisions belong in pure domain policy; recovery controllers are procedural shells.
   Read/analyze work may be re-enqueued by deterministic job id when safe.
+  The bounded scanner currently owns Page Proposal and release-verification transport gaps only.
+  Recovery attempts must be durably counted and claimed before re-enqueue.
+  `job_runs` must record each recovered enqueue as system-triggered recovery audit.
+  Unknown transport state must not be guessed into a re-enqueue.
+  Completed transport without terminal product truth must fail visibly.
   Provider mutation work must reconcile by provider reads or mark manual reconciliation.
 ```
 

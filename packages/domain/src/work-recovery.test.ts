@@ -19,6 +19,10 @@ void describe("DB-before-queue recovery decisions", () => {
       kind: "noop",
       reason: "fresh_worker"
     });
+    assert.deepEqual(classifyWorkRecovery(workRecoveryInput({ transportState: "unknown" })), {
+      kind: "noop",
+      reason: "transport_state_unknown"
+    });
   });
 
   void it("re-enqueues stale read/analyze work with the same deterministic job id", () => {

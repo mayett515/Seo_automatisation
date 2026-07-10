@@ -149,7 +149,7 @@ Follow-up direction:
 
 Why: workflow engines converge on durable run records, named child steps, idempotent one-active execution, status/conclusion separation, and persisted evidence before projection. This repo already has the primitives; adding a full workflow engine now would add runtime surface without improving the product invariant.
 
-Implementation note, 2026-07-07:
+Implementation note, updated 2026-07-10:
 
 - `release-verification` is now a first-class queue/job type.
 - `release_verifications_active_deployment_idx` enforces at most one running verification per deployment.
@@ -211,13 +211,15 @@ Implementation note, 2026-07-07:
 
 - `packages/domain/src/work-recovery.ts` now implements the pure recovery classifier for the policy above.
 - The implemented classifier is intentionally not a scheduler: it produces `noop`, `reenqueue`, `mark_execution_failed`, `record_warning`, `reconcile_provider`, or `manual_reconciliation` decisions from durable state, transport state, worker freshness, recovery count, workflow category, and idempotency/provider-uncertainty facts.
-- Recovery controllers remain future procedural shells. They must translate lane-specific Postgres/BullMQ observations into classifier input and apply the decision with guarded DB updates.
+- The first recovery controller now exists in `apps/worker/src/work-recovery.ts` for stale Page Proposal agent runs and release verifications.
+- It combines durable product rows, `job_runs`, and BullMQ state; claims attempts through guarded recovery counters; reuses deterministic job ids; and records bounded exhaustion as visible product truth.
+- Provider mutation lanes remain excluded and continue through their provider-state reconcilers/manual reconciliation paths.
 
 Follow-up direction:
 
-- Start with a release-verification recovery controller: scan stale running `release_verifications`, compare durable row plus `job_runs` plus BullMQ state, re-add the same `jobId = verificationId` when safe, and mark `execution_failed` after bounded recovery.
-- Apply the same policy to `agent_runs` before adding the Page Proposal worker lane: stale read-only AI runs can be re-enqueued by run id, and duplicate persistence must remain guarded.
+- Extend the same lane-specific shell to Opportunity Scout or other proven-idempotent workflows only after naming their stale thresholds and terminal evidence.
 - Add an operator-facing active/dead-work view later rather than a generic retry button.
+- Keep deploy/rollback out of this scanner; their recovery remains provider reconciliation or manual review.
 
 Why: Redis can lose or stall transport work independently of Postgres truth. Workflow systems solve this with leases, claimed work, visibility timeouts, dead letters, idempotency keys, and recovery scans. This repo already has the right primitives; the next hardening step is to make recovery explicit per workflow.
 

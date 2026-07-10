@@ -43,6 +43,22 @@ void describe("AppEnvSchema", () => {
     assert.equal(env.AI_REASONING_TIMEOUT_MS, 45_000);
   });
 
+  void it("parses bounded work recovery settings", () => {
+    const defaults = parseAppEnv({});
+    assert.equal(defaults.WORK_RECOVERY_STALE_AFTER_MS, 15 * 60_000);
+    assert.equal(defaults.WORK_RECOVERY_MAX_COUNT, 3);
+    assert.equal(defaults.WORK_RECOVERY_BATCH_SIZE, 25);
+
+    const configured = parseAppEnv({
+      WORK_RECOVERY_STALE_AFTER_MS: "300000",
+      WORK_RECOVERY_MAX_COUNT: "5",
+      WORK_RECOVERY_BATCH_SIZE: "40"
+    });
+    assert.equal(configured.WORK_RECOVERY_STALE_AFTER_MS, 300_000);
+    assert.equal(configured.WORK_RECOVERY_MAX_COUNT, 5);
+    assert.equal(configured.WORK_RECOVERY_BATCH_SIZE, 40);
+  });
+
   void it("strips obsolete global tracking ingest token config", () => {
     const env = parseAppEnv({
       TRACKING_INGEST_TOKEN: "12345678901234567890123456789012"

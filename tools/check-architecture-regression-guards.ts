@@ -171,7 +171,7 @@ requireNotIncludes(
 
 requireIncludes(
   "apps/worker/src/handlers/release-verification.ts",
-  'source: "release_verify_worker"',
+  'releaseVerificationWorkerEvidenceSource = "release_verify_worker"',
   "worker-owned-release-verification",
   "release verification worker must own persisted verification provenance"
 );
@@ -314,6 +314,62 @@ requireIncludes(
   "routes provider mutation uncertainty to provider reconciliation instead of re-enqueue",
   "db-before-queue-recovery",
   "recovery tests must prove provider mutation uncertainty does not generic re-enqueue"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  "classifyWorkRecovery",
+  "db-before-queue-recovery",
+  "the recovery scanner must remain a procedural shell around the pure domain classifier"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  'triggerSource: "work_recovery"',
+  "db-before-queue-recovery",
+  "recovered queue attempts must write explicit system recovery audit evidence"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  "eq(agentRuns.recoveryCount, candidate.recoveryCount)",
+  "db-before-queue-recovery",
+  "Page Proposal recovery claims must be guarded against competing scanners"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  "eq(releaseVerifications.recoveryCount, candidate.recoveryCount)",
+  "db-before-queue-recovery",
+  "release-verification recovery claims must be guarded against competing scanners"
+);
+
+requireNotRegex(
+  "apps/worker/src/work-recovery.ts",
+  /queueName:\s*["'](?:deploy|rollback)["']/u,
+  "db-before-queue-recovery",
+  "generic stale-work recovery must not register provider-mutation deploy or rollback queues"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "allows only one of two recovery scanners to claim the same stale run",
+  "db-before-queue-recovery",
+  "DB integration must prove competing recovery scanners cannot duplicate enqueue"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "records warning evidence and execution_failed after release verification recovery is exhausted",
+  "db-before-queue-recovery",
+  "DB integration must prove bounded release-verification exhaustion becomes visible product truth"
+);
+
+requireIncludes(
+  "packages/db/migrations/0032_low_boom_boom.sql",
+  'ADD COLUMN "recovery_count"',
+  "db-before-queue-recovery",
+  "durable workflow rows must store bounded recovery counts"
 );
 
 requireIncludes(

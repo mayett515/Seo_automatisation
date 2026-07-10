@@ -344,6 +344,8 @@ export const agentRuns = pgTable(
     usageJson: jsonb("usage_json").$type<Record<string, unknown>>(),
     diagnosticsJson: jsonb("diagnostics_json").$type<Record<string, unknown>>(),
     latencyMs: integer("latency_ms"),
+    recoveryCount: integer("recovery_count").default(0).notNull(),
+    lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     ...timestamps
@@ -357,6 +359,9 @@ export const agentRuns = pgTable(
       table.status,
       table.createdAt
     ),
+    index("agent_runs_recovery_scan_idx")
+      .on(table.task, table.status, table.updatedAt)
+      .where(sql`${table.task} = 'page_brief_draft' and ${table.status} in ('queued', 'running')`),
     uniqueIndex("agent_runs_active_per_project_task_subject_idx")
       .on(table.projectId, table.task, table.subjectId)
       .where(sql`${table.status} in ('queued', 'running') and ${table.subjectId} is not null`),
@@ -639,11 +644,16 @@ export const releaseVerifications = pgTable(
     summary: text("summary").notNull(),
     checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
     evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+    recoveryCount: integer("recovery_count").default(0).notNull(),
+    lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true }),
     ...timestamps
   },
   (table) => [
     uniqueIndex("release_verifications_active_deployment_idx")
       .on(table.deploymentId)
+      .where(sql`${table.status} = 'running'`),
+    index("release_verifications_recovery_scan_idx")
+      .on(table.status, table.updatedAt)
       .where(sql`${table.status} = 'running'`)
   ]
 );

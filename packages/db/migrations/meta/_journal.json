@@ -225,6 +225,13 @@
       "when": 1783501442867,
       "tag": "0031_salty_warpath",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783684705545,
+      "tag": "0032_low_boom_boom",
+      "breakpoints": true
     }
   ]
 }

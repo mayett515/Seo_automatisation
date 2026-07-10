@@ -30,10 +30,11 @@ import {
   releaseVerifications
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, desc, eq, inArray, isNull, not } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, not } from "drizzle-orm";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 const maxGscInspectionUrlsPerVerification = 10;
+const releaseVerificationWorkerEvidenceSource = "release_verify_worker";
 
 type ReleaseVerificationDependencies = {
   verification: VerificationPort;
@@ -137,6 +138,52 @@ export async function executeReleaseVerification(input: {
     verificationStatus: persisted.verificationStatus,
     checkCount: persisted.checks.length
   };
+}
+
+export async function markReleaseVerificationRecoveryFailure(input: {
+  db: WorkerDb;
+  data: ReleaseVerificationJobData;
+  checkedAt: Date;
+  staleBefore: Date;
+  reason: string;
+  recoveryCount: number;
+}): Promise<boolean> {
+  const persisted = await persistReleaseVerificationResult(
+    input.db,
+    input.data.projectId,
+    input.data.verificationId,
+    ReleaseVerificationSchema.parse({
+      releasePlanId: input.data.releasePlanId,
+      deploymentId: input.data.deploymentId,
+      verificationStatus: "execution_failed",
+      summary: "Post-deploy verification did not complete after bounded transport recovery.",
+      checkedAt: input.checkedAt.toISOString(),
+      checks: [
+        ReleaseCheckSchema.parse({
+          checkKey: "verification_recovery_check",
+          scope: "project",
+          severity: "warning",
+          result: "skipped",
+          message: "Post-deploy verification did not complete after bounded transport recovery.",
+          evidence: {
+            workRecovery: {
+              reason: input.reason,
+              recoveryCount: input.recoveryCount
+            }
+          }
+        })
+      ]
+    }),
+    {
+      evidenceSource: "work_recovery",
+      recoveryGuard: {
+        recoveryCount: input.recoveryCount,
+        staleBefore: input.staleBefore
+      }
+    }
+  );
+
+  return Boolean(persisted);
 }
 
 async function runVerifier(input: {
@@ -554,7 +601,11 @@ async function persistReleaseVerificationResult(
   db: WorkerDb,
   projectId: string,
   verificationId: string,
-  verification: ReleaseVerification
+  verification: ReleaseVerification,
+  options: {
+    evidenceSource?: string;
+    recoveryGuard?: { recoveryCount: number; staleBefore: Date };
+  } = {}
 ): Promise<ReleaseVerification | undefined> {
   if (!verification.deploymentId) {
     throw new ReleaseVerificationEvidenceError("Release verification results require a deployment id.");
@@ -572,7 +623,7 @@ async function persistReleaseVerificationResult(
         summary: verification.summary,
         checkedAt,
         evidenceJson: {
-          source: "release_verify_worker",
+          source: options.evidenceSource ?? releaseVerificationWorkerEvidenceSource,
           checkCount: verification.checks.length
         },
         updatedAt: new Date()
@@ -582,7 +633,13 @@ async function persistReleaseVerificationResult(
           eq(releaseVerifications.id, verificationId),
           eq(releaseVerifications.releasePlanId, verification.releasePlanId),
           eq(releaseVerifications.deploymentId, deploymentId),
-          eq(releaseVerifications.status, "running")
+          eq(releaseVerifications.status, "running"),
+          ...(options.recoveryGuard
+            ? [
+                eq(releaseVerifications.recoveryCount, options.recoveryGuard.recoveryCount),
+                lte(releaseVerifications.updatedAt, options.recoveryGuard.staleBefore)
+              ]
+            : [])
         )
       )
       .returning();

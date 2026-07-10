@@ -42,6 +42,9 @@ function testEnv(): AppEnv {
     AI_REASONING_PROVIDER: "mock",
     AI_REASONING_MODEL: "glm-5.2",
     AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
-    AI_REASONING_TIMEOUT_MS: 120_000
+    AI_REASONING_TIMEOUT_MS: 120_000,
+    WORK_RECOVERY_STALE_AFTER_MS: 15 * 60_000,
+    WORK_RECOVERY_MAX_COUNT: 3,
+    WORK_RECOVERY_BATCH_SIZE: 25
   };
 }
