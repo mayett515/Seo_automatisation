@@ -437,6 +437,13 @@ requireIncludes(
 
 requireIncludes(
   "apps/worker/src/handlers/page-proposal.ts",
+  "attributePageProposalGeneration(parsedOutput.data, input.data.runId)",
+  "page-proposal-worker",
+  "Page Proposal generation provenance must come from the durable worker run, not model claims"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
   "evaluatePageProposalOutput",
   "page-proposal-worker",
   "Page Proposal worker must run deterministic page proposal QA before persistence"
@@ -517,6 +524,69 @@ requireIncludes(
   "page_proposals_project_route_idx",
   "page-proposal-worker",
   "Page Proposal routes must stay DB-unique per project"
+);
+
+requireIncludes(
+  "packages/ai/src/index.ts",
+  "canonicalPageProposalOutputExample",
+  "page-proposal-real-provider-smoke",
+  "real Page Proposal prompts must retain a contract-valid registry-prop example"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.integration.ts",
+  "persists an OpenCode Go Page Proposal response with worker-owned generation provenance",
+  "page-proposal-real-provider-smoke",
+  "DB integration must prove the real adapter boundary preserves policy, gates, and draft-only persistence"
+);
+
+requireIncludes(
+  "tools/page-proposal-smoke.ts",
+  "assertOpenCodeGoSmokeConfiguration",
+  "page-proposal-real-provider-smoke",
+  "the Page Proposal smoke runner must reject mock or not-configured adapter execution"
+);
+
+requireIncludes(
+  "tools/scout-smoke.ts",
+  "assertRealOpportunityScoutReasoningRun(run)",
+  "page-proposal-real-provider-smoke",
+  "the shared smoke refactor must keep durable provider verification on Opportunity Scout runs"
+);
+
+requireIncludes(
+  "tools/page-proposal-smoke.ts",
+  "CreatePageProposalRunRequestSchema.parse",
+  "page-proposal-real-provider-smoke",
+  "the Page Proposal smoke runner must queue through the contract-parsed public API boundary"
+);
+
+requireIncludes(
+  "tools/seed-page-proposal-fixture.ts",
+  "Refusing to reset Page Proposal smoke state because the fixture has an immutable page version.",
+  "page-proposal-real-provider-smoke",
+  "smoke fixture reset must not delete approved or otherwise frozen page versions"
+);
+
+requireIncludes(
+  "package.json",
+  "tsc -p tools/tsconfig.json --noEmit",
+  "page-proposal-real-provider-smoke",
+  "operational smoke tools must remain inside the repository typecheck gate"
+);
+
+requireIncludes(
+  "package.json",
+  'tsx --test \\"tools/**/*.test.ts\\"',
+  "page-proposal-real-provider-smoke",
+  "operational smoke-tool tests must remain inside the repository test gate"
+);
+
+requireIncludes(
+  "tools/reasoning-smoke-support.test.ts",
+  "real-provider smoke configuration fails closed and redacts loaded secrets",
+  "page-proposal-real-provider-smoke",
+  "smoke tooling tests must prove explicit provider selection and secret redaction"
 );
 
 requireIncludes(

@@ -135,6 +135,10 @@ implemented 2026-07-07
   Page Proposal persists only page_proposals.status = draft and page_versions.status = preview
   Page Proposal worker gates output through PageProposalJsonSchema, deterministic QA,
     registry validation, Page Studio publish-readiness, and shared preview rendering
+  Page Proposal prompt includes a contract-valid registry-prop example for the real provider
+  Page Proposal worker owns generation provenance and replaces model attribution with the durable run id
+  OpenCode Go Page Proposal responses are covered through a DB-backed adapter/policy/persistence test
+  synthetic fixture and redacted API-to-worker smoke tooling exist for credentialed Page Proposal runs
   page_proposals route uniqueness is DB-enforced per project
   Opportunity Explorer can trigger Page Proposal runs through the API queue endpoint only
   Page Proposal UI status reads subject-scoped page_brief_draft agent runs
@@ -258,6 +262,7 @@ Completed implementation work:
 
 Remaining implementation work:
 
+- execute and record a credentialed Page Proposal smoke run against the synthetic fixture before model-specific calibration;
 - add policy tests that reject provider mutation, approval, shell/file/db writes, browser state-changing actions, and unknown tool categories once those categories exist as executable tool calls;
 - add `agent_run_events` only when the UI needs live/replay event timelines.
 

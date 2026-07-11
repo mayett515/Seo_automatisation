@@ -239,6 +239,20 @@ Implemented tests:
 
 These tests use a stateful fake BullMQ queue with a real database because the DB audit truth is the project-owned behavior. Full Redis/BullMQ worker processing remains out of scope for this milestone slice.
 
+### Page Proposal Reasoning Worker
+
+Files:
+
+- [page-proposal.integration.ts](/C:/localseoproject/apps/worker/src/handlers/page-proposal.integration.ts)
+- [page-proposal-smoke.md](/C:/localseoproject/docs/testing/page-proposal-smoke.md)
+
+Implemented DB-backed tests:
+
+1. A contract-valid mock response crosses deterministic QA, registry, composition, and preview-render gates before one draft proposal and one unapproved preview version persist transactionally.
+2. The actual `OpenCodeGoReasoningAdapter` serializes `page_brief_draft`, `PageProposalJson`, and the exact no-production-mutation policy; its controlled HTTP response crosses the same gates, while the worker replaces model-provided generation provenance with the durable run id.
+
+The credentialed provider run is an explicit operational smoke, not a CI secret-bearing test. Its runner uses the public API/queue path, requires `provider = opencode_go`, verifies draft/preview-only product truth, and prints sanitized summaries only.
+
 ### Bounded Stale-Work Recovery
 
 File:

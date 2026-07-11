@@ -18,6 +18,7 @@ import {
   type OpportunityGroupHint,
   type OpportunityScoutOutput,
   type PageEvidenceRef,
+  type PageGeneration,
   type PageProposalJson
 } from "@localseo/contracts";
 
@@ -452,6 +453,170 @@ export const pageProposalEvidencePacketLimits = {
   serializedBytes: 160_000
 } as const;
 
+export type CanonicalPageProposalExampleInput = {
+  projectId: string;
+  opportunityId: string;
+  agentRunId: string;
+};
+
+export const canonicalPageProposalOutputExample = buildCanonicalPageProposalOutputExample({
+  projectId: "11111111-1111-4111-8111-111111111111",
+  opportunityId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  agentRunId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+});
+
+const pageProposalOutputExampleJson = JSON.stringify(canonicalPageProposalOutputExample, null, 2);
+
+export function buildCanonicalPageProposalOutputExample(input: CanonicalPageProposalExampleInput): PageProposalJson {
+  const generation: PageGeneration = {
+    source: "agent",
+    agentRunId: input.agentRunId
+  };
+
+  return {
+    schemaVersion: 1,
+    projectId: input.projectId,
+    opportunityId: input.opportunityId,
+    route: "/dachreinigung-muenchen/",
+    primaryKeyword: "dachreinigung muenchen",
+    evidenceRefs: [],
+    proposalRationale: "Eine eigene Muenchen-Seite beantwortet die lokale Nachfrage nach Dachreinigung.",
+    generation,
+    page: {
+      schemaVersion: 1,
+      route: "/dachreinigung-muenchen/",
+      pageType: "service_area_page",
+      target: {
+        service: "Dachreinigung",
+        location: "Muenchen",
+        primaryKeyword: "dachreinigung muenchen",
+        secondaryKeywords: ["dach reinigen muenchen"]
+      },
+      seo: {
+        title: "Dachreinigung Muenchen",
+        metaDescription: "Lokale Dachreinigung in Muenchen mit klarer Beratung und schneller Anfrage.",
+        canonicalPath: "/dachreinigung-muenchen/",
+        robots: "noindex",
+        jsonLd: [],
+        sitemapReady: true
+      },
+      sections: [
+        pageProposalExampleSection("header-1", "Header", "Header.default", "frame_top", 0, generation, {
+          brandName: "Muster Dachservice",
+          navItems: [{ label: "Kontakt", href: "/kontakt/" }]
+        }),
+        pageProposalExampleSection("hero-1", "Hero", "Hero.default", "hero", 1, generation, {
+          h1: "Dachreinigung in Muenchen",
+          lead: "Gruendliche Dachreinigung fuer Immobilien in Muenchen.",
+          primaryCtaLabel: "Anfragen",
+          primaryCtaHref: "/kontakt/"
+        }),
+        pageProposalExampleSection("intro-1", "ServiceIntro", "ServiceIntro.default", "body_intro", 2, generation, {
+          heading: "Lokale Dachpflege mit sauberem Ablauf",
+          body: "Die Seite beantwortet Muenchner Suchintention mit Service, Ablauf und Kontaktmoeglichkeit."
+        }),
+        pageProposalExampleSection(
+          "description-1",
+          "ServiceDescription",
+          "ServiceDescription.default",
+          "body_main",
+          3,
+          generation,
+          {
+            heading: "Was die Dachreinigung umfasst",
+            paragraphs: ["Moos, Schmutz und Ablagerungen werden geprueft und schonend entfernt."]
+          }
+        ),
+        pageProposalExampleSection("benefits-1", "BenefitsGrid", "BenefitsGrid.default", "body_main", 4, generation, {
+          heading: "Vorteile",
+          benefits: [
+            { title: "Lokale Anfahrt", body: "Termine in Muenchen und Umgebung." },
+            { title: "Klare Beratung", body: "Vor der Reinigung wird der Zustand nachvollziehbar besprochen." }
+          ]
+        }),
+        pageProposalExampleSection("faq-1", "FAQ", "FAQ.default", "body_late", 5, generation, {
+          heading: "Haeufige Fragen",
+          items: [
+            {
+              question: "Wann lohnt sich eine Dachreinigung?",
+              answer: "Wenn Moos oder Schmutz sichtbar sind."
+            }
+          ]
+        }),
+        pageProposalExampleSection(
+          "areas-1",
+          "ServiceAreaList",
+          "ServiceAreaList.default",
+          "body_late",
+          6,
+          generation,
+          {
+            heading: "Einsatzgebiet",
+            areas: [{ name: "Muenchen", route: "/dachreinigung-muenchen/" }]
+          }
+        ),
+        pageProposalExampleSection("cta-1", "FinalCTA", "FinalCTA.default", "cta_late", 7, generation, {
+          heading: "Dachreinigung anfragen",
+          body: "Beschreiben Sie kurz das Objekt und wir melden uns.",
+          ctaLabel: "Kontakt aufnehmen",
+          ctaHref: "/kontakt/"
+        }),
+        pageProposalExampleSection("footer-1", "Footer", "Footer.default", "frame_bottom", 8, generation, {
+          businessName: "Muster Dachservice",
+          legalLinks: [{ label: "Impressum", href: "/impressum/" }]
+        })
+      ],
+      internalLinks: ["/kontakt/", "/impressum/"],
+      evidenceRefs: [],
+      uniquenessRationale: "Muenchen bekommt eine eigenstaendige Dachreinigung-Seite mit lokalem Anfragefokus.",
+      generation
+    }
+  };
+}
+
+export function attributePageProposalGeneration(output: PageProposalJson, agentRunId: string): PageProposalJson {
+  const generation: PageGeneration = {
+    source: "agent",
+    agentRunId
+  };
+
+  return {
+    ...output,
+    generation,
+    page: {
+      ...output.page,
+      generation,
+      sections: output.page.sections.map((section) => ({
+        ...section,
+        generation
+      }))
+    }
+  };
+}
+
+function pageProposalExampleSection(
+  id: PageProposalJson["page"]["sections"][number]["id"],
+  type: PageProposalJson["page"]["sections"][number]["type"],
+  registryKey: PageProposalJson["page"]["sections"][number]["registryKey"],
+  zone: PageProposalJson["page"]["sections"][number]["zone"],
+  order: number,
+  generation: PageGeneration,
+  props: Record<string, unknown>
+): PageProposalJson["page"]["sections"][number] {
+  return {
+    id,
+    type,
+    registryKey,
+    schemaVersion: 1,
+    zone,
+    order,
+    variant: "default",
+    props,
+    evidenceRefs: [],
+    generation
+  };
+}
+
 export const pageProposalPromptSections: readonly OpportunityScoutPromptSection[] = [
   {
     key: "role",
@@ -502,7 +667,10 @@ export const pageProposalPromptSections: readonly OpportunityScoutPromptSection[
     lines: [
       "Return only JSON. Do not wrap it in Markdown.",
       "Never output null. Omit optional fields when unknown, and use empty arrays only where the schema allows arrays.",
-      "The output must be previewable, but preview rendering is deterministic code-owned. Do not emit renderer class names or style controls."
+      "Copy the input packet runId into proposal, page, and section generation.agentRunId with generation.source set to agent.",
+      "The output must be previewable, but preview rendering is deterministic code-owned. Do not emit renderer class names or style controls.",
+      "Use this canonical schema and registry-prop example as the output shape. Replace projectId, opportunityId, runId, route, keyword, location, service, and copy with input-backed values:",
+      pageProposalOutputExampleJson
     ]
   }
 ];

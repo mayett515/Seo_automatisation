@@ -1,8 +1,10 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MockReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
+import { MockReasoningAdapter, OpenCodeGoReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
+import { buildCanonicalPageProposalOutputExample } from "@localseo/ai";
 import {
   OpportunityBriefSchema,
+  PageJsonSchema,
   PageProposalJsonSchema,
   type PageJson,
   type PageProposalJson
@@ -114,6 +116,110 @@ void describe(
       const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, fixture.opportunityId));
       assert.equal(opportunity?.status, "brief_created");
     });
+
+    void it("persists an OpenCode Go Page Proposal response with worker-owned generation provenance", async () => {
+      const fixture = await createPageProposalFixture(db);
+      const storage = new MemoryObjectStorage();
+      const requestBodies: string[] = [];
+      const modelOutput = validPageProposalJson(fixture);
+      const reasoning = new OpenCodeGoReasoningAdapter({
+        apiKey: "test-page-proposal-key",
+        model: "glm-5.2",
+        endpoint: "https://example.test/v1/chat/completions",
+        fetchImpl: (_url, init = {}) => {
+          requestBodies.push(requestBodyText(init.body));
+          return Promise.resolve(
+            jsonResponse({
+              model: "glm-5.2",
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({
+                      ...modelOutput,
+                      generation: { source: "human" },
+                      page: {
+                        ...modelOutput.page,
+                        generation: { source: "template", templateId: "model-template" },
+                        sections: modelOutput.page.sections.map((section) => ({
+                          ...section,
+                          generation: { source: "import", reason: "model-provided provenance" }
+                        }))
+                      }
+                    })
+                  },
+                  finish_reason: "stop"
+                }
+              ],
+              usage: { prompt_tokens: 120, completion_tokens: 480, cost_cents: 7 }
+            })
+          );
+        }
+      });
+
+      const result = await executePageProposal({
+        data: { projectId: fixture.projectId, runId: fixture.runId, opportunityId: fixture.opportunityId },
+        repository: createDrizzlePageProposalRepository(db),
+        reasoning,
+        objectStorage: storage
+      });
+
+      assert.equal(result.status, "succeeded");
+      assert.equal(requestBodies.length, 1);
+      const providerRequest = JSON.parse(requestBodies[0] ?? "") as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      const userMessage = providerRequest.messages.find((message) => message.role === "user");
+      assert.ok(userMessage);
+      const envelope = JSON.parse(userMessage.content) as {
+        task: string;
+        outputSchemaName: string;
+        policy: { canMutateProduction: boolean; allowedToolCategories: string[] };
+      };
+      assert.equal(envelope.task, "page_brief_draft");
+      assert.equal(envelope.outputSchemaName, "PageProposalJson");
+      assert.equal(envelope.policy.canMutateProduction, false);
+      assert.deepEqual(envelope.policy.allowedToolCategories, [
+        "read_evidence",
+        "read_registry",
+        "analyze",
+        "draft_content",
+        "draft_page_json",
+        "render_preview"
+      ]);
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "succeeded");
+      assert.equal(run?.provider, "opencode_go");
+      assert.equal(run?.model, "glm-5.2");
+
+      const [proposal] = await db
+        .select()
+        .from(pageProposals)
+        .where(eq(pageProposals.opportunityId, fixture.opportunityId));
+      assert.ok(proposal);
+      const persistedProposal = PageProposalJsonSchema.parse(proposal.proposalJson);
+      assert.deepEqual(persistedProposal.generation, { source: "agent", agentRunId: fixture.runId });
+      assert.deepEqual(persistedProposal.page.generation, { source: "agent", agentRunId: fixture.runId });
+      assert.equal(
+        persistedProposal.page.sections.every(
+          (section) => section.generation?.source === "agent" && section.generation.agentRunId === fixture.runId
+        ),
+        true
+      );
+
+      const [version] = await db.select().from(pageVersions).where(eq(pageVersions.pageProposalId, proposal.id));
+      assert.equal(version?.status, "preview");
+      assert.equal(version?.approvedAt, null);
+      const persistedPage = PageJsonSchema.parse(version?.pageJson);
+      assert.deepEqual(persistedPage.generation, { source: "agent", agentRunId: fixture.runId });
+      assert.equal(
+        persistedPage.sections.every(
+          (section) => section.generation?.source === "agent" && section.generation.agentRunId === fixture.runId
+        ),
+        true
+      );
+    });
   }
 );
 
@@ -205,107 +311,26 @@ class MemoryObjectStorage implements ObjectStoragePort {
 }
 
 function validPageProposalJson(fixture: PageProposalFixture): PageProposalJson {
-  return PageProposalJsonSchema.parse({
-    schemaVersion: 1,
-    projectId: fixture.projectId,
-    opportunityId: fixture.opportunityId,
-    route: "/dachreinigung-muenchen/",
-    primaryKeyword: "dachreinigung muenchen",
-    evidenceRefs: [],
-    proposalRationale: "A dedicated Muenchen page addresses local Dachreinigung intent.",
-    generation: { source: "agent", agentRunId: fixture.runId },
-    page: validPageJson(fixture)
+  return PageProposalJsonSchema.parse(
+    buildCanonicalPageProposalOutputExample({
+      projectId: fixture.projectId,
+      opportunityId: fixture.opportunityId,
+      agentRunId: fixture.runId
+    })
+  );
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" }
   });
 }
 
-function validPageJson(fixture: PageProposalFixture): PageJson {
-  return {
-    schemaVersion: 1,
-    route: "/dachreinigung-muenchen/",
-    pageType: "service_area_page",
-    target: {
-      service: "Dachreinigung",
-      location: "Muenchen",
-      primaryKeyword: "dachreinigung muenchen",
-      secondaryKeywords: ["dach reinigen muenchen"]
-    },
-    seo: {
-      title: "Dachreinigung Muenchen",
-      metaDescription: "Lokale Dachreinigung in Muenchen mit klarer Beratung und schneller Anfrage.",
-      canonicalPath: "/dachreinigung-muenchen/",
-      robots: "noindex",
-      jsonLd: [],
-      sitemapReady: true
-    },
-    sections: [
-      section("header-1", "Header", "Header.default", "frame_top", 0, {
-        brandName: "Muster Dachservice",
-        navItems: [{ label: "Kontakt", href: "/kontakt/" }]
-      }),
-      section("hero-1", "Hero", "Hero.default", "hero", 1, {
-        h1: "Dachreinigung in Muenchen",
-        lead: "Gruendliche Dachreinigung fuer Immobilien in Muenchen.",
-        primaryCtaLabel: "Anfragen",
-        primaryCtaHref: "/kontakt/"
-      }),
-      section("intro-1", "ServiceIntro", "ServiceIntro.default", "body_intro", 2, {
-        heading: "Lokale Dachpflege mit sauberem Ablauf",
-        body: "Die Seite beantwortet Muenchner Suchintention mit Service, Ablauf und Kontaktmoeglichkeit."
-      }),
-      section("description-1", "ServiceDescription", "ServiceDescription.default", "body_main", 3, {
-        heading: "Was die Dachreinigung umfasst",
-        paragraphs: ["Moos, Schmutz und Ablagerungen werden geprueft und schonend entfernt."]
-      }),
-      section("benefits-1", "BenefitsGrid", "BenefitsGrid.default", "body_main", 4, {
-        heading: "Vorteile",
-        benefits: [
-          { title: "Lokale Anfahrt", body: "Termine in Muenchen und Umgebung." },
-          { title: "Klare Beratung", body: "Vor der Reinigung wird der Zustand nachvollziehbar besprochen." }
-        ]
-      }),
-      section("faq-1", "FAQ", "FAQ.default", "body_late", 5, {
-        heading: "Haeufige Fragen",
-        items: [{ question: "Wann lohnt sich eine Dachreinigung?", answer: "Wenn Moos oder Schmutz sichtbar sind." }]
-      }),
-      section("areas-1", "ServiceAreaList", "ServiceAreaList.default", "body_late", 6, {
-        heading: "Einsatzgebiet",
-        areas: [{ name: "Muenchen", route: "/dachreinigung-muenchen/" }]
-      }),
-      section("cta-1", "FinalCTA", "FinalCTA.default", "cta_late", 7, {
-        heading: "Dachreinigung anfragen",
-        body: "Beschreiben Sie kurz das Objekt und wir melden uns.",
-        ctaLabel: "Kontakt aufnehmen",
-        ctaHref: "/kontakt/"
-      }),
-      section("footer-1", "Footer", "Footer.default", "frame_bottom", 8, {
-        businessName: "Muster Dachservice",
-        legalLinks: [{ label: "Impressum", href: "/impressum/" }]
-      })
-    ],
-    internalLinks: ["/kontakt/", "/impressum/"],
-    evidenceRefs: [],
-    uniquenessRationale: "Muenchen bekommt eine eigenstaendige Dachreinigung-Seite mit lokalem Anfragefokus.",
-    generation: { source: "agent", agentRunId: fixture.runId }
-  };
-}
+function requestBodyText(body: BodyInit | null | undefined): string {
+  if (typeof body !== "string") {
+    throw new TypeError("Expected OpenCode Go request body to be a string.");
+  }
 
-function section(
-  id: string,
-  type: PageJson["sections"][number]["type"],
-  registryKey: string,
-  zone: PageJson["sections"][number]["zone"],
-  order: number,
-  props: Record<string, unknown>
-): PageJson["sections"][number] {
-  return {
-    id,
-    type,
-    registryKey,
-    schemaVersion: 1,
-    zone,
-    order,
-    variant: "default",
-    props,
-    evidenceRefs: []
-  };
+  return body;
 }

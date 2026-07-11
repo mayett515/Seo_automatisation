@@ -183,6 +183,7 @@ It also gives the next implementation slice a concrete target:
 11. Freeze approved versions and revalidate PageJson during release preflight. Done in the eighth Page Registry slice.
 12. Add Opportunity Explorer Page Proposal trigger and run-status UI on top of the durable `page_brief_draft` queue path. Done in the ninth Page Registry slice.
 13. Add durable page version approval/request-changes flow with `approval_blocker` enforcement and `approvals` audit rows. Done in the tenth Page Registry slice.
+14. Add a real-provider Page Proposal smoke harness, canonical registry-prop prompt example, and worker-owned generation provenance. Done in the Page Proposal provider-smoke slice; credentialed execution remains operational follow-up.
 
 The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:
 

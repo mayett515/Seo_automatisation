@@ -19,11 +19,14 @@ import {
   type OpportunityScoutOutput
 } from "@localseo/contracts";
 import {
+  attributePageProposalGeneration,
+  buildCanonicalPageProposalOutputExample,
   buildPageProposalEvidencePacket,
   buildPageProposalPrompt,
   buildOpportunityScoutEvidencePacket,
   buildOpportunityScoutPrompt,
   canonicalOpportunityScoutOutputExample,
+  canonicalPageProposalOutputExample,
   evaluatePageProposalOutput,
   evaluateOpportunityScoutOutput,
   opportunityScoutEvidencePacketLimits,
@@ -36,6 +39,10 @@ const projectId = "project-1";
 
 void test("canonical opportunity scout prompt example stays valid against the contract", () => {
   assert.doesNotThrow(() => OpportunityScoutOutputSchema.parse(canonicalOpportunityScoutOutputExample));
+});
+
+void test("canonical Page Proposal prompt example stays valid against the contract", () => {
+  assert.doesNotThrow(() => PageProposalJsonSchema.parse(canonicalPageProposalOutputExample));
 });
 
 void test("buildOpportunityScoutPrompt is sectioned around the product safety rules", () => {
@@ -102,6 +109,41 @@ void test("buildPageProposalPrompt is sectioned around the PageJson safety bound
   assert.match(prompt, /Return one JSON object matching PageProposalJson/u);
   assert.match(prompt, /Use only registry keys, section types, zones, and variants from registrySummary/u);
   assert.match(prompt, /Do not output html, css, script, jsx, class, className, style/u);
+  assert.match(prompt, /Copy the input packet runId into proposal, page, and section generation\.agentRunId/u);
+  assert.match(prompt, /"registryKey": "Header\.default"/u);
+  assert.match(prompt, /"brandName": "Muster Dachservice"/u);
+});
+
+void test("worker attribution replaces model-provided Page Proposal generation provenance", () => {
+  const output = buildCanonicalPageProposalOutputExample({
+    projectId: "11111111-1111-4111-8111-111111111111",
+    opportunityId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    agentRunId: "model-run"
+  });
+  const attributed = attributePageProposalGeneration(
+    {
+      ...output,
+      generation: { source: "human" },
+      page: {
+        ...output.page,
+        generation: { source: "template", templateId: "model-template" },
+        sections: output.page.sections.map((section) => ({
+          ...section,
+          generation: { source: "import", reason: "model-provided provenance" }
+        }))
+      }
+    },
+    "durable-run-id"
+  );
+
+  assert.deepEqual(attributed.generation, { source: "agent", agentRunId: "durable-run-id" });
+  assert.deepEqual(attributed.page.generation, { source: "agent", agentRunId: "durable-run-id" });
+  assert.equal(
+    attributed.page.sections.every(
+      (section) => section.generation?.source === "agent" && section.generation.agentRunId === "durable-run-id"
+    ),
+    true
+  );
 });
 
 void test("buildPageProposalEvidencePacket caps and normalizes existing routes", () => {

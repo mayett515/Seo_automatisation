@@ -267,7 +267,28 @@ assistant content not JSON       -> output_not_json
 
 Provider response bodies are not persisted. Diagnostics keep only latency, finish reason, and a bounded safe reason code. The worker remains responsible for Zod parsing, deterministic QA, evidence resolution, scoring, and persistence.
 
-If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected scout run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
+If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected Opportunity Scout or Page Proposal run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
+
+### Page Proposal real-provider smoke harness
+
+The existing adapter is now exercised against the Page Proposal task at two levels:
+
+```text
+automated DB integration
+  actual OpenCodeGoReasoningAdapter with controlled HTTP response
+  page_brief_draft task + exact ADR 0019 policy serialized to provider request
+  PageProposalJson parse -> QA -> registry -> composition -> render -> draft/preview persistence
+
+manual credentialed smoke
+  synthetic project/opportunity fixture only
+  API -> BullMQ -> worker -> OpenCode Go
+  redacted run/proposal summary only
+  no prompt, PageJson, provider body, packet contents, or secret output
+```
+
+`packages/ai` provides a contract-valid canonical output example because the runtime registry summary intentionally excludes executable Zod schemas. The example teaches the real model the closed registry prop shapes without moving registry validation into the prompt. The worker remains authoritative and overwrites proposal/page/initial-section generation provenance with the durable `agent_runs.id` before deterministic QA and persistence.
+
+The operational procedure lives in `docs/testing/page-proposal-smoke.md`. The harness refuses mock/not-configured adapter execution and refuses to reset any immutable fixture page version.
 
 Deferred provider work:
 
@@ -276,7 +297,7 @@ Mastra internals behind the same port
 task-specific model config for search/SERP versus page/frontend reasoning
 OpenCode Go /messages endpoint support for MiniMax/Qwen-family models
 empirical model benchmarks against Martines/Dachdecker fixtures
-real-provider smoke run and prompt tuning from observed run failures
+credentialed Page Proposal smoke execution and prompt tuning from its sanitized review artifact
 cost budget enforcement beyond recording usage metadata
 ```
 
@@ -733,13 +754,14 @@ run timeline        -> agent_runs rows
 
 No contract field exists solely for a UI that does not exist yet except `mapGroupKey`, `recommendedSequence`, and `OpportunityGroupHint`. These are deliberately cheap value objects because the Opportunity Explorer needs GSC clusters and eventual user grouping from the beginning, and adding them later would force a breaking evidence-shape migration. Everything else the frontend design prompt asks for (routes, TanStack boundaries, Page Studio zones) stays in the referenced frontend docs and starts after this slice lands.
 
-## Out Of Scope For This Slice
+## Original Opportunity Scout Slice Boundaries
+
+The list below records the original Opportunity Scout foundation scope. Page Proposal generation has since landed as a separate constrained worker slice and must be judged against ADR 0017/0019 plus the current roadmap.
 
 ```text
 Mastra multi-agent orchestration (single scout task first)
 agent_run_events / streaming timeline
 additional Explorer UI beyond the current table/detail/run/proof/decision baseline
-PageBrief / page proposal generation
 read-only tool plumbing beyond what the worker loads directly
 MapLibre, RAG, agent memory
 ```

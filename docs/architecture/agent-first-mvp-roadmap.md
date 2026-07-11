@@ -252,7 +252,7 @@ still next
 
 ### 5. Real Reasoning Adapter
 
-Status: OpenCode Go adapter baseline implemented.
+Status: OpenCode Go adapter baseline, Opportunity Scout credentialed smoke, and Page Proposal smoke harness implemented.
 
 After the mock worker loop is green, add the real provider behind the same port:
 
@@ -282,6 +282,12 @@ implemented now
   NotConfiguredReasoningAdapter prevents scout-lane misconfig from crashing the shared worker host
   redacted diagnostics and bounded provider reason codes
   mock remains the default worker adapter
+  canonical contract-valid Page Proposal output example with registry-owned prop shapes
+  worker-owned Page Proposal generation provenance tied to the durable run id
+  DB-backed OpenCode Go Page Proposal adapter/policy/persistence integration test
+  synthetic Page Proposal fixture plus API -> queue -> worker smoke runner
+  smoke tooling rejects mock/not-configured adapters and prints redacted summaries only
+  tools TypeScript is part of the repository typecheck gate
 ```
 
 Model routing decision:
@@ -354,7 +360,7 @@ Still deferred:
 ```text
 Mastra multi-agent orchestration
 Anthropic-style OpenCode Go /messages endpoint support for MiniMax/Qwen models
-real-provider smoke run with a project API key
+credentialed Page Proposal smoke execution and sanitized review artifact
 model-specific prompt tuning from observed failed runs
 cost budget enforcement beyond recording usage metadata
 ```
@@ -645,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, and page-version lifecycle projection are implemented.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, and page-version lifecycle projection are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -690,6 +696,8 @@ implemented now
   named policyForReasoningTask("page_brief_draft") profile
   evidence packet from OpportunityBrief + existing proposal routes + registry summary
   AiReasoningPort.runStructured with outputSchemaName = PageProposalJson
+  canonical contract-valid prompt example documents registry prop shapes for the real model
+  worker overwrites model-provided generation provenance with the durable run id
   PageProposalJsonSchema parse
   deterministic page proposal QA for project/opportunity/evidence/route uniqueness
   page-registry validation
@@ -717,9 +725,12 @@ implemented now
   deploy approval moves included approved page versions to release_candidate
   live verification moves included page versions to released and supersedes older released versions for the same proposal
   failed, rolled-back, or cancelled release plans restore release_candidate page versions to approved for replanning
+  synthetic fixture and redacted API-to-worker OpenCode Go smoke runner
+  DB-backed actual-adapter response test proves policy and draft/preview-only persistence
 
 still deferred
   agent_run_events streaming timeline
+  credentialed Page Proposal smoke execution and model calibration note
 ```
 
 ### 10. Page Studio, Notes, Approval, And Versioning

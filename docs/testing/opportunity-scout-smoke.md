@@ -15,6 +15,8 @@ API enqueue
 -> agent_runs terminal state
 ```
 
+The runner fails before enqueue unless `AI_REASONING_PROVIDER=opencode_go`, a model id, and an external API key are loaded. After the worker finishes, it also requires durable `agent_runs.provider = opencode_go` plus an evidence `input_ref`, so a differently configured worker cannot make a mock/not-configured run look like a real-provider smoke.
+
 The smoke does not require opportunities to persist. A run that reaches `output_not_json`, `output_schema_mismatch`, or
 `qa_rejected` can be a passing smoke when the failure is correctly classified, redacted, and visible in `agent_runs`.
 

@@ -9,6 +9,7 @@ import {
   type PageProposalJson
 } from "@localseo/contracts";
 import {
+  attributePageProposalGeneration,
   buildPageProposalEvidencePacket,
   buildPageProposalPrompt,
   evaluatePageProposalOutput,
@@ -179,10 +180,12 @@ export async function executePageProposal(input: {
     throw new PageProposalWorkflowError("output_schema_mismatch");
   }
 
+  const attributedOutput = attributePageProposalGeneration(parsedOutput.data, input.data.runId);
+
   const qaResult = evaluatePageProposalOutput({
     projectId: input.data.projectId,
     opportunityId: input.data.opportunityId,
-    output: parsedOutput.data,
+    output: attributedOutput,
     resolvableEvidence: evidence.resolvableEvidence,
     existingRoutes: evidence.existingRoutes
   });
