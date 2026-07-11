@@ -127,6 +127,21 @@ void describe(
       assert.equal(deployment?.verificationStatus, "execution_failed");
     });
 
+    void it("fails a Page Proposal after bounded recovery is exhausted", async () => {
+      const fixture = await createPageProposalRecoveryFixture(db, { recoveryCount: 3 });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues["page-generation"].addCalls.length, 0);
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "failed");
+      assert.equal(run?.failureCode, "work_recovery_exhausted");
+      assert.equal(run?.recoveryCount, 3);
+    });
+
     void it("fails Page Proposal product truth when transport completed without terminal persistence", async () => {
       const fixture = await createPageProposalRecoveryFixture(db);
       const queues = fakeQueues();
@@ -140,6 +155,61 @@ void describe(
       const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
       assert.equal(run?.status, "failed");
       assert.equal(run?.failureCode, "work_transport_inconsistent");
+    });
+
+    void it("uses completed job-run audit when BullMQ retention removed the transport job", async () => {
+      const fixture = await createReleaseVerificationRecoveryFixture(db);
+      await db.insert(jobRuns).values({
+        projectId: fixture.projectId,
+        externalJobId: fixture.verificationId,
+        queueName: "release-verification",
+        type: "release_verification",
+        status: "completed",
+        inputRef: fixture.verificationId,
+        actorType: "system",
+        completedAt: staleUpdatedAt,
+        updatedAt: staleUpdatedAt
+      });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues["release-verification"].addCalls.length, 0);
+
+      const [verification] = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.id, fixture.verificationId));
+      assert.equal(verification?.status, "execution_failed");
+      assert.equal(
+        verification?.summary,
+        "Queue transport completed without terminal release-verification product truth."
+      );
+
+      const [check] = await db
+        .select()
+        .from(releaseVerificationChecks)
+        .where(eq(releaseVerificationChecks.verificationId, fixture.verificationId));
+      assert.equal(check?.message, "Queue transport completed without terminal release-verification product truth.");
+    });
+
+    void it("coalesces when transport becomes active after the recovery claim", async () => {
+      const fixture = await createPageProposalRecoveryFixture(db);
+      const pageQueue = new LateActiveFakeQueue();
+      const queues = fakeQueues({ pageQueue });
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.coalesced, 1);
+      assert.equal(pageQueue.addCalls.length, 0);
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "queued");
+      assert.equal(run?.recoveryCount, 1);
+
+      const [audit] = await db.select().from(jobRuns).where(eq(jobRuns.externalJobId, fixture.runId));
+      assert.equal(audit?.status, "cancelled");
     });
 
     void it("keeps the durable row active but records a failed audit when recovery enqueue fails", async () => {
@@ -195,7 +265,10 @@ async function createProject(db: DatabaseClient): Promise<string> {
   return project.id;
 }
 
-async function createPageProposalRecoveryFixture(db: DatabaseClient): Promise<{
+async function createPageProposalRecoveryFixture(
+  db: DatabaseClient,
+  input: { recoveryCount?: number } = {}
+): Promise<{
   projectId: string;
   opportunityId: string;
   runId: string;
@@ -219,6 +292,7 @@ async function createPageProposalRecoveryFixture(db: DatabaseClient): Promise<{
       subjectId: opportunity.id,
       task: "page_brief_draft",
       status: "queued",
+      recoveryCount: input.recoveryCount ?? 0,
       updatedAt: staleUpdatedAt
     })
     .returning();
@@ -345,5 +419,14 @@ class BarrierFakeQueue extends FakeQueue {
     }
 
     return super.getJob(jobId);
+  }
+}
+
+class LateActiveFakeQueue extends FakeQueue {
+  private observationCount = 0;
+
+  override getJob(): Promise<WorkRecoveryTransportJob | undefined> {
+    this.observationCount += 1;
+    return Promise.resolve(this.observationCount === 1 ? undefined : new FakeTransportJob("active"));
   }
 }

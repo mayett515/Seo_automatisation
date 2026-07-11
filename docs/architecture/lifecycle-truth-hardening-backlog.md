@@ -213,6 +213,7 @@ Implementation note, 2026-07-07:
 - The implemented classifier is intentionally not a scheduler: it produces `noop`, `reenqueue`, `mark_execution_failed`, `record_warning`, `reconcile_provider`, or `manual_reconciliation` decisions from durable state, transport state, worker freshness, recovery count, workflow category, and idempotency/provider-uncertainty facts.
 - The first recovery controller now exists in `apps/worker/src/work-recovery.ts` for stale Page Proposal agent runs and release verifications.
 - It combines durable product rows, `job_runs`, and BullMQ state; claims attempts through guarded recovery counters; reuses deterministic job ids; and records bounded exhaustion as visible product truth.
+- Candidate discovery is isolated per registered lane, and the configured batch size applies independently to each lane.
 - Provider mutation lanes remain excluded and continue through their provider-state reconcilers/manual reconciliation paths.
 
 Follow-up direction:
@@ -258,6 +259,8 @@ Why: `executeDeploy` has been hardened through several subtle retry, resume, and
 The queue audit path has theoretical race shapes, but the current BullMQ job-id coalescing plus database audit constraints cover the main invariants. Keep the terminal re-enqueue behavior; do not remove the `getJob/remove` path without proving legitimate re-enqueue still works.
 
 Why: simplifying by relying only on BullMQ `jobId` dedupe would break the intended terminal re-enqueue flow.
+
+BullMQ terminal-job retention is not configured yet. Decide `removeOnComplete` / `removeOnFail` only alongside explicit audit-retention and recovery semantics; terminal transport rows must not be removed in a way that turns completed work into an unsafe blind replay.
 
 ### Tracking Hash Performance
 

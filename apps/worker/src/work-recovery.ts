@@ -82,10 +82,31 @@ export async function scanStaleWork(input: {
   const now = input.now ?? new Date();
   const staleBefore = new Date(now.getTime() - input.staleAfterMs);
   const result = emptyWorkRecoveryScanResult();
-  const candidates = [
-    ...(await loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize)),
-    ...(await loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize))
-  ];
+  const [pageProposalLoad, releaseVerificationLoad] = await Promise.allSettled([
+    loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize)
+  ]);
+  const candidates: RecoveryCandidate[] = [];
+
+  if (pageProposalLoad.status === "fulfilled") {
+    candidates.push(...pageProposalLoad.value);
+  } else {
+    result.errors += 1;
+    console.error(
+      "Work recovery failed to load page_proposal candidates",
+      normalizeErrorMessage(pageProposalLoad.reason)
+    );
+  }
+
+  if (releaseVerificationLoad.status === "fulfilled") {
+    candidates.push(...releaseVerificationLoad.value);
+  } else {
+    result.errors += 1;
+    console.error(
+      "Work recovery failed to load release_verification candidates",
+      normalizeErrorMessage(releaseVerificationLoad.reason)
+    );
+  }
 
   for (const candidate of candidates) {
     result.checked += 1;

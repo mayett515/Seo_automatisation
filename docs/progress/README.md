@@ -46,3 +46,4 @@ Do not log every tiny edit. Commit history already covers that.
 - [2026-07-07.md](2026-07-07.md)
 - [2026-07-08.md](2026-07-08.md)
 - [2026-07-10.md](2026-07-10.md)
+- [2026-07-11.md](2026-07-11.md)

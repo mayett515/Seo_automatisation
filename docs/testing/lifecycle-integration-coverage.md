@@ -250,9 +250,12 @@ Implemented tests:
 1. A stale Page Proposal run with missing transport is claimed once, re-enqueued with `jobId = runId`, and receives a system-owned recovery `job_runs` row.
 2. A stale release verification is re-enqueued with `jobId = verificationId` while deploy/rollback provider-mutation lanes remain outside the scanner.
 3. Exhausted release-verification recovery becomes `execution_failed` with warning-level recovery evidence and matching deployment verification truth.
-4. Completed transport without terminal Page Proposal truth becomes `work_transport_inconsistent` instead of being replayed.
-5. A failed recovery enqueue leaves the durable workflow active for the next bounded scan and records the failed queue attempt in `job_runs`.
-6. Two concurrent scanners race one stale Page Proposal row, but the recovery-count/stale-time claim permits exactly one enqueue.
+4. Exhausted Page Proposal recovery becomes a failed run with `work_recovery_exhausted` and no queue replay.
+5. Completed live transport without terminal Page Proposal truth becomes `work_transport_inconsistent` instead of being replayed.
+6. Completed `job_runs` audit still terminalizes inconsistent release-verification truth when BullMQ retention has removed the live transport job.
+7. Transport that becomes active after the durable recovery claim coalesces the enqueue and records a cancelled recovery audit.
+8. A failed recovery enqueue leaves the durable workflow active for the next bounded scan and records the failed queue attempt in `job_runs`.
+9. Two concurrent scanners race one stale Page Proposal row, but the recovery-count/stale-time claim permits exactly one enqueue.
 
 The scanner tests use real Postgres migrations and a stateful fake queue. This proves product-row claims and audit transactions without requiring Redis to manufacture the race timing.
 

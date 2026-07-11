@@ -866,6 +866,8 @@ Implemented boundary:
 same deterministic job id on safe re-enqueue
 durable recovery_count and last_recovery_at on owning rows
 guarded claims so competing scanners cannot duplicate recovery
+registered lane candidate loads fail independently
+batch size is capped independently per registered lane
 visible Page Proposal failure after bounded exhaustion
 release-verification execution_failed + warning evidence after bounded exhaustion
 unknown transport state is a no-op

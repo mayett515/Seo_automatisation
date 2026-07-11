@@ -66,6 +66,8 @@ Implementation note, 2026-07-07:
 - Competing scanners claim an attempt through recovery-count and stale-timestamp predicates. A lost claim is a stale no-op, not a second enqueue.
 - Unknown transport state is conservative `noop`. Completed transport without terminal product truth becomes a visible failure instead of an automatic replay.
 - The scanner deliberately registers only `page-generation` and `release-verification`; deploy and rollback remain owned by provider-state reconcilers/manual reconciliation.
+- Candidate discovery is isolated per registered lane, so one lane's query failure is recorded without suppressing the other lane for that scan.
+- `WORK_RECOVERY_BATCH_SIZE` is a per-lane cap. With the two registered lanes, one scan can inspect at most twice that configured count.
 
 ## Consequences
 
@@ -77,6 +79,7 @@ The first recovery implementation stays intentionally small:
 - release verification may re-add `jobId = verificationId` because its provider handoff is warning-level/idempotent and its final product projection is transaction-guarded;
 - bounded Page Proposal exhaustion becomes a visible failed agent run;
 - bounded release-verification exhaustion becomes `execution_failed` plus warning evidence without claiming observed bad page health;
+- transport-completed inconsistency and bounded exhaustion retain distinct release-verification evidence messages;
 - an operator-facing active/dead-work view and additional safe workflow lanes remain later slices.
 
 The project accepts that BullMQ enqueue is not transactional with Postgres. That gap is handled explicitly by durable run rows, enqueue-failure cleanup, and recovery scans.

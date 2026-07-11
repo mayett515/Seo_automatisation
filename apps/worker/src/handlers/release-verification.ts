@@ -148,6 +148,7 @@ export async function markReleaseVerificationRecoveryFailure(input: {
   reason: string;
   recoveryCount: number;
 }): Promise<boolean> {
+  const failureMessage = releaseVerificationRecoveryFailureMessage(input.reason);
   const persisted = await persistReleaseVerificationResult(
     input.db,
     input.data.projectId,
@@ -156,7 +157,7 @@ export async function markReleaseVerificationRecoveryFailure(input: {
       releasePlanId: input.data.releasePlanId,
       deploymentId: input.data.deploymentId,
       verificationStatus: "execution_failed",
-      summary: "Post-deploy verification did not complete after bounded transport recovery.",
+      summary: failureMessage,
       checkedAt: input.checkedAt.toISOString(),
       checks: [
         ReleaseCheckSchema.parse({
@@ -164,7 +165,7 @@ export async function markReleaseVerificationRecoveryFailure(input: {
           scope: "project",
           severity: "warning",
           result: "skipped",
-          message: "Post-deploy verification did not complete after bounded transport recovery.",
+          message: failureMessage,
           evidence: {
             workRecovery: {
               reason: input.reason,
@@ -184,6 +185,12 @@ export async function markReleaseVerificationRecoveryFailure(input: {
   );
 
   return Boolean(persisted);
+}
+
+function releaseVerificationRecoveryFailureMessage(reason: string): string {
+  return reason === "transport_completed_without_product_truth"
+    ? "Queue transport completed without terminal release-verification product truth."
+    : "Post-deploy verification did not complete after bounded transport recovery.";
 }
 
 async function runVerifier(input: {

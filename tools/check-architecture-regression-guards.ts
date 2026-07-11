@@ -366,6 +366,34 @@ requireIncludes(
 );
 
 requireIncludes(
+  "apps/worker/src/work-recovery.test.ts",
+  "continues loading the other lane when one candidate query fails",
+  "db-before-queue-recovery",
+  "a recovery candidate query failure in one lane must not suppress another registered lane"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "fails a Page Proposal after bounded recovery is exhausted",
+  "db-before-queue-recovery",
+  "DB integration must prove bounded Page Proposal exhaustion becomes visible product truth"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "uses completed job-run audit when BullMQ retention removed the transport job",
+  "db-before-queue-recovery",
+  "DB integration must prove audit fallback preserves completed-transport inconsistency detection"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "coalesces when transport becomes active after the recovery claim",
+  "db-before-queue-recovery",
+  "DB integration must prove a late active transport observation suppresses duplicate recovery enqueue"
+);
+
+requireIncludes(
   "packages/db/migrations/0032_low_boom_boom.sql",
   'ADD COLUMN "recovery_count"',
   "db-before-queue-recovery",

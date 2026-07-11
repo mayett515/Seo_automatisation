@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.0"
+version: "1.1.1"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -149,6 +149,7 @@ DB-before-queue recovery policy
   Recovery decisions belong in pure domain policy; recovery controllers are procedural shells.
   Read/analyze work may be re-enqueued by deterministic job id when safe.
   The bounded scanner currently owns Page Proposal and release-verification transport gaps only.
+  A candidate-load failure in one registered lane must not suppress scanning another registered lane.
   Recovery attempts must be durably counted and claimed before re-enqueue.
   `job_runs` must record each recovered enqueue as system-triggered recovery audit.
   Unknown transport state must not be guessed into a re-enqueue.
