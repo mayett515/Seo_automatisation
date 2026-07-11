@@ -243,8 +243,13 @@ These tests use a stateful fake BullMQ queue with a real database because the DB
 
 Files:
 
+- [page-proposal-example.test.ts](/C:/localseoproject/apps/worker/src/page-proposal-example.test.ts)
 - [page-proposal.integration.ts](/C:/localseoproject/apps/worker/src/handlers/page-proposal.integration.ts)
 - [page-proposal-smoke.md](/C:/localseoproject/docs/testing/page-proposal-smoke.md)
+
+Implemented DB-free compatibility test:
+
+1. The canonical prompt example parses through the Page Proposal contract, passes Page Registry validation and Page Studio composition, and renders through the shared editor-preview path. Registry drift therefore fails the normal worker unit loop rather than waiting for DB integration.
 
 Implemented DB-backed tests:
 

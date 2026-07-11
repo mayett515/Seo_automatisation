@@ -541,6 +541,13 @@ requireIncludes(
 );
 
 requireIncludes(
+  "apps/worker/src/page-proposal-example.test.ts",
+  "canonical Page Proposal example remains registry-valid, composition-ready, and previewable",
+  "page-proposal-real-provider-smoke",
+  "the canonical prompt example must stay pinned to registry, composition, and renderer truth without a database"
+);
+
+requireIncludes(
   "tools/page-proposal-smoke.ts",
   "assertOpenCodeGoSmokeConfiguration",
   "page-proposal-real-provider-smoke",
@@ -559,6 +566,20 @@ requireIncludes(
   "CreatePageProposalRunRequestSchema.parse",
   "page-proposal-real-provider-smoke",
   "the Page Proposal smoke runner must queue through the contract-parsed public API boundary"
+);
+
+requireIncludes(
+  "tools/page-proposal-smoke.ts",
+  "baselineProposalIds",
+  "page-proposal-real-provider-smoke",
+  "smoke product-row checks must distinguish rows created during the current run from pre-existing fixture residue"
+);
+
+requireIncludes(
+  "tools/page-proposal-smoke.ts",
+  "--require-succeeded",
+  "page-proposal-real-provider-smoke",
+  "credentialed calibration can require a successful terminal run through an explicit CLI gate"
 );
 
 requireIncludes(

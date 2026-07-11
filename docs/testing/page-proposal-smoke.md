@@ -107,6 +107,8 @@ corepack pnpm tsx tools/page-proposal-smoke.ts `
   --opportunity-id aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
 ```
 
+Add `--require-succeeded` when the run must act as a strict prompt/model calibration gate. Without it, a correctly classified and cleanly persisted failure remains a valid adapter-boundary smoke result.
+
 The runner refuses mock/not-configured adapter runs. It prints only bounded summary fields:
 
 ```text
@@ -136,12 +138,14 @@ The smoke passes when:
 - the durable run reaches `succeeded` or a correctly classified `failed` state;
 - `agent_runs.provider` is `opencode_go`, proving the worker did not use the mock/not-configured adapter;
 - the evidence packet is referenced by `input_ref` rather than printed;
-- a failed run has no proposal/version rows attributed to that run;
+- a failed run creates no proposal/version rows beyond the fixture baseline captured before enqueue;
 - a succeeded run has exactly one `draft` proposal and one `preview` version with no `approvedAt`;
 - the persisted proposal, page, and initial sections carry worker-owned `generation.source = agent` and the durable run id;
 - no raw prompt, secret, provider body, or customer data appears in output or committed artifacts.
 
 An `output_schema_mismatch` or `qa_rejected` result can still prove the real adapter, failure taxonomy, and deterministic gates. At least one credentialed `succeeded` run is required before treating the Page Proposal prompt/model combination as operationally proven.
+
+For that operational proof, invoke the runner with `--require-succeeded` so a classified failure returns a non-zero exit code.
 
 ## Review Artifact
 

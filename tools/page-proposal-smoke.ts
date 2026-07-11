@@ -33,6 +33,7 @@ type CliArgs = {
   opportunityId: string;
   timeoutMs: number;
   pollMs: number;
+  requireSucceeded: boolean;
 };
 
 type PageProposalSmokeRow = {
@@ -53,6 +54,10 @@ type PageProposalSmokeRow = {
   versionSectionsMatchGeneration: boolean;
 };
 
+type ExistingPageProposalRow = {
+  proposalId: string;
+};
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.envFile) {
@@ -68,6 +73,10 @@ async function main(): Promise<void> {
   const handle = createDatabaseClient(databaseUrl, { max: 1, idleTimeoutSeconds: 5, connectTimeoutSeconds: 5 });
 
   try {
+    const baselineProposalIds = await loadExistingPageProposalIds(handle.sql, {
+      projectId: args.projectId,
+      opportunityId: args.opportunityId
+    });
     const response = await enqueuePageProposal(args);
     console.log(`enqueue.status=${response.status}`);
     console.log(`enqueue.jobId=${response.jobId}`);
@@ -90,16 +99,35 @@ async function main(): Promise<void> {
     printReasoningAgentRunSummary(run);
     assertRealPageProposalReasoningRun(run);
 
-    const proposalRows = await loadPageProposalRows(handle.sql, {
+    const allProposalRows = await loadPageProposalRows(handle.sql, {
       projectId: args.projectId,
       opportunityId: args.opportunityId,
       runId: run.id
     });
-    assertPageProposalProductTruth(run, proposalRows);
-    printPageProposalSummary(proposalRows);
+    const createdRows = allProposalRows.filter((row) => !baselineProposalIds.has(row.proposalId));
+    assertPageProposalProductTruth(run, createdRows);
+    printPageProposalSummary(createdRows);
+
+    if (args.requireSucceeded && run.status !== "succeeded") {
+      throw new Error(`Page Proposal smoke required success but ended with ${run.failureCode ?? run.status}.`);
+    }
   } finally {
     await handle.close();
   }
+}
+
+async function loadExistingPageProposalIds(
+  sql: ReasoningSmokeSqlClient,
+  input: { projectId: string; opportunityId: string }
+): Promise<Set<string>> {
+  const rows = await sql<ExistingPageProposalRow[]>`
+    select id as "proposalId"
+    from page_proposals
+    where project_id = ${input.projectId}
+      and opportunity_id = ${input.opportunityId}
+  `;
+
+  return new Set(rows.map((row) => row.proposalId));
 }
 
 async function enqueuePageProposal(args: CliArgs): Promise<PageProposalQueueResponse> {
@@ -253,7 +281,8 @@ function parseArgs(args: string[]): CliArgs {
     userId: reasoningSmokeValueAfter(args, "--user-id") ?? defaults.userId,
     opportunityId: reasoningSmokeValueAfter(args, "--opportunity-id") ?? defaults.opportunityId,
     timeoutMs: reasoningSmokeNumberAfter(args, "--timeout-ms") ?? defaults.timeoutMs,
-    pollMs: reasoningSmokeNumberAfter(args, "--poll-ms") ?? defaults.pollMs
+    pollMs: reasoningSmokeNumberAfter(args, "--poll-ms") ?? defaults.pollMs,
+    requireSucceeded: args.includes("--require-succeeded")
   };
 }
 
