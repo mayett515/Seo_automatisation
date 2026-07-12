@@ -124,6 +124,17 @@ Approval: human/customer approves a concrete PageVersion before release
 Forbidden: approve page, deploy page, write approved PageVersion, invent proof, copy competitor copy, emit raw code/markup
 ```
 
+Section Text Generation:
+
+```text
+Allowed: read_evidence, draft_content
+Output: SectionCopyRevisionOutput for one server-pinned pageVersionId + sectionId
+QA: pinned section, registry-owned AI-copy field allow-list, no markup, non-noop output, registry props, Page Studio composition, shared preview render
+Persistence: durable suggestion state only; never creates or approves a page version
+Application: explicit operator apply through update_section_props; exact suggestion = agent run provenance, modified suggestion = human provenance; queued/generating work may be operator-cancelled without creating product output
+Forbidden: choose another section, paths/URLs/phone/business identity/evidence/layout/structure, direct PageJson writes, approval, deploy, provider mutation
+```
+
 Implementation checkpoint:
 
 ```text
@@ -137,6 +148,11 @@ implemented 2026-07-07
     registry validation, Page Studio publish-readiness, and shared preview rendering
   Page Proposal prompt includes a contract-valid registry-prop example for the real provider
   Page Proposal worker owns generation provenance and replaces model attribution with the durable run id
+  Section Text Generation consumes policyForReasoningTask("section_text_generation")
+  Section Text Generation is pinned to one page version and section, and may return registry-approved copy fields only
+  Section Text Generation persists queued/generating/ready/failed suggestion truth but never a page version
+  exact suggestion application uses the durable agent run id; operator-modified application records human provenance
+  stale section-copy work uses the bounded read/analyze recovery controller and never widens into provider-mutation recovery
   OpenCode Go Page Proposal responses are covered through a DB-backed adapter/policy/persistence test
   synthetic fixture and redacted API-to-worker smoke tooling exist for credentialed Page Proposal runs
   page_proposals route uniqueness is DB-enforced per project

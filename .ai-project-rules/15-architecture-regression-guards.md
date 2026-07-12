@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.5"
+version: "1.1.7"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -202,6 +202,12 @@ Controlled Page Studio editing
   Section prop edits are complete object replacements; the form must preserve fields the operator did not remove.
   The UI treats stale-base conflicts as durable server truth and navigates operators to the latest version.
   Unresolved predecessor blockers are bounded display-only context; they are not copied or silently promoted into current-version approval truth.
+  AI copy generation is a durable suggestion workflow pinned to one latest page version and section; it is not a direct edit.
+  Registry metadata owns the exact copy fields available to AI; path, phone, identity, evidence, layout, and structural props remain protected.
+  A worker may mark a validated suggestion ready but must not create a page version, approve, deploy, or auto-apply it.
+  Exact suggestion application records the durable agent run id; operator-modified application records human provenance.
+  Apply uses the existing update_section_props transaction with suggestionId, and dismiss changes suggestion state only.
+  Cancelling queued/generating copy work must lock run before suggestion, terminalize unfinished run truth, and prevent late worker persistence.
 ```
 
 </context>
@@ -220,6 +226,8 @@ Agent constraint policy
   Real-provider smoke runs require explicit provider configuration, synthetic fixture data, redacted summaries, and the same contract/QA/registry/composition/render gates as normal jobs.
   Page Proposal success may move held/monitoring opportunities to brief_created because a proposal now exists; rejected opportunities are the hard stop and must not be overwritten.
   Page Proposal UI triggers only the durable API queue endpoint and reads status from page_brief_draft agent runs.
+  Section Text Generation remains read_evidence + draft_content only and returns one pinned SectionCopyRevisionOutput.
+  Stale Section Text Generation may use bounded read/analyze recovery; provider-mutation recovery scope must not widen.
   Agent/session/tool approval is not product approval; product approval must be durable.
   Subagents inherit or narrow parent denied outcomes.
 ```

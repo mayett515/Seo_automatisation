@@ -27,6 +27,7 @@ export type PageRegistryEditorField =
       label: string;
       control: "text" | "textarea";
       optional?: boolean;
+      aiCopy?: boolean;
     }
   | {
       key: string;
@@ -37,6 +38,7 @@ export type PageRegistryEditorField =
       minItems?: number;
       multilineItemKeys?: readonly string[];
       optionalItemKeys?: readonly string[];
+      aiCopy?: boolean;
     };
 
 export type PageRegistryEntry = {
@@ -200,11 +202,11 @@ export const pageRegistryEntries = [
       })
       .strict(),
     editorFields: [
-      { key: "h1", label: "Headline", control: "text" },
-      { key: "lead", label: "Lead", control: "textarea" },
-      { key: "primaryCtaLabel", label: "Primary CTA label", control: "text", optional: true },
+      { key: "h1", label: "Headline", control: "text", aiCopy: true },
+      { key: "lead", label: "Lead", control: "textarea", aiCopy: true },
+      { key: "primaryCtaLabel", label: "Primary CTA label", control: "text", optional: true, aiCopy: true },
       { key: "primaryCtaHref", label: "Primary CTA path", control: "text", optional: true },
-      { key: "trustLine", label: "Trust line", control: "textarea", optional: true }
+      { key: "trustLine", label: "Trust line", control: "textarea", optional: true, aiCopy: true }
     ],
     seoCapabilities: { canProvideH1: true }
   }),
@@ -224,9 +226,9 @@ export const pageRegistryEntries = [
       })
       .strict(),
     editorFields: [
-      { key: "eyebrow", label: "Eyebrow", control: "text", optional: true },
-      { key: "heading", label: "Heading", control: "text" },
-      { key: "body", label: "Body", control: "textarea" }
+      { key: "eyebrow", label: "Eyebrow", control: "text", optional: true, aiCopy: true },
+      { key: "heading", label: "Heading", control: "text", aiCopy: true },
+      { key: "body", label: "Body", control: "textarea", aiCopy: true }
     ]
   }),
   registryEntry({
@@ -244,14 +246,15 @@ export const pageRegistryEntries = [
       })
       .strict(),
     editorFields: [
-      { key: "heading", label: "Heading", control: "text" },
+      { key: "heading", label: "Heading", control: "text", aiCopy: true },
       {
         key: "paragraphs",
         label: "Paragraphs",
         control: "list",
         itemLabel: "Paragraph",
         itemTemplate: "",
-        minItems: 1
+        minItems: 1,
+        aiCopy: true
       }
     ]
   }),
@@ -270,7 +273,7 @@ export const pageRegistryEntries = [
       })
       .strict(),
     editorFields: [
-      { key: "heading", label: "Heading", control: "text" },
+      { key: "heading", label: "Heading", control: "text", aiCopy: true },
       {
         key: "benefits",
         label: "Benefits",
@@ -278,7 +281,8 @@ export const pageRegistryEntries = [
         itemLabel: "Benefit",
         itemTemplate: { title: "", body: "" },
         minItems: 2,
-        multilineItemKeys: ["body"]
+        multilineItemKeys: ["body"],
+        aiCopy: true
       }
     ]
   }),
@@ -297,7 +301,7 @@ export const pageRegistryEntries = [
       })
       .strict(),
     editorFields: [
-      { key: "heading", label: "Heading", control: "text" },
+      { key: "heading", label: "Heading", control: "text", aiCopy: true },
       {
         key: "items",
         label: "Questions",
@@ -305,7 +309,8 @@ export const pageRegistryEntries = [
         itemLabel: "Question",
         itemTemplate: { question: "", answer: "" },
         minItems: 1,
-        multilineItemKeys: ["answer"]
+        multilineItemKeys: ["answer"],
+        aiCopy: true
       }
     ],
     seoCapabilities: { canProvideFaq: true, canProvideJsonLd: true }
@@ -325,7 +330,7 @@ export const pageRegistryEntries = [
       })
       .strict(),
     editorFields: [
-      { key: "heading", label: "Heading", control: "text" },
+      { key: "heading", label: "Heading", control: "text", aiCopy: true },
       {
         key: "areas",
         label: "Service areas",
@@ -355,9 +360,9 @@ export const pageRegistryEntries = [
       })
       .strict(),
     editorFields: [
-      { key: "heading", label: "Heading", control: "text" },
-      { key: "body", label: "Body", control: "textarea" },
-      { key: "ctaLabel", label: "CTA label", control: "text" },
+      { key: "heading", label: "Heading", control: "text", aiCopy: true },
+      { key: "body", label: "Body", control: "textarea", aiCopy: true },
+      { key: "ctaLabel", label: "CTA label", control: "text", aiCopy: true },
       { key: "ctaHref", label: "CTA path", control: "text" }
     ]
   }),
@@ -487,6 +492,11 @@ export function getPageRegistryEntry(
   registry: PageRegistry = pageRegistry
 ): PageRegistryEntry | undefined {
   return registry.byKey.get(registryKey);
+}
+
+export function getPageRegistryAiCopyFieldKeys(registryKey: string, registry: PageRegistry = pageRegistry): string[] {
+  const entry = getPageRegistryEntry(registryKey, registry);
+  return entry ? entry.editorFields.filter((field) => field.aiCopy).map((field) => field.key) : [];
 }
 
 export function validatePageSectionProps(

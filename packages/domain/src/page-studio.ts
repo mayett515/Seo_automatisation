@@ -83,6 +83,10 @@ export type PageStudioMutationResult =
   | { success: true; pageJson: PageJson }
   | { success: false; decision: Exclude<PageStudioActionDecision, { kind: "allow" }> };
 
+export type SectionCopySuggestionAttributionDecision =
+  | { kind: "agent"; generation: PageGeneration }
+  | { kind: "human_modified"; generation: PageGeneration };
+
 export type PageStudioReplacementSection = Pick<
   PageSectionInstance,
   "type" | "registryKey" | "schemaVersion" | "zone" | "variant" | "props"
@@ -271,6 +275,31 @@ export function applyPageStudioEditCommand(input: {
             }
           : section
       )
+    }
+  };
+}
+
+export function decideSectionCopySuggestionAttribution(input: {
+  agentRunId: string;
+  suggestedProps: Record<string, unknown>;
+  submittedProps: Record<string, unknown>;
+}): SectionCopySuggestionAttributionDecision {
+  if (jsonValuesEqual(input.suggestedProps, input.submittedProps)) {
+    return {
+      kind: "agent",
+      generation: {
+        source: "agent",
+        agentRunId: input.agentRunId,
+        reason: "page_studio:section_text_generation"
+      }
+    };
+  }
+
+  return {
+    kind: "human_modified",
+    generation: {
+      source: "human",
+      reason: "page_studio:section_text_generation_modified"
     }
   };
 }
@@ -525,6 +554,36 @@ function addOrderNumberIssues(ordered: readonly IndexedSection[], issues: PageSt
       message: "Page sections must use contiguous zero-based order values."
     });
   }
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => jsonValuesEqual(value, right[index]))
+    );
+  }
+
+  if (!isRecord(left) || !isRecord(right)) {
+    return false;
+  }
+
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key, index) => key === rightKeys[index] && jsonValuesEqual(left[key], right[key]))
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function addRequiredSectionIssues(pageJson: PageJson, issues: PageStudioCompositionIssue[]): void {

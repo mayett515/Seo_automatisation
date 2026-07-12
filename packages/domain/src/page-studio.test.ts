@@ -6,6 +6,7 @@ import {
   decideMovePageSection,
   decidePageStudioPublishReadiness,
   decideReplacePageSection,
+  decideSectionCopySuggestionAttribution,
   decideSwitchPageSectionVariant,
   getPageStudioSectionCapabilities,
   movePageSection,
@@ -15,6 +16,41 @@ import {
   validatePageStudioComposition,
   type PageStudioRegistryEntry
 } from "./page-studio.js";
+
+void describe("Page Studio section-copy attribution", () => {
+  void it("attributes an unchanged durable suggestion to its agent run", () => {
+    const decision = decideSectionCopySuggestionAttribution({
+      agentRunId: "run-1",
+      suggestedProps: { h1: "Dachreinigung Muenchen", lead: ["A", { nested: "B" }] },
+      submittedProps: { lead: ["A", { nested: "B" }], h1: "Dachreinigung Muenchen" }
+    });
+
+    assert.deepEqual(decision, {
+      kind: "agent",
+      generation: {
+        source: "agent",
+        agentRunId: "run-1",
+        reason: "page_studio:section_text_generation"
+      }
+    });
+  });
+
+  void it("attributes operator-modified suggestion props to the human", () => {
+    const decision = decideSectionCopySuggestionAttribution({
+      agentRunId: "run-1",
+      suggestedProps: { h1: "Dachreinigung Muenchen" },
+      submittedProps: { h1: "Dachreinigung in Muenchen" }
+    });
+
+    assert.deepEqual(decision, {
+      kind: "human_modified",
+      generation: {
+        source: "human",
+        reason: "page_studio:section_text_generation_modified"
+      }
+    });
+  });
+});
 
 void describe("Page Studio composition decisions", () => {
   void it("accepts the MVP Local SEO page skeleton", () => {

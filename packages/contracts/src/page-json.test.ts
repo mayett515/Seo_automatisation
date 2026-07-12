@@ -10,13 +10,15 @@ import {
   ReleaseDeployApprovalResponseSchema,
   ReleasePreflightResponseSchema,
   ReviewPageVersionRequestSchema,
+  SectionCopyRevisionOutputSchema,
   type PageJson
 } from "./index.js";
 
 void describe("AgentRunFailureCodeSchema", () => {
-  void it("accepts visible bounded-recovery terminal failure codes", () => {
+  void it("accepts visible recovery and operator terminal failure codes", () => {
     assert.equal(AgentRunFailureCodeSchema.parse("work_recovery_exhausted"), "work_recovery_exhausted");
     assert.equal(AgentRunFailureCodeSchema.parse("work_transport_inconsistent"), "work_transport_inconsistent");
+    assert.equal(AgentRunFailureCodeSchema.parse("operator_cancelled"), "operator_cancelled");
   });
 });
 
@@ -271,6 +273,59 @@ void describe("EditPageVersionRequestSchema", () => {
           props: { heading: "Mehr Details", paragraphs: ["Lokale Details fuer Dachau."] },
           zone: "body_main"
         }
+      }).success,
+      false
+    );
+  });
+
+  void it("allows suggestion attribution only for structured props edits", () => {
+    const suggestionId = "11111111-1111-4111-8111-111111111111";
+
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        suggestionId,
+        command: {
+          type: "update_section_props",
+          sectionId: "hero-1",
+          props: { h1: "AI suggestion" }
+        }
+      }).success,
+      true
+    );
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        suggestionId,
+        command: { type: "move_section", sectionId: "benefits-1", direction: "up" }
+      }).success,
+      false
+    );
+  });
+});
+
+void describe("SectionCopyRevisionOutputSchema", () => {
+  void it("accepts a bounded field suggestion and rejects empty or structural output", () => {
+    assert.equal(
+      SectionCopyRevisionOutputSchema.safeParse({
+        schemaVersion: 1,
+        sectionId: "hero-1",
+        suggestedFields: { h1: "Dachreinigung in Muenchen" }
+      }).success,
+      true
+    );
+    assert.equal(
+      SectionCopyRevisionOutputSchema.safeParse({
+        schemaVersion: 1,
+        sectionId: "hero-1",
+        suggestedFields: {}
+      }).success,
+      false
+    );
+    assert.equal(
+      SectionCopyRevisionOutputSchema.safeParse({
+        schemaVersion: 1,
+        sectionId: "hero-1",
+        suggestedFields: { h1: "Dachreinigung" },
+        pageJson: { route: "/unsafe/" }
       }).success,
       false
     );

@@ -4,12 +4,14 @@ import { Link } from "@tanstack/react-router";
 import type {
   PageSectionInstance,
   PageStudioEditCommand,
+  SectionCopySuggestion,
   PageVersionDetail,
   PageVersionSummary
 } from "@localseo/contracts";
 import { decideMovePageSection, getPageStudioSectionCapabilities } from "@localseo/domain";
 import {
   pageRegistrySummary,
+  getPageRegistryAiCopyFieldKeys,
   validatePageSectionProps,
   type PageRegistryEditorField,
   type PageRegistryEntrySummary
@@ -21,21 +23,30 @@ import {
   editorListItemValue,
   isRecord,
   legalReplacementEntries,
+  latestCopySuggestionForSection,
   normalizeEditorProps,
   orderedPageSections
 } from "./page-studio-state.js";
 
-type PageStudioPanelMode = "properties" | "replacement";
+type PageStudioPanelMode = "properties" | "replacement" | "copy";
 
 export function PageStudioEditor(props: {
+  copyActionError: Error | null;
+  copySuggestions: readonly SectionCopySuggestion[];
   error: Error | null;
+  isCopyActionPending: boolean;
+  isCopySuggestionsError: boolean;
+  isCopySuggestionsPending: boolean;
   isSaving: boolean;
   isVersionListError: boolean;
   isVersionListPending: boolean;
   latestVersion?: PageVersionSummary;
   pageVersion: PageVersionDetail;
   projectId: string;
+  onApplyCopySuggestion: (suggestion: SectionCopySuggestion, props: Record<string, unknown>) => void;
   onCommand: (command: PageStudioEditCommand) => void;
+  onDismissCopySuggestion: (suggestionId: string) => void;
+  onRequestCopySuggestion: (sectionId: string, instruction: string) => void;
 }) {
   const sections = orderedPageSections(props.pageVersion);
   const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.id ?? "");
@@ -44,7 +55,13 @@ export function PageStudioEditor(props: {
   const replacementEntries = selectedSection
     ? legalReplacementEntries(props.pageVersion.pageJson, selectedSection.id, pageRegistrySummary)
     : [];
-  const activePanelMode = panelMode === "replacement" && replacementEntries.length > 0 ? panelMode : "properties";
+  const copyFieldKeys = selectedSection ? getPageRegistryAiCopyFieldKeys(selectedSection.registryKey) : [];
+  const activePanelMode =
+    panelMode === "replacement" && replacementEntries.length === 0
+      ? "properties"
+      : panelMode === "copy" && copyFieldKeys.length === 0
+        ? "properties"
+        : panelMode;
   const isLatest = props.latestVersion?.id === props.pageVersion.id;
   const canEdit = isLatest && props.pageVersion.status !== "superseded" && !props.isVersionListPending;
   const editorState = props.isVersionListPending
@@ -84,6 +101,7 @@ export function PageStudioEditor(props: {
         </div>
       ) : null}
       {props.error ? <div className="notice notice--danger">{props.error.message}</div> : null}
+      {props.copyActionError ? <div className="notice notice--danger">{props.copyActionError.message}</div> : null}
 
       <div className="page-studio-outline" aria-label="Page section outline">
         {sections.map((section) => (
@@ -106,6 +124,7 @@ export function PageStudioEditor(props: {
       {selectedSection ? (
         <>
           <PageStudioPanelModeControl
+            canGenerateCopy={copyFieldKeys.length > 0}
             canReplace={replacementEntries.length > 0}
             mode={activePanelMode}
             onChange={setPanelMode}
@@ -120,7 +139,7 @@ export function PageStudioEditor(props: {
                 props.onCommand({ type: "update_section_props", sectionId: selectedSection.id, props: sectionProps })
               }
             />
-          ) : (
+          ) : activePanelMode === "replacement" ? (
             <SectionReplacementForm
               canEdit={canEdit}
               entries={replacementEntries}
@@ -137,6 +156,19 @@ export function PageStudioEditor(props: {
                 })
               }
             />
+          ) : (
+            <SectionCopySuggestionPanel
+              canEdit={canEdit}
+              isActionPending={props.isCopyActionPending || props.isSaving}
+              isSuggestionsError={props.isCopySuggestionsError}
+              isSuggestionsPending={props.isCopySuggestionsPending}
+              key={`${props.pageVersion.id}:${selectedSection.id}:copy`}
+              section={selectedSection}
+              suggestions={props.copySuggestions}
+              onApply={props.onApplyCopySuggestion}
+              onDismiss={props.onDismissCopySuggestion}
+              onRequest={props.onRequestCopySuggestion}
+            />
           )}
         </>
       ) : null}
@@ -145,6 +177,7 @@ export function PageStudioEditor(props: {
 }
 
 function PageStudioPanelModeControl(props: {
+  canGenerateCopy: boolean;
   canReplace: boolean;
   mode: PageStudioPanelMode;
   onChange: (mode: PageStudioPanelMode) => void;
@@ -168,7 +201,129 @@ function PageStudioPanelModeControl(props: {
       >
         Replace section
       </button>
+      <button
+        aria-pressed={props.mode === "copy"}
+        className={props.mode === "copy" ? "button-secondary button-secondary--active" : "button-secondary"}
+        disabled={!props.canGenerateCopy}
+        type="button"
+        onClick={() => props.onChange("copy")}
+      >
+        AI copy
+      </button>
     </div>
+  );
+}
+
+function SectionCopySuggestionPanel(props: {
+  canEdit: boolean;
+  isActionPending: boolean;
+  isSuggestionsError: boolean;
+  isSuggestionsPending: boolean;
+  section: PageSectionInstance;
+  suggestions: readonly SectionCopySuggestion[];
+  onApply: (suggestion: SectionCopySuggestion, props: Record<string, unknown>) => void;
+  onDismiss: (suggestionId: string) => void;
+  onRequest: (sectionId: string, instruction: string) => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const suggestion = latestCopySuggestionForSection(props.section.id, props.suggestions);
+  const entry = pageRegistrySummary.find((candidate) => candidate.registryKey === props.section.registryKey);
+  const isActive =
+    suggestion?.status === "queued" || suggestion?.status === "generating" || suggestion?.status === "ready";
+
+  if (!entry) {
+    return <div className="notice notice--danger">AI copy controls are unavailable for this registry entry.</div>;
+  }
+
+  return (
+    <section className="page-studio-copy-panel">
+      <div className="page-studio-props-heading">
+        <div>
+          <h3>AI copy revision</h3>
+          <p>{sectionLabel(props.section.type)}</p>
+        </div>
+        <StatusPill
+          tone={suggestion?.status === "failed" ? "danger" : suggestion?.status === "ready" ? "success" : "neutral"}
+        >
+          {suggestion?.status ?? "new"}
+        </StatusPill>
+      </div>
+
+      {props.isSuggestionsPending ? <div className="notice notice--neutral">Loading copy suggestions</div> : null}
+      {props.isSuggestionsError ? (
+        <div className="notice notice--danger">Copy suggestions could not be loaded.</div>
+      ) : null}
+      {suggestion?.status === "queued" || suggestion?.status === "generating" ? (
+        <>
+          <div className="notice notice--neutral">Copy revision is being generated.</div>
+          <button
+            className="button-secondary"
+            disabled={!props.canEdit || props.isActionPending}
+            type="button"
+            onClick={() => props.onDismiss(suggestion.id)}
+          >
+            Cancel revision
+          </button>
+        </>
+      ) : null}
+      {suggestion?.status === "failed" ? (
+        <div className="notice notice--danger">
+          {suggestion.failureMessage ?? "Copy revision could not be generated."}
+        </div>
+      ) : null}
+
+      {suggestion?.status === "ready" && suggestion.suggestedProps ? (
+        <>
+          <RegistryPropsForm
+            canSubmit={props.canEdit}
+            description="Review before creating the next version"
+            entry={entry}
+            initialProps={suggestion.suggestedProps}
+            isSaving={props.isActionPending}
+            requireDirty={false}
+            savingLabel="Applying"
+            submitLabel="Apply suggestion"
+            title={sectionLabel(props.section.type)}
+            variant={props.section.variant}
+            onSubmit={(sectionProps) => props.onApply(suggestion, sectionProps)}
+          />
+          <button
+            className="button-secondary"
+            disabled={!props.canEdit || props.isActionPending}
+            type="button"
+            onClick={() => props.onDismiss(suggestion.id)}
+          >
+            Dismiss suggestion
+          </button>
+        </>
+      ) : null}
+
+      {!isActive ? (
+        <div className="page-studio-copy-request">
+          <label className="form-field">
+            <span>Revision instruction</span>
+            <textarea
+              disabled={!props.canEdit || props.isActionPending}
+              placeholder="Optional"
+              value={instruction}
+              onChange={(event) => setInstruction(event.currentTarget.value)}
+            />
+          </label>
+          <button
+            className="button-primary"
+            disabled={!props.canEdit || props.isActionPending || props.isSuggestionsPending || props.isSuggestionsError}
+            type="button"
+            onClick={() => props.onRequest(props.section.id, instruction)}
+          >
+            {props.isActionPending
+              ? "Queueing"
+              : suggestion?.status === "failed"
+                ? "Retry revision"
+                : "Generate revision"}
+          </button>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -370,6 +525,7 @@ function RegistryPropsForm(props: {
   entry: PageRegistryEntrySummary;
   initialProps: Record<string, unknown>;
   isSaving: boolean;
+  requireDirty?: boolean;
   savingLabel: string;
   submitLabel: string;
   title: string;
@@ -426,7 +582,12 @@ function RegistryPropsForm(props: {
         {(state) => (
           <button
             className="button-primary"
-            disabled={!props.canSubmit || props.isSaving || state.isSubmitting || !state.isDirty}
+            disabled={
+              !props.canSubmit ||
+              props.isSaving ||
+              state.isSubmitting ||
+              (props.requireDirty !== false && !state.isDirty)
+            }
             type="submit"
           >
             {props.isSaving ? props.savingLabel : props.submitLabel}

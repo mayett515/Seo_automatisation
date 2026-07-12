@@ -18,6 +18,10 @@ const reasoningTaskPolicies: Partial<Record<ReasoningTask, AiReasoningRunPolicy>
       "draft_page_json",
       "render_preview"
     ]
+  },
+  section_text_generation: {
+    canMutateProduction: false,
+    allowedToolCategories: ["read_evidence", "draft_content"]
   }
 } satisfies Partial<Record<ReasoningTask, AiReasoningRunPolicy>>;
 

@@ -20,6 +20,7 @@ import {
   type AiReasoningEnqueueFailureCode,
   CreatePageProposalRunRequestSchema,
   CreatePageSectionNoteRequestSchema,
+  CreateSectionCopySuggestionRequestSchema,
   EditPageVersionRequestSchema,
   PageJsonSchema,
   PageProposalJobDataSchema,
@@ -31,6 +32,10 @@ import {
   PageSectionNoteFieldPathSchema,
   PageSectionNoteListResponseSchema,
   PageSectionNoteSchema,
+  SectionCopySuggestionJobDataSchema,
+  SectionCopySuggestionListResponseSchema,
+  SectionCopySuggestionQueueResponseSchema,
+  SectionCopySuggestionSchema,
   PageVersionDetailSchema,
   PageVersionEditResponseSchema,
   PageVersionListResponseSchema,
@@ -40,6 +45,7 @@ import {
   ReviewPageVersionRequestSchema,
   type CreatePageProposalRunRequest,
   type CreatePageSectionNoteRequest,
+  type CreateSectionCopySuggestionRequest,
   type PageGeneration,
   type PageJson,
   type PageProposalDetail,
@@ -48,6 +54,9 @@ import {
   type PageProposalSummary,
   type PageSectionNote,
   type PageSectionNoteListResponse,
+  type SectionCopySuggestion,
+  type SectionCopySuggestionListResponse,
+  type SectionCopySuggestionQueueResponse,
   type PageVersionDetail,
   type PageVersionEditResponse,
   type PageVersionListResponse,
@@ -55,18 +64,29 @@ import {
   type PageVersionReviewResponse,
   type PageVersionSummary
 } from "@localseo/contracts";
-import { applyPageStudioEditCommand, decidePageStudioPublishReadiness } from "@localseo/domain";
+import {
+  applyPageStudioEditCommand,
+  decidePageStudioPublishReadiness,
+  decideSectionCopySuggestionAttribution
+} from "@localseo/domain";
 import {
   agentRuns,
   approvals,
   isDatabaseUniqueViolation,
   opportunities,
   pageProposals,
+  pageSectionCopySuggestions,
   pageSectionNotes,
   pageVersions,
   type DatabaseClient
 } from "@localseo/db";
-import { pageRegistrySummary, renderPagePreviewFile, validatePageJsonAgainstRegistry } from "@localseo/page-registry";
+import {
+  getPageRegistryAiCopyFieldKeys,
+  pageRegistrySummary,
+  renderPagePreviewFile,
+  validatePageJsonAgainstRegistry,
+  validatePageSectionProps
+} from "@localseo/page-registry";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
@@ -82,6 +102,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 type Db = DatabaseClient;
 type PageProposalRow = Awaited<ReturnType<typeof selectPageProposalRows>>[number];
 type PageSectionNoteRow = Awaited<ReturnType<typeof selectPageSectionNoteRows>>[number];
+type SectionCopySuggestionRow = typeof pageSectionCopySuggestions.$inferSelect;
 type PageVersionRow = Awaited<ReturnType<typeof selectPageVersionRows>>[number];
 type PageVersionApprovalRow = typeof approvals.$inferSelect;
 type ApprovalBlockerReader = Pick<DatabaseClient, "select">;
@@ -262,6 +283,328 @@ export class PagesService {
     });
   }
 
+  async listSectionCopySuggestions(
+    projectId: string,
+    pageVersionId: string
+  ): Promise<SectionCopySuggestionListResponse> {
+    const pageVersion = await this.loadPageVersion(projectId, pageVersionId);
+    const rows = await selectSectionCopySuggestionRows(this.database.requireDb(), projectId, pageVersion.id);
+
+    return SectionCopySuggestionListResponseSchema.parse({
+      projectId,
+      pageVersionId: pageVersion.id,
+      suggestions: rows.map(sectionCopySuggestionToResponse)
+    });
+  }
+
+  async queueSectionCopySuggestion(
+    projectId: string,
+    pageVersionId: string,
+    input: CreateSectionCopySuggestionRequest,
+    requestedByUserId?: string
+  ): Promise<SectionCopySuggestionQueueResponse> {
+    if (!requestedByUserId) {
+      throw new BadRequestException("Section copy generation requires an authenticated persisted user id.");
+    }
+
+    if (!this.database.isConfigured()) {
+      return SectionCopySuggestionQueueResponseSchema.parse({
+        jobId: randomUUID(),
+        projectId,
+        pageVersionId,
+        sectionId: input.sectionId,
+        type: "page_generation",
+        status: "dry_run",
+        createdBy: requestedByUserId,
+        message: "Database is not configured. Section copy persistence is in explicit dry-run mode.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!this.queues.isQueueConfigured("page-generation")) {
+      const jobId = randomUUID();
+      await this.queues.enqueue({
+        queueName: "page-generation",
+        jobName: "section_text_generation",
+        jobId,
+        data: SectionCopySuggestionJobDataSchema.parse({
+          projectId,
+          runId: jobId,
+          suggestionId: "dry-run",
+          pageVersionId,
+          sectionId: input.sectionId,
+          triggeredByUserId: requestedByUserId,
+          triggerSource: "user_action"
+        }),
+        audit: {
+          projectId,
+          type: "page_generation",
+          inputRef: pageVersionId,
+          actorType: "user",
+          actorUserId: requestedByUserId,
+          triggerSource: "user_action"
+        }
+      });
+
+      return SectionCopySuggestionQueueResponseSchema.parse({
+        jobId,
+        projectId,
+        pageVersionId,
+        sectionId: input.sectionId,
+        type: "page_generation",
+        status: "dry_run",
+        createdBy: requestedByUserId,
+        message: "Page generation queue is not configured. This is an explicit dry-run response.",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const initialBase = await this.loadPageVersion(projectId, pageVersionId);
+    const db = this.database.requireDb();
+    const runId = randomUUID();
+    const suggestionId = randomUUID();
+    let suggestion: SectionCopySuggestionRow | undefined;
+    let alreadyActive = false;
+
+    try {
+      await db.transaction(async (tx) => {
+        await lockPageProposalForVersioning(tx, projectId, initialBase.pageProposalId);
+        const latest = await selectLatestPageVersionIdentity(tx, initialBase.pageProposalId);
+        if (!latest || latest.id !== initialBase.id) {
+          throw new ConflictException("Section copy generation must use the latest page version.");
+        }
+
+        const [base] = await selectPageVersionRows(tx, projectId, { pageVersionId: initialBase.id });
+        if (!base) {
+          throw new NotFoundException("Page version was not found for this project.");
+        }
+        assertSectionCopySuggestionTarget(parseStoredPageJson(base), input.sectionId);
+
+        const [active] = await selectSectionCopySuggestionRows(
+          tx,
+          projectId,
+          base.id,
+          undefined,
+          input.sectionId,
+          true
+        );
+        if (active) {
+          suggestion = active;
+          alreadyActive = true;
+          return;
+        }
+
+        await tx.insert(agentRuns).values({
+          id: runId,
+          projectId,
+          subjectId: suggestionId,
+          task: "section_text_generation",
+          status: "queued",
+          diagnosticsJson: {
+            suggestionId,
+            pageVersionId: base.id,
+            sectionId: input.sectionId
+          }
+        });
+
+        const [created] = await tx
+          .insert(pageSectionCopySuggestions)
+          .values({
+            id: suggestionId,
+            projectId,
+            pageVersionId: base.id,
+            sectionId: input.sectionId,
+            agentRunId: runId,
+            requestedByUserId,
+            status: "queued",
+            instruction: input.instruction
+          })
+          .returning();
+
+        if (!created) {
+          throw new Error("Failed to create section copy suggestion.");
+        }
+        suggestion = created;
+      });
+    } catch (error) {
+      if (isDatabaseUniqueViolation(error)) {
+        const [active] = await selectSectionCopySuggestionRows(
+          db,
+          projectId,
+          initialBase.id,
+          undefined,
+          input.sectionId,
+          true
+        );
+        if (active) {
+          suggestion = active;
+          alreadyActive = true;
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    if (!suggestion) {
+      throw new Error("Failed to load the created section copy suggestion.");
+    }
+    if (alreadyActive) {
+      return activeSectionCopySuggestionResponse(suggestion);
+    }
+
+    let enqueued: boolean;
+    try {
+      enqueued = await this.queues.enqueue({
+        queueName: "page-generation",
+        jobName: "section_text_generation",
+        jobId: suggestion.agentRunId,
+        data: SectionCopySuggestionJobDataSchema.parse({
+          projectId,
+          runId: suggestion.agentRunId,
+          suggestionId: suggestion.id,
+          pageVersionId: suggestion.pageVersionId,
+          sectionId: suggestion.sectionId,
+          triggeredByUserId: requestedByUserId,
+          triggerSource: "user_action"
+        }),
+        options: {
+          attempts: 3,
+          backoff: { type: "exponential", delay: 5000 }
+        },
+        audit: {
+          projectId,
+          type: "page_generation",
+          inputRef: suggestion.id,
+          actorType: "user",
+          actorUserId: requestedByUserId,
+          triggerSource: "user_action"
+        }
+      });
+    } catch (error) {
+      await markSectionCopySuggestionQueueFailure(
+        db,
+        suggestion,
+        "queue_enqueue_failed",
+        normalizePageProposalQueueFailure(error)
+      );
+      throw error;
+    }
+
+    if (!enqueued) {
+      await markSectionCopySuggestionQueueFailure(
+        db,
+        suggestion,
+        "queue_not_configured",
+        "Page generation queue was not configured after suggestion creation."
+      );
+    }
+
+    return SectionCopySuggestionQueueResponseSchema.parse({
+      jobId: suggestion.agentRunId,
+      projectId,
+      runId: suggestion.agentRunId,
+      suggestionId: suggestion.id,
+      pageVersionId: suggestion.pageVersionId,
+      sectionId: suggestion.sectionId,
+      type: "page_generation",
+      status: enqueued ? "queued" : "dry_run",
+      inputRef: suggestion.id,
+      createdBy: requestedByUserId,
+      message: enqueued ? undefined : "Page generation queue is not configured. This is an explicit dry-run response.",
+      createdAt: suggestion.createdAt.toISOString()
+    });
+  }
+
+  async dismissSectionCopySuggestion(
+    projectId: string,
+    pageVersionId: string,
+    suggestionId: string,
+    dismissedByUserId?: string
+  ): Promise<SectionCopySuggestion> {
+    if (!dismissedByUserId) {
+      throw new BadRequestException(
+        "Dismissing a section copy suggestion requires an authenticated persisted user id."
+      );
+    }
+    if (!isPersistedId(suggestionId)) {
+      throw new BadRequestException("Section copy suggestion id must be a UUID.");
+    }
+
+    const pageVersion = await this.loadPageVersion(projectId, pageVersionId);
+    const db = this.database.requireDb();
+    let dismissed: SectionCopySuggestionRow | undefined;
+
+    await db.transaction(async (tx) => {
+      const [candidate] = await selectSectionCopySuggestionRows(tx, projectId, pageVersion.id, suggestionId);
+      if (!candidate) {
+        throw new NotFoundException("Section copy suggestion was not found for this page version.");
+      }
+
+      await lockAgentRunForSectionCopyCancellation(tx, projectId, candidate.agentRunId);
+      await lockSectionCopySuggestion(tx, projectId, pageVersion.id, suggestionId);
+      const [existing] = await selectSectionCopySuggestionRows(tx, projectId, pageVersion.id, suggestionId);
+      if (!existing) {
+        throw new NotFoundException("Section copy suggestion was not found for this page version.");
+      }
+      if (existing.status === "dismissed") {
+        dismissed = existing;
+        return;
+      }
+      if (existing.status !== "queued" && existing.status !== "generating" && existing.status !== "ready") {
+        throw new BadRequestException("Only unresolved section copy suggestions can be dismissed.");
+      }
+
+      const now = new Date();
+      await tx
+        .update(agentRuns)
+        .set({
+          status: "failed",
+          failureCode: "operator_cancelled",
+          diagnosticsJson: {
+            suggestionId: existing.id,
+            pageVersionId: existing.pageVersionId,
+            sectionId: existing.sectionId,
+            message: "Section copy suggestion was cancelled by the operator."
+          },
+          completedAt: now,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(agentRuns.id, existing.agentRunId),
+            eq(agentRuns.projectId, projectId),
+            inArray(agentRuns.status, ["queued", "running"])
+          )
+        );
+
+      const [updated] = await tx
+        .update(pageSectionCopySuggestions)
+        .set({
+          status: "dismissed",
+          dismissedByUserId,
+          dismissedAt: now,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(pageSectionCopySuggestions.id, existing.id),
+            eq(pageSectionCopySuggestions.projectId, projectId),
+            eq(pageSectionCopySuggestions.pageVersionId, pageVersion.id),
+            inArray(pageSectionCopySuggestions.status, ["queued", "generating", "ready"])
+          )
+        )
+        .returning();
+      dismissed = updated;
+    });
+
+    if (!dismissed) {
+      throw new ConflictException("Section copy suggestion is no longer dismissible.");
+    }
+    return sectionCopySuggestionToResponse(dismissed);
+  }
+
   async getPageProposal(projectId: string, pageProposalId: string): Promise<PageProposalDetail> {
     const proposal = await this.loadPageProposal(projectId, pageProposalId);
     const versions = await selectPageVersionRows(this.database.requireDb(), projectId, { pageProposalId });
@@ -430,12 +773,49 @@ export class PagesService {
         throw new BadRequestException("Superseded page versions cannot be used as Page Studio edit bases.");
       }
 
-      const generation = {
+      const basePageJson = parseStoredPageJson(base);
+      let generation: PageGeneration = {
         source: "human",
         reason: `page_studio:${input.command.type}`
-      } satisfies PageGeneration;
+      };
+      let appliedSuggestion: SectionCopySuggestionRow | undefined;
+
+      if (input.suggestionId) {
+        if (input.command.type !== "update_section_props") {
+          throw new BadRequestException("Section copy suggestions require an update_section_props command.");
+        }
+
+        await lockSectionCopySuggestion(tx, projectId, base.id, input.suggestionId);
+        const [suggestion] = await selectSectionCopySuggestionRows(tx, projectId, base.id, input.suggestionId);
+        if (!suggestion) {
+          throw new NotFoundException("Section copy suggestion was not found for this page version.");
+        }
+        if (suggestion.status !== "ready" || !suggestion.suggestedProps) {
+          throw new ConflictException("Section copy suggestion is not ready to apply.");
+        }
+        if (suggestion.sectionId !== input.command.sectionId) {
+          throw new BadRequestException("Section copy suggestion does not target this edit command section.");
+        }
+
+        const targetSection = basePageJson.sections.find((section) => section.id === suggestion.sectionId);
+        if (!targetSection) {
+          throw new UnprocessableEntityException("Section copy suggestion targets a missing PageJson section.");
+        }
+        const suggestedProps = validatePageSectionProps(targetSection.registryKey, suggestion.suggestedProps);
+        if (!suggestedProps.success) {
+          throw new UnprocessableEntityException("Stored section copy suggestion failed registry validation.");
+        }
+
+        generation = decideSectionCopySuggestionAttribution({
+          agentRunId: suggestion.agentRunId,
+          suggestedProps: suggestedProps.props,
+          submittedProps: input.command.props
+        }).generation;
+        appliedSuggestion = suggestion;
+      }
+
       const mutation = applyPageStudioEditCommand({
-        pageJson: parseStoredPageJson(base),
+        pageJson: basePageJson,
         command: input.command,
         generation,
         registryEntries: pageRegistrySummary
@@ -481,6 +861,31 @@ export class PagesService {
 
       if (!created) {
         throw new Error("Failed to create edited page version.");
+      }
+
+      if (appliedSuggestion) {
+        const [updatedSuggestion] = await tx
+          .update(pageSectionCopySuggestions)
+          .set({
+            status: "applied",
+            appliedPageVersionId: created.id,
+            appliedByUserId: createdByUserId,
+            appliedAt: now,
+            updatedAt: now
+          })
+          .where(
+            and(
+              eq(pageSectionCopySuggestions.id, appliedSuggestion.id),
+              eq(pageSectionCopySuggestions.projectId, projectId),
+              eq(pageSectionCopySuggestions.pageVersionId, base.id),
+              eq(pageSectionCopySuggestions.status, "ready")
+            )
+          )
+          .returning({ id: pageSectionCopySuggestions.id });
+
+        if (!updatedSuggestion) {
+          throw new ConflictException("Section copy suggestion was already applied or dismissed.");
+        }
       }
 
       await tx
@@ -678,6 +1083,43 @@ class PagesController {
     return this.pages.previewPageVersion(projectId, pageVersionId);
   }
 
+  @Get(":pageVersionId/copy-suggestions")
+  listCopySuggestions(@Param("projectId") projectId: string, @Param("pageVersionId") pageVersionId: string) {
+    return this.pages.listSectionCopySuggestions(projectId, pageVersionId);
+  }
+
+  @Post(":pageVersionId/copy-suggestions")
+  @RequireProjectPermission("page:edit")
+  queueCopySuggestion(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    const parsed = CreateSectionCopySuggestionRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException("Section copy generation requires a valid sectionId and optional instruction.");
+    }
+
+    return this.pages.queueSectionCopySuggestion(projectId, pageVersionId, parsed.data, persistedActorUserId(request));
+  }
+
+  @Patch(":pageVersionId/copy-suggestions/:suggestionId/dismiss")
+  @RequireProjectPermission("page:edit")
+  dismissCopySuggestion(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Param("suggestionId") suggestionId: string,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.pages.dismissSectionCopySuggestion(
+      projectId,
+      pageVersionId,
+      suggestionId,
+      persistedActorUserId(request)
+    );
+  }
+
   @Get(":pageVersionId/notes")
   listNotes(@Param("projectId") projectId: string, @Param("pageVersionId") pageVersionId: string) {
     return this.pages.listPageSectionNotes(projectId, pageVersionId);
@@ -801,6 +1243,22 @@ function activePageProposalResponse(run: typeof agentRuns.$inferSelect): PagePro
   });
 }
 
+function activeSectionCopySuggestionResponse(suggestion: SectionCopySuggestionRow): SectionCopySuggestionQueueResponse {
+  return SectionCopySuggestionQueueResponseSchema.parse({
+    jobId: suggestion.agentRunId,
+    projectId: suggestion.projectId,
+    runId: suggestion.agentRunId,
+    suggestionId: suggestion.id,
+    pageVersionId: suggestion.pageVersionId,
+    sectionId: suggestion.sectionId,
+    type: "page_generation",
+    status: "already_active",
+    inputRef: suggestion.id,
+    message: "A copy suggestion is already queued, generating, or ready for this section version.",
+    createdAt: suggestion.createdAt.toISOString()
+  });
+}
+
 async function markPageProposalQueueFailure(
   db: Db,
   runId: string,
@@ -819,6 +1277,43 @@ async function markPageProposalQueueFailure(
       updatedAt: new Date()
     })
     .where(eq(agentRuns.id, runId));
+}
+
+async function markSectionCopySuggestionQueueFailure(
+  db: Db,
+  suggestion: SectionCopySuggestionRow,
+  failureCode: AiReasoningEnqueueFailureCode,
+  message: string
+): Promise<void> {
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(agentRuns)
+      .set({
+        status: "failed",
+        failureCode,
+        diagnosticsJson: { message, suggestionId: suggestion.id },
+        completedAt: now,
+        updatedAt: now
+      })
+      .where(and(eq(agentRuns.id, suggestion.agentRunId), eq(agentRuns.projectId, suggestion.projectId)));
+
+    await tx
+      .update(pageSectionCopySuggestions)
+      .set({
+        status: "failed",
+        failureCode,
+        failureMessage: message,
+        updatedAt: now
+      })
+      .where(
+        and(
+          eq(pageSectionCopySuggestions.id, suggestion.id),
+          eq(pageSectionCopySuggestions.projectId, suggestion.projectId),
+          inArray(pageSectionCopySuggestions.status, ["queued", "generating"])
+        )
+      );
+  });
 }
 
 function normalizePageProposalQueueFailure(error: unknown): string {
@@ -878,6 +1373,36 @@ async function selectPageSectionNoteRows(db: Db, pageVersionId: string, noteId?:
     .limit(noteId ? 1 : 500);
 }
 
+async function selectSectionCopySuggestionRows(
+  db: ApprovalBlockerReader,
+  projectId: string,
+  pageVersionId: string,
+  suggestionId?: string,
+  sectionId?: string,
+  activeOnly = false
+) {
+  const filters = [
+    eq(pageSectionCopySuggestions.projectId, projectId),
+    eq(pageSectionCopySuggestions.pageVersionId, pageVersionId)
+  ];
+  if (suggestionId) {
+    filters.push(eq(pageSectionCopySuggestions.id, suggestionId));
+  }
+  if (sectionId) {
+    filters.push(eq(pageSectionCopySuggestions.sectionId, sectionId));
+  }
+  if (activeOnly) {
+    filters.push(inArray(pageSectionCopySuggestions.status, ["queued", "generating", "ready"]));
+  }
+
+  return db
+    .select()
+    .from(pageSectionCopySuggestions)
+    .where(and(...filters))
+    .orderBy(desc(pageSectionCopySuggestions.createdAt))
+    .limit(suggestionId || activeOnly ? 1 : 100);
+}
+
 async function countOpenApprovalBlockers(db: ApprovalBlockerReader, pageVersionId: string): Promise<number> {
   const [row] = await db
     .select({
@@ -897,6 +1422,27 @@ async function countOpenApprovalBlockers(db: ApprovalBlockerReader, pageVersionI
 
 async function lockPageVersionForReview(db: PageVersionLockClient, pageVersionId: string): Promise<void> {
   await db.execute(sql`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`);
+}
+
+async function lockSectionCopySuggestion(
+  db: PageVersionLockClient,
+  projectId: string,
+  pageVersionId: string,
+  suggestionId: string
+): Promise<void> {
+  await db.execute(
+    sql`SELECT "id" FROM "page_section_copy_suggestions" WHERE "id" = ${suggestionId} AND "project_id" = ${projectId} AND "page_version_id" = ${pageVersionId} FOR UPDATE`
+  );
+}
+
+async function lockAgentRunForSectionCopyCancellation(
+  db: PageVersionLockClient,
+  projectId: string,
+  agentRunId: string
+): Promise<void> {
+  await db.execute(
+    sql`SELECT "id" FROM "agent_runs" WHERE "id" = ${agentRunId} AND "project_id" = ${projectId} FOR UPDATE`
+  );
 }
 
 async function lockPageProposalForVersioning(
@@ -1015,6 +1561,30 @@ function pageSectionNoteToResponse(projectId: string, row: PageSectionNoteRow): 
   });
 }
 
+function sectionCopySuggestionToResponse(row: SectionCopySuggestionRow): SectionCopySuggestion {
+  return SectionCopySuggestionSchema.parse({
+    id: row.id,
+    projectId: row.projectId,
+    pageVersionId: row.pageVersionId,
+    sectionId: row.sectionId,
+    agentRunId: row.agentRunId,
+    status: row.status,
+    instruction: row.instruction ?? undefined,
+    suggestedProps: row.suggestedProps ?? undefined,
+    failureCode: row.failureCode ?? undefined,
+    failureMessage: row.failureMessage ?? undefined,
+    requestedByUserId: row.requestedByUserId,
+    appliedPageVersionId: row.appliedPageVersionId ?? undefined,
+    appliedByUserId: row.appliedByUserId ?? undefined,
+    dismissedByUserId: row.dismissedByUserId ?? undefined,
+    readyAt: row.readyAt?.toISOString(),
+    appliedAt: row.appliedAt?.toISOString(),
+    dismissedAt: row.dismissedAt?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  });
+}
+
 function pageVersionApprovalToResponse(projectId: string, row: PageVersionApprovalRow) {
   return PageVersionReviewResponseSchema.shape.approval.parse({
     id: row.id,
@@ -1061,6 +1631,17 @@ function assertPageJsonSectionExists(pageJson: PageJson, sectionId: CreatePageSe
 
   if (!section) {
     throw new UnprocessableEntityException("Page section note must target an existing PageJson section id.");
+  }
+}
+
+function assertSectionCopySuggestionTarget(pageJson: PageJson, sectionId: string): void {
+  const section = pageJson.sections.find((candidate) => candidate.id === sectionId);
+  if (!section) {
+    throw new UnprocessableEntityException("Section copy generation must target an existing PageJson section id.");
+  }
+
+  if (getPageRegistryAiCopyFieldKeys(section.registryKey).length === 0) {
+    throw new UnprocessableEntityException("This Page Studio section has no registry-approved AI copy fields.");
   }
 }
 

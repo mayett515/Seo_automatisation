@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { PageJson } from "@localseo/contracts";
 import {
   createPageRegistry,
+  getPageRegistryAiCopyFieldKeys,
   getPageRegistryEntry,
   pageRegistry,
   pageRegistryEntries,
@@ -171,6 +172,13 @@ void describe("page registry", () => {
     assert.equal("propsSchema" in firstEntry, false);
     assert.ok(firstEntry.editorFields.length > 0);
     assert.doesNotMatch(JSON.stringify(pageRegistrySummary), /propsSchema/u);
+  });
+
+  void it("exposes only registry-owned copy fields to section text generation", () => {
+    assert.deepEqual(getPageRegistryAiCopyFieldKeys("Hero.default"), ["h1", "lead", "primaryCtaLabel", "trustLine"]);
+    assert.equal(getPageRegistryAiCopyFieldKeys("Hero.default").includes("primaryCtaHref"), false);
+    assert.deepEqual(getPageRegistryAiCopyFieldKeys("Header.default"), []);
+    assert.deepEqual(getPageRegistryAiCopyFieldKeys("ServiceAreaList.default"), ["heading"]);
   });
 
   void it("keeps editor metadata aligned with registry prop schemas", () => {

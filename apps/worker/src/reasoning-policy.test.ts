@@ -24,6 +24,13 @@ void describe("policyForReasoningTask", () => {
     });
   });
 
+  void it("keeps section copy generation bounded to evidence and draft content", () => {
+    assert.deepEqual(policyForReasoningTask("section_text_generation"), {
+      canMutateProduction: false,
+      allowedToolCategories: ["read_evidence", "draft_content"]
+    });
+  });
+
   void it("fails closed for reasoning tasks without a named policy profile", () => {
     assert.throws(() => policyForReasoningTask("report_narrative"), ReasoningPolicyConfigurationError);
   });

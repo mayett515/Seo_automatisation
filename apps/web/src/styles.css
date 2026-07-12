@@ -628,13 +628,19 @@ a {
 
 .page-studio-mode-control {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   border-top: 1px solid #d9ddd5;
   padding-top: 14px;
 }
 
 .page-studio-replacement {
+  display: grid;
+  gap: 14px;
+}
+
+.page-studio-copy-panel,
+.page-studio-copy-request {
   display: grid;
   gap: 14px;
 }

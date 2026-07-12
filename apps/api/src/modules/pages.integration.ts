@@ -1,5 +1,6 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { OpportunityBriefSchema, type PageJson, type PageProposalJson } from "@localseo/contracts";
 import {
   agentRuns,
@@ -8,12 +9,13 @@ import {
   jobRuns,
   opportunities,
   pageProposals,
+  pageSectionCopySuggestions,
   pageVersions,
   projects,
   users,
   type DatabaseClient
 } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
 import { QueueProducerService } from "../queue-producer.js";
 import { PagesService } from "./pages.module.js";
@@ -210,6 +212,250 @@ void describe(
 
       const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, result.runId));
       assert.equal(run?.subjectId, otherOpportunityId);
+    });
+
+    void it("queues one durable section copy suggestion per page version and section", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Copy queue", route: "/copy-queue/" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setPageGenerationQueue(queueService, queue);
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      const queued = await service.queueSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { sectionId: "hero-1", instruction: "Make the local intent clearer." },
+        fixture.userId
+      );
+      const duplicate = await service.queueSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { sectionId: "hero-1" },
+        fixture.userId
+      );
+
+      assert.equal(queued.status, "queued");
+      assert.equal(queued.sectionId, "hero-1");
+      assert.ok(queued.suggestionId);
+      assert.equal(duplicate.status, "already_active");
+      assert.equal(duplicate.suggestionId, queued.suggestionId);
+      assert.equal(queue.addCalls.length, 1);
+      assert.equal(queue.addCalls[0]?.name, "section_text_generation");
+      assert.equal(queue.addCalls[0]?.options.jobId, queued.runId);
+      assert.equal(queue.addCalls[0]?.data.suggestionId, queued.suggestionId);
+      assert.equal(queue.addCalls[0]?.data.pageVersionId, fixture.pageVersionId);
+
+      const [suggestion] = await db
+        .select()
+        .from(pageSectionCopySuggestions)
+        .where(eq(pageSectionCopySuggestions.id, queued.suggestionId));
+      assert.equal(suggestion?.status, "queued");
+      assert.equal(suggestion?.requestedByUserId, fixture.userId);
+      assert.equal(suggestion?.instruction, "Make the local intent clearer.");
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, queued.runId!));
+      assert.equal(run?.task, "section_text_generation");
+      assert.equal(run?.subjectId, queued.suggestionId);
+
+      const list = await service.listSectionCopySuggestions(fixture.projectId, fixture.pageVersionId);
+      assert.equal(list.suggestions.length, 1);
+      assert.equal(list.suggestions[0]?.id, queued.suggestionId);
+      assert.equal(list.suggestions[0]?.suggestedProps, undefined);
+    });
+
+    void it("returns an explicit section copy dry-run without phantom product rows", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Copy dry run", route: "/copy-dry-run/" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      const result = await service.queueSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { sectionId: "hero-1" },
+        fixture.userId
+      );
+
+      assert.equal(result.status, "dry_run");
+      assert.equal(result.suggestionId, undefined);
+      const suggestions = await db
+        .select()
+        .from(pageSectionCopySuggestions)
+        .where(eq(pageSectionCopySuggestions.pageVersionId, fixture.pageVersionId));
+      assert.equal(suggestions.length, 0);
+      const runs = await db
+        .select()
+        .from(agentRuns)
+        .where(and(eq(agentRuns.projectId, fixture.projectId), eq(agentRuns.task, "section_text_generation")));
+      assert.equal(runs.length, 0);
+    });
+
+    void it("rejects section copy generation for protected sections and missing actor evidence", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Copy boundary", route: "/copy-boundary/" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      setPageGenerationQueue(queueService, new FakeQueue());
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      await assert.rejects(
+        () =>
+          service.queueSectionCopySuggestion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            { sectionId: "header-1" },
+            fixture.userId
+          ),
+        matchesErrorMessage(/no registry-approved AI copy fields/u)
+      );
+      await assert.rejects(
+        () => service.queueSectionCopySuggestion(fixture.projectId, fixture.pageVersionId, { sectionId: "hero-1" }),
+        matchesErrorMessage(/authenticated persisted user id/u)
+      );
+    });
+
+    void it("applies an unchanged AI suggestion as agent provenance in the existing N+1 transaction", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Copy apply agent", route: "/copy-agent/" });
+      const suggestedProps = {
+        h1: "Dachreinigung fuer Muenchen",
+        lead: "Lokale Dachreinigung mit klarer Planung.",
+        primaryCtaLabel: "Anfragen",
+        primaryCtaHref: "/kontakt/"
+      };
+      const suggestion = await createReadyCopySuggestion(db, fixture, suggestedProps);
+
+      const edited = await service.editPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          suggestionId: suggestion.id,
+          command: { type: "update_section_props", sectionId: "hero-1", props: suggestedProps }
+        },
+        fixture.userId
+      );
+
+      assert.equal(edited.pageVersion.versionNumber, 2);
+      assert.deepEqual(edited.pageVersion.pageJson.generation, {
+        source: "agent",
+        agentRunId: suggestion.agentRunId,
+        reason: "page_studio:section_text_generation"
+      });
+      assert.deepEqual(
+        edited.pageVersion.pageJson.sections.find((section) => section.id === "hero-1")?.generation,
+        edited.pageVersion.pageJson.generation
+      );
+
+      const [applied] = await db
+        .select()
+        .from(pageSectionCopySuggestions)
+        .where(eq(pageSectionCopySuggestions.id, suggestion.id));
+      assert.equal(applied?.status, "applied");
+      assert.equal(applied?.appliedPageVersionId, edited.pageVersion.id);
+      assert.equal(applied?.appliedByUserId, fixture.userId);
+      assert.ok(applied?.appliedAt);
+    });
+
+    void it("records human provenance when the operator modifies a suggestion before applying", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Copy apply human", route: "/copy-human/" });
+      const suggestedProps = {
+        h1: "Dachreinigung fuer Muenchen",
+        lead: "Lokale Dachreinigung mit klarer Planung.",
+        primaryCtaLabel: "Anfragen",
+        primaryCtaHref: "/kontakt/"
+      };
+      const suggestion = await createReadyCopySuggestion(db, fixture, suggestedProps);
+
+      const edited = await service.editPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          suggestionId: suggestion.id,
+          command: {
+            type: "update_section_props",
+            sectionId: "hero-1",
+            props: { ...suggestedProps, lead: "Vom Operator angepasste lokale Einleitung." }
+          }
+        },
+        fixture.userId
+      );
+
+      assert.deepEqual(edited.pageVersion.pageJson.generation, {
+        source: "human",
+        reason: "page_studio:section_text_generation_modified"
+      });
+    });
+
+    void it("dismisses a ready suggestion and allows a replacement request", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Copy dismiss", route: "/copy-dismiss/" });
+      const suggestion = await createReadyCopySuggestion(db, fixture, {
+        h1: "Dachreinigung fuer Muenchen",
+        lead: "Lokale Dachreinigung mit klarer Planung.",
+        primaryCtaLabel: "Anfragen",
+        primaryCtaHref: "/kontakt/"
+      });
+
+      const dismissed = await service.dismissSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        suggestion.id,
+        fixture.userId
+      );
+
+      assert.equal(dismissed.status, "dismissed");
+      assert.equal(dismissed.dismissedByUserId, fixture.userId);
+      assert.ok(dismissed.dismissedAt);
+
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      setPageGenerationQueue(queueService, new FakeQueue());
+      service = new PagesService(testDatabaseService(db), queueService);
+      const replacement = await service.queueSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { sectionId: "hero-1" },
+        fixture.userId
+      );
+      assert.equal(replacement.status, "queued");
+      assert.notEqual(replacement.suggestionId, suggestion.id);
+    });
+
+    void it("cancels generating section copy work and terminalizes its run", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Copy cancel", route: "/copy-cancel/" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      setPageGenerationQueue(queueService, new FakeQueue());
+      service = new PagesService(testDatabaseService(db), queueService);
+      const queued = await service.queueSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { sectionId: "hero-1" },
+        fixture.userId
+      );
+      assert.ok(queued.runId);
+      assert.ok(queued.suggestionId);
+
+      await db.update(agentRuns).set({ status: "running" }).where(eq(agentRuns.id, queued.runId));
+      await db
+        .update(pageSectionCopySuggestions)
+        .set({ status: "generating" })
+        .where(eq(pageSectionCopySuggestions.id, queued.suggestionId));
+
+      const cancelled = await service.dismissSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        queued.suggestionId,
+        fixture.userId
+      );
+      assert.equal(cancelled.status, "dismissed");
+      assert.equal(cancelled.dismissedByUserId, fixture.userId);
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, queued.runId));
+      assert.equal(run?.status, "failed");
+      assert.equal(run?.failureCode, "operator_cancelled");
+
+      const replacement = await service.queueSectionCopySuggestion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { sectionId: "hero-1" },
+        fixture.userId
+      );
+      assert.equal(replacement.status, "queued");
+      assert.notEqual(replacement.suggestionId, queued.suggestionId);
     });
 
     void it("returns a parsed page proposal only for its owning project", async () => {
@@ -1342,6 +1588,44 @@ async function createPageVersionFixture(
     pageVersionId: pageVersion.id,
     route: input.route
   };
+}
+
+async function createReadyCopySuggestion(
+  db: DatabaseClient,
+  fixture: PageVersionFixture,
+  suggestedProps: Record<string, unknown>,
+  sectionId = "hero-1"
+) {
+  const suggestionId = randomUUID();
+  const agentRunId = randomUUID();
+  const now = new Date("2026-07-12T12:00:00.000Z");
+
+  await db.insert(agentRuns).values({
+    id: agentRunId,
+    projectId: fixture.projectId,
+    subjectId: suggestionId,
+    task: "section_text_generation",
+    status: "succeeded",
+    provider: "mock",
+    model: "mock-section-copy",
+    completedAt: now
+  });
+  const [suggestion] = await db
+    .insert(pageSectionCopySuggestions)
+    .values({
+      id: suggestionId,
+      projectId: fixture.projectId,
+      pageVersionId: fixture.pageVersionId,
+      sectionId,
+      agentRunId,
+      requestedByUserId: fixture.userId,
+      status: "ready",
+      suggestedProps,
+      readyAt: now
+    })
+    .returning();
+  assert.ok(suggestion);
+  return suggestion;
 }
 
 async function createOpportunityFixture(db: DatabaseClient, input: { name: string }): Promise<OpportunityFixture> {

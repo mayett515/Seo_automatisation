@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { PageJson, PageSectionInstance, PageVersionSummary } from "@localseo/contracts";
+import type { PageJson, PageSectionInstance, PageVersionSummary, SectionCopySuggestion } from "@localseo/contracts";
 import { pageRegistrySummary } from "@localseo/page-registry";
 import {
   createEmptyEditorProps,
   editorListItemValue,
   legalReplacementEntries,
+  latestCopySuggestionForSection,
   latestVersionForProposal,
   normalizeEditorProps,
   pageVersionAncestors
@@ -81,7 +82,32 @@ void describe("Page Studio client state", () => {
     );
     assert.deepEqual(legalReplacementEntries(page, "hero-1", pageRegistrySummary), []);
   });
+
+  void it("selects the latest copy suggestion for one section without trusting API order", () => {
+    const suggestions = [
+      copySuggestion("new", "hero-1", "2026-07-12T12:00:00.000Z"),
+      copySuggestion("other", "faq-1", "2026-07-12T13:00:00.000Z"),
+      copySuggestion("old", "hero-1", "2026-07-12T10:00:00.000Z")
+    ];
+
+    assert.equal(latestCopySuggestionForSection("hero-1", suggestions)?.id, "new");
+  });
 });
+
+function copySuggestion(id: string, sectionId: string, createdAt: string): SectionCopySuggestion {
+  return {
+    id,
+    projectId: "project-1",
+    pageVersionId: "version-1",
+    sectionId,
+    agentRunId: `run-${id}`,
+    status: "ready",
+    suggestedProps: { heading: "Suggestion" },
+    requestedByUserId: "user-1",
+    createdAt,
+    updatedAt: createdAt
+  };
+}
 
 function version(
   id: string,

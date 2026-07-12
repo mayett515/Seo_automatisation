@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("local scaffold shell renders and navigates core routes", async ({ page }) => {
-  await page.route("http://127.0.0.1:65535/health", async (route) => {
+  await page.route("**/health", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({

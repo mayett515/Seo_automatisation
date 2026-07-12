@@ -1,4 +1,10 @@
-import type { PageJson, PageSectionInstance, PageVersionDetail, PageVersionSummary } from "@localseo/contracts";
+import type {
+  PageJson,
+  PageSectionInstance,
+  PageVersionDetail,
+  PageVersionSummary,
+  SectionCopySuggestion
+} from "@localseo/contracts";
 import { decideReplacePageSection } from "@localseo/domain";
 import type { PageRegistryEditorField, PageRegistryEntrySummary } from "@localseo/page-registry";
 
@@ -41,6 +47,21 @@ export function orderedPageSections(pageVersion: PageVersionDetail): PageSection
     .map((section, index) => ({ section, index }))
     .sort((left, right) => left.section.order - right.section.order || left.index - right.index)
     .map(({ section }) => section);
+}
+
+export function latestCopySuggestionForSection(
+  sectionId: string,
+  suggestions: readonly SectionCopySuggestion[]
+): SectionCopySuggestion | undefined {
+  return suggestions
+    .filter((suggestion) => suggestion.sectionId === sectionId)
+    .reduce<SectionCopySuggestion | undefined>((latest, suggestion) => {
+      if (!latest) {
+        return suggestion;
+      }
+
+      return Date.parse(suggestion.createdAt) > Date.parse(latest.createdAt) ? suggestion : latest;
+    }, undefined);
 }
 
 export function normalizeEditorProps(

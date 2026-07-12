@@ -169,6 +169,15 @@ export const opportunityClassifications = ["proven_win", "near_term_target", "in
 export const opportunityLifecycleStatuses = ["new", "monitoring", "held", "rejected", "brief_created"] as const;
 export const opportunityScoutQueueStatuses = [...jobStatuses, "already_active"] as const;
 export const pageProposalQueueStatuses = [...jobStatuses, "already_active"] as const;
+export const sectionCopySuggestionStatuses = [
+  "queued",
+  "generating",
+  "ready",
+  "failed",
+  "applied",
+  "dismissed"
+] as const;
+export const sectionCopySuggestionQueueStatuses = [...jobStatuses, "already_active"] as const;
 
 export const opportunityRecommendedActions = [
   "monitor",
@@ -353,6 +362,8 @@ export const OpportunityClassificationSchema = z.enum(opportunityClassifications
 export const OpportunityLifecycleStatusSchema = z.enum(opportunityLifecycleStatuses);
 export const OpportunityScoutQueueStatusSchema = z.enum(opportunityScoutQueueStatuses);
 export const PageProposalQueueStatusSchema = z.enum(pageProposalQueueStatuses);
+export const SectionCopySuggestionStatusSchema = z.enum(sectionCopySuggestionStatuses);
+export const SectionCopySuggestionQueueStatusSchema = z.enum(sectionCopySuggestionQueueStatuses);
 export const OpportunityRecommendedActionSchema = z.enum(opportunityRecommendedActions);
 export const OpportunitySuggestedPageTypeSchema = z.enum(opportunitySuggestedPageTypes);
 export const EvidenceSourceTypeSchema = z.enum(evidenceSourceTypes);
@@ -451,6 +462,13 @@ export const CreateOpportunityScoutRunRequestSchema = z.object({
 export const CreatePageProposalRunRequestSchema = z
   .object({
     opportunityId: z.string().trim().min(1).max(200)
+  })
+  .strict();
+
+export const CreateSectionCopySuggestionRequestSchema = z
+  .object({
+    sectionId: z.string().trim().min(1).max(120),
+    instruction: z.string().trim().min(1).max(1_000).optional()
   })
   .strict();
 
@@ -674,6 +692,20 @@ export const PageProposalJobDataSchema = z
   })
   .strict();
 
+export const SectionCopySuggestionJobDataSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    runId: z.string().min(1),
+    suggestionId: z.string().min(1),
+    pageVersionId: z.string().min(1),
+    sectionId: z.string().trim().min(1).max(120),
+    maxAttempts: z.number().int().positive().optional(),
+    jobRunId: z.string().min(1).optional(),
+    triggeredByUserId: z.string().min(1).nullable().optional(),
+    triggerSource: z.string().min(1).optional()
+  })
+  .strict();
+
 export const SerpScoutJobDataSchema = SerpScoutRequestSchema.extend({
   snapshotId: z.string().min(1),
   agentRunId: z.string().min(1).optional(),
@@ -815,6 +847,17 @@ export const PageProposalJsonSchema = z
 
 const PageStudioSectionIdSchema = PageSectionInstanceSchema.shape.id;
 
+export const SectionCopyRevisionOutputSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    sectionId: PageStudioSectionIdSchema,
+    suggestedFields: z
+      .record(z.string().trim().min(1).max(120), z.unknown())
+      .refine((value) => Object.keys(value).length > 0, "Section copy output must suggest at least one field.")
+      .refine((value) => Object.keys(value).length <= 30, "Section copy output may suggest at most 30 fields.")
+  })
+  .strict();
+
 export const PageStudioEditCommandSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -850,9 +893,19 @@ export const PageStudioEditCommandSchema = z.discriminatedUnion("type", [
 
 export const EditPageVersionRequestSchema = z
   .object({
-    command: PageStudioEditCommandSchema
+    command: PageStudioEditCommandSchema,
+    suggestionId: z.string().uuid().optional()
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.suggestionId && value.command.type !== "update_section_props") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["suggestionId"],
+        message: "Section copy suggestions can only be applied through update_section_props."
+      });
+    }
+  });
 
 const renderableReleaseItemActions = new Set<ReleaseItemAction>(["create", "update"]);
 
@@ -933,6 +986,38 @@ export const PageVersionEditResponseSchema = z
     projectId: ProjectIdSchema,
     basePageVersionId: z.string().min(1),
     pageVersion: PageVersionDetailSchema
+  })
+  .strict();
+
+export const SectionCopySuggestionSchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: ProjectIdSchema,
+    pageVersionId: z.string().min(1),
+    sectionId: PageStudioSectionIdSchema,
+    agentRunId: z.string().min(1),
+    status: SectionCopySuggestionStatusSchema,
+    instruction: z.string().trim().min(1).max(1_000).optional(),
+    suggestedProps: z.record(z.string(), z.unknown()).optional(),
+    failureCode: z.string().trim().min(1).max(120).optional(),
+    failureMessage: z.string().trim().min(1).max(500).optional(),
+    requestedByUserId: z.string().min(1),
+    appliedPageVersionId: z.string().min(1).optional(),
+    appliedByUserId: z.string().min(1).optional(),
+    dismissedByUserId: z.string().min(1).optional(),
+    readyAt: z.string().datetime().optional(),
+    appliedAt: z.string().datetime().optional(),
+    dismissedAt: z.string().datetime().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
+
+export const SectionCopySuggestionListResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    pageVersionId: z.string().min(1),
+    suggestions: z.array(SectionCopySuggestionSchema).max(100)
   })
   .strict();
 
@@ -1661,6 +1746,14 @@ export const PageProposalQueueResponseSchema = QueueJobSchema.extend({
   runId: z.string().min(1).optional(),
   opportunityId: z.string().min(1).optional()
 });
+export const SectionCopySuggestionQueueResponseSchema = QueueJobSchema.extend({
+  type: z.literal("page_generation"),
+  status: SectionCopySuggestionQueueStatusSchema,
+  runId: z.string().min(1).optional(),
+  suggestionId: z.string().min(1).optional(),
+  pageVersionId: z.string().min(1),
+  sectionId: PageStudioSectionIdSchema
+});
 export const SerpScoutQueueResponseSchema = QueueJobSchema.extend({
   snapshotId: z.string().min(1).optional(),
   query: z.string().trim().min(1).max(200).optional()
@@ -1704,7 +1797,8 @@ export const AgentRunFailureCodeSchema = z.union([
   AiReasoningAdapterFailureCodeSchema,
   AiReasoningWorkflowFailureCodeSchema,
   AiReasoningEnqueueFailureCodeSchema,
-  z.enum(aiReasoningRecoveryFailureCodes)
+  z.enum(aiReasoningRecoveryFailureCodes),
+  z.literal("operator_cancelled")
 ]);
 
 export const OpportunityExplorerOpportunitySchema = z.object({
@@ -1768,12 +1862,14 @@ export type ReleaseVerificationJobData = z.output<typeof ReleaseVerificationJobD
 export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
 export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
 export type PageProposalJobData = z.output<typeof PageProposalJobDataSchema>;
+export type SectionCopySuggestionJobData = z.output<typeof SectionCopySuggestionJobDataSchema>;
 export type TechnicalAuditJobData = z.output<typeof TechnicalAuditJobDataSchema>;
 export type PageEvidenceRef = z.output<typeof PageEvidenceRefSchema>;
 export type PageGeneration = z.output<typeof PageGenerationSchema>;
 export type PageSectionInstance = z.output<typeof PageSectionInstanceSchema>;
 export type PageJson = z.output<typeof PageJsonSchema>;
 export type PageProposalJson = z.output<typeof PageProposalJsonSchema>;
+export type SectionCopyRevisionOutput = z.output<typeof SectionCopyRevisionOutputSchema>;
 export type PageStudioEditCommand = z.output<typeof PageStudioEditCommandSchema>;
 export type EditPageVersionRequest = z.output<typeof EditPageVersionRequestSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
@@ -1783,6 +1879,9 @@ export type StaticSiteArtifact = z.output<typeof StaticSiteArtifactSchema>;
 export type PageVersionSummary = z.output<typeof PageVersionSummarySchema>;
 export type PageVersionDetail = z.output<typeof PageVersionDetailSchema>;
 export type PageVersionEditResponse = z.output<typeof PageVersionEditResponseSchema>;
+export type SectionCopySuggestion = z.output<typeof SectionCopySuggestionSchema>;
+export type SectionCopySuggestionStatus = z.output<typeof SectionCopySuggestionStatusSchema>;
+export type SectionCopySuggestionListResponse = z.output<typeof SectionCopySuggestionListResponseSchema>;
 export type PageVersionListResponse = z.output<typeof PageVersionListResponseSchema>;
 export type PageProposalSummary = z.output<typeof PageProposalSummarySchema>;
 export type PageProposalDetail = z.output<typeof PageProposalDetailSchema>;
@@ -1821,6 +1920,7 @@ export type TechnicalAuditRun = z.output<typeof TechnicalAuditRunSchema>;
 export type LatestTechnicalAuditResponse = z.output<typeof LatestTechnicalAuditResponseSchema>;
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
 export type CreatePageProposalRunRequest = z.output<typeof CreatePageProposalRunRequestSchema>;
+export type CreateSectionCopySuggestionRequest = z.output<typeof CreateSectionCopySuggestionRequestSchema>;
 export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;
 export type UpdateRankingProofStatusRequest = z.output<typeof UpdateRankingProofStatusRequestSchema>;
 export type SerpScoutRequest = z.output<typeof SerpScoutRequestSchema>;
@@ -1858,6 +1958,7 @@ export type GscSyncQueueResponse = z.output<typeof GscSyncQueueResponseSchema>;
 export type WebsiteImportQueueResponse = z.output<typeof WebsiteImportQueueResponseSchema>;
 export type OpportunityScoutQueueResponse = z.output<typeof OpportunityScoutQueueResponseSchema>;
 export type PageProposalQueueResponse = z.output<typeof PageProposalQueueResponseSchema>;
+export type SectionCopySuggestionQueueResponse = z.output<typeof SectionCopySuggestionQueueResponseSchema>;
 export type SerpScoutQueueResponse = z.output<typeof SerpScoutQueueResponseSchema>;
 export type TechnicalAuditQueueResponse = z.output<typeof TechnicalAuditQueueResponseSchema>;
 export type ReleaseVerificationQueueResponse = z.output<typeof ReleaseVerificationQueueResponseSchema>;

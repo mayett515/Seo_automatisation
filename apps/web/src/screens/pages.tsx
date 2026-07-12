@@ -7,6 +7,9 @@ import {
   PageProposalListResponseSchema,
   PageSectionNoteListResponseSchema,
   PageSectionNoteSchema,
+  SectionCopySuggestionListResponseSchema,
+  SectionCopySuggestionQueueResponseSchema,
+  SectionCopySuggestionSchema,
   PageVersionDetailSchema,
   PageVersionListResponseSchema,
   PageVersionPreviewResponseSchema,
@@ -14,6 +17,7 @@ import {
   ReleasePlanSchema,
   ReviewPageVersionRequestSchema,
   CreatePageSectionNoteRequestSchema,
+  CreateSectionCopySuggestionRequestSchema,
   CreateReleasePlanRequestSchema,
   EditPageVersionRequestSchema,
   PageVersionEditResponseSchema,
@@ -22,6 +26,8 @@ import {
   type PageSectionNote,
   type PageSectionNoteInstructionType,
   type PageStudioEditCommand,
+  type EditPageVersionRequest,
+  type SectionCopySuggestion,
   type PageVersionDetail,
   type PageVersionReviewDecision,
   type PageVersionReviewResponse,
@@ -136,14 +142,31 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
     queryFn: () => getJson(projectApiPath(projectId, "/pages"), PageVersionListResponseSchema),
     retry: false
   });
+  const copySuggestionsQueryKey = ["page-section-copy-suggestions", projectId, pageVersionId] as const;
+  const copySuggestions = useQuery({
+    queryKey: copySuggestionsQueryKey,
+    queryFn: () =>
+      getJson(
+        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/copy-suggestions`),
+        SectionCopySuggestionListResponseSchema
+      ),
+    retry: false,
+    enabled: pageVersionId.length > 0,
+    refetchInterval: (query) =>
+      query.state.data?.suggestions.some(
+        (suggestion) => suggestion.status === "queued" || suggestion.status === "generating"
+      )
+        ? 3000
+        : false
+  });
   const latestVersion =
     version.data && versions.data ? latestVersionForProposal(version.data, versions.data.pageVersions) : undefined;
   const ancestorVersions =
     version.data && versions.data ? pageVersionAncestors(version.data, versions.data.pageVersions).slice(0, 20) : [];
   const notesQueryKey = pageSectionNotesQueryKey(projectId, pageVersionId);
   const editVersion = useMutation({
-    mutationFn: (command: PageStudioEditCommand) => {
-      const body = EditPageVersionRequestSchema.parse({ command });
+    mutationFn: (input: EditPageVersionRequest) => {
+      const body = EditPageVersionRequestSchema.parse(input);
       return postJson(
         projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/edits`),
         body,
@@ -153,7 +176,8 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
     onSuccess: async (response) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] })
+        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
+        queryClient.invalidateQueries({ queryKey: copySuggestionsQueryKey })
       ]);
       await navigate({
         to: "/projects/$projectId/pages/$pageId/preview",
@@ -162,6 +186,33 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
     },
     onError: async () => {
       await queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] });
+    }
+  });
+  const requestCopySuggestion = useMutation({
+    mutationFn: (input: { sectionId: string; instruction?: string }) => {
+      const body = CreateSectionCopySuggestionRequestSchema.parse(input);
+      return postJson(
+        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/copy-suggestions`),
+        body,
+        SectionCopySuggestionQueueResponseSchema
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: copySuggestionsQueryKey });
+    }
+  });
+  const dismissCopySuggestion = useMutation({
+    mutationFn: (suggestionId: string) =>
+      patchJson(
+        projectApiPath(
+          projectId,
+          `/pages/${encodeURIComponent(pageVersionId)}/copy-suggestions/${encodeURIComponent(suggestionId)}/dismiss`
+        ),
+        {},
+        SectionCopySuggestionSchema
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: copySuggestionsQueryKey });
     }
   });
 
@@ -270,6 +321,11 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
 
           <section className="page-studio-workspace">
             <PageStudioEditor
+              copyActionError={requestCopySuggestion.error ?? dismissCopySuggestion.error}
+              copySuggestions={copySuggestions.data?.suggestions ?? []}
+              isCopyActionPending={requestCopySuggestion.isPending || dismissCopySuggestion.isPending}
+              isCopySuggestionsError={copySuggestions.isError}
+              isCopySuggestionsPending={copySuggestions.isPending}
               error={editVersion.error}
               isSaving={editVersion.isPending}
               isVersionListError={versions.isError}
@@ -277,7 +333,21 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
               latestVersion={latestVersion}
               pageVersion={version.data}
               projectId={projectId}
-              onCommand={(command) => editVersion.mutate(command)}
+              onApplyCopySuggestion={(suggestion: SectionCopySuggestion, sectionProps: Record<string, unknown>) =>
+                editVersion.mutate({
+                  suggestionId: suggestion.id,
+                  command: {
+                    type: "update_section_props",
+                    sectionId: suggestion.sectionId,
+                    props: sectionProps
+                  }
+                })
+              }
+              onCommand={(command: PageStudioEditCommand) => editVersion.mutate({ command })}
+              onDismissCopySuggestion={(suggestionId) => dismissCopySuggestion.mutate(suggestionId)}
+              onRequestCopySuggestion={(sectionId, instruction) =>
+                requestCopySuggestion.mutate({ sectionId, instruction: normalizedText(instruction) })
+              }
             />
             <div className="page-studio-preview-pane">
               <div className="page-studio-preview-heading">

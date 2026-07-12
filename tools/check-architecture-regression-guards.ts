@@ -409,7 +409,7 @@ requireIncludes(
 
 requireIncludes(
   "apps/worker/src/work-recovery.test.ts",
-  "continues loading the other lane when one candidate query fails",
+  "continues loading the other lanes when one candidate query fails",
   "db-before-queue-recovery",
   "a recovery candidate query failure in one lane must not suppress another registered lane"
 );
@@ -762,6 +762,167 @@ requireIncludes(
   "stages controlled section replacement before creating one next version",
   "page-studio-section-replacement",
   "browser coverage must prove replacement staging does not persist before explicit confirmation"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "SectionCopyRevisionOutputSchema",
+  "page-studio-section-copy",
+  "section copy output must remain a strict bounded contract"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  'value.suggestionId && value.command.type !== "update_section_props"',
+  "page-studio-section-copy",
+  "AI suggestion application must reuse the structured props command only"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  "getPageRegistryAiCopyFieldKeys",
+  "page-studio-section-copy",
+  "Page Registry metadata must own the exact AI-copy field allow-list"
+);
+
+requireIncludes(
+  "packages/domain/src/page-studio.ts",
+  "decideSectionCopySuggestionAttribution",
+  "page-studio-section-copy",
+  "exact and operator-modified suggestion application must derive provenance in the domain"
+);
+
+requireIncludes(
+  "apps/worker/src/reasoning-policy.ts",
+  "section_text_generation",
+  "page-studio-section-copy",
+  "section text generation must have a named fail-closed policy profile"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/section-copy-suggestion.ts",
+  "evaluateSectionCopyRevision",
+  "page-studio-section-copy",
+  "section copy output must pass deterministic scope and field QA before readiness"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  '@Post(":pageVersionId/copy-suggestions")',
+  "page-studio-section-copy",
+  "section copy generation must enter through the durable API queue boundary"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "decideSectionCopySuggestionAttribution",
+  "page-studio-section-copy",
+  "suggestion provenance must be decided inside the existing edit transaction"
+);
+
+requireIncludes(
+  "packages/db/migrations/0034_section_copy_suggestions.sql",
+  "page_section_copy_suggestions_active_idx",
+  "page-studio-section-copy",
+  "the database must allow only one unresolved suggestion per page-version section"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "applies an unchanged AI suggestion as agent provenance in the existing N+1 transaction",
+  "page-studio-section-copy",
+  "DB integration must prove exact suggestion application creates one agent-attributed version"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "returns an explicit section copy dry-run without phantom product rows",
+  "page-studio-section-copy",
+  "unconfigured section-copy transport must remain an honest dry-run without product rows"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  'suggestionId: "dry-run"',
+  "page-studio-section-copy",
+  "section-copy dry-run audit data must not pretend to reference a durable suggestion"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "records human provenance when the operator modifies a suggestion before applying",
+  "page-studio-section-copy",
+  "DB integration must prove operator-modified suggestions cannot retain agent provenance"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/section-copy-suggestion.integration.ts",
+  "persists a validated suggestion without creating a page version",
+  "page-studio-section-copy",
+  "worker integration must prove generation stops at ready suggestion truth"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "fails both run and suggestion after bounded section copy recovery is exhausted",
+  "page-studio-section-copy",
+  "bounded recovery exhaustion must terminalize both section-copy rows visibly"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "CreateSectionCopySuggestionRequestSchema.parse",
+  "page-studio-section-copy",
+  "Page Studio must parse copy requests and queue through the API"
+);
+
+requireIncludes(
+  "apps/web/e2e/page-studio-replacement.spec.ts",
+  "queues, reviews, and explicitly applies a section copy suggestion",
+  "page-studio-section-copy",
+  "browser coverage must prove AI copy never creates a version before explicit apply"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  'z.literal("operator_cancelled")',
+  "page-studio-section-copy",
+  "operator cancellation must remain visible in durable run failure truth"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "lockAgentRunForSectionCopyCancellation",
+  "page-studio-section-copy",
+  "section-copy cancellation must preserve worker-compatible run-before-suggestion lock ordering"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "cancels generating section copy work and terminalizes its run",
+  "page-studio-section-copy",
+  "DB integration must prove active cancellation frees the section without resurrection"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/section-copy-suggestion.integration.ts",
+  "does not resurrect an operator-cancelled suggestion",
+  "page-studio-section-copy",
+  "worker retries must not revive operator-cancelled section-copy work"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/section-copy-suggestion.integration.ts",
+  "preserves operator cancellation when an in-flight provider fails late",
+  "page-studio-section-copy",
+  "late provider results must not overwrite operator cancellation truth"
+);
+
+requireIncludes(
+  "apps/web/src/features/page-studio/page-studio-editor.tsx",
+  "Cancel revision",
+  "page-studio-section-copy",
+  "operators must be able to cancel queued or generating section-copy work"
 );
 
 requireIncludes(

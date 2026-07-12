@@ -1,15 +1,21 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { buildCanonicalPageProposalOutputExample } from "@localseo/ai";
 import {
   agentRuns,
   customers,
   deployments,
   jobRuns,
   opportunities,
+  pageProposals,
+  pageSectionCopySuggestions,
+  pageVersions,
   projects,
   releasePlans,
   releaseVerificationChecks,
   releaseVerifications,
+  users,
   type DatabaseClient
 } from "@localseo/db";
 import type { JobsOptions } from "bullmq";
@@ -97,6 +103,47 @@ void describe(
       assert.equal(verification?.status, "running");
       assert.equal(verification?.recoveryCount, 1);
       assert.equal(verification?.lastRecoveryAt?.toISOString(), now.toISOString());
+    });
+
+    void it("re-enqueues stale section copy generation with its pinned suggestion payload", async () => {
+      const fixture = await createSectionCopyRecoveryFixture(db);
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.reEnqueued, 1);
+      assert.equal(queues["page-generation"].addCalls[0]?.name, "section_text_generation");
+      assert.equal(queues["page-generation"].addCalls[0]?.options.jobId, fixture.runId);
+      assert.equal(queues["page-generation"].addCalls[0]?.data.suggestionId, fixture.suggestionId);
+      assert.equal(queues["page-generation"].addCalls[0]?.data.pageVersionId, fixture.pageVersionId);
+      assert.equal(queues["page-generation"].addCalls[0]?.data.sectionId, "hero-1");
+
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.recoveryCount, 1);
+      const [suggestion] = await db
+        .select()
+        .from(pageSectionCopySuggestions)
+        .where(eq(pageSectionCopySuggestions.id, fixture.suggestionId));
+      assert.equal(suggestion?.status, "queued");
+    });
+
+    void it("fails both run and suggestion after bounded section copy recovery is exhausted", async () => {
+      const fixture = await createSectionCopyRecoveryFixture(db, { recoveryCount: 3 });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues["page-generation"].addCalls.length, 0);
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "failed");
+      assert.equal(run?.failureCode, "work_recovery_exhausted");
+      const [suggestion] = await db
+        .select()
+        .from(pageSectionCopySuggestions)
+        .where(eq(pageSectionCopySuggestions.id, fixture.suggestionId));
+      assert.equal(suggestion?.status, "failed");
+      assert.equal(suggestion?.failureCode, "work_recovery_exhausted");
     });
 
     void it("records warning evidence and execution_failed after release verification recovery is exhausted", async () => {
@@ -340,6 +387,64 @@ async function createReleaseVerificationRecoveryFixture(
     deploymentId: deployment.id,
     verificationId: verification.id
   };
+}
+
+async function createSectionCopyRecoveryFixture(
+  db: DatabaseClient,
+  input: { recoveryCount?: number } = {}
+): Promise<{ projectId: string; pageVersionId: string; suggestionId: string; runId: string }> {
+  const projectId = await createProject(db);
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${randomUUID()}@example.com`, name: "Recovery Copy Operator" })
+    .returning();
+  assert.ok(user);
+  const page = buildCanonicalPageProposalOutputExample({
+    projectId,
+    opportunityId: randomUUID(),
+    agentRunId: randomUUID()
+  }).page;
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId,
+      route: page.route,
+      primaryKeyword: page.target.primaryKeyword,
+      uniquenessRationale: page.uniquenessRationale ?? "Recovery page.",
+      status: "draft",
+      sitemapReady: page.seo.sitemapReady
+    })
+    .returning();
+  assert.ok(proposal);
+  const [version] = await db
+    .insert(pageVersions)
+    .values({ pageProposalId: proposal.id, versionNumber: 1, status: "preview", pageJson: page })
+    .returning();
+  assert.ok(version);
+  const suggestionId = randomUUID();
+  const [run] = await db
+    .insert(agentRuns)
+    .values({
+      projectId,
+      subjectId: suggestionId,
+      task: "section_text_generation",
+      status: "queued",
+      recoveryCount: input.recoveryCount ?? 0,
+      updatedAt: staleUpdatedAt
+    })
+    .returning();
+  assert.ok(run);
+  await db.insert(pageSectionCopySuggestions).values({
+    id: suggestionId,
+    projectId,
+    pageVersionId: version.id,
+    sectionId: "hero-1",
+    agentRunId: run.id,
+    requestedByUserId: user.id,
+    status: "queued"
+  });
+
+  return { projectId, pageVersionId: version.id, suggestionId, runId: run.id };
 }
 
 type FakeWorkRecoveryQueues = WorkRecoveryQueues & {

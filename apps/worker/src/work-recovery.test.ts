@@ -16,7 +16,7 @@ void describe("work recovery transport mapping", () => {
     assert.equal(transportStateFromBullMqJobState("paused"), "unknown");
   });
 
-  void it("continues loading the other lane when one candidate query fails", async () => {
+  void it("continues loading the other lanes when one candidate query fails", async () => {
     let selectCount = 0;
     const db = {
       select() {
@@ -55,7 +55,7 @@ void describe("work recovery transport mapping", () => {
         batchSize: 25
       });
 
-      assert.equal(selectCount, 2);
+      assert.equal(selectCount, 3);
       assert.equal(result.errors, 1);
       assert.equal(result.checked, 0);
       assert.match(errors[0] ?? "", /page_proposal candidates/u);

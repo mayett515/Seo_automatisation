@@ -61,7 +61,7 @@ Do not split port definitions across two homes. `packages/ai` stays free of prov
 type ReasoningTask = "opportunity_scout" | "page_brief_draft" | "section_text_generation" | "report_narrative";
 ```
 
-Only `opportunity_scout` is implemented in this slice. The union existing now keeps the port stable when slices 6+ arrive.
+The original foundation slice implemented only `opportunity_scout`. The same closed union now also drives the implemented `page_brief_draft` and `section_text_generation` workers; `report_narrative` remains future work.
 
 ### 3. The model never emits the final score
 
@@ -267,7 +267,25 @@ assistant content not JSON       -> output_not_json
 
 Provider response bodies are not persisted. Diagnostics keep only latency, finish reason, and a bounded safe reason code. The worker remains responsible for Zod parsing, deterministic QA, evidence resolution, scoring, and persistence.
 
-If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected Opportunity Scout or Page Proposal run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
+If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected Opportunity Scout, Page Proposal, or Section Copy run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
+
+### Page Studio section-copy reasoning
+
+`section_text_generation` is implemented as a bounded suggestion lane rather than direct PageJson editing:
+
+```text
+API pins latest pageVersionId + sectionId and persists suggestion + agent run
+-> worker stores bounded current-section/page/surrounding-section evidence
+-> named policy allows read_evidence + draft_content only
+-> model returns SectionCopyRevisionOutput for the pinned section
+-> deterministic QA accepts registry-marked copy fields only
+-> protected stored props are merged back in
+-> registry + composition + preview-render gates run
+-> suggestion becomes ready; no page version exists yet
+-> operator applies through update_section_props or dismisses
+```
+
+Exact application receives durable agent-run provenance. If the operator changes any suggested prop before applying, the created version receives human provenance. The UI cannot claim either outcome; the API compares normalized stored suggestion props with the submitted complete props inside the edit transaction.
 
 ### Page Proposal real-provider smoke harness
 

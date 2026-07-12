@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { PageProposalJobDataSchema, ReleaseVerificationJobDataSchema, type AgentRunStatus } from "@localseo/contracts";
-import { agentRuns, jobRuns, releasePlans, releaseVerifications } from "@localseo/db";
+import {
+  PageProposalJobDataSchema,
+  ReleaseVerificationJobDataSchema,
+  SectionCopySuggestionJobDataSchema,
+  type AgentRunStatus
+} from "@localseo/contracts";
+import { agentRuns, jobRuns, pageSectionCopySuggestions, releasePlans, releaseVerifications } from "@localseo/db";
 import { classifyWorkRecovery, type WorkRecoveryDecision, type WorkRecoveryTransportState } from "@localseo/domain";
 import type { JobsOptions } from "bullmq";
 import { and, asc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
@@ -50,6 +55,17 @@ type PageProposalRecoveryCandidate = {
   recoveryCount: number;
 };
 
+type SectionCopySuggestionRecoveryCandidate = {
+  kind: "section_copy_suggestion";
+  id: string;
+  projectId: string;
+  suggestionId: string;
+  pageVersionId: string;
+  sectionId: string;
+  durableState: "queued" | "running";
+  recoveryCount: number;
+};
+
 type ReleaseVerificationRecoveryCandidate = {
   kind: "release_verification";
   id: string;
@@ -60,7 +76,10 @@ type ReleaseVerificationRecoveryCandidate = {
   recoveryCount: number;
 };
 
-type RecoveryCandidate = PageProposalRecoveryCandidate | ReleaseVerificationRecoveryCandidate;
+type RecoveryCandidate =
+  | PageProposalRecoveryCandidate
+  | SectionCopySuggestionRecoveryCandidate
+  | ReleaseVerificationRecoveryCandidate;
 
 type RecoveryJobSpec = {
   queueName: keyof WorkRecoveryQueues;
@@ -82,8 +101,9 @@ export async function scanStaleWork(input: {
   const now = input.now ?? new Date();
   const staleBefore = new Date(now.getTime() - input.staleAfterMs);
   const result = emptyWorkRecoveryScanResult();
-  const [pageProposalLoad, releaseVerificationLoad] = await Promise.allSettled([
+  const [pageProposalLoad, sectionCopyLoad, releaseVerificationLoad] = await Promise.allSettled([
     loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadSectionCopySuggestionRecoveryCandidates(input.db, staleBefore, input.batchSize),
     loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize)
   ]);
   const candidates: RecoveryCandidate[] = [];
@@ -105,6 +125,16 @@ export async function scanStaleWork(input: {
     console.error(
       "Work recovery failed to load release_verification candidates",
       normalizeErrorMessage(releaseVerificationLoad.reason)
+    );
+  }
+
+  if (sectionCopyLoad.status === "fulfilled") {
+    candidates.push(...sectionCopyLoad.value);
+  } else {
+    result.errors += 1;
+    console.error(
+      "Work recovery failed to load section_copy_suggestion candidates",
+      normalizeErrorMessage(sectionCopyLoad.reason)
     );
   }
 
@@ -173,7 +203,7 @@ async function recoverCandidate(input: {
   const queue = input.queues[spec.queueName];
   const transportState = await observeTransportState(input.db, queue, spec);
   const decision = classifyWorkRecovery({
-    workflowCategory: input.candidate.kind === "page_proposal" ? "read_analyze" : "provider_handoff_warning",
+    workflowCategory: input.candidate.kind === "release_verification" ? "provider_handoff_warning" : "read_analyze",
     durableState: input.candidate.durableState,
     transportState,
     workerFreshness: "stale",
@@ -335,6 +365,52 @@ async function loadPageProposalRecoveryCandidates(
   });
 }
 
+async function loadSectionCopySuggestionRecoveryCandidates(
+  db: WorkerDb,
+  staleBefore: Date,
+  batchSize: number
+): Promise<SectionCopySuggestionRecoveryCandidate[]> {
+  const rows = await db
+    .select({
+      id: agentRuns.id,
+      projectId: agentRuns.projectId,
+      suggestionId: pageSectionCopySuggestions.id,
+      pageVersionId: pageSectionCopySuggestions.pageVersionId,
+      sectionId: pageSectionCopySuggestions.sectionId,
+      status: agentRuns.status,
+      recoveryCount: agentRuns.recoveryCount
+    })
+    .from(agentRuns)
+    .innerJoin(pageSectionCopySuggestions, eq(pageSectionCopySuggestions.agentRunId, agentRuns.id))
+    .where(
+      and(
+        eq(agentRuns.task, "section_text_generation"),
+        inArray(agentRuns.status, activeAgentRunStatuses),
+        inArray(pageSectionCopySuggestions.status, ["queued", "generating"]),
+        lte(agentRuns.updatedAt, staleBefore)
+      )
+    )
+    .orderBy(asc(agentRuns.updatedAt))
+    .limit(batchSize);
+
+  return rows.flatMap((row) =>
+    row.status === "queued" || row.status === "running"
+      ? [
+          {
+            kind: "section_copy_suggestion" as const,
+            id: row.id,
+            projectId: row.projectId,
+            suggestionId: row.suggestionId,
+            pageVersionId: row.pageVersionId,
+            sectionId: row.sectionId,
+            durableState: row.status,
+            recoveryCount: row.recoveryCount
+          }
+        ]
+      : []
+  );
+}
+
 async function loadReleaseVerificationRecoveryCandidates(
   db: WorkerDb,
   staleBefore: Date,
@@ -386,45 +462,51 @@ async function claimRecoveryAttempt(
   reason: string
 ): Promise<{ jobRunId: string; recoveryCount: number } | undefined> {
   return db.transaction(async (tx) => {
-    const [claimed] =
-      candidate.kind === "page_proposal"
-        ? await tx
-            .update(agentRuns)
-            .set({
-              recoveryCount: sql<number>`${agentRuns.recoveryCount} + 1`,
-              lastRecoveryAt: now,
-              updatedAt: now
-            })
-            .where(
-              and(
-                eq(agentRuns.id, candidate.id),
-                eq(agentRuns.projectId, candidate.projectId),
-                eq(agentRuns.task, "page_brief_draft"),
-                eq(agentRuns.subjectId, candidate.opportunityId),
-                inArray(agentRuns.status, activeAgentRunStatuses),
-                eq(agentRuns.recoveryCount, candidate.recoveryCount),
-                lte(agentRuns.updatedAt, staleBefore)
-              )
-            )
-            .returning({ recoveryCount: agentRuns.recoveryCount })
-        : await tx
-            .update(releaseVerifications)
-            .set({
-              recoveryCount: sql<number>`${releaseVerifications.recoveryCount} + 1`,
-              lastRecoveryAt: now,
-              updatedAt: now
-            })
-            .where(
-              and(
-                eq(releaseVerifications.id, candidate.id),
-                eq(releaseVerifications.releasePlanId, candidate.releasePlanId),
-                eq(releaseVerifications.deploymentId, candidate.deploymentId),
-                eq(releaseVerifications.status, "running"),
-                eq(releaseVerifications.recoveryCount, candidate.recoveryCount),
-                lte(releaseVerifications.updatedAt, staleBefore)
-              )
-            )
-            .returning({ recoveryCount: releaseVerifications.recoveryCount });
+    let claimedRows: Array<{ recoveryCount: number }>;
+    if (candidate.kind === "release_verification") {
+      claimedRows = await tx
+        .update(releaseVerifications)
+        .set({
+          recoveryCount: sql<number>`${releaseVerifications.recoveryCount} + 1`,
+          lastRecoveryAt: now,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(releaseVerifications.id, candidate.id),
+            eq(releaseVerifications.releasePlanId, candidate.releasePlanId),
+            eq(releaseVerifications.deploymentId, candidate.deploymentId),
+            eq(releaseVerifications.status, "running"),
+            eq(releaseVerifications.recoveryCount, candidate.recoveryCount),
+            lte(releaseVerifications.updatedAt, staleBefore)
+          )
+        )
+        .returning({ recoveryCount: releaseVerifications.recoveryCount });
+    } else {
+      const task = candidate.kind === "page_proposal" ? "page_brief_draft" : "section_text_generation";
+      const subjectId = candidate.kind === "page_proposal" ? candidate.opportunityId : candidate.suggestionId;
+      claimedRows = await tx
+        .update(agentRuns)
+        .set({
+          recoveryCount: sql<number>`${agentRuns.recoveryCount} + 1`,
+          lastRecoveryAt: now,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(agentRuns.id, candidate.id),
+            eq(agentRuns.projectId, candidate.projectId),
+            eq(agentRuns.task, task),
+            eq(agentRuns.subjectId, subjectId),
+            inArray(agentRuns.status, activeAgentRunStatuses),
+            eq(agentRuns.recoveryCount, candidate.recoveryCount),
+            lte(agentRuns.updatedAt, staleBefore)
+          )
+        )
+        .returning({ recoveryCount: agentRuns.recoveryCount });
+    }
+
+    const [claimed] = claimedRows;
 
     if (!claimed) {
       return undefined;
@@ -469,7 +551,7 @@ async function claimRecoveryAttempt(
       queueName: spec.queueName,
       type: spec.jobType,
       status: "queued",
-      inputRef: candidate.id,
+      inputRef: candidate.kind === "section_copy_suggestion" ? candidate.suggestionId : candidate.id,
       actorType: "system",
       triggerSource: "work_recovery"
     });
@@ -488,29 +570,112 @@ async function markCandidateRecoveryFailed(
   },
   reason: string
 ): Promise<boolean> {
-  const updated =
-    input.candidate.kind === "page_proposal"
-      ? await markPageProposalRecoveryFailed(input.db, input.candidate, input.now, input.staleBefore, reason)
-      : await markReleaseVerificationRecoveryFailure({
-          db: input.db,
-          data: ReleaseVerificationJobDataSchema.parse({
-            projectId: input.candidate.projectId,
-            releasePlanId: input.candidate.releasePlanId,
-            deploymentId: input.candidate.deploymentId,
-            verificationId: input.candidate.id,
-            triggerSource: "work_recovery"
-          }),
-          checkedAt: input.now,
-          staleBefore: input.staleBefore,
-          reason,
-          recoveryCount: input.candidate.recoveryCount
-        });
+  let updated: boolean;
+  if (input.candidate.kind === "page_proposal") {
+    updated = await markPageProposalRecoveryFailed(input.db, input.candidate, input.now, input.staleBefore, reason);
+  } else if (input.candidate.kind === "section_copy_suggestion") {
+    updated = await markSectionCopySuggestionRecoveryFailed(
+      input.db,
+      input.candidate,
+      input.now,
+      input.staleBefore,
+      reason
+    );
+  } else {
+    updated = await markReleaseVerificationRecoveryFailure({
+      db: input.db,
+      data: ReleaseVerificationJobDataSchema.parse({
+        projectId: input.candidate.projectId,
+        releasePlanId: input.candidate.releasePlanId,
+        deploymentId: input.candidate.deploymentId,
+        verificationId: input.candidate.id,
+        triggerSource: "work_recovery"
+      }),
+      checkedAt: input.now,
+      staleBefore: input.staleBefore,
+      reason,
+      recoveryCount: input.candidate.recoveryCount
+    });
+  }
 
   if (updated) {
     await markCurrentJobRunFailed(input.db, input.spec, input.now, reason);
   }
 
   return updated;
+}
+
+async function markSectionCopySuggestionRecoveryFailed(
+  db: WorkerDb,
+  candidate: SectionCopySuggestionRecoveryCandidate,
+  now: Date,
+  staleBefore: Date,
+  reason: string
+): Promise<boolean> {
+  const failureCode =
+    reason === "transport_completed_without_product_truth" ? "work_transport_inconsistent" : "work_recovery_exhausted";
+
+  return db.transaction(async (tx) => {
+    const [run] = await tx
+      .update(agentRuns)
+      .set({
+        status: "failed",
+        failureCode,
+        diagnosticsJson: {
+          message:
+            failureCode === "work_transport_inconsistent"
+              ? "Queue transport completed without terminal section copy suggestion truth."
+              : "Section copy suggestion recovery exhausted its bounded retry count.",
+          recoveryReason: reason,
+          recoveryCount: candidate.recoveryCount,
+          suggestionId: candidate.suggestionId
+        },
+        completedAt: now,
+        updatedAt: now
+      })
+      .where(
+        and(
+          eq(agentRuns.id, candidate.id),
+          eq(agentRuns.projectId, candidate.projectId),
+          eq(agentRuns.task, "section_text_generation"),
+          eq(agentRuns.subjectId, candidate.suggestionId),
+          inArray(agentRuns.status, activeAgentRunStatuses),
+          eq(agentRuns.recoveryCount, candidate.recoveryCount),
+          lte(agentRuns.updatedAt, staleBefore)
+        )
+      )
+      .returning({ id: agentRuns.id });
+    if (!run) {
+      return false;
+    }
+
+    const [suggestion] = await tx
+      .update(pageSectionCopySuggestions)
+      .set({
+        status: "failed",
+        failureCode,
+        failureMessage:
+          failureCode === "work_transport_inconsistent"
+            ? "Queue transport completed without a ready suggestion."
+            : "Suggestion generation exhausted bounded recovery.",
+        updatedAt: now
+      })
+      .where(
+        and(
+          eq(pageSectionCopySuggestions.id, candidate.suggestionId),
+          eq(pageSectionCopySuggestions.projectId, candidate.projectId),
+          eq(pageSectionCopySuggestions.pageVersionId, candidate.pageVersionId),
+          eq(pageSectionCopySuggestions.sectionId, candidate.sectionId),
+          eq(pageSectionCopySuggestions.agentRunId, candidate.id),
+          inArray(pageSectionCopySuggestions.status, ["queued", "generating"])
+        )
+      )
+      .returning({ id: pageSectionCopySuggestions.id });
+    if (!suggestion) {
+      throw new Error(`Section copy suggestion ${candidate.suggestionId} was not recoverable at terminalization.`);
+    }
+    return true;
+  });
 }
 
 async function markPageProposalRecoveryFailed(
@@ -610,6 +775,32 @@ function recoveryJobSpec(candidate: RecoveryCandidate, jobRunId?: string): Recov
         projectId: candidate.projectId,
         runId: candidate.id,
         opportunityId: candidate.opportunityId,
+        maxAttempts: attempts,
+        ...(jobRunId ? { jobRunId } : {}),
+        triggeredByUserId: null,
+        triggerSource: "work_recovery"
+      }),
+      options: {
+        attempts,
+        jobId: candidate.id,
+        backoff: { type: "exponential", delay: 5000 }
+      }
+    };
+  }
+
+  if (candidate.kind === "section_copy_suggestion") {
+    const attempts = 3;
+    return {
+      queueName: pageProposalQueueName,
+      jobName: "section_text_generation",
+      jobId: candidate.id,
+      jobType: "page_generation",
+      data: SectionCopySuggestionJobDataSchema.parse({
+        projectId: candidate.projectId,
+        runId: candidate.id,
+        suggestionId: candidate.suggestionId,
+        pageVersionId: candidate.pageVersionId,
+        sectionId: candidate.sectionId,
         maxAttempts: attempts,
         ...(jobRunId ? { jobRunId } : {}),
         triggeredByUserId: null,

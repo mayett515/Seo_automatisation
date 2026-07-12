@@ -304,6 +304,26 @@ DB-free Page Registry and web tests additionally prove that registry editor meta
 
 The Playwright replacement test runs the visual workspace at 390px and proves target/variant/prop staging makes no request, one explicit confirmation sends exactly one narrow `replace_section` command, the UI navigates to the N+1 preview, the shared preview reflects the replacement, and the page has no horizontal overflow.
 
+### AI Section Copy Revision
+
+Files:
+
+- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
+- [section-copy-suggestion.integration.ts](/C:/localseoproject/apps/worker/src/handlers/section-copy-suggestion.integration.ts)
+- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
+
+Implemented tests prove:
+
+1. The API creates one unresolved suggestion/run per page-version section, enqueues deterministic `section_text_generation` transport, lists contract-parsed suggestion state, and returns an explicit no-product-row dry-run when transport is absent.
+2. Protected sections and missing persisted actor evidence fail before queueing.
+3. Exact application creates N+1 with durable agent-run provenance; operator-modified application creates N+1 with human provenance.
+4. Ready dismissal and queued/generating cancellation persist actor evidence and permit a later replacement suggestion; cancellation also terminalizes unfinished run truth as `operator_cancelled`.
+5. The worker accepts only the pinned section and registry-marked copy fields, preserves protected href props, reruns registry/composition/render gates, and marks only the suggestion ready without creating a page version.
+6. Protected-field output fails terminally without creating a page version, and neither a retried worker nor a late provider failure can resurrect or overwrite an operator-cancelled suggestion.
+7. Bounded recovery re-enqueues stale suggestion work with the same run/suggestion ids and atomically fails both rows after exhaustion.
+
+DB-free contract, AI, registry, domain, adapter, and web-state tests additionally pin the strict output shape, bounded prompt/evidence packet, protected-field merge, AI-copy field metadata, exact-versus-modified provenance, task-aware mock output, and latest-suggestion selection. The 390px Playwright flow proves generate creates no version, ready output is reviewed in the structured form, and one explicit apply sends `suggestionId` through the existing edit command before navigating to N+1.
+
 ### Tracking Ingestion
 
 File:

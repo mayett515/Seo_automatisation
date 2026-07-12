@@ -22,6 +22,7 @@ import {
   releasePlanStatuses,
   releaseVerificationStatuses,
   rankingProofStatuses,
+  sectionCopySuggestionStatuses,
   serpSnapshotStatuses,
   technicalAuditFindingCategories,
   technicalAuditFindingSeverities,
@@ -86,6 +87,7 @@ export const pageSectionNoteInstructionTypeEnum = pgEnum(
   "page_section_note_instruction_type",
   pageSectionNoteInstructionTypes
 );
+export const sectionCopySuggestionStatusEnum = pgEnum("section_copy_suggestion_status", sectionCopySuggestionStatuses);
 export const approvalStatusEnum = pgEnum("approval_status", approvalStatuses);
 export const customerMembershipRoleEnum = pgEnum("customer_membership_role", customerMembershipRoles);
 
@@ -362,7 +364,9 @@ export const agentRuns = pgTable(
     ),
     index("agent_runs_recovery_scan_idx")
       .on(table.task, table.status, table.updatedAt)
-      .where(sql`${table.task} = 'page_brief_draft' and ${table.status} in ('queued', 'running')`),
+      .where(
+        sql`${table.task} in ('page_brief_draft', 'section_text_generation') and ${table.status} in ('queued', 'running')`
+      ),
     uniqueIndex("agent_runs_active_per_project_task_subject_idx")
       .on(table.projectId, table.task, table.subjectId)
       .where(sql`${table.status} in ('queued', 'running') and ${table.subjectId} is not null`),
@@ -487,6 +491,45 @@ export const pageVersions = pgTable(
   (table) => [
     uniqueIndex("page_versions_proposal_version_idx").on(table.pageProposalId, table.versionNumber),
     index("page_versions_based_on_version_idx").on(table.basedOnVersionId)
+  ]
+);
+
+export const pageSectionCopySuggestions = pgTable(
+  "page_section_copy_suggestions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    pageVersionId: uuid("page_version_id")
+      .notNull()
+      .references(() => pageVersions.id),
+    sectionId: text("section_id").notNull(),
+    agentRunId: uuid("agent_run_id")
+      .notNull()
+      .references(() => agentRuns.id),
+    requestedByUserId: uuid("requested_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    status: sectionCopySuggestionStatusEnum("status").notNull().default("queued"),
+    instruction: text("instruction"),
+    suggestedProps: jsonb("suggested_props").$type<Record<string, unknown>>(),
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    appliedPageVersionId: uuid("applied_page_version_id").references((): AnyPgColumn => pageVersions.id),
+    appliedByUserId: uuid("applied_by_user_id").references(() => users.id),
+    dismissedByUserId: uuid("dismissed_by_user_id").references(() => users.id),
+    readyAt: timestamp("ready_at", { withTimezone: true }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("page_section_copy_suggestions_agent_run_idx").on(table.agentRunId),
+    index("page_section_copy_suggestions_version_created_idx").on(table.pageVersionId, table.createdAt),
+    uniqueIndex("page_section_copy_suggestions_active_idx")
+      .on(table.pageVersionId, table.sectionId)
+      .where(sql`${table.status} in ('queued', 'generating', 'ready')`)
   ]
 );
 
@@ -922,7 +965,26 @@ export const pageVersionRelations = relations(pageVersions, ({ many, one }) => (
   }),
   derivedVersions: many(pageVersions, { relationName: "pageVersionLineage" }),
   createdBy: one(users, { fields: [pageVersions.createdByUserId], references: [users.id] }),
-  sectionNotes: many(pageSectionNotes)
+  sectionNotes: many(pageSectionNotes),
+  copySuggestions: many(pageSectionCopySuggestions, { relationName: "copySuggestionBaseVersion" }),
+  appliedCopySuggestions: many(pageSectionCopySuggestions, { relationName: "copySuggestionAppliedVersion" })
+}));
+
+export const pageSectionCopySuggestionRelations = relations(pageSectionCopySuggestions, ({ one }) => ({
+  pageVersion: one(pageVersions, {
+    fields: [pageSectionCopySuggestions.pageVersionId],
+    references: [pageVersions.id],
+    relationName: "copySuggestionBaseVersion"
+  }),
+  appliedPageVersion: one(pageVersions, {
+    fields: [pageSectionCopySuggestions.appliedPageVersionId],
+    references: [pageVersions.id],
+    relationName: "copySuggestionAppliedVersion"
+  }),
+  agentRun: one(agentRuns, {
+    fields: [pageSectionCopySuggestions.agentRunId],
+    references: [agentRuns.id]
+  })
 }));
 
 export const pageSectionNoteRelations = relations(pageSectionNotes, ({ one }) => ({
@@ -933,7 +995,8 @@ export const pageSectionNoteRelations = relations(pageSectionNotes, ({ one }) =>
 
 export const agentRunRelations = relations(agentRuns, ({ many, one }) => ({
   project: one(projects, { fields: [agentRuns.projectId], references: [projects.id] }),
-  opportunities: many(opportunities)
+  opportunities: many(opportunities),
+  pageSectionCopySuggestions: many(pageSectionCopySuggestions)
 }));
 
 export const opportunityRelations = relations(opportunities, ({ many, one }) => ({

@@ -197,6 +197,8 @@ Replace Section
 
 Controlled replacement preserves the current section id, order, zone, and page slot. The client submits only the target registry key, target variant, and complete props; the domain derives type/schema structure from the registry, clears evidence attached to the replaced content, and runs the same contract, registry, composition, and preview-render gates as every other edit. Choosing a type or variant in the form is staging, not persistence.
 
+`Generate Text` is implemented as a durable suggest-review-apply workflow. The request is pinned to the latest page version and selected section. Registry metadata supplies the only fields the model may revise, and the worker merges those fields into protected stored props before rerunning registry, composition, and preview-render gates. A ready suggestion still does not change PageJson. The operator may cancel queued/generating work, edit and apply a ready structured suggestion through the normal `update_section_props` command, or dismiss it. Cancellation prevents late persistence and frees the section slot but may not abort a provider request already in flight. Exact application carries the durable agent run id; modified application is attributed to the human editor. No AI task may auto-apply, approve, or deploy the result.
+
 ## LLM Boundary
 
 The LLM may suggest a page template or section changes, but it must output structured JSON that validates against the same registry rules as the UI.

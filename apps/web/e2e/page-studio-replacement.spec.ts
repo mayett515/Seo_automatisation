@@ -1,11 +1,19 @@
 import { expect, test, type Route } from "@playwright/test";
 import { PageVersionSummarySchema } from "@localseo/contracts";
-import type { PageJson, PageStudioEditCommand, PageVersionDetail } from "@localseo/contracts";
+import type {
+  EditPageVersionRequest,
+  PageJson,
+  PageStudioEditCommand,
+  PageVersionDetail,
+  SectionCopySuggestion
+} from "@localseo/contracts";
 
 const projectId = "demo-project";
 const proposalId = "proposal-1";
 const baseVersionId = "version-1";
 const replacementVersionId = "version-2";
+const copySuggestionId = "10000000-0000-4000-8000-000000000001";
+const copyRunId = "10000000-0000-4000-8000-000000000002";
 const createdAt = "2026-07-12T10:00:00.000Z";
 
 test("stages controlled section replacement before creating one next version", async ({ page }) => {
@@ -13,9 +21,17 @@ test("stages controlled section replacement before creating one next version", a
   const submittedCommands: PageStudioEditCommand[] = [];
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route("http://127.0.0.1:65535/**", async (route) => {
+  await page.route("**/*", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+
+    if (
+      !["fetch", "xhr"].includes(request.resourceType()) ||
+      (path !== "/health" && !path.startsWith(`/projects/${projectId}`))
+    ) {
+      await route.continue();
+      return;
+    }
 
     if (path === "/health") {
       await json(route, { status: "ok", service: "local-seo-api", stack: {} });
@@ -33,6 +49,11 @@ test("stages controlled section replacement before creating one next version", a
     const version = versions.find((candidate) => path.includes(`/pages/${candidate.id}`));
     if (!version) {
       await json(route, null);
+      return;
+    }
+
+    if (path.endsWith("/copy-suggestions")) {
+      await json(route, { projectId, pageVersionId: version.id, suggestions: [] });
       return;
     }
 
@@ -142,6 +163,159 @@ test("stages controlled section replacement before creating one next version", a
   expect(horizontalScroll.distance, JSON.stringify(horizontalScroll, null, 2)).toBe(0);
 });
 
+test("queues, reviews, and explicitly applies a section copy suggestion", async ({ page }) => {
+  const suggestionId = copySuggestionId;
+  const runId = copyRunId;
+  const revisedHeading = "Dachreinigung fuer Muenchen auf den Punkt";
+  let versions = [pageVersion(baseVersionId, 1, pageJson())];
+  let suggestions: SectionCopySuggestion[] = [];
+  let serveQueuedSuggestionOnce = false;
+  const queuedRequests: unknown[] = [];
+  const submittedEdits: EditPageVersionRequest[] = [];
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+
+    if (
+      !["fetch", "xhr"].includes(request.resourceType()) ||
+      (path !== "/health" && !path.startsWith(`/projects/${projectId}`))
+    ) {
+      await route.continue();
+      return;
+    }
+
+    if (path === "/health") {
+      await json(route, { status: "ok", service: "local-seo-api", stack: {} });
+      return;
+    }
+
+    if (path === `/projects/${projectId}/pages`) {
+      await json(route, { projectId, pageVersions: versions.map(pageVersionSummary) });
+      return;
+    }
+
+    const version = versions.find((candidate) => path.includes(`/pages/${candidate.id}`));
+    if (!version) {
+      await json(route, null);
+      return;
+    }
+
+    if (path.endsWith("/copy-suggestions")) {
+      if (request.method() === "POST") {
+        queuedRequests.push(request.postDataJSON());
+        suggestions = [readyCopySuggestion(suggestionId, runId, version, revisedHeading)];
+        serveQueuedSuggestionOnce = true;
+        await json(route, {
+          jobId: runId,
+          projectId,
+          type: "page_generation",
+          status: "queued",
+          runId,
+          suggestionId,
+          pageVersionId: version.id,
+          sectionId: "hero-1",
+          createdBy: "user-1",
+          createdAt
+        });
+        return;
+      }
+
+      const visibleSuggestions = serveQueuedSuggestionOnce
+        ? suggestions.map((suggestion) => ({
+            ...suggestion,
+            status: "queued" as const,
+            suggestedProps: undefined,
+            readyAt: undefined
+          }))
+        : suggestions;
+      serveQueuedSuggestionOnce = false;
+      await json(route, {
+        projectId,
+        pageVersionId: version.id,
+        suggestions: version.id === baseVersionId ? visibleSuggestions : []
+      });
+      return;
+    }
+
+    if (path.endsWith("/preview")) {
+      await json(route, {
+        projectId,
+        pageVersionId: version.id,
+        route: version.route,
+        mode: "editor",
+        file: {
+          path: "/dachreinigung-muenchen/index.html",
+          contentType: "text/html; charset=utf-8",
+          body: `<main><h1>${previewHeading(version.pageJson)}</h1></main>`
+        }
+      });
+      return;
+    }
+
+    if (path.endsWith("/notes")) {
+      await json(route, { projectId, pageVersionId: version.id, notes: [] });
+      return;
+    }
+
+    if (path.endsWith("/edits") && request.method() === "POST") {
+      const body = request.postDataJSON() as EditPageVersionRequest;
+      submittedEdits.push(body);
+      const next = copySuggestionVersion(version, body);
+      versions = [...versions, next];
+      suggestions = suggestions.map((suggestion) => ({
+        ...suggestion,
+        status: "applied",
+        appliedPageVersionId: next.id,
+        appliedByUserId: "user-1",
+        appliedAt: createdAt,
+        updatedAt: createdAt
+      }));
+      await json(route, { projectId, basePageVersionId: version.id, pageVersion: next });
+      return;
+    }
+
+    await json(route, version);
+  });
+
+  await page.goto(`/projects/${projectId}/pages/${baseVersionId}/preview`);
+  await page.getByRole("button", { name: /^Hero hero/u }).click();
+  await page.getByRole("button", { name: "AI copy" }).click();
+  await page.getByLabel("Revision instruction").fill("Make the local intent clearer.");
+  await page.getByRole("button", { name: "Generate revision" }).click();
+
+  await expect(page.getByRole("button", { name: "Cancel revision" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apply suggestion" })).toBeVisible();
+  expect(queuedRequests).toEqual([{ sectionId: "hero-1", instruction: "Make the local intent clearer." }]);
+  expect(submittedEdits).toHaveLength(0);
+  await expect(page.getByLabel("Headline")).toHaveValue(revisedHeading);
+
+  await page.getByRole("button", { name: "Apply suggestion" }).click();
+
+  await expect.poll(() => submittedEdits.length).toBe(1);
+  await expect(page).toHaveURL(new RegExp(`/pages/${replacementVersionId}/preview$`, "u"));
+  await expect(page.getByText("Version 2", { exact: true })).toBeVisible();
+  await expect(
+    page.frameLocator("iframe[title='Page preview']").getByRole("heading", { name: revisedHeading })
+  ).toBeVisible();
+  expect(submittedEdits).toEqual([
+    {
+      suggestionId,
+      command: {
+        type: "update_section_props",
+        sectionId: "hero-1",
+        props: {
+          h1: revisedHeading,
+          lead: "Lokale Dachreinigung in Muenchen.",
+          primaryCtaLabel: "Anfragen",
+          primaryCtaHref: "/kontakt/"
+        }
+      }
+    }
+  ]);
+});
+
 function pageVersion(id: string, versionNumber: number, value: PageJson): PageVersionDetail {
   return {
     id,
@@ -197,10 +371,89 @@ function replacementVersion(base: PageVersionDetail, command: PageStudioEditComm
   };
 }
 
+function readyCopySuggestion(
+  id: string,
+  agentRunId: string,
+  version: PageVersionDetail,
+  revisedHeading: string
+): SectionCopySuggestion {
+  const hero = version.pageJson.sections.find((section) => section.id === "hero-1");
+  if (!hero) {
+    throw new Error("Expected the Hero fixture section.");
+  }
+
+  return {
+    id,
+    projectId,
+    pageVersionId: version.id,
+    sectionId: hero.id,
+    agentRunId,
+    status: "ready",
+    instruction: "Make the local intent clearer.",
+    suggestedProps: {
+      ...hero.props,
+      h1: revisedHeading
+    },
+    requestedByUserId: "user-1",
+    readyAt: createdAt,
+    createdAt,
+    updatedAt: createdAt
+  };
+}
+
+function copySuggestionVersion(base: PageVersionDetail, request: EditPageVersionRequest): PageVersionDetail {
+  if (request.command.type !== "update_section_props" || request.suggestionId !== copySuggestionId) {
+    throw new Error("Expected the suggestion-attributed props command.");
+  }
+  const command = request.command;
+
+  const sections = base.pageJson.sections.map((section) =>
+    section.id === command.sectionId
+      ? {
+          ...section,
+          props: command.props,
+          generation: {
+            source: "agent" as const,
+            agentRunId: copyRunId,
+            reason: "page_studio:section_text_generation"
+          }
+        }
+      : section
+  );
+
+  return {
+    ...pageVersion(replacementVersionId, 2, {
+      ...base.pageJson,
+      sections,
+      generation: {
+        source: "agent",
+        agentRunId: copyRunId,
+        reason: "page_studio:section_text_generation"
+      }
+    }),
+    basedOnVersionId: base.id,
+    createdByUserId: "user-1",
+    uniquenessRationale: base.uniquenessRationale,
+    pageJson: {
+      ...base.pageJson,
+      sections,
+      generation: {
+        source: "agent",
+        agentRunId: copyRunId,
+        reason: "page_studio:section_text_generation"
+      }
+    }
+  };
+}
+
 function previewHeading(value: PageJson): string {
   const replacement = value.sections.find((section) => section.id === "benefits-1");
-  const heading = replacement?.props.heading;
-  return typeof heading === "string" ? heading : "Dachreinigung in Muenchen";
+  const replacementHeading = replacement?.props.heading;
+  if (typeof replacementHeading === "string" && replacement?.registryKey === "ServiceDescription.default") {
+    return replacementHeading;
+  }
+  const hero = value.sections.find((section) => section.id === "hero-1");
+  return typeof hero?.props.h1 === "string" ? hero.props.h1 : "Dachreinigung in Muenchen";
 }
 
 function pageJson(): PageJson {

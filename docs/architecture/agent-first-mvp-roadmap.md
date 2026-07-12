@@ -651,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, and controlled section replacement are implemented.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, and bounded AI section-copy revision are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -727,11 +727,19 @@ implemented now
   failed, rolled-back, or cancelled release plans restore release_candidate page versions to approved for replanning
   synthetic fixture and redacted API-to-worker OpenCode Go smoke runner
   DB-backed actual-adapter response test proves policy and draft/preview-only persistence
+  registry metadata marks the exact section prop fields eligible for AI copy revision
+  POST /projects/:projectId/pages/:pageVersionId/copy-suggestions creates one pinned durable suggestion and section_text_generation run
+  section_text_generation uses read_evidence + draft_content only and produces SectionCopyRevisionOutput for the server-pinned section
+  worker merges allowed copy fields with protected stored props and reruns registry/composition/render gates before ready
+  ready suggestions require explicit operator apply through update_section_props or explicit dismiss
+  queued/generating suggestions can be operator-cancelled, terminalizing unfinished run truth and freeing the section slot
+  exact application records durable agent-run provenance; operator-modified application records human provenance
+  stale queued/generating section-copy work participates in bounded read/analyze recovery
 
 still deferred
   agent_run_events streaming timeline
   credentialed Page Proposal smoke execution and model calibration note
-  Page Studio media and AI section-copy revision actions
+  Page Studio media pipeline and controls
 ```
 
 ### 10. Page Studio, Notes, Approval, And Versioning
@@ -788,7 +796,7 @@ POST /projects/:projectId/pages/:basePageVersionId/edits
   DB trigger enforces immediate same-proposal lineage and freezes lineage evidence
 ```
 
-Visual outline, legal movement, registry variant, structured complete-props, controlled section replacement, stale-version, and rendered-preview controls are implemented. Replacement targets are filtered through the pure domain decision; target/variant/props are staged locally and only an explicit confirmation posts the command. The server derives type, schema version, and legal zone while preserving the section id, order, and page slot. Media controls and AI text actions remain follow-up work. They must call this command boundary or a future equally explicit command contract; they must not write PageJson directly.
+Visual outline, legal movement, registry variant, structured complete-props, controlled section replacement, stale-version, rendered-preview, and AI copy-revision controls are implemented. Replacement targets are filtered through the pure domain decision; target/variant/props are staged locally and only an explicit confirmation posts the command. The server derives type, schema version, and legal zone while preserving the section id, order, and page slot. AI copy is a separate durable suggestion workflow pinned to one version and section; the model may revise only registry-marked copy props, never creates a version, and reaches persistence only when the operator explicitly applies the reviewed structured props through `update_section_props`. Media remains follow-up infrastructure and must use project-scoped asset references rather than raw arbitrary URLs.
 
 Unresolved predecessor approval blockers remain attached to their source versions. The review UI reads a bounded lineage chain and shows those blockers as historical context without copying rows or turning old concerns into a chain-wide durable gate. Only blockers on the concrete version being approved are authoritative.
 
