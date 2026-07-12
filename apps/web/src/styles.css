@@ -247,7 +247,10 @@ a {
 }
 
 .status-pill {
+  box-sizing: border-box;
   width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
@@ -781,6 +784,11 @@ a {
 
   .screen-header {
     display: grid;
+  }
+
+  .panel-heading {
+    display: grid;
+    justify-items: start;
   }
 
   .data-table__row {

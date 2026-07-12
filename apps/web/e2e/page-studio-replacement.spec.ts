@@ -121,7 +121,8 @@ test("stages controlled section replacement before creating one next version", a
           boxSizing: style.boxSizing,
           declaredWidth: style.width,
           paddingLeft: style.paddingLeft,
-          paddingRight: style.paddingRight
+          paddingRight: style.paddingRight,
+          text: element.textContent?.trim().slice(0, 120) ?? ""
         };
       })
       .filter((element) => element.left < -0.5 || element.right > viewportWidth + 0.5)
