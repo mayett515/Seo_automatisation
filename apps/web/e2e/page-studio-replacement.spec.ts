@@ -102,10 +102,19 @@ test("stages controlled section replacement before creating one next version", a
     }
   ]);
 
-  const hasHorizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(hasHorizontalOverflow).toBe(false);
+  const horizontalScroll = await page.evaluate(() => {
+    const top = window.scrollY;
+    window.scrollTo(document.documentElement.scrollWidth, top);
+    const distance = window.scrollX;
+    window.scrollTo(0, top);
+    return {
+      distance,
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      innerWidth: window.innerWidth
+    };
+  });
+  expect(horizontalScroll.distance, JSON.stringify(horizontalScroll)).toBe(0);
 });
 
 function pageVersion(id: string, versionNumber: number, value: PageJson): PageVersionDetail {
