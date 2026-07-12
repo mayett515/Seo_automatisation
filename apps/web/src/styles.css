@@ -27,6 +27,12 @@ a {
   grid-template-rows: 56px 1fr;
 }
 
+.app-shell > * {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .app-shell__header {
   grid-column: 1 / -1;
   display: flex;
@@ -771,7 +777,6 @@ a {
   .app-shell__main,
   .app-shell__panel {
     grid-column: 1;
-    min-width: 0;
   }
 
   .screen-header {
