@@ -96,7 +96,7 @@ Composition: one composition root per process wires adapters into use cases
 ```text
 Lead, Customer, Project, Website, Service, Area, Opportunity,
 PageProposal, PageVersion, Approval, ReleasePlan, Deployment,
-GscSync, TrackingEvent, Report
+MediaAsset, GscSync, TrackingEvent, Report
 ```
 
 ## Port Inventory
@@ -107,6 +107,7 @@ SearchConsolePort      -> Google Search Console OAuth/API adapter
 CrawlerPort            -> website import/crawl adapter
 AnalyticsPort          -> analytics provider or internal analytics adapter
 ObjectStoragePort      -> S3/object storage adapter
+MediaAssetStoragePort -> S3/filesystem binary media adapter
 AiReasoningPort        -> Mastra workflow/agent adapter
 TrackingPort           -> event ingestion adapter
 EventPublisherPort     -> domain event publisher adapter
@@ -127,6 +128,7 @@ RollbackPort           -> rollback prepare/execute adapter
 - Drizzle owns persistence contracts.
 - Ports are named by purpose; vendor names live in adapters, provider records, and deployment configuration.
 - Control-panel UI components and deployable customer-page components stay separate.
+- PageJson stores opaque project-owned media references, never raw media URLs or storage keys; untrusted uploads become selectable only after deterministic worker normalization.
 - Each shared enum, event, and payload type has exactly one declared source of truth.
 - Customer reports do not use GSC impressions, CTR, average position, or weak opportunity signals as success proof.
 - Automated GSC OAuth/API sync is the only product path for Search Console data; if GSC is not connected, GSC-dependent workflows wait for connection.

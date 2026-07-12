@@ -2,7 +2,7 @@
 description: "Architecture direction for modular monolith, Clean Architecture, Hexagonal ports/adapters, DDD-lite bounded contexts, and system design"
 globs: "src/**/*.{ts,tsx}, apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, **/*architecture*.md, **/*boundary*.md, **/*port*.{ts,tsx}, **/*adapter*.{ts,tsx}, **/*schema*.{ts,tsx}"
 alwaysApply: false
-version: "1.0.0"
+version: "1.0.1"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -89,6 +89,7 @@ SearchConsolePort      -> Google Search Console OAuth/API adapter
 CrawlerPort            -> website import/crawl adapter
 AnalyticsPort          -> analytics provider or internal analytics adapter
 ObjectStoragePort      -> S3/object storage adapter
+MediaAssetStoragePort -> S3/filesystem binary media adapter
 AiReasoningPort        -> Mastra workflow/agent adapter
 TrackingPort           -> event ingestion adapter
 EventPublisherPort     -> domain event publisher adapter

@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, editor metadata, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app reads page proposals/page versions, renders API-produced preview HTML, records section notes, reviews concrete versions, and exposes a constrained Page Studio workspace. Movement buttons and legal replacement targets use pure domain decisions; variant menus and prop fields use registry metadata; complete props are validated through the registry; and successful commands navigate to the new append-only preview. Replacement choices remain local until the operator explicitly confirms creation of the next version. Opportunity Explorer continues to queue Page Proposal runs through durable subject-scoped agent runs. Media, AI copy actions, and richer section families remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, editor metadata, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app reads page proposals/page versions, renders API-produced preview HTML, records section notes, reviews concrete versions, and exposes a constrained Page Studio workspace. Movement buttons and legal replacement targets use pure domain decisions; variant menus and prop fields use registry metadata; complete props are validated through the registry; and successful commands navigate to the new append-only preview. Replacement choices remain local until the operator explicitly confirms creation of the next version. Opportunity Explorer continues to queue Page Proposal runs through durable subject-scoped agent runs. Bounded AI copy revision is implemented. Media controls and richer section families remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -372,6 +372,23 @@ Section replacement is a separate, explicitly confirmed command and must validat
 ```
 
 LLM-generated page proposals must validate against the same section schemas and movement rules before preview.
+
+### Media Asset Boundary
+
+ADR 0020 defines media before the UI exposes it. The Page Studio media surface is a project asset library, never a raw URL or storage-key field. PageJson stores a strict placement reference with an opaque asset id, explicit content/decorative alt semantics, and an optional normalized focal point.
+
+The future UI owns only staging and explicit selection:
+
+```text
+create upload intent
+-> upload to private quarantine transport
+-> show durable pending/processing/ready/failed state through TanStack Query
+-> select one ready project asset
+-> edit placement alt/focal point
+-> explicitly create N+1 through the existing Page Studio edit command
+```
+
+Upload completion never edits PageJson. The backend media worker validates and rewrites bytes before an asset becomes selectable. Preview must move to an authenticated document URL before media ships so the same root-relative asset paths and renderer output can be used in preview and deploy. The iframe keeps `sandbox=""`; a five-minute path-scoped signed partitioned capability cookie authorizes only the resolved preview manifest without changing HTML or asset paths.
 
 ## Opportunity Explorer MVP
 

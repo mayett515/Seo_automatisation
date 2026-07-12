@@ -61,3 +61,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0017 - Page Registry And PageJson Source Of Truth](0017-page-registry-and-page-json-source-of-truth.md)
 - [0018 - DB-Before-Queue Work Recovery Policy](0018-db-before-queue-work-recovery-policy.md)
 - [0019 - Agent Constraint Architecture And Tool Policy](0019-agent-constraint-architecture-and-tool-policy.md)
+- [0020 - Project-Scoped Media Asset Pipeline](0020-project-scoped-media-asset-pipeline.md)

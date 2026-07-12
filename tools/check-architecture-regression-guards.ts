@@ -1136,6 +1136,76 @@ requireIncludes(
 );
 
 requireIncludes(
+  "docs/architecture/decisions/0020-project-scoped-media-asset-pipeline.md",
+  "PageMediaReference",
+  "media-asset-boundary",
+  "ADR 0020 must keep the PageJson media reference explicit and opaque"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0020-project-scoped-media-asset-pipeline.md",
+  "The reference must not include a URL, object-storage key, provider name",
+  "media-asset-boundary",
+  "ADR 0020 must forbid provider/storage locators in PageJson media references"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0020-project-scoped-media-asset-pipeline.md",
+  "StaticSiteFile` must become binary-safe",
+  "media-asset-boundary",
+  "ADR 0020 must preserve the binary artifact migration prerequisite"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Project-scoped media asset boundary",
+  "media-asset-boundary",
+  "Rule 15 must pin the accepted media asset boundary"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Preview and deploy must resolve the same media manifest",
+  "media-asset-boundary",
+  "Rule 15 must preserve preview/deploy media manifest parity"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Short-lived upload grants must bind an expected checksum",
+  "media-asset-boundary",
+  "Rule 15 must preserve checksum binding across presigned upload and worker processing"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Ready asset manifests, processor versions, and derivative bytes are immutable",
+  "media-asset-boundary",
+  "Rule 15 must prevent approved pages from changing through in-place media reprocessing"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Sandboxed preview media uses a short-lived path-scoped signed capability",
+  "media-asset-boundary",
+  "Rule 15 must preserve empty-sandbox preview auth without changing rendered asset paths"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Provider file digests and uploads must use the same decoded bytes",
+  "media-asset-boundary",
+  "Rule 15 must prevent base64 text digests from diverging from uploaded file bytes"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Ready status requires the exact DB-checked derivative key set",
+  "media-asset-boundary",
+  "Rule 15 must prevent partial derivative manifests from becoming ready"
+);
+
+requireIncludes(
   "packages/page-registry/src/index.ts",
   "Header phoneHref must be a tel: or mailto: link.",
   "page-json-safety",

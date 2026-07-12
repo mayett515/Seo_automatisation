@@ -199,6 +199,18 @@ Controlled replacement preserves the current section id, order, zone, and page s
 
 `Generate Text` is implemented as a durable suggest-review-apply workflow. The request is pinned to the latest page version and selected section. Registry metadata supplies the only fields the model may revise, and the worker merges those fields into protected stored props before rerunning registry, composition, and preview-render gates. A ready suggestion still does not change PageJson. The operator may cancel queued/generating work, edit and apply a ready structured suggestion through the normal `update_section_props` command, or dismiss it. Cancellation prevents late persistence and frees the section slot but may not abort a provider request already in flight. Exact application carries the durable agent run id; modified application is attributed to the human editor. No AI task may auto-apply, approve, or deploy the result.
 
+`Media` is governed by ADR 0020 and is not a URL editor. The future control lists only project-owned assets that completed deterministic worker normalization. Uploading creates private quarantine/processing state only; it does not edit a page. Selecting an asset, writing placement-specific alt text, and choosing a normalized focal point remain local staging until explicit confirmation creates N+1 through the existing complete-props command. Archived assets remain resolvable for historical versions but disappear from new selection.
+
+The first media implementation is deliberately ordered:
+
+```text
+backend asset/upload/processing foundation
+-> binary-safe artifact plus authenticated preview media parity
+-> ImageText registry entry and Page Studio media controls
+```
+
+Raw external URLs, object keys, SVG, animation, video, stock search, and generated images remain outside the MVP media boundary.
+
 ## LLM Boundary
 
 The LLM may suggest a page template or section changes, but it must output structured JSON that validates against the same registry rules as the UI.

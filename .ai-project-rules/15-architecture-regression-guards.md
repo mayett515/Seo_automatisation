@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.7"
+version: "1.1.9"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -18,7 +18,7 @@ anti_regression_mode: "hybrid-boundary"
 # Domain Execution Contract: Architecture Regression Guards
 
 <meta-instruction>
-Use this shard when a task touches a seam previously found by review: persisted JSON contracts, release/deploy/verify truth, provider mutations, durable worker recovery, evidence proof tiers, roadmap implemented/deferred lists, or PageJson/Page Registry source-of-truth work.
+Use this shard when a task touches a seam previously found by review: persisted JSON contracts, release/deploy/verify truth, provider mutations, durable worker recovery, evidence proof tiers, roadmap implemented/deferred lists, project-scoped media assets, or PageJson/Page Registry source-of-truth work.
 </meta-instruction>
 
 ## 1. Guard Categories
@@ -169,6 +169,27 @@ Page Registry render/preflight boundary
   Release preflight blocks actions that do not yet materialize to rendered files or explicit directive artifacts.
   PageJson safety guards reject raw markup, scripts, event handlers, inline styles, className, and literal class keys.
   Preview rendering must call the page-registry renderer core, and deploy-preview output must stay byte-identical to deploy artifact output for the same PageJson.
+```
+
+</context>
+
+<context>
+```text
+Project-scoped media asset boundary
+  PageJson may store only opaque project-scoped media references, never raw URLs, object keys, provider fields, filenames, MIME claims, or arbitrary metadata.
+  Postgres owns asset identity/lifecycle/actor evidence; private object storage owns bytes.
+  Uploaded bytes remain private quarantine data until a deterministic worker validates decoded content, strips metadata, and writes immutable derivatives.
+  Browser MIME, extension, filename, dimensions, and upload success are not renderable asset truth.
+  Short-lived upload grants must bind an expected checksum; completion and worker processing must verify the bytes actually uploaded.
+  Upload completion must not create a page version, approval, release plan, deploy, or public asset.
+  New edits may select only ready assets; archived referenced assets remain resolvable for historical versions.
+  Ready asset manifests, processor versions, and derivative bytes are immutable; changed processing creates a new asset id.
+  Page-version reference projection and rollback retention must block deletion of in-use derivatives.
+  Preview and deploy must resolve the same media manifest through the same renderer and emit identical asset paths.
+  Sandboxed preview media uses a short-lived path-scoped signed capability; do not add allow-same-origin/scripts or credentials to rendered paths.
+  Static release artifacts must use an explicit binary-safe file encoding before media can reach provider handoff.
+  Provider file digests and uploads must use the same decoded bytes, never the base64 transport text.
+  Ready status requires the exact DB-checked derivative key set, and ready/archived variants are append-only.
 ```
 
 </context>
