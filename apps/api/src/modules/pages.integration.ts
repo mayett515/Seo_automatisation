@@ -488,6 +488,174 @@ void describe(
       assert.deepEqual(versions.map((version) => version.versionNumber).sort(), [1, 2]);
     });
 
+    void it("makes a concurrently waiting review stale when the edit holds the proposal lock first", async () => {
+      assert.ok(testDatabaseUrl);
+      const fixture = await createPageVersionFixture(db, { name: "Edit before review", route: "/edit-before-review/" });
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const editHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const reviewHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const editService = new PagesService(
+        testDatabaseService(editHandle.db),
+        new QueueProducerService(testDatabaseService(editHandle.db))
+      );
+      const reviewService = new PagesService(
+        testDatabaseService(reviewHandle.db),
+        new QueueProducerService(testDatabaseService(reviewHandle.db))
+      );
+      let heldLock: HeldPageVersionLock | undefined;
+      let editSettled = false;
+      let reviewSettled = false;
+
+      try {
+        heldLock = await startHeldPageVersionLock(blockerHandle.sql, fixture.pageVersionId);
+        const editPid = await backendPid(editHandle.sql);
+        const editOutcome = editService
+          .editPageVersion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            { command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" } },
+            fixture.userId
+          )
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            editSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: editPid,
+          blockingPid: heldLock.pid,
+          isSettled: () => editSettled
+        });
+
+        const reviewPid = await backendPid(reviewHandle.sql);
+        const reviewOutcome = reviewService
+          .reviewPageVersion(fixture.projectId, fixture.pageVersionId, { decision: "approve" }, fixture.userId)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            reviewSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: reviewPid,
+          blockingPid: editPid,
+          isSettled: () => reviewSettled
+        });
+        heldLock.release();
+        await heldLock.done;
+
+        const edited = await editOutcome;
+        const reviewed = await reviewOutcome;
+        assert.equal(edited.ok, true);
+        assert.equal(reviewed.ok, false);
+        if (!reviewed.ok) {
+          assert.match(errorMessage(reviewed.error), /Only the latest page version can be reviewed/u);
+        }
+
+        const versions = await db
+          .select()
+          .from(pageVersions)
+          .where(eq(pageVersions.pageProposalId, fixture.pageProposalId));
+        assert.equal(versions.length, 2);
+        assert.equal(versions.find((version) => version.id === fixture.pageVersionId)?.status, "preview");
+      } finally {
+        heldLock?.rollback();
+        await heldLock?.done.catch(() => undefined);
+        await blockerHandle.close();
+        await editHandle.close();
+        await reviewHandle.close();
+      }
+    });
+
+    void it("branches from the newly approved base when review holds the proposal lock first", async () => {
+      assert.ok(testDatabaseUrl);
+      const fixture = await createPageVersionFixture(db, {
+        name: "Review before edit",
+        route: "/review-before-edit/"
+      });
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const reviewHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const editHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const reviewService = new PagesService(
+        testDatabaseService(reviewHandle.db),
+        new QueueProducerService(testDatabaseService(reviewHandle.db))
+      );
+      const editService = new PagesService(
+        testDatabaseService(editHandle.db),
+        new QueueProducerService(testDatabaseService(editHandle.db))
+      );
+      let heldLock: HeldPageVersionLock | undefined;
+      let reviewSettled = false;
+      let editSettled = false;
+
+      try {
+        heldLock = await startHeldPageVersionLock(blockerHandle.sql, fixture.pageVersionId);
+        const reviewPid = await backendPid(reviewHandle.sql);
+        const reviewOutcome = reviewService
+          .reviewPageVersion(fixture.projectId, fixture.pageVersionId, { decision: "approve" }, fixture.userId)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            reviewSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: reviewPid,
+          blockingPid: heldLock.pid,
+          isSettled: () => reviewSettled
+        });
+
+        const editPid = await backendPid(editHandle.sql);
+        const editOutcome = editService
+          .editPageVersion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            { command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" } },
+            fixture.userId
+          )
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            editSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: editPid,
+          blockingPid: reviewPid,
+          isSettled: () => editSettled
+        });
+        heldLock.release();
+        await heldLock.done;
+
+        const reviewed = await reviewOutcome;
+        const edited = await editOutcome;
+        assert.equal(reviewed.ok, true);
+        if (!edited.ok) {
+          throw edited.error;
+        }
+
+        const [base] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+        assert.equal(base?.status, "approved");
+        assert.equal(edited.value.pageVersion.status, "preview");
+        assert.equal(edited.value.pageVersion.basedOnVersionId, fixture.pageVersionId);
+      } finally {
+        heldLock?.rollback();
+        await heldLock?.done.catch(() => undefined);
+        await blockerHandle.close();
+        await reviewHandle.close();
+        await editHandle.close();
+      }
+    });
+
     void it("enforces page-version lineage and freezes lineage evidence after approval", async () => {
       const first = await createPageVersionFixture(db, { name: "Lineage first", route: "/lineage-first/" });
       const second = await createPageVersionFixture(db, { name: "Lineage second", route: "/lineage-second/" });
@@ -1194,6 +1362,40 @@ type HeldApprovalBlockerInsert = {
   commit: () => void;
   rollback: () => void;
 };
+
+type HeldPageVersionLock = {
+  pid: number;
+  done: Promise<void>;
+  release: () => void;
+  rollback: () => void;
+};
+
+async function startHeldPageVersionLock(sql: SqlClient, pageVersionId: string): Promise<HeldPageVersionLock> {
+  const locked = deferred<{ pid: number }>();
+  const finish = deferred<"release" | "rollback">();
+  const done = sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`;
+    const pid = await backendPid(tx);
+    await tx`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`;
+    locked.resolve({ pid });
+
+    if ((await finish.promise) === "rollback") {
+      throw new Error("Rollback held page version lock.");
+    }
+  });
+
+  void done.catch((error: unknown) => {
+    locked.reject(error);
+  });
+
+  const { pid } = await locked.promise;
+  return {
+    pid,
+    done,
+    release: () => finish.resolve("release"),
+    rollback: () => finish.resolve("rollback")
+  };
+}
 
 async function startHeldApprovalBlockerInsert(
   sql: SqlClient,

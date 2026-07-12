@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.3"
+version: "1.1.4"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -195,6 +195,10 @@ Controlled Page Studio editing
   Every successful edit creates the immediate N+1 preview with same-proposal lineage and persisted actor evidence.
   Editing a frozen artifact branches to a new preview and never mutates the source.
   Existing notes remain attached to their source version; edit persistence must not silently copy blocker truth.
+  Visual controls derive movement legality and variants from domain/registry metadata and post only explicit commands.
+  Section prop edits are complete object replacements; the form must preserve fields the operator did not remove.
+  The UI treats stale-base conflicts as durable server truth and navigates operators to the latest version.
+  Unresolved predecessor blockers are bounded display-only context; they are not copied or silently promoted into current-version approval truth.
 ```
 
 </context>

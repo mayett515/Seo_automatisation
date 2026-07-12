@@ -21,6 +21,23 @@ export type PageRegistrySeoCapabilities = {
   canProvideInternalLinks?: boolean;
 };
 
+export type PageRegistryEditorField =
+  | {
+      key: string;
+      label: string;
+      control: "text" | "textarea";
+      optional?: boolean;
+    }
+  | {
+      key: string;
+      label: string;
+      control: "list";
+      itemLabel: string;
+      itemTemplate: string | Readonly<Record<string, string>>;
+      multilineItemKeys?: readonly string[];
+      optionalItemKeys?: readonly string[];
+    };
+
 export type PageRegistryEntry = {
   type: PageSectionType;
   registryKey: string;
@@ -30,6 +47,7 @@ export type PageRegistryEntry = {
   variants: readonly string[];
   defaultVariant: string;
   propsSchema: z.ZodType<unknown>;
+  editorFields: readonly PageRegistryEditorField[];
   seoCapabilities?: PageRegistrySeoCapabilities;
 };
 
@@ -61,6 +79,10 @@ export type PageRegistryValidationIssue = {
 export type PageRegistryValidationResult =
   | { success: true; pageJson: PageJson }
   | { success: false; issues: PageRegistryValidationIssue[] };
+
+export type PageRegistryPropsValidationResult =
+  | { success: true; props: Record<string, unknown> }
+  | { success: false; message: string };
 
 export type PagePreviewRenderMode = "editor" | "deploy";
 
@@ -145,6 +167,18 @@ export const pageRegistryEntries = [
         phoneHref: phoneHrefSchema.optional()
       })
       .strict(),
+    editorFields: [
+      { key: "brandName", label: "Brand name", control: "text" },
+      {
+        key: "navItems",
+        label: "Navigation links",
+        control: "list",
+        itemLabel: "Link",
+        itemTemplate: { label: "", href: "/" }
+      },
+      { key: "phoneLabel", label: "Phone label", control: "text", optional: true },
+      { key: "phoneHref", label: "Phone link", control: "text", optional: true }
+    ],
     seoCapabilities: { canProvideInternalLinks: true }
   }),
   registryEntry({
@@ -164,6 +198,13 @@ export const pageRegistryEntries = [
         trustLine: textMedium.optional()
       })
       .strict(),
+    editorFields: [
+      { key: "h1", label: "Headline", control: "text" },
+      { key: "lead", label: "Lead", control: "textarea" },
+      { key: "primaryCtaLabel", label: "Primary CTA label", control: "text", optional: true },
+      { key: "primaryCtaHref", label: "Primary CTA path", control: "text", optional: true },
+      { key: "trustLine", label: "Trust line", control: "textarea", optional: true }
+    ],
     seoCapabilities: { canProvideH1: true }
   }),
   registryEntry({
@@ -180,7 +221,12 @@ export const pageRegistryEntries = [
         heading: textShort,
         body: textLong
       })
-      .strict()
+      .strict(),
+    editorFields: [
+      { key: "eyebrow", label: "Eyebrow", control: "text", optional: true },
+      { key: "heading", label: "Heading", control: "text" },
+      { key: "body", label: "Body", control: "textarea" }
+    ]
   }),
   registryEntry({
     type: "ServiceDescription",
@@ -195,7 +241,17 @@ export const pageRegistryEntries = [
         heading: textShort,
         paragraphs: z.array(textLong).min(1).max(6)
       })
-      .strict()
+      .strict(),
+    editorFields: [
+      { key: "heading", label: "Heading", control: "text" },
+      {
+        key: "paragraphs",
+        label: "Paragraphs",
+        control: "list",
+        itemLabel: "Paragraph",
+        itemTemplate: ""
+      }
+    ]
   }),
   registryEntry({
     type: "BenefitsGrid",
@@ -210,7 +266,18 @@ export const pageRegistryEntries = [
         heading: textShort,
         benefits: z.array(benefitSchema).min(2).max(8)
       })
-      .strict()
+      .strict(),
+    editorFields: [
+      { key: "heading", label: "Heading", control: "text" },
+      {
+        key: "benefits",
+        label: "Benefits",
+        control: "list",
+        itemLabel: "Benefit",
+        itemTemplate: { title: "", body: "" },
+        multilineItemKeys: ["body"]
+      }
+    ]
   }),
   registryEntry({
     type: "FAQ",
@@ -226,6 +293,17 @@ export const pageRegistryEntries = [
         items: z.array(faqItemSchema).min(1).max(12)
       })
       .strict(),
+    editorFields: [
+      { key: "heading", label: "Heading", control: "text" },
+      {
+        key: "items",
+        label: "Questions",
+        control: "list",
+        itemLabel: "Question",
+        itemTemplate: { question: "", answer: "" },
+        multilineItemKeys: ["answer"]
+      }
+    ],
     seoCapabilities: { canProvideFaq: true, canProvideJsonLd: true }
   }),
   registryEntry({
@@ -242,6 +320,17 @@ export const pageRegistryEntries = [
         areas: z.array(areaSchema).min(1).max(40)
       })
       .strict(),
+    editorFields: [
+      { key: "heading", label: "Heading", control: "text" },
+      {
+        key: "areas",
+        label: "Service areas",
+        control: "list",
+        itemLabel: "Area",
+        itemTemplate: { name: "", route: "/" },
+        optionalItemKeys: ["route"]
+      }
+    ],
     seoCapabilities: { canProvideAreaServed: true, canProvideInternalLinks: true }
   }),
   registryEntry({
@@ -259,7 +348,13 @@ export const pageRegistryEntries = [
         ctaLabel: textShort,
         ctaHref: PagePathSchema
       })
-      .strict()
+      .strict(),
+    editorFields: [
+      { key: "heading", label: "Heading", control: "text" },
+      { key: "body", label: "Body", control: "textarea" },
+      { key: "ctaLabel", label: "CTA label", control: "text" },
+      { key: "ctaHref", label: "CTA path", control: "text" }
+    ]
   }),
   registryEntry({
     type: "Footer",
@@ -275,6 +370,16 @@ export const pageRegistryEntries = [
         legalLinks: z.array(linkSchema).max(6).default([])
       })
       .strict(),
+    editorFields: [
+      { key: "businessName", label: "Business name", control: "text" },
+      {
+        key: "legalLinks",
+        label: "Legal links",
+        control: "list",
+        itemLabel: "Link",
+        itemTemplate: { label: "", href: "/" }
+      }
+    ],
     seoCapabilities: { canProvideInternalLinks: true }
   })
 ] as const satisfies readonly PageRegistryEntry[];
@@ -379,6 +484,28 @@ export function getPageRegistryEntry(
   return registry.byKey.get(registryKey);
 }
 
+export function validatePageSectionProps(
+  registryKey: string,
+  props: unknown,
+  registry: PageRegistry = pageRegistry
+): PageRegistryPropsValidationResult {
+  const entry = registry.byKey.get(registryKey);
+  if (!entry) {
+    return { success: false, message: `Unknown page registry key '${registryKey}'.` };
+  }
+
+  const parsed = entry.propsSchema.safeParse(props);
+  if (!parsed.success) {
+    return { success: false, message: parsed.error.issues[0]?.message ?? "Section props are invalid." };
+  }
+
+  if (!isRecord(parsed.data)) {
+    return { success: false, message: "Section props must be an object." };
+  }
+
+  return { success: true, props: parsed.data };
+}
+
 export function summarizePageRegistry(registry: PageRegistry = pageRegistry): PageRegistryEntrySummary[] {
   return registry.entries.map((entry) => ({
     type: entry.type,
@@ -388,6 +515,7 @@ export function summarizePageRegistry(registry: PageRegistry = pageRegistry): Pa
     allowedZones: entry.allowedZones,
     variants: entry.variants,
     defaultVariant: entry.defaultVariant,
+    editorFields: entry.editorFields,
     seoCapabilities: entry.seoCapabilities
   }));
 }
@@ -914,6 +1042,16 @@ export function createPageRegistry(entries: readonly PageRegistryEntry[]): PageR
       throw new Error(`Page registry key '${entry.registryKey}' defaultVariant must be listed in variants.`);
     }
 
+    if (!(entry.propsSchema instanceof z.ZodObject)) {
+      throw new Error(`Page registry key '${entry.registryKey}' propsSchema must be a Zod object.`);
+    }
+
+    const propKeys = Object.keys(entry.propsSchema.shape).sort();
+    const editorKeys = entry.editorFields.map((field) => field.key).sort();
+    if (new Set(editorKeys).size !== editorKeys.length || propKeys.join("\u0000") !== editorKeys.join("\u0000")) {
+      throw new Error(`Page registry key '${entry.registryKey}' editor fields must match its prop schema.`);
+    }
+
     byKey.set(entry.registryKey, entry);
   }
 
@@ -926,4 +1064,8 @@ function registryEntry(entry: PageRegistryEntry): PageRegistryEntry {
 
 function toRegistryIssuePath(path: readonly PropertyKey[]): Array<string | number> {
   return path.map((part) => (typeof part === "symbol" ? part.toString() : part));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

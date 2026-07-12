@@ -272,7 +272,7 @@ function OpportunitiesRouteComponent() {
 
 function PagePreviewRouteComponent() {
   const params = projectPagePreviewRoute.useParams();
-  return <PagePreviewScreen pageVersionId={params.pageId} projectId={params.projectId} />;
+  return <PagePreviewScreen key={params.pageId} pageVersionId={params.pageId} projectId={params.projectId} />;
 }
 
 function ReleaseDetailRouteComponent() {

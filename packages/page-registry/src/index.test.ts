@@ -11,7 +11,8 @@ import {
   renderApprovedReleaseArtifact,
   renderPagePreviewArtifact,
   renderPagePreviewFile,
-  validatePageJsonAgainstRegistry
+  validatePageJsonAgainstRegistry,
+  validatePageSectionProps
 } from "./index.js";
 
 void describe("page registry", () => {
@@ -168,7 +169,25 @@ void describe("page registry", () => {
     const firstEntry = pageRegistrySummary[0];
     assert.ok(firstEntry);
     assert.equal("propsSchema" in firstEntry, false);
+    assert.ok(firstEntry.editorFields.length > 0);
     assert.doesNotMatch(JSON.stringify(pageRegistrySummary), /propsSchema/u);
+  });
+
+  void it("keeps editor metadata aligned with registry prop schemas", () => {
+    assert.doesNotThrow(() => createPageRegistry(pageRegistryEntries));
+
+    const accepted = validatePageSectionProps("Hero.default", {
+      h1: "Dachreinigung Muenchen",
+      lead: "Lokale Dachreinigung fuer Wohn- und Gewerbeimmobilien."
+    });
+    const rejected = validatePageSectionProps("Hero.default", {
+      h1: "Dachreinigung Muenchen",
+      lead: "Lokale Dachreinigung fuer Wohn- und Gewerbeimmobilien.",
+      inventedField: "not in the registry"
+    });
+
+    assert.equal(accepted.success, true);
+    assert.equal(rejected.success, false);
   });
 
   void it("keeps registry keys unique and internally consistent", () => {

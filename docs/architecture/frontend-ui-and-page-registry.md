@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, approves or requests changes on preview versions, blocks approval on unresolved `approval_blocker` notes with DB-backed serialization against concurrent blocker creation, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. The backend now also owns explicit prop/movement/variant edit commands that create append-only preview versions with lineage and actor evidence. Visual Page Studio editing controls and richer section families remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, editor metadata, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app reads page proposals/page versions, renders API-produced preview HTML, records section notes, reviews concrete versions, and exposes a constrained Page Studio workspace. Movement buttons use pure domain decisions, variant menus and prop fields use registry metadata, complete props are validated through the registry, and successful commands navigate to the new append-only preview. Opportunity Explorer continues to queue Page Proposal runs through durable subject-scoped agent runs. Media, section replacement, AI copy actions, and richer section families remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -286,6 +286,10 @@ latest PageVersion + explicit edit command
 ```
 
 The API serializes edit and review decisions on the page proposal. Only the latest version may be edited or reviewed. Frozen approved/release artifacts may be used as a base, but the edit always branches to a new preview version and never mutates the source. The frontend must not send whole-PageJson replacement, JSON Patch, arbitrary markup, or style/code payloads.
+
+`update_section_props` replaces the complete props object for one section; it is not a partial merge. Registry editor metadata owns field order, labels, list templates, and optional-field handling so the form preserves fields the operator did not remove. Client registry validation gives immediate feedback, but the API and DB remain authoritative.
+
+Version notes are not inherited as new rows. The review panel loads at most the nearest 20 lineage ancestors and displays unresolved predecessor blockers as historical context. Those rows do not disable approval of the child; an authoritative blocker must be attached to the concrete version under review.
 
 Section notes are persisted as PageJson anchors, not component-instance projection anchors:
 

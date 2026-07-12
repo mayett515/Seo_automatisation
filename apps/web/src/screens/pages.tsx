@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { useForm } from "@tanstack/react-form";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import {
   PageProposalListResponseSchema,
@@ -14,10 +15,13 @@ import {
   ReviewPageVersionRequestSchema,
   CreatePageSectionNoteRequestSchema,
   CreateReleasePlanRequestSchema,
+  EditPageVersionRequestSchema,
+  PageVersionEditResponseSchema,
   pageSectionNoteInstructionTypes,
   type PageProposalSummary,
   type PageSectionNote,
   type PageSectionNoteInstructionType,
+  type PageStudioEditCommand,
   type PageVersionDetail,
   type PageVersionReviewDecision,
   type PageVersionReviewResponse,
@@ -25,6 +29,8 @@ import {
   type ReleasePlan
 } from "@localseo/contracts";
 import { getJson, patchJson, postJson } from "../lib/api";
+import { PageStudioEditor } from "../features/page-studio/page-studio-editor";
+import { latestVersionForProposal, pageVersionAncestors } from "../features/page-studio/page-studio-state";
 import { ReleaseLifecyclePanel } from "./release-detail";
 
 export function PagesScreen(props: { projectId: string }) {
@@ -104,6 +110,7 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
   const projectId = props.projectId;
   const pageVersionId = props.pageVersionId;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [decisionNote, setDecisionNote] = useState("");
   const [latestReview, setLatestReview] = useState<PageVersionReviewResponse | undefined>();
   const [latestReleasePlan, setLatestReleasePlan] = useState<ReleasePlan | undefined>();
@@ -124,7 +131,40 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
     retry: false,
     enabled: pageVersionId.length > 0
   });
+  const versions = useQuery({
+    queryKey: ["page-versions", projectId],
+    queryFn: () => getJson(projectApiPath(projectId, "/pages"), PageVersionListResponseSchema),
+    retry: false
+  });
+  const latestVersion =
+    version.data && versions.data ? latestVersionForProposal(version.data, versions.data.pageVersions) : undefined;
+  const ancestorVersions =
+    version.data && versions.data ? pageVersionAncestors(version.data, versions.data.pageVersions).slice(0, 20) : [];
   const notesQueryKey = pageSectionNotesQueryKey(projectId, pageVersionId);
+  const editVersion = useMutation({
+    mutationFn: (command: PageStudioEditCommand) => {
+      const body = EditPageVersionRequestSchema.parse({ command });
+      return postJson(
+        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/edits`),
+        body,
+        PageVersionEditResponseSchema
+      );
+    },
+    onSuccess: async (response) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] })
+      ]);
+      await navigate({
+        to: "/projects/$projectId/pages/$pageId/preview",
+        params: { projectId, pageId: response.pageVersion.id }
+      });
+    },
+    onError: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] });
+    }
+  });
+
   const reviewVersion = useMutation({
     mutationFn: (decision: PageVersionReviewDecision) => {
       const body = ReviewPageVersionRequestSchema.parse({
@@ -181,6 +221,7 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
       {preview.isError ? <div className="notice notice--danger">Preview could not be rendered.</div> : null}
       {version.isPending ? <div className="notice notice--neutral">Loading page version</div> : null}
       {version.isError ? <div className="notice notice--danger">Page version could not be loaded.</div> : null}
+      {versions.isError ? <div className="notice notice--danger">Page version history could not be loaded.</div> : null}
       {latestReview ? (
         <div className="notice notice--neutral">
           Page version review saved: {latestReview.approval.status}
@@ -227,8 +268,31 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
             </div>
           </article>
 
+          <section className="page-studio-workspace">
+            <PageStudioEditor
+              error={editVersion.error}
+              isSaving={editVersion.isPending}
+              isVersionListError={versions.isError}
+              isVersionListPending={versions.isPending}
+              latestVersion={latestVersion}
+              pageVersion={version.data}
+              projectId={projectId}
+              onCommand={(command) => editVersion.mutate(command)}
+            />
+            <div className="page-studio-preview-pane">
+              <div className="page-studio-preview-heading">
+                <strong>Rendered preview</strong>
+                <StatusPill tone="neutral">noindex</StatusPill>
+              </div>
+              <iframe className="preview-frame" sandbox="" srcDoc={preview.data.file.body} title="Page preview" />
+            </div>
+          </section>
+
           <PageVersionReviewPanel
+            ancestorVersions={ancestorVersions}
             decisionNote={decisionNote}
+            isLatest={latestVersion?.id === version.data.id}
+            isLatestStateReady={versions.isSuccess}
             isPending={reviewVersion.isPending}
             pageVersion={version.data}
             projectId={projectId}
@@ -248,8 +312,7 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
             />
           ) : null}
 
-          <iframe className="preview-frame" sandbox="" srcDoc={preview.data.file.body} title="Page preview" />
-          <PageSectionNotesPanel pageVersionId={pageVersionId} projectId={projectId} />
+          <PageSectionNotesPanel pageVersion={version.data} projectId={projectId} />
         </section>
       ) : null}
     </section>
@@ -257,7 +320,10 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
 }
 
 function PageVersionReviewPanel(props: {
+  ancestorVersions: readonly PageVersionSummary[];
   decisionNote: string;
+  isLatest: boolean;
+  isLatestStateReady: boolean;
   isPending: boolean;
   pageVersion: PageVersionDetail;
   projectId: string;
@@ -274,9 +340,30 @@ function PageVersionReviewPanel(props: {
       ),
     retry: false
   });
+  const ancestorNotes = useQueries({
+    queries: props.ancestorVersions.map((version) => ({
+      queryKey: pageSectionNotesQueryKey(props.projectId, version.id),
+      queryFn: () =>
+        getJson(
+          projectApiPath(props.projectId, `/pages/${encodeURIComponent(version.id)}/notes`),
+          PageSectionNoteListResponseSchema
+        ),
+      retry: false
+    }))
+  });
   const openBlockers =
     notes.data?.notes.filter((note) => note.status === "open" && note.instructionType === "approval_blocker") ?? [];
-  const reviewable = props.pageVersion.status === "preview" || props.pageVersion.status === "changes_requested";
+  const ancestorBlockers = props.ancestorVersions.flatMap((version, index) =>
+    (ancestorNotes[index]?.data?.notes ?? [])
+      .filter((note) => note.status === "open" && note.instructionType === "approval_blocker")
+      .map((note) => ({ note, version }))
+  );
+  const ancestorNotesPending = ancestorNotes.some((query) => query.isPending);
+  const ancestorNotesError = ancestorNotes.some((query) => query.isError);
+  const reviewable =
+    props.isLatestStateReady &&
+    props.isLatest &&
+    (props.pageVersion.status === "preview" || props.pageVersion.status === "changes_requested");
   const canApprove = reviewable && openBlockers.length === 0;
   const canRequestChanges = reviewable && normalizedText(props.decisionNote) !== undefined;
 
@@ -308,8 +395,45 @@ function PageVersionReviewPanel(props: {
       {openBlockers.length > 0 ? (
         <div className="notice notice--danger">Resolve approval blocker notes before approving this version.</div>
       ) : null}
+      {ancestorNotesPending ? <div className="notice notice--neutral">Loading earlier review context</div> : null}
+      {ancestorNotesError ? (
+        <div className="notice notice--danger">Earlier review context could not be loaded.</div>
+      ) : null}
+      {ancestorBlockers.length > 0 ? (
+        <section className="lineage-blocker-context">
+          <div className="page-studio-props-heading">
+            <div>
+              <h3>Earlier version blockers</h3>
+              <p>Historical context for this version.</p>
+            </div>
+            <StatusPill tone="warning">{`${ancestorBlockers.length} open`}</StatusPill>
+          </div>
+          <div className="lineage-blocker-list">
+            {ancestorBlockers.map(({ note, version }) => (
+              <div className="lineage-blocker-row" key={note.id}>
+                <div>
+                  <strong>{`v${version.versionNumber} / ${note.sectionId}`}</strong>
+                  <p>{note.note}</p>
+                </div>
+                <Link
+                  className="button-link"
+                  to="/projects/$projectId/pages/$pageId/preview"
+                  params={{ projectId: props.projectId, pageId: version.id }}
+                >
+                  Open source
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {props.isLatestStateReady && !props.isLatest ? (
+        <div className="notice notice--neutral">Only the latest page version can be reviewed.</div>
+      ) : null}
       {!reviewable ? (
-        <div className="notice notice--neutral">This page version is not in a reviewable state.</div>
+        props.isLatest ? (
+          <div className="notice notice--neutral">This page version is not in a reviewable state.</div>
+        ) : null
       ) : null}
 
       <div className="decision-card__actions">
@@ -369,37 +493,39 @@ function PageVersionReleasePlanPanel(props: {
   );
 }
 
-function PageSectionNotesPanel(props: { projectId: string; pageVersionId: string }) {
+type PageSectionNoteFormValues = {
+  sectionId: string;
+  instructionType: PageSectionNoteInstructionType;
+  note: string;
+};
+
+function PageSectionNotesPanel(props: { projectId: string; pageVersion: PageVersionDetail }) {
   const queryClient = useQueryClient();
-  const [sectionId, setSectionId] = useState("hero-1");
-  const [instructionType, setInstructionType] = useState<PageSectionNoteInstructionType>("general");
-  const [note, setNote] = useState("");
-  const notesQueryKey = pageSectionNotesQueryKey(props.projectId, props.pageVersionId);
+  const notesQueryKey = pageSectionNotesQueryKey(props.projectId, props.pageVersion.id);
   const notes = useQuery({
     queryKey: notesQueryKey,
     queryFn: () =>
       getJson(
-        projectApiPath(props.projectId, `/pages/${encodeURIComponent(props.pageVersionId)}/notes`),
+        projectApiPath(props.projectId, `/pages/${encodeURIComponent(props.pageVersion.id)}/notes`),
         PageSectionNoteListResponseSchema
       ),
     retry: false
   });
   const createNote = useMutation({
-    mutationFn: () => {
+    mutationFn: (input: PageSectionNoteFormValues) => {
       const body = CreatePageSectionNoteRequestSchema.parse({
-        sectionId,
-        instructionType,
-        note
+        sectionId: input.sectionId,
+        instructionType: input.instructionType,
+        note: input.note
       });
 
       return postJson(
-        projectApiPath(props.projectId, `/pages/${encodeURIComponent(props.pageVersionId)}/notes`),
+        projectApiPath(props.projectId, `/pages/${encodeURIComponent(props.pageVersion.id)}/notes`),
         body,
         PageSectionNoteSchema
       );
     },
     onSuccess: async () => {
-      setNote("");
       await queryClient.invalidateQueries({ queryKey: notesQueryKey });
     }
   });
@@ -408,13 +534,24 @@ function PageSectionNotesPanel(props: { projectId: string; pageVersionId: string
       patchJson(
         projectApiPath(
           props.projectId,
-          `/pages/${encodeURIComponent(props.pageVersionId)}/notes/${encodeURIComponent(noteId)}/resolve`
+          `/pages/${encodeURIComponent(props.pageVersion.id)}/notes/${encodeURIComponent(noteId)}/resolve`
         ),
         {},
         PageSectionNoteSchema
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: notesQueryKey });
+    }
+  });
+  const form = useForm({
+    defaultValues: {
+      sectionId: props.pageVersion.pageJson.sections[0]?.id ?? "",
+      instructionType: "general" as PageSectionNoteInstructionType,
+      note: ""
+    } satisfies PageSectionNoteFormValues,
+    onSubmit: async ({ value }) => {
+      await createNote.mutateAsync(value);
+      form.reset();
     }
   });
   const noteItems = notes.data?.notes ?? [];
@@ -435,33 +572,59 @@ function PageSectionNotesPanel(props: { projectId: string; pageVersionId: string
         className="note-form"
         onSubmit={(event) => {
           event.preventDefault();
-          createNote.mutate();
+          void form.handleSubmit();
         }}
       >
-        <label className="form-field">
-          <span>Section id</span>
-          <input value={sectionId} onChange={(event) => setSectionId(event.currentTarget.value)} />
-        </label>
-        <label className="form-field">
-          <span>Instruction</span>
-          <select
-            value={instructionType}
-            onChange={(event) => setInstructionType(event.currentTarget.value as PageSectionNoteInstructionType)}
-          >
-            {pageSectionNoteInstructionTypes.map((value) => (
-              <option key={value} value={value}>
-                {labelFromInstructionType(value)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="form-field">
-          <span>Note</span>
-          <textarea value={note} onChange={(event) => setNote(event.currentTarget.value)} />
-        </label>
-        <button className="button-primary" disabled={createNote.isPending || note.trim().length === 0} type="submit">
-          {createNote.isPending ? "Adding" : "Add note"}
-        </button>
+        <form.Field name="sectionId">
+          {(field) => (
+            <label className="form-field">
+              <span>Section</span>
+              <select value={field.state.value} onChange={(event) => field.handleChange(event.currentTarget.value)}>
+                {props.pageVersion.pageJson.sections.map((section) => (
+                  <option key={section.id} value={section.id}>
+                    {`${pageSectionTypeLabel(section.type)} / ${section.id}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </form.Field>
+        <form.Field name="instructionType">
+          {(field) => (
+            <label className="form-field">
+              <span>Instruction</span>
+              <select
+                value={field.state.value}
+                onChange={(event) => field.handleChange(event.currentTarget.value as PageSectionNoteInstructionType)}
+              >
+                {pageSectionNoteInstructionTypes.map((value) => (
+                  <option key={value} value={value}>
+                    {labelFromInstructionType(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </form.Field>
+        <form.Field name="note">
+          {(field) => (
+            <label className="form-field">
+              <span>Note</span>
+              <textarea value={field.state.value} onChange={(event) => field.handleChange(event.currentTarget.value)} />
+            </label>
+          )}
+        </form.Field>
+        <form.Subscribe selector={(state) => ({ isSubmitting: state.isSubmitting, note: state.values.note })}>
+          {(state) => (
+            <button
+              className="button-primary"
+              disabled={createNote.isPending || state.isSubmitting || state.note.trim().length === 0}
+              type="submit"
+            >
+              {createNote.isPending ? "Adding" : "Add note"}
+            </button>
+          )}
+        </form.Subscribe>
       </form>
 
       {createNote.isError ? <div className="notice notice--danger">Note could not be added.</div> : null}
@@ -562,6 +725,10 @@ function labelFromInstructionType(value: PageSectionNoteInstructionType): string
     .split("_")
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+function pageSectionTypeLabel(value: string): string {
+  return value.replace(/([a-z])([A-Z])/gu, "$1 $2");
 }
 
 function pageVersionTone(status: PageVersionSummary["status"]): "neutral" | "success" | "warning" | "danger" {

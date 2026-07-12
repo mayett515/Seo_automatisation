@@ -294,8 +294,12 @@ Implemented tests:
 6. Two concurrent edits from one base serialize so exactly one N+1 version is created.
 7. DB triggers reject missing, cross-proposal, and non-immediate lineage and freeze lineage/actor evidence after approval.
 8. Once a newer version exists, review of the stale base is rejected.
+9. Edit-first lock ordering makes a concurrently waiting review stale after the N+1 version commits.
+10. Review-first lock ordering approves the base before the waiting edit branches to a new preview.
 
 These tests run the real migrations and transactions. They prove that Page Studio commands are append-only product decisions rather than in-place JSON mutation.
+
+DB-free Page Registry and web tests additionally prove that registry editor metadata stays aligned with prop-schema keys, latest-version selection does not depend on API arrival order, lineage traversal is bounded/cycle-safe, complete props normalization removes only explicitly optional blank fields, and registry templates restore absent optional list controls without changing the durable schema.
 
 ### Tracking Ingestion
 

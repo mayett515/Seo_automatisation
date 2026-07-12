@@ -651,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, and the controlled Page Studio edit/versioning backend are implemented.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, and controlled Page Studio backend/visual editing are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -731,7 +731,7 @@ implemented now
 still deferred
   agent_run_events streaming timeline
   credentialed Page Proposal smoke execution and model calibration note
-  Page Studio visual editing controls and AI section-copy revision actions
+  Page Studio media, section replacement, and AI section-copy revision actions
 ```
 
 ### 10. Page Studio, Notes, Approval, And Versioning
@@ -788,7 +788,9 @@ POST /projects/:projectId/pages/:basePageVersionId/edits
   DB trigger enforces immediate same-proposal lineage and freezes lineage evidence
 ```
 
-The visual outline/editor, media controls, section replacement UI, and AI text actions remain follow-up work. They must call this command boundary or a future equally explicit command contract; they must not write PageJson directly.
+Visual outline, legal movement, registry variant, structured complete-props, stale-version, and rendered-preview controls are implemented. Media controls, section replacement, and AI text actions remain follow-up work. They must call this command boundary or a future equally explicit command contract; they must not write PageJson directly.
+
+Unresolved predecessor approval blockers remain attached to their source versions. The review UI reads a bounded lineage chain and shows those blockers as historical context without copying rows or turning old concerns into a chain-wide durable gate. Only blockers on the concrete version being approved are authoritative.
 
 Notes attach to stable section ids and optional field paths, not visual order. If `component_instances` rows are used for note anchoring, they are regenerated/projection data from `pageJson`.
 

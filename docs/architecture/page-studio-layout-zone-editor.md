@@ -36,7 +36,7 @@ Slice 8: Page Studio, Notes, Approval, And Versioning
   editing, notes, approval, and version freezing.
 ```
 
-Backend checkpoint (2026-07-12): the first controlled editing foundation now accepts explicit prop, movement, and variant commands and creates append-only preview versions. The visual outline/editor controls, media workflow, and AI text-revision actions remain separate UI/agent slices.
+Implementation checkpoint (2026-07-12): the controlled backend accepts explicit prop, movement, and variant commands and creates append-only preview versions. The first visual workspace now exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, the shared rendered preview, and predecessor-blocker context. Media, section replacement, and AI text-revision actions remain separate slices.
 
 ## Page Structure
 
@@ -277,6 +277,7 @@ Each edit names one latest base version and creates its immediate N+1 child.
 The API serializes edit and review decisions on the parent page proposal.
 Lineage and editing-user evidence are persisted and DB-validated.
 Notes remain version-scoped and are not silently copied onto the child version.
+Unresolved predecessor blockers are shown as historical review context but do not become copied blocker rows or a chain-wide approval gate.
 Customer/operator notes create explicit instructions.
 Unresolved approval blocker notes stop approval and cannot race onto approved versions.
 Approval freezes one concrete page version.
@@ -292,6 +293,7 @@ Deploy publishes only approved versions.
 - Do not silently mutate approved versions.
 - Do not expose arbitrary PageJson replacement or JSON Patch as an edit command.
 - Do not allow edits or review from a stale, non-latest version.
+- Treat `update_section_props` as complete replacement and preserve all unremoved fields in the form payload.
 - Do not copy competitor content.
 - Do not publish preview pages as indexable.
 - Do not claim ranking success from weak opportunity evidence.

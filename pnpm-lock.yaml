@@ -126,6 +126,12 @@ importers:
       '@localseo/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@localseo/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@localseo/page-registry':
+        specifier: workspace:*
+        version: link:../../packages/page-registry
       '@localseo/ui':
         specifier: workspace:*
         version: link:../../packages/ui

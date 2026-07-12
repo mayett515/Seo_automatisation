@@ -744,6 +744,69 @@ requireIncludes(
 );
 
 requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "makes a concurrently waiting review stale when the edit holds the proposal lock first",
+  "page-studio-versioning",
+  "DB integration must prove edit-first serialization makes a concurrent review stale"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "branches from the newly approved base when review holds the proposal lock first",
+  "page-studio-versioning",
+  "DB integration must prove review-first serialization permits a new preview branch"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  "editor fields must match its prop schema",
+  "page-studio-ui",
+  "Page Registry editor metadata must fail fast when it drifts from registry prop keys"
+);
+
+requireIncludes(
+  "apps/web/src/features/page-studio/page-studio-editor.tsx",
+  "decideMovePageSection",
+  "page-studio-ui",
+  "Page Studio movement controls must derive legality from the pure domain decision"
+);
+
+requireIncludes(
+  "apps/web/src/features/page-studio/page-studio-editor.tsx",
+  "validatePageSectionProps",
+  "page-studio-ui",
+  "Page Studio prop forms must use registry-owned validation before the API remains authoritative"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "EditPageVersionRequestSchema.parse",
+  "page-studio-ui",
+  "Page Studio UI must parse explicit edit requests through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "PageVersionEditResponseSchema",
+  "page-studio-ui",
+  "Page Studio UI must parse created-version responses through the shared contract"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "Earlier version blockers",
+  "page-studio-ui",
+  "Page review must surface unresolved predecessor blockers as historical context"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "useQueries",
+  "page-studio-ui",
+  "Page review predecessor-note loading must stay query-owned rather than local server state"
+);
+
+requireIncludes(
   "apps/api/src/modules/pages.module.ts",
   '@RequireProjectPermission("page:approve")',
   "page-version-approval",
