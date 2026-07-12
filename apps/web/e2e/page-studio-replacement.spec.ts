@@ -104,6 +104,29 @@ test("stages controlled section replacement before creating one next version", a
 
   const horizontalScroll = await page.evaluate(() => {
     const top = window.scrollY;
+    const viewportWidth = document.documentElement.clientWidth;
+    const overflowingElements = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return {
+          selector: `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${Array.from(
+            element.classList
+          )
+            .map((className) => `.${className}`)
+            .join("")}`,
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          boxSizing: style.boxSizing,
+          declaredWidth: style.width,
+          paddingLeft: style.paddingLeft,
+          paddingRight: style.paddingRight
+        };
+      })
+      .filter((element) => element.left < -0.5 || element.right > viewportWidth + 0.5)
+      .sort((left, right) => right.right - left.right)
+      .slice(0, 12);
     window.scrollTo(document.documentElement.scrollWidth, top);
     const distance = window.scrollX;
     window.scrollTo(0, top);
@@ -111,10 +134,11 @@ test("stages controlled section replacement before creating one next version", a
       distance,
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
-      innerWidth: window.innerWidth
+      innerWidth: window.innerWidth,
+      overflowingElements
     };
   });
-  expect(horizontalScroll.distance, JSON.stringify(horizontalScroll)).toBe(0);
+  expect(horizontalScroll.distance, JSON.stringify(horizontalScroll, null, 2)).toBe(0);
 });
 
 function pageVersion(id: string, versionNumber: number, value: PageJson): PageVersionDetail {
