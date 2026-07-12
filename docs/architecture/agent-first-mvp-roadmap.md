@@ -651,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, and page-version lifecycle projection are implemented.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, and the controlled Page Studio edit/versioning backend are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -731,6 +731,7 @@ implemented now
 still deferred
   agent_run_events streaming timeline
   credentialed Page Proposal smoke execution and model calibration note
+  Page Studio visual editing controls and AI section-copy revision actions
 ```
 
 ### 10. Page Studio, Notes, Approval, And Versioning
@@ -771,6 +772,23 @@ approval freezes the deployable version
 unresolved approval_blocker notes block approval and cannot race onto approved versions
 request changes records a rejected approval event without approving the version
 ```
+
+Controlled editing backend implemented 2026-07-12:
+
+```text
+POST /projects/:projectId/pages/:basePageVersionId/edits
+  page:edit permission and persisted actor required
+  explicit update_section_props | move_section | switch_section_variant command only
+  pure domain command application
+  PageJson contract/projection + registry + composition + preview-render gates
+  page-proposal FOR UPDATE lock serializes edit and review
+  base must be the latest version
+  success creates preview version N+1 with basedOnVersionId + createdByUserId
+  frozen source versions remain unchanged; editing them branches to a preview
+  DB trigger enforces immediate same-proposal lineage and freezes lineage evidence
+```
+
+The visual outline/editor, media controls, section replacement UI, and AI text actions remain follow-up work. They must call this command boundary or a future equally explicit command contract; they must not write PageJson directly.
 
 Notes attach to stable section ids and optional field paths, not visual order. If `component_instances` rows are used for note anchoring, they are regenerated/projection data from `pageJson`.
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PageJson, PageSectionInstance, PageSectionType, PageZone } from "@localseo/contracts";
 import {
+  applyPageStudioEditCommand,
   decideMovePageSection,
   decidePageStudioPublishReadiness,
   decideReplacePageSection,
@@ -10,6 +11,7 @@ import {
   movePageSection,
   replacePageSection,
   switchPageSectionVariant,
+  updatePageSectionProps,
   validatePageStudioComposition,
   type PageStudioRegistryEntry
 } from "./page-studio.js";
@@ -234,6 +236,67 @@ void describe("Page Studio variant and replacement decisions", () => {
         variants: ["default", "detailed"]
       }
     );
+  });
+});
+
+void describe("Page Studio version edit commands", () => {
+  void it("updates structured section props without changing other sections", () => {
+    const original = pageJson();
+    const result = updatePageSectionProps({
+      pageJson: original,
+      sectionId: "hero-1",
+      props: {
+        h1: "Updated local heading",
+        lead: "Updated local lead",
+        primaryCtaLabel: "Anfragen",
+        primaryCtaHref: "/kontakt/"
+      }
+    });
+
+    assert.equal(result.success, true);
+    if (result.success) {
+      assert.equal(
+        result.pageJson.sections.find((section) => section.id === "hero-1")?.props.h1,
+        "Updated local heading"
+      );
+      assert.deepEqual(
+        result.pageJson.sections.find((section) => section.id === "intro-1"),
+        original.sections.find((section) => section.id === "intro-1")
+      );
+    }
+  });
+
+  void it("attributes only the page and directly edited section to the human edit", () => {
+    const original = pageJson();
+    const result = applyPageStudioEditCommand({
+      pageJson: original,
+      command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" },
+      generation: { source: "human", reason: "page_studio:switch_section_variant" },
+      registryEntries
+    });
+
+    assert.equal(result.success, true);
+    if (result.success) {
+      assert.deepEqual(result.pageJson.generation, {
+        source: "human",
+        reason: "page_studio:switch_section_variant"
+      });
+      assert.deepEqual(result.pageJson.sections.find((section) => section.id === "hero-1")?.generation, {
+        source: "human",
+        reason: "page_studio:switch_section_variant"
+      });
+      assert.deepEqual(
+        result.pageJson.sections.find((section) => section.id === "intro-1")?.generation,
+        original.sections.find((section) => section.id === "intro-1")?.generation
+      );
+    }
+  });
+
+  void it("rejects structured prop edits for missing sections", () => {
+    assert.deepEqual(updatePageSectionProps({ pageJson: pageJson(), sectionId: "missing", props: {} }), {
+      success: false,
+      decision: { kind: "deny", reason: "section_not_found" }
+    });
   });
 });
 

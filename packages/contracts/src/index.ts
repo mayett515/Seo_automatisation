@@ -813,6 +813,38 @@ export const PageProposalJsonSchema = z
     }
   });
 
+const PageStudioSectionIdSchema = PageSectionInstanceSchema.shape.id;
+
+export const PageStudioEditCommandSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("update_section_props"),
+      sectionId: PageStudioSectionIdSchema,
+      props: PageSectionInstanceSchema.shape.props
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("move_section"),
+      sectionId: PageStudioSectionIdSchema,
+      direction: z.enum(["up", "down"])
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("switch_section_variant"),
+      sectionId: PageStudioSectionIdSchema,
+      variant: PageSectionInstanceSchema.shape.variant
+    })
+    .strict()
+]);
+
+export const EditPageVersionRequestSchema = z
+  .object({
+    command: PageStudioEditCommandSchema
+  })
+  .strict();
+
 const renderableReleaseItemActions = new Set<ReleaseItemAction>(["create", "update"]);
 
 export const ApprovedReleaseArtifactPageSchema = z
@@ -875,6 +907,8 @@ export const PageVersionSummarySchema = z
     sitemapReady: z.boolean(),
     versionNumber: z.number().int().positive(),
     status: PageVersionStatusSchema,
+    basedOnVersionId: z.string().min(1).optional(),
+    createdByUserId: z.string().min(1).optional(),
     approvedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime()
@@ -884,6 +918,14 @@ export const PageVersionSummarySchema = z
 export const PageVersionDetailSchema = PageVersionSummarySchema.extend({
   pageJson: PageJsonSchema
 }).strict();
+
+export const PageVersionEditResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    basePageVersionId: z.string().min(1),
+    pageVersion: PageVersionDetailSchema
+  })
+  .strict();
 
 export const PageVersionListResponseSchema = z
   .object({
@@ -1723,12 +1765,15 @@ export type PageGeneration = z.output<typeof PageGenerationSchema>;
 export type PageSectionInstance = z.output<typeof PageSectionInstanceSchema>;
 export type PageJson = z.output<typeof PageJsonSchema>;
 export type PageProposalJson = z.output<typeof PageProposalJsonSchema>;
+export type PageStudioEditCommand = z.output<typeof PageStudioEditCommandSchema>;
+export type EditPageVersionRequest = z.output<typeof EditPageVersionRequestSchema>;
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type StaticSiteFile = z.output<typeof StaticSiteFileSchema>;
 export type StaticSiteArtifact = z.output<typeof StaticSiteArtifactSchema>;
 export type PageVersionSummary = z.output<typeof PageVersionSummarySchema>;
 export type PageVersionDetail = z.output<typeof PageVersionDetailSchema>;
+export type PageVersionEditResponse = z.output<typeof PageVersionEditResponseSchema>;
 export type PageVersionListResponse = z.output<typeof PageVersionListResponseSchema>;
 export type PageProposalSummary = z.output<typeof PageProposalSummarySchema>;
 export type PageProposalDetail = z.output<typeof PageProposalDetailSchema>;

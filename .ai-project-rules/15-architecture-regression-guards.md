@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.2"
+version: "1.1.3"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -176,10 +176,25 @@ Page Registry render/preflight boundary
 <context>
 ```text
 Page Version immutability
+  PageJson, page-proposal/version identity, lineage, and editor provenance are append-only for every page version.
   Approved, release-candidate, released, and superseded page versions are frozen structural artifacts.
   Edits after approval must create a new page_versions row with a new versionNumber.
-  The database trigger must reject in-place changes to page_proposal_id, version_number, and page_json for frozen versions.
+  The database trigger must reject in-place changes to page_proposal_id, version_number, page_json, lineage, and editor actor evidence for frozen versions.
   Frozen versions require approved_at and must not be deleted.
+```
+
+</context>
+
+<context>
+```text
+Controlled Page Studio editing
+  Editing accepts named structured commands, never arbitrary PageJson replacement or JSON Patch.
+  Pure domain helpers apply prop, legal movement, and legal variant commands before persistence.
+  Contract/projection, registry, composition, and preview-render gates run before a new version is inserted.
+  Edit and review paths serialize on the page proposal, and only the latest version may be edited or reviewed.
+  Every successful edit creates the immediate N+1 preview with same-proposal lineage and persisted actor evidence.
+  Editing a frozen artifact branches to a new preview and never mutates the source.
+  Existing notes remain attached to their source version; edit persistence must not silently copy blocker truth.
 ```
 
 </context>

@@ -4,6 +4,7 @@ import {
   AgentRunFailureCodeSchema,
   ApprovedReleaseArtifactPageSchema,
   CreateReleasePlanRequestSchema,
+  EditPageVersionRequestSchema,
   PageJsonSchema,
   PageProposalJsonSchema,
   ReleaseDeployApprovalResponseSchema,
@@ -206,6 +207,48 @@ void describe("ReviewPageVersionRequestSchema", () => {
 
   void it("allows approval without a decision note", () => {
     assert.equal(ReviewPageVersionRequestSchema.safeParse({ decision: "approve" }).success, true);
+  });
+});
+
+void describe("EditPageVersionRequestSchema", () => {
+  void it("accepts only explicit Page Studio edit commands", () => {
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        command: {
+          type: "update_section_props",
+          sectionId: "hero-1",
+          props: { h1: "Updated heading" }
+        }
+      }).success,
+      true
+    );
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        command: { type: "move_section", sectionId: "benefits-1", direction: "up" }
+      }).success,
+      true
+    );
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" }
+      }).success,
+      true
+    );
+  });
+
+  void it("rejects unrestricted patch commands and extra fields", () => {
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        command: { type: "json_patch", path: "/sections/0/props/h1", value: "Unsafe" }
+      }).success,
+      false
+    );
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        command: { type: "move_section", sectionId: "benefits-1", direction: "up", html: "<script>" }
+      }).success,
+      false
+    );
   });
 });
 

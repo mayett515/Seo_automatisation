@@ -289,6 +289,48 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/db/migrations/0033_hot_scarecrow.sql",
+  "page_versions_validate_lineage",
+  "page-studio-versioning",
+  "Page Studio versions must keep DB-enforced lineage"
+);
+
+requireIncludes(
+  "packages/db/migrations/0033_hot_scarecrow.sql",
+  'derived."version_number" = base."version_number" + 1',
+  "page-studio-versioning",
+  "existing derived page versions must be backfilled to direct lineage before the trigger becomes authoritative"
+);
+
+requireIncludes(
+  "packages/db/migrations/0033_hot_scarecrow.sql",
+  "base_version_number <> NEW.version_number - 1",
+  "page-studio-versioning",
+  "derived Page Studio versions must reference their immediate predecessor"
+);
+
+requireIncludes(
+  "packages/db/migrations/0033_hot_scarecrow.sql",
+  "OLD.based_on_version_id IS DISTINCT FROM NEW.based_on_version_id",
+  "page-studio-versioning",
+  "page versions must keep lineage evidence append-only"
+);
+
+requireIncludes(
+  "packages/db/migrations/0033_hot_scarecrow.sql",
+  "OLD.created_by_user_id IS DISTINCT FROM NEW.created_by_user_id",
+  "page-studio-versioning",
+  "page versions must keep editor actor evidence append-only"
+);
+
+requireIncludes(
+  "packages/db/migrations/0033_hot_scarecrow.sql",
+  "Page version structure and provenance are append-only",
+  "page-studio-versioning",
+  "preview and immutable page versions must create a new row for structural edits"
+);
+
+requireIncludes(
   "packages/domain/src/work-recovery.ts",
   "classifyWorkRecovery",
   "db-before-queue-recovery",
@@ -636,6 +678,69 @@ requireIncludes(
   '"page:approve"',
   "page-version-approval",
   "Page version approval must have an explicit project permission"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "PageStudioEditCommandSchema",
+  "page-studio-versioning",
+  "Page Studio editing must accept only named structured edit commands"
+);
+
+requireIncludes(
+  "packages/domain/src/page-studio.ts",
+  "applyPageStudioEditCommand",
+  "page-studio-versioning",
+  "Page Studio edits must pass through pure domain command behavior"
+);
+
+requireIncludes(
+  "apps/api/src/auth/permissions/project-permissions.ts",
+  '"page:edit"',
+  "page-studio-versioning",
+  "Page Studio editing must have an explicit project permission"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  '@RequireProjectPermission("page:edit")',
+  "page-studio-versioning",
+  "Page Studio edit endpoint must require explicit edit permission"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "lockPageProposalForVersioning",
+  "page-studio-versioning",
+  "Page Studio edit and review paths must serialize on the page proposal"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "Page Studio edits must use the latest page version as their base.",
+  "page-studio-versioning",
+  "Page Studio edits must reject stale base versions"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "Only the latest page version can be reviewed.",
+  "page-studio-versioning",
+  "page review must reject stale page versions after a newer edit exists"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "allows only one concurrent edit to derive from the same latest base",
+  "page-studio-versioning",
+  "DB integration must prove concurrent same-base edits create at most one version"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "branches from an approved immutable version while preserving the approved artifact",
+  "page-studio-versioning",
+  "DB integration must prove edits branch from frozen artifacts instead of mutating them"
 );
 
 requireIncludes(

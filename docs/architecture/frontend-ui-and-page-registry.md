@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, approves or requests changes on preview versions, blocks approval on unresolved `approval_blocker` notes with DB-backed serialization against concurrent blocker creation, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. Full Page Studio editing and richer section families remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app now has a minimal project-scoped Pages surface that reads page proposals/page versions, renders preview HTML returned by the API, records section notes anchored to stable PageJson section ids, approves or requests changes on preview versions, blocks approval on unresolved `approval_blocker` notes with DB-backed serialization against concurrent blocker creation, and lets Opportunity Explorer queue Page Proposal runs while reading status from subject-scoped `page_brief_draft` agent runs. The backend now also owns explicit prop/movement/variant edit commands that create append-only preview versions with lineage and actor evidence. Visual Page Studio editing controls and richer section families remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -268,13 +268,24 @@ packages/page-registry
   registry entries, prop schemas, variants, internal CSS foundation, preview/static renderers
 
 packages/domain/src/page-studio
-  canMoveSection, canSwitchVariant, canReplaceSectionType, publish readiness
+  explicit edit command application, legal movement/variant/replacement decisions, publish readiness
 
 packages/ai
   page brief/proposal prompt builders and QA
 ```
 
 Every page section needs a stable section instance id so notes, validation errors, diffs, and future AI patches remain attached when the section moves.
+
+The Page Studio persistence boundary is version-oriented:
+
+```text
+latest PageVersion + explicit edit command
+-> pure Page Studio domain decision
+-> contract, registry, composition, and preview-render validation
+-> new preview PageVersion with basedOnVersionId and createdByUserId
+```
+
+The API serializes edit and review decisions on the page proposal. Only the latest version may be edited or reviewed. Frozen approved/release artifacts may be used as a base, but the edit always branches to a new preview version and never mutates the source. The frontend must not send whole-PageJson replacement, JSON Patch, arbitrary markup, or style/code payloads.
 
 Section notes are persisted as PageJson anchors, not component-instance projection anchors:
 

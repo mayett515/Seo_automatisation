@@ -36,6 +36,8 @@ Slice 8: Page Studio, Notes, Approval, And Versioning
   editing, notes, approval, and version freezing.
 ```
 
+Backend checkpoint (2026-07-12): the first controlled editing foundation now accepts explicit prop, movement, and variant commands and creates append-only preview versions. The visual outline/editor controls, media workflow, and AI text-revision actions remain separate UI/agent slices.
+
 ## Page Structure
 
 ```text
@@ -271,6 +273,10 @@ This keeps layout rules reusable by the LLM boundary, API validation, preview UI
 ```text
 AI proposal creates a page proposal.
 Page Studio edits create a preview version.
+Each edit names one latest base version and creates its immediate N+1 child.
+The API serializes edit and review decisions on the parent page proposal.
+Lineage and editing-user evidence are persisted and DB-validated.
+Notes remain version-scoped and are not silently copied onto the child version.
 Customer/operator notes create explicit instructions.
 Unresolved approval blocker notes stop approval and cannot race onto approved versions.
 Approval freezes one concrete page version.
@@ -284,6 +290,8 @@ Deploy publishes only approved versions.
 - Do not expose illegal movement controls in the UI.
 - Do not let the LLM bypass movement rules.
 - Do not silently mutate approved versions.
+- Do not expose arbitrary PageJson replacement or JSON Patch as an edit command.
+- Do not allow edits or review from a stale, non-latest version.
 - Do not copy competitor content.
 - Do not publish preview pages as indexable.
 - Do not claim ranking success from weak opportunity evidence.

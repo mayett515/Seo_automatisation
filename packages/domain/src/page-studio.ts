@@ -1,8 +1,10 @@
 import {
   pageZones,
   type PageJson,
+  type PageGeneration,
   type PageSectionInstance,
   type PageSectionType,
+  type PageStudioEditCommand,
   type PageZone
 } from "@localseo/contracts";
 
@@ -226,6 +228,53 @@ export function switchPageSectionVariant(input: {
   };
 }
 
+export function updatePageSectionProps(input: {
+  pageJson: PageJson;
+  sectionId: string;
+  props: PageSectionInstance["props"];
+}): PageStudioMutationResult {
+  if (!findSection(input.pageJson, input.sectionId)) {
+    return { success: false, decision: { kind: "deny", reason: "section_not_found" } };
+  }
+
+  return {
+    success: true,
+    pageJson: updateSection(input.pageJson, input.sectionId, (section) => ({
+      ...section,
+      props: input.props
+    }))
+  };
+}
+
+export function applyPageStudioEditCommand(input: {
+  pageJson: PageJson;
+  command: PageStudioEditCommand;
+  generation: PageGeneration;
+  registryEntries: readonly PageStudioRegistryEntry[];
+}): PageStudioMutationResult {
+  const mutation = applyPageStudioMutation(input);
+
+  if (!mutation.success) {
+    return mutation;
+  }
+
+  return {
+    success: true,
+    pageJson: {
+      ...mutation.pageJson,
+      generation: input.generation,
+      sections: mutation.pageJson.sections.map((section) =>
+        section.id === input.command.sectionId
+          ? {
+              ...section,
+              generation: input.generation
+            }
+          : section
+      )
+    }
+  };
+}
+
 export function decideReplacePageSection(input: {
   pageJson: PageJson;
   sectionId: string;
@@ -373,6 +422,35 @@ function addRegistrySummaryIssues(
       });
     }
   });
+}
+
+function applyPageStudioMutation(input: {
+  pageJson: PageJson;
+  command: PageStudioEditCommand;
+  registryEntries: readonly PageStudioRegistryEntry[];
+}): PageStudioMutationResult {
+  switch (input.command.type) {
+    case "update_section_props":
+      return updatePageSectionProps({
+        pageJson: input.pageJson,
+        sectionId: input.command.sectionId,
+        props: input.command.props
+      });
+    case "move_section":
+      return movePageSection({
+        pageJson: input.pageJson,
+        sectionId: input.command.sectionId,
+        direction: input.command.direction,
+        registryEntries: input.registryEntries
+      });
+    case "switch_section_variant":
+      return switchPageSectionVariant({
+        pageJson: input.pageJson,
+        sectionId: input.command.sectionId,
+        variant: input.command.variant,
+        registryEntries: input.registryEntries
+      });
+  }
 }
 
 function addOrderNumberIssues(ordered: readonly IndexedSection[], issues: PageStudioCompositionIssue[]): void {

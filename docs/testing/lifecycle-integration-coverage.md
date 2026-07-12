@@ -278,6 +278,25 @@ Implemented tests:
 
 The scanner tests use real Postgres migrations and a stateful fake queue. This proves product-row claims and audit transactions without requiring Redis to manufacture the race timing.
 
+### Controlled Page Studio Editing
+
+File:
+
+- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
+
+Implemented tests:
+
+1. Structured prop edits create an N+1 preview with persisted actor and base-version lineage while leaving the base PageJson unchanged.
+2. Legal movement and variant commands chain only from the latest version.
+3. Registry-invalid props and illegal movement fail without creating product rows.
+4. Editing an approved version creates a new preview while preserving the frozen approved artifact.
+5. Editing is project-scoped and requires persisted actor evidence.
+6. Two concurrent edits from one base serialize so exactly one N+1 version is created.
+7. DB triggers reject missing, cross-proposal, and non-immediate lineage and freeze lineage/actor evidence after approval.
+8. Once a newer version exists, review of the stale base is rejected.
+
+These tests run the real migrations and transactions. They prove that Page Studio commands are append-only product decisions rather than in-place JSON mutation.
+
 ### Tracking Ingestion
 
 File:

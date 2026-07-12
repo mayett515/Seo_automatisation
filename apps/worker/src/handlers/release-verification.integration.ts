@@ -162,17 +162,23 @@ void describe(
 
     void it("supersedes older released page versions for the same proposal", async () => {
       const fixture = await createVerificationFixture(db, { releasePlanStatus: "deploying" });
-      const [olderVersion] = await db
+      await db.update(pageVersions).set({ status: "released" }).where(eq(pageVersions.id, fixture.pageVersionId));
+      const [currentVersion] = await db
         .insert(pageVersions)
         .values({
           pageProposalId: fixture.pageProposalId,
-          versionNumber: 0,
-          status: "released",
-          approvedAt: new Date("2026-06-29T10:00:00.000Z"),
-          pageJson: pageJson()
+          versionNumber: 2,
+          status: "release_candidate",
+          approvedAt: new Date("2026-06-30T11:00:00.000Z"),
+          pageJson: pageJson(),
+          basedOnVersionId: fixture.pageVersionId
         })
         .returning();
-      assert.ok(olderVersion);
+      assert.ok(currentVersion);
+      await db
+        .update(releasePlanItems)
+        .set({ pageVersionId: currentVersion.id })
+        .where(eq(releasePlanItems.releasePlanId, fixture.releasePlanId));
 
       const result = await executeReleaseVerification({
         data: fixture.data,
@@ -183,8 +189,8 @@ void describe(
 
       assert.equal(result.verificationStatus, "live_healthy");
 
-      const [current] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
-      const [older] = await db.select().from(pageVersions).where(eq(pageVersions.id, olderVersion.id));
+      const [current] = await db.select().from(pageVersions).where(eq(pageVersions.id, currentVersion.id));
+      const [older] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
 
       assert.equal(current?.status, "released");
       assert.equal(older?.status, "superseded");

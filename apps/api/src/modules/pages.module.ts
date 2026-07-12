@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Inject,
@@ -19,6 +20,7 @@ import {
   type AiReasoningEnqueueFailureCode,
   CreatePageProposalRunRequestSchema,
   CreatePageSectionNoteRequestSchema,
+  EditPageVersionRequestSchema,
   PageJsonSchema,
   PageProposalJobDataSchema,
   PageProposalDetailSchema,
@@ -30,6 +32,7 @@ import {
   PageSectionNoteListResponseSchema,
   PageSectionNoteSchema,
   PageVersionDetailSchema,
+  PageVersionEditResponseSchema,
   PageVersionListResponseSchema,
   PageVersionPreviewResponseSchema,
   PageVersionReviewResponseSchema,
@@ -37,6 +40,7 @@ import {
   ReviewPageVersionRequestSchema,
   type CreatePageProposalRunRequest,
   type CreatePageSectionNoteRequest,
+  type PageGeneration,
   type PageJson,
   type PageProposalDetail,
   type PageProposalListResponse,
@@ -45,11 +49,13 @@ import {
   type PageSectionNote,
   type PageSectionNoteListResponse,
   type PageVersionDetail,
+  type PageVersionEditResponse,
   type PageVersionListResponse,
   type PageVersionPreviewResponse,
   type PageVersionReviewResponse,
   type PageVersionSummary
 } from "@localseo/contracts";
+import { applyPageStudioEditCommand, decidePageStudioPublishReadiness } from "@localseo/domain";
 import {
   agentRuns,
   approvals,
@@ -60,7 +66,7 @@ import {
   pageVersions,
   type DatabaseClient
 } from "@localseo/db";
-import { renderPagePreviewFile, validatePageJsonAgainstRegistry } from "@localseo/page-registry";
+import { pageRegistrySummary, renderPagePreviewFile, validatePageJsonAgainstRegistry } from "@localseo/page-registry";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
@@ -391,6 +397,119 @@ export class PagesService {
     return pageSectionNoteToResponse(projectId, latest ?? existing);
   }
 
+  async editPageVersion(
+    projectId: string,
+    basePageVersionId: string,
+    body: unknown,
+    createdByUserId?: string
+  ): Promise<PageVersionEditResponse> {
+    const input = EditPageVersionRequestSchema.parse(body ?? {});
+
+    if (!createdByUserId) {
+      throw new BadRequestException("Page Studio editing requires an authenticated persisted user id.");
+    }
+
+    const initialBase = await this.loadPageVersion(projectId, basePageVersionId);
+    const db = this.database.requireDb();
+    let createdPageVersionId: string | undefined;
+
+    await db.transaction(async (tx) => {
+      await lockPageProposalForVersioning(tx, projectId, initialBase.pageProposalId);
+      const latest = await selectLatestPageVersionIdentity(tx, initialBase.pageProposalId);
+
+      if (!latest || latest.id !== initialBase.id) {
+        throw new ConflictException("Page Studio edits must use the latest page version as their base.");
+      }
+
+      const [base] = await selectPageVersionRows(tx, projectId, { pageVersionId: initialBase.id });
+      if (!base) {
+        throw new NotFoundException("Page version was not found for this project.");
+      }
+
+      if (base.status === "superseded") {
+        throw new BadRequestException("Superseded page versions cannot be used as Page Studio edit bases.");
+      }
+
+      const generation = {
+        source: "human",
+        reason: `page_studio:${input.command.type}`
+      } satisfies PageGeneration;
+      const mutation = applyPageStudioEditCommand({
+        pageJson: parseStoredPageJson(base),
+        command: input.command,
+        generation,
+        registryEntries: pageRegistrySummary
+      });
+
+      if (!mutation.success) {
+        throw new UnprocessableEntityException(`Page Studio edit was rejected: ${mutation.decision.reason}.`);
+      }
+
+      const editedPageJson = parseStoredPageJson({ ...base, pageJson: mutation.pageJson });
+      const readiness = decidePageStudioPublishReadiness(editedPageJson, pageRegistrySummary);
+      if (readiness.kind === "blocked") {
+        throw new UnprocessableEntityException(
+          `Page Studio edit would break page composition: ${readiness.issues[0]?.code ?? "unknown_issue"}.`
+        );
+      }
+
+      try {
+        renderPagePreviewFile({
+          pageJson: editedPageJson,
+          pageVersionId: base.id,
+          previewId: base.id,
+          targetUrl: base.route,
+          mode: "editor"
+        });
+      } catch {
+        throw new UnprocessableEntityException("Edited PageJson cannot be rendered as a preview.");
+      }
+
+      const now = new Date();
+      const [created] = await tx
+        .insert(pageVersions)
+        .values({
+          pageProposalId: base.pageProposalId,
+          versionNumber: latest.versionNumber + 1,
+          status: "preview",
+          pageJson: editedPageJson,
+          basedOnVersionId: base.id,
+          createdByUserId,
+          updatedAt: now
+        })
+        .returning({ id: pageVersions.id });
+
+      if (!created) {
+        throw new Error("Failed to create edited page version.");
+      }
+
+      await tx
+        .update(pageProposals)
+        .set({ status: "draft", updatedAt: now })
+        .where(and(eq(pageProposals.id, base.pageProposalId), eq(pageProposals.projectId, projectId)));
+
+      createdPageVersionId = created.id;
+    });
+
+    if (!createdPageVersionId) {
+      throw new Error("Failed to persist Page Studio edit.");
+    }
+
+    const [createdRow] = await selectPageVersionRows(db, projectId, { pageVersionId: createdPageVersionId });
+    if (!createdRow) {
+      throw new NotFoundException("Edited page version was not found for this project.");
+    }
+
+    return PageVersionEditResponseSchema.parse({
+      projectId,
+      basePageVersionId: initialBase.id,
+      pageVersion: {
+        ...pageVersionSummaryToResponse(createdRow),
+        pageJson: parseStoredPageJson(createdRow)
+      }
+    });
+  }
+
   async reviewPageVersion(
     projectId: string,
     pageVersionId: string,
@@ -418,6 +537,12 @@ export class PagesService {
     let approval: PageVersionApprovalRow | undefined;
 
     await db.transaction(async (tx) => {
+      await lockPageProposalForVersioning(tx, projectId, row.pageProposalId);
+      const latest = await selectLatestPageVersionIdentity(tx, row.pageProposalId);
+      if (!latest || latest.id !== row.id) {
+        throw new ConflictException("Only the latest page version can be reviewed.");
+      }
+
       await lockPageVersionForReview(tx, row.id);
 
       if (input.decision === "approve") {
@@ -578,6 +703,23 @@ class PagesController {
     @Req() request: RequestWithAuth
   ) {
     return this.pages.resolvePageSectionNote(projectId, pageVersionId, noteId, persistedActorUserId(request));
+  }
+
+  @Post(":pageVersionId/edits")
+  @RequireProjectPermission("page:edit")
+  editVersion(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    const parsed = EditPageVersionRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Page Studio edit requires a valid explicit edit command.");
+    }
+
+    return this.pages.editPageVersion(projectId, pageVersionId, parsed.data, persistedActorUserId(request));
   }
 
   @Post(":pageVersionId/review")
@@ -757,8 +899,29 @@ async function lockPageVersionForReview(db: PageVersionLockClient, pageVersionId
   await db.execute(sql`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`);
 }
 
+async function lockPageProposalForVersioning(
+  db: PageVersionLockClient,
+  projectId: string,
+  pageProposalId: string
+): Promise<void> {
+  await db.execute(
+    sql`SELECT "id" FROM "page_proposals" WHERE "id" = ${pageProposalId} AND "project_id" = ${projectId} FOR UPDATE`
+  );
+}
+
+async function selectLatestPageVersionIdentity(db: ApprovalBlockerReader, pageProposalId: string) {
+  const [row] = await db
+    .select({ id: pageVersions.id, versionNumber: pageVersions.versionNumber })
+    .from(pageVersions)
+    .where(eq(pageVersions.pageProposalId, pageProposalId))
+    .orderBy(desc(pageVersions.versionNumber))
+    .limit(1);
+
+  return row;
+}
+
 async function selectPageVersionRows(
-  db: Db,
+  db: ApprovalBlockerReader,
   projectId: string,
   filter: { pageVersionId?: string; pageProposalId?: string } = {}
 ) {
@@ -776,6 +939,8 @@ async function selectPageVersionRows(
       versionNumber: pageVersions.versionNumber,
       status: pageVersions.status,
       pageJson: pageVersions.pageJson,
+      basedOnVersionId: pageVersions.basedOnVersionId,
+      createdByUserId: pageVersions.createdByUserId,
       approvedAt: pageVersions.approvedAt,
       createdAt: pageVersions.createdAt,
       updatedAt: pageVersions.updatedAt
@@ -822,6 +987,8 @@ function pageVersionSummaryToResponse(row: PageVersionRow): PageVersionSummary {
     sitemapReady: row.sitemapReady,
     versionNumber: row.versionNumber,
     status: row.status,
+    basedOnVersionId: row.basedOnVersionId ?? undefined,
+    createdByUserId: row.createdByUserId ?? undefined,
     approvedAt: row.approvedAt?.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()

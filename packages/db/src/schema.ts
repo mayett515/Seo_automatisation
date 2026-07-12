@@ -38,6 +38,7 @@ import type {
   SerpSearchResult
 } from "@localseo/contracts";
 import {
+  type AnyPgColumn,
   boolean,
   doublePrecision,
   index,
@@ -478,10 +479,15 @@ export const pageVersions = pgTable(
     versionNumber: integer("version_number").notNull(),
     status: pageVersionStatusEnum("status").notNull().default("preview"),
     pageJson: jsonb("page_json").$type<PageJson>().notNull(),
+    basedOnVersionId: uuid("based_on_version_id").references((): AnyPgColumn => pageVersions.id),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     ...timestamps
   },
-  (table) => [uniqueIndex("page_versions_proposal_version_idx").on(table.pageProposalId, table.versionNumber)]
+  (table) => [
+    uniqueIndex("page_versions_proposal_version_idx").on(table.pageProposalId, table.versionNumber),
+    index("page_versions_based_on_version_idx").on(table.basedOnVersionId)
+  ]
 );
 
 export const componentTemplates = pgTable("component_templates", {
@@ -909,6 +915,13 @@ export const pageProposalRelations = relations(pageProposals, ({ many, one }) =>
 
 export const pageVersionRelations = relations(pageVersions, ({ many, one }) => ({
   proposal: one(pageProposals, { fields: [pageVersions.pageProposalId], references: [pageProposals.id] }),
+  basedOn: one(pageVersions, {
+    fields: [pageVersions.basedOnVersionId],
+    references: [pageVersions.id],
+    relationName: "pageVersionLineage"
+  }),
+  derivedVersions: many(pageVersions, { relationName: "pageVersionLineage" }),
+  createdBy: one(users, { fields: [pageVersions.createdByUserId], references: [users.id] }),
   sectionNotes: many(pageSectionNotes)
 }));
 

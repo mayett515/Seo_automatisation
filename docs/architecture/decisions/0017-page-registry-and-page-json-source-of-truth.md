@@ -108,6 +108,8 @@ The first PageJson contract slice enforces this with a recursive forbidden-key a
 
 Approved page versions are immutable. New AI work creates new proposals or versions. The DB boundary enforces this with `page_versions_prevent_immutable_update`, `page_versions_prevent_immutable_delete`, and an approval-evidence CHECK constraint: once a row is approved, release-candidate, released, or superseded, structural edits to `page_proposal_id`, `version_number`, or `page_json` are rejected, the frozen artifact cannot be deleted, and frozen statuses require `approved_at`.
 
+Controlled Page Studio editing is append-only and command-based. The API accepts named structured commands for section-prop replacement, legal movement, and registry-owned variant switching; it does not accept JSON Patch, arbitrary PageJson replacement, HTML, CSS, or executable code. Every accepted edit creates the immediate next `page_versions` row in `preview`, records `based_on_version_id` plus the persisted editing user, and marks the page plus directly edited section with human generation provenance. A page-proposal row lock serializes edit and review decisions, so only the latest version may be edited or reviewed and two concurrent commands cannot both derive from the same base. The database validates direct same-proposal lineage and treats PageJson, version identity, lineage, and editor provenance as append-only even while a row is still a preview; lifecycle status and approval evidence remain the controlled mutable fields. Editing an approved or released artifact branches to a new preview row; it never changes the frozen source row. Section notes remain attached to their original page version and are not silently copied to the child; future UI may display prior-version review context, but copied blocker truth requires an explicit product decision.
+
 Page version approval is a durable human/operator decision on one concrete `pageVersionId`. The API owns the transition from `preview` or `changes_requested` to `approved` or back to `changes_requested`, requires `page:approve`, parses and registry-validates the stored PageJson, blocks approval while unresolved `approval_blocker` section notes exist, sets `page_versions.approvedAt` only on approval, and writes an `approvals` audit row. Approval and unresolved `approval_blocker` note creation serialize on the same page-version row so approval cannot race with a new blocker. Approval does not enqueue deploy or mutate providers; release planning, release preflight, deploy, and verification remain separate deterministic steps.
 
 Release-plan creation is the first consumer of approved page versions. It may create draft release plans and pending release items only from project-owned `page_versions.status = "approved"` rows with `approved_at` evidence. It must reject preview, changes-requested, release-candidate, released, superseded, missing, cross-project, or approval-evidence-missing page versions. Release planning does not approve deploy, enqueue deploy, mutate providers, or mark a release live.
@@ -184,6 +186,7 @@ It also gives the next implementation slice a concrete target:
 12. Add Opportunity Explorer Page Proposal trigger and run-status UI on top of the durable `page_brief_draft` queue path. Done in the ninth Page Registry slice.
 13. Add durable page version approval/request-changes flow with `approval_blocker` enforcement and `approvals` audit rows. Done in the tenth Page Registry slice.
 14. Add a real-provider Page Proposal smoke harness, canonical registry-prop prompt example, and worker-owned generation provenance. Done in the Page Proposal provider-smoke slice; credentialed execution remains operational follow-up.
+15. Add the controlled Page Studio edit/versioning backend: explicit commands, pure domain application, registry/composition/render gates, append-only N+1 lineage, persisted actor evidence, and latest-version serialization across edit/review. Done in the first controlled Page Studio editing slice; operator editing controls remain a frontend follow-up.
 
 The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:
 
@@ -239,6 +242,9 @@ Future work must not:
 - let `component_instances` become a second source of render truth,
 - populate `component_templates` as registry truth,
 - mutate an approved `page_versions.pageJson` in place,
+- accept arbitrary PageJson replacement or JSON Patch as a Page Studio editing boundary,
+- create ambiguous or cross-proposal page-version lineage,
+- let stale versions be edited or reviewed after a newer version exists,
 - allow unresolved `approval_blocker` notes to race with or appear on approved page versions,
 - accept raw HTML, React, CSS, JavaScript, class names, or inline styles from model output,
 - store Tailwind/utility classes, runtime CSS-in-JS rules, arbitrary theme tokens, or user/model CSS in PageJson,

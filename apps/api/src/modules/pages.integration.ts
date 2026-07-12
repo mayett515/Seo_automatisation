@@ -264,6 +264,287 @@ void describe(
       assert.match(preview.file.body, /Dachreinigung in Muenchen/u);
     });
 
+    void it("creates a new preview version for a structured props edit without mutating its base", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Props edit", route: "/props-edit/" });
+
+      const edited = await service.editPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          command: {
+            type: "update_section_props",
+            sectionId: "hero-1",
+            props: {
+              h1: "Dachreinigung in Muenchen neu gedacht",
+              lead: "Aktualisierte lokale Einleitung.",
+              primaryCtaLabel: "Beratung anfragen",
+              primaryCtaHref: "/kontakt/"
+            }
+          }
+        },
+        fixture.userId
+      );
+
+      assert.equal(edited.basePageVersionId, fixture.pageVersionId);
+      assert.equal(edited.pageVersion.versionNumber, 2);
+      assert.equal(edited.pageVersion.status, "preview");
+      assert.equal(edited.pageVersion.basedOnVersionId, fixture.pageVersionId);
+      assert.equal(edited.pageVersion.createdByUserId, fixture.userId);
+      assert.deepEqual(edited.pageVersion.pageJson.generation, {
+        source: "human",
+        reason: "page_studio:update_section_props"
+      });
+      assert.equal(
+        edited.pageVersion.pageJson.sections.find((section) => section.id === "hero-1")?.props.h1,
+        "Dachreinigung in Muenchen neu gedacht"
+      );
+
+      const [base] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      const basePageJson = base?.pageJson;
+      assert.equal(base?.status, "preview");
+      assert.equal(base?.basedOnVersionId, null);
+      assert.equal(
+        basePageJson?.sections.find((section) => section.id === "hero-1")?.props.h1,
+        "Dachreinigung in Muenchen"
+      );
+
+      await assert.rejects(
+        () =>
+          db
+            .update(pageVersions)
+            .set({ pageJson: edited.pageVersion.pageJson })
+            .where(eq(pageVersions.id, fixture.pageVersionId)),
+        matchesErrorMessage(/append-only|create a new page version/u)
+      );
+
+      await assert.rejects(
+        () =>
+          service.reviewPageVersion(fixture.projectId, fixture.pageVersionId, { decision: "approve" }, fixture.userId),
+        matchesErrorMessage(/Only the latest page version can be reviewed/u)
+      );
+    });
+
+    void it("chains legal movement and variant commands from the latest version", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Command chain", route: "/command-chain/" });
+      const moved = await service.editPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { command: { type: "move_section", sectionId: "benefits-1", direction: "up" } },
+        fixture.userId
+      );
+
+      assert.deepEqual(
+        moved.pageVersion.pageJson.sections.map((section) => section.id),
+        ["header-1", "hero-1", "service-1", "benefits-1", "description-1", "faq-1", "areas-1", "cta-1", "footer-1"]
+      );
+
+      const variant = await service.editPageVersion(
+        fixture.projectId,
+        moved.pageVersion.id,
+        { command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" } },
+        fixture.userId
+      );
+
+      assert.equal(variant.pageVersion.versionNumber, 3);
+      assert.equal(variant.pageVersion.basedOnVersionId, moved.pageVersion.id);
+      assert.equal(variant.pageVersion.pageJson.sections.find((section) => section.id === "hero-1")?.variant, "split");
+      assert.deepEqual(
+        variant.pageVersion.pageJson.sections.find((section) => section.id === "benefits-1")?.generation,
+        moved.pageVersion.pageJson.sections.find((section) => section.id === "benefits-1")?.generation
+      );
+    });
+
+    void it("rejects invalid props and illegal movement without creating a version", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Invalid edits", route: "/invalid-edits/" });
+
+      await assert.rejects(
+        () =>
+          service.editPageVersion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            {
+              command: {
+                type: "update_section_props",
+                sectionId: "hero-1",
+                props: {
+                  h1: "Dachreinigung",
+                  lead: "Lokale Einleitung",
+                  primaryCtaLabel: "Anfragen",
+                  primaryCtaHref: "/kontakt/",
+                  unknownRegistryProp: true
+                }
+              }
+            },
+            fixture.userId
+          ),
+        matchesErrorMessage(/registry validation/u)
+      );
+
+      await assert.rejects(
+        () =>
+          service.editPageVersion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            { command: { type: "move_section", sectionId: "service-1", direction: "up" } },
+            fixture.userId
+          ),
+        matchesErrorMessage(/would_break_composition/u)
+      );
+
+      const versions = await db
+        .select()
+        .from(pageVersions)
+        .where(eq(pageVersions.pageProposalId, fixture.pageProposalId));
+      assert.equal(versions.length, 1);
+    });
+
+    void it("branches from an approved immutable version while preserving the approved artifact", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Approved branch", route: "/approved-branch/" });
+      await service.reviewPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        { decision: "approve", decisionNote: "Freeze version one." },
+        fixture.userId
+      );
+      const [approvedBase] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      const approvedPageJson = approvedBase?.pageJson;
+
+      const edited = await service.editPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          command: {
+            type: "update_section_props",
+            sectionId: "faq-1",
+            props: {
+              heading: "Neue Fragen",
+              items: [{ question: "Was ist neu?", answer: "Diese Antwort gehoert nur zu Version zwei." }]
+            }
+          }
+        },
+        fixture.userId
+      );
+
+      assert.equal(edited.pageVersion.status, "preview");
+      assert.equal(edited.pageVersion.basedOnVersionId, fixture.pageVersionId);
+
+      const [base] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(base?.status, "approved");
+      assert.ok(base?.approvedAt);
+      assert.deepEqual(base?.pageJson, approvedPageJson);
+    });
+
+    void it("keeps Page Studio edits tenant-scoped and requires persisted actor evidence", async () => {
+      const first = await createPageVersionFixture(db, { name: "First edit tenant", route: "/first-edit-tenant/" });
+      const second = await createPageVersionFixture(db, { name: "Second edit tenant", route: "/second-edit-tenant/" });
+
+      await assert.rejects(
+        () =>
+          service.editPageVersion(
+            first.projectId,
+            second.pageVersionId,
+            { command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" } },
+            first.userId
+          ),
+        matchesErrorMessage(/not found for this project/u)
+      );
+      await assert.rejects(
+        () =>
+          service.editPageVersion(first.projectId, first.pageVersionId, {
+            command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" }
+          }),
+        matchesErrorMessage(/authenticated persisted user id/u)
+      );
+    });
+
+    void it("allows only one concurrent edit to derive from the same latest base", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Concurrent edit", route: "/concurrent-edit/" });
+
+      const outcomes = await Promise.allSettled([
+        service.editPageVersion(
+          fixture.projectId,
+          fixture.pageVersionId,
+          { command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" } },
+          fixture.userId
+        ),
+        service.editPageVersion(
+          fixture.projectId,
+          fixture.pageVersionId,
+          { command: { type: "switch_section_variant", sectionId: "footer-1", variant: "compact" } },
+          fixture.userId
+        )
+      ]);
+
+      assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+      const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+      assert.ok(rejected && rejected.status === "rejected");
+      assert.match(errorMessage(rejected.reason), /latest page version/u);
+
+      const versions = await db
+        .select()
+        .from(pageVersions)
+        .where(eq(pageVersions.pageProposalId, fixture.pageProposalId));
+      assert.equal(versions.length, 2);
+      assert.deepEqual(versions.map((version) => version.versionNumber).sort(), [1, 2]);
+    });
+
+    void it("enforces page-version lineage and freezes lineage evidence after approval", async () => {
+      const first = await createPageVersionFixture(db, { name: "Lineage first", route: "/lineage-first/" });
+      const second = await createPageVersionFixture(db, { name: "Lineage second", route: "/lineage-second/" });
+
+      await assert.rejects(
+        () =>
+          db.insert(pageVersions).values({
+            pageProposalId: first.pageProposalId,
+            versionNumber: 2,
+            status: "preview",
+            pageJson: pageJson(first.route)
+          }),
+        matchesErrorMessage(/require based_on_version_id/u)
+      );
+      await assert.rejects(
+        () =>
+          db.insert(pageVersions).values({
+            pageProposalId: second.pageProposalId,
+            versionNumber: 2,
+            status: "preview",
+            pageJson: pageJson(second.route),
+            basedOnVersionId: first.pageVersionId,
+            createdByUserId: second.userId
+          }),
+        matchesErrorMessage(/lineage must stay within one page proposal/u)
+      );
+
+      const derived = await service.editPageVersion(
+        first.projectId,
+        first.pageVersionId,
+        { command: { type: "switch_section_variant", sectionId: "hero-1", variant: "split" } },
+        first.userId
+      );
+      await assert.rejects(
+        () =>
+          db.insert(pageVersions).values({
+            pageProposalId: first.pageProposalId,
+            versionNumber: 3,
+            status: "preview",
+            pageJson: pageJson(first.route),
+            basedOnVersionId: first.pageVersionId,
+            createdByUserId: first.userId
+          }),
+        matchesErrorMessage(/immediately previous version/u)
+      );
+
+      await approvePageVersion(db, derived.pageVersion.id);
+      await assert.rejects(
+        () =>
+          db
+            .update(pageVersions)
+            .set({ createdByUserId: second.userId })
+            .where(eq(pageVersions.id, derived.pageVersion.id)),
+        matchesErrorMessage(/immutable|create a new page version/u)
+      );
+    });
+
     void it("creates and lists section notes anchored to stable PageJson section ids", async () => {
       const fixture = await createPageVersionFixture(db, { name: "Notes", route: "/notes/" });
 
@@ -582,7 +863,7 @@ void describe(
               })
             })
             .where(eq(pageVersions.id, fixture.pageVersionId)),
-        matchesErrorMessage(/immutable|PageJson|page versions/u)
+        matchesErrorMessage(/append-only|create a new page version/u)
       );
     });
 
@@ -609,7 +890,8 @@ void describe(
             pageProposalId: fixture.pageProposalId,
             versionNumber: 2,
             status: "approved",
-            pageJson: pageJson(fixture.route)
+            pageJson: pageJson(fixture.route),
+            basedOnVersionId: fixture.pageVersionId
           }),
         matchesErrorMessage(/approved_at|approval evidence|check constraint/u)
       );
@@ -1066,12 +1348,26 @@ function pageJson(
     },
     sections: [
       {
+        id: "header-1",
+        type: "Header",
+        registryKey: "Header.default",
+        schemaVersion: 1,
+        zone: "frame_top",
+        order: 0,
+        variant: "default",
+        props: {
+          brandName: "Muster Dachservice",
+          navItems: [{ label: "Kontakt", href: "/kontakt/" }]
+        },
+        evidenceRefs: []
+      },
+      {
         id: "hero-1",
         type: "Hero",
         registryKey: "Hero.default",
         schemaVersion: 1,
         zone: "hero",
-        order: 0,
+        order: 1,
         variant: "default",
         props: {
           h1: "Dachreinigung in Muenchen",
@@ -1087,11 +1383,42 @@ function pageJson(
         registryKey: "ServiceIntro.default",
         schemaVersion: 1,
         zone: "body_intro",
-        order: 1,
+        order: 2,
         variant: "default",
         props: {
           heading: "Dachreinigung fuer Muenchen",
           body: "Wir reinigen Daecher mit lokal abgestimmter Planung."
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "description-1",
+        type: "ServiceDescription",
+        registryKey: "ServiceDescription.default",
+        schemaVersion: 1,
+        zone: "body_main",
+        order: 3,
+        variant: "default",
+        props: {
+          heading: "Was die Dachreinigung umfasst",
+          paragraphs: ["Moos, Schmutz und Ablagerungen werden schonend entfernt."]
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "benefits-1",
+        type: "BenefitsGrid",
+        registryKey: "BenefitsGrid.default",
+        schemaVersion: 1,
+        zone: "body_main",
+        order: 4,
+        variant: "default",
+        props: {
+          heading: "Vorteile",
+          benefits: [
+            { title: "Lokale Anfahrt", body: "Termine in Muenchen und Umgebung." },
+            { title: "Klare Beratung", body: "Der Zustand wird vor der Reinigung nachvollziehbar besprochen." }
+          ]
         },
         evidenceRefs: []
       },
@@ -1101,11 +1428,25 @@ function pageJson(
         registryKey: "FAQ.default",
         schemaVersion: 1,
         zone: "body_late",
-        order: 2,
+        order: 5,
         variant: "default",
         props: {
           heading: "Haeufige Fragen",
           items: [{ question: "Wie schnell?", answer: "Nach Absprache." }]
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "areas-1",
+        type: "ServiceAreaList",
+        registryKey: "ServiceAreaList.default",
+        schemaVersion: 1,
+        zone: "body_late",
+        order: 6,
+        variant: "default",
+        props: {
+          heading: "Einsatzgebiet",
+          areas: [{ name: "Muenchen", route }]
         },
         evidenceRefs: []
       },
@@ -1115,13 +1456,27 @@ function pageJson(
         registryKey: "FinalCTA.default",
         schemaVersion: 1,
         zone: "cta_late",
-        order: 3,
+        order: 7,
         variant: "default",
         props: {
           heading: "Dachreinigung anfragen",
           body: "Wir pruefen die passende Ausfuehrung fuer Ihr Objekt.",
           ctaLabel: "Anfragen",
           ctaHref: "/kontakt/"
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "footer-1",
+        type: "Footer",
+        registryKey: "Footer.default",
+        schemaVersion: 1,
+        zone: "frame_bottom",
+        order: 8,
+        variant: "default",
+        props: {
+          businessName: "Muster Dachservice",
+          legalLinks: [{ label: "Impressum", href: "/impressum/" }]
         },
         evidenceRefs: []
       }
