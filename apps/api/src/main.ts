@@ -24,6 +24,12 @@ const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter,
 const fastify = app.getHttpAdapter().getInstance();
 const redis = app.get(RedisService);
 
+fastify.addContentTypeParser(
+  "application/octet-stream",
+  { parseAs: "buffer", bodyLimit: env.MEDIA_MAX_UPLOAD_BYTES },
+  (_request, body, done) => done(null, body)
+);
+
 await app.register(helmet);
 await app.register(rateLimit, {
   global: true,

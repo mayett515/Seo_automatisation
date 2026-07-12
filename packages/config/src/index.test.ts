@@ -59,6 +59,18 @@ void describe("AppEnvSchema", () => {
     assert.equal(configured.WORK_RECOVERY_BATCH_SIZE, 40);
   });
 
+  void it("keeps media upload and project quotas within the accepted MVP bounds", () => {
+    const defaults = parseAppEnv({});
+    assert.equal(defaults.MEDIA_UPLOAD_GRANT_TTL_SECONDS, 600);
+    assert.equal(defaults.MEDIA_MAX_UPLOAD_BYTES, 10 * 1024 * 1024);
+    assert.equal(defaults.MEDIA_MAX_UNRESOLVED_ASSETS, 5);
+    assert.equal(defaults.MEDIA_MAX_RETAINED_ASSETS, 250);
+    assert.equal(defaults.MEDIA_MAX_DERIVATIVE_BYTES, 2 * 1024 * 1024 * 1024);
+
+    assert.throws(() => parseAppEnv({ MEDIA_UPLOAD_GRANT_TTL_SECONDS: "601" }));
+    assert.throws(() => parseAppEnv({ MEDIA_MAX_UPLOAD_BYTES: String(10 * 1024 * 1024 + 1) }));
+  });
+
   void it("strips obsolete global tracking ingest token config", () => {
     const env = parseAppEnv({
       TRACKING_INGEST_TOKEN: "12345678901234567890123456789012"
@@ -177,6 +189,13 @@ void describe("AppEnvSchema", () => {
         }),
       /RELEASE_BROWSER_VERIFICATION_ENABLED/u
     );
+  });
+
+  void it("rejects production boot without durable S3 storage", () => {
+    const input = productionEnv();
+    delete input.S3_BUCKET;
+
+    assert.throws(() => assertProductionRuntimeEnv(input), /S3_BUCKET/u);
   });
 });
 

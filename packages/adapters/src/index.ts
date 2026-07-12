@@ -363,6 +363,50 @@ export interface ObjectStoragePort {
   getJson(input: { key: string }): Promise<unknown>;
 }
 
+export type MediaUploadGrant =
+  | {
+      kind: "presigned_post";
+      url: string;
+      fields: Record<string, string>;
+      expiresAt: string;
+    }
+  | {
+      kind: "api_put";
+      url: string;
+      headers: Record<string, string>;
+      expiresAt: string;
+    };
+
+export type MediaStoredObjectMetadata = {
+  key: string;
+  contentType?: string;
+  contentLength?: number;
+  sha256?: string;
+};
+
+export interface MediaAssetStoragePort {
+  createUploadGrant(input: {
+    key: string;
+    contentType: string;
+    contentLength: number;
+    sha256: string;
+    projectId: string;
+    assetId: string;
+    expiresAt: Date;
+    apiPutUrl?: string;
+  }): Promise<MediaUploadGrant>;
+  headPrivateObject(input: { key: string }): Promise<MediaStoredObjectMetadata | undefined>;
+  readPrivateObject(input: { key: string; maxBytes: number }): Promise<Uint8Array>;
+  putPrivateObject(input: {
+    key: string;
+    body: Uint8Array;
+    contentType: string;
+    sha256: string;
+    metadata?: Record<string, string>;
+  }): Promise<MediaStoredObjectMetadata>;
+  deletePrivateObject(input: { key: string }): Promise<void>;
+}
+
 export interface TrackingPort {
   ingest(event: TrackingEvent): Promise<void>;
 }

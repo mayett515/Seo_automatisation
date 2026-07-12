@@ -20,6 +20,7 @@ export const jobTypes = [
   "technical_audit",
   "local_analysis",
   "page_generation",
+  "media_processing",
   "seo_qa",
   "deployment_agent_preflight",
   "deploy",
@@ -39,6 +40,7 @@ export const queueNames = [
   "technical-audit",
   "local-analysis",
   "page-generation",
+  "media-processing",
   "seo-qa",
   "deploy",
   "rollback",
@@ -178,6 +180,9 @@ export const sectionCopySuggestionStatuses = [
   "dismissed"
 ] as const;
 export const sectionCopySuggestionQueueStatuses = [...jobStatuses, "already_active"] as const;
+export const mediaAssetStatuses = ["pending_upload", "processing", "ready", "failed", "archived"] as const;
+export const mediaUploadContentTypes = ["image/jpeg", "image/png", "image/webp"] as const;
+export const mediaProcessingQueueStatuses = [...jobStatuses, "already_active"] as const;
 
 export const opportunityRecommendedActions = [
   "monitor",
@@ -364,6 +369,9 @@ export const OpportunityScoutQueueStatusSchema = z.enum(opportunityScoutQueueSta
 export const PageProposalQueueStatusSchema = z.enum(pageProposalQueueStatuses);
 export const SectionCopySuggestionStatusSchema = z.enum(sectionCopySuggestionStatuses);
 export const SectionCopySuggestionQueueStatusSchema = z.enum(sectionCopySuggestionQueueStatuses);
+export const MediaAssetStatusSchema = z.enum(mediaAssetStatuses);
+export const MediaUploadContentTypeSchema = z.enum(mediaUploadContentTypes);
+export const MediaProcessingQueueStatusSchema = z.enum(mediaProcessingQueueStatuses);
 export const OpportunityRecommendedActionSchema = z.enum(opportunityRecommendedActions);
 export const OpportunitySuggestedPageTypeSchema = z.enum(opportunitySuggestedPageTypes);
 export const EvidenceSourceTypeSchema = z.enum(evidenceSourceTypes);
@@ -469,6 +477,23 @@ export const CreateSectionCopySuggestionRequestSchema = z
   .object({
     sectionId: z.string().trim().min(1).max(120),
     instruction: z.string().trim().min(1).max(1_000).optional()
+  })
+  .strict();
+
+export const MediaSha256Schema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/u, "Expected a lowercase hexadecimal SHA-256 digest.");
+
+export const CreateMediaUploadIntentRequestSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(255),
+    claimedContentType: MediaUploadContentTypeSchema,
+    expectedBytes: z
+      .number()
+      .int()
+      .min(1)
+      .max(10 * 1024 * 1024),
+    expectedSha256: MediaSha256Schema
   })
   .strict();
 
@@ -706,6 +731,17 @@ export const SectionCopySuggestionJobDataSchema = z
   })
   .strict();
 
+export const MediaProcessingJobDataSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    assetId: z.string().uuid(),
+    maxAttempts: z.number().int().positive().optional(),
+    jobRunId: z.string().min(1).optional(),
+    triggeredByUserId: z.string().min(1).nullable().optional(),
+    triggerSource: z.string().min(1).optional()
+  })
+  .strict();
+
 export const SerpScoutJobDataSchema = SerpScoutRequestSchema.extend({
   snapshotId: z.string().min(1),
   agentRunId: z.string().min(1).optional(),
@@ -743,6 +779,32 @@ export const PagePathSchema = z
   .refine((value) => value.startsWith("/"), "Page paths must start with '/'.")
   .refine((value) => !value.startsWith("//"), "Page paths must not be protocol-relative URLs.")
   .refine((value) => !value.includes("\\"), "Page paths must not contain backslashes.");
+
+export const PageMediaFocalPointSchema = z
+  .object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1)
+  })
+  .strict();
+
+export const PageMediaReferenceSchema = z.discriminatedUnion("purpose", [
+  z
+    .object({
+      assetId: z.string().uuid(),
+      purpose: z.literal("content"),
+      alt: z.string().trim().min(1).max(300),
+      focalPoint: PageMediaFocalPointSchema.optional()
+    })
+    .strict(),
+  z
+    .object({
+      assetId: z.string().uuid(),
+      purpose: z.literal("decorative"),
+      alt: z.literal(""),
+      focalPoint: PageMediaFocalPointSchema.optional()
+    })
+    .strict()
+]);
 
 export const PageEvidenceRefSchema = z
   .object({
@@ -1712,6 +1774,98 @@ export const ExecuteRollbackRequestSchema = z.object({
   rollbackPointId: z.string().min(1)
 });
 
+export const MediaAssetVariantSchema = z
+  .object({
+    variantKey: z.string().regex(/^w[1-9][0-9]*_webp$/u),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    contentType: z.literal("image/webp"),
+    byteSize: z.number().int().positive(),
+    sha256: MediaSha256Schema
+  })
+  .strict();
+
+export const MediaAssetSummarySchema = z
+  .object({
+    id: z.string().uuid(),
+    projectId: ProjectIdSchema,
+    status: MediaAssetStatusSchema,
+    displayName: z.string().min(1).max(255),
+    claimedContentType: MediaUploadContentTypeSchema,
+    expectedBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(10 * 1024 * 1024),
+    expectedSha256: MediaSha256Schema,
+    detectedContentType: MediaUploadContentTypeSchema.optional(),
+    sourceBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(10 * 1024 * 1024)
+      .optional(),
+    checksumSha256: MediaSha256Schema.optional(),
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+    processorVersion: z.string().min(1).max(80).optional(),
+    variants: z.array(MediaAssetVariantSchema).max(4).default([]),
+    failureCode: z.string().min(1).max(120).optional(),
+    failureMessage: z.string().min(1).max(500).optional(),
+    createdByUserId: z.string().uuid(),
+    archivedByUserId: z.string().uuid().optional(),
+    readyAt: z.string().datetime().optional(),
+    archivedAt: z.string().datetime().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
+
+export const MediaUploadTargetSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("presigned_post"),
+      url: HttpUrlSchema,
+      fields: z.record(z.string(), z.string()).refine((value) => Object.keys(value).length > 0),
+      expiresAt: z.string().datetime()
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("api_put"),
+      url: PagePathSchema,
+      headers: z.record(z.string(), z.string()).refine((value) => Object.keys(value).length > 0),
+      expiresAt: z.string().datetime()
+    })
+    .strict()
+]);
+
+export const MediaUploadIntentResponseSchema = z
+  .object({
+    asset: MediaAssetSummarySchema,
+    upload: MediaUploadTargetSchema
+  })
+  .strict();
+
+export const CompleteMediaUploadRequestSchema = z.object({}).strict();
+
+export const MediaUploadCompletionResponseSchema = z
+  .object({
+    asset: MediaAssetSummarySchema,
+    processing: QueueJobSchema.extend({
+      type: z.literal("media_processing"),
+      status: MediaProcessingQueueStatusSchema
+    })
+  })
+  .strict();
+
+export const MediaAssetListResponseSchema = z
+  .object({
+    projectId: ProjectIdSchema,
+    assets: z.array(MediaAssetSummarySchema).max(500)
+  })
+  .strict();
+
 export const HealthResponseSchema = z.object({
   status: z.enum(["ok", "degraded", "down"]),
   service: z.string().min(1),
@@ -1863,8 +2017,10 @@ export type WebsiteImportJobData = z.output<typeof WebsiteImportJobDataSchema>;
 export type OpportunityScoutJobData = z.output<typeof OpportunityScoutJobDataSchema>;
 export type PageProposalJobData = z.output<typeof PageProposalJobDataSchema>;
 export type SectionCopySuggestionJobData = z.output<typeof SectionCopySuggestionJobDataSchema>;
+export type MediaProcessingJobData = z.output<typeof MediaProcessingJobDataSchema>;
 export type TechnicalAuditJobData = z.output<typeof TechnicalAuditJobDataSchema>;
 export type PageEvidenceRef = z.output<typeof PageEvidenceRefSchema>;
+export type PageMediaReference = z.output<typeof PageMediaReferenceSchema>;
 export type PageGeneration = z.output<typeof PageGenerationSchema>;
 export type PageSectionInstance = z.output<typeof PageSectionInstanceSchema>;
 export type PageJson = z.output<typeof PageJsonSchema>;
@@ -1882,6 +2038,16 @@ export type PageVersionEditResponse = z.output<typeof PageVersionEditResponseSch
 export type SectionCopySuggestion = z.output<typeof SectionCopySuggestionSchema>;
 export type SectionCopySuggestionStatus = z.output<typeof SectionCopySuggestionStatusSchema>;
 export type SectionCopySuggestionListResponse = z.output<typeof SectionCopySuggestionListResponseSchema>;
+export type MediaAssetStatus = z.output<typeof MediaAssetStatusSchema>;
+export type MediaUploadContentType = z.output<typeof MediaUploadContentTypeSchema>;
+export type MediaProcessingQueueStatus = z.output<typeof MediaProcessingQueueStatusSchema>;
+export type CreateMediaUploadIntentRequest = z.output<typeof CreateMediaUploadIntentRequestSchema>;
+export type MediaAssetVariant = z.output<typeof MediaAssetVariantSchema>;
+export type MediaAssetSummary = z.output<typeof MediaAssetSummarySchema>;
+export type MediaUploadTarget = z.output<typeof MediaUploadTargetSchema>;
+export type MediaUploadIntentResponse = z.output<typeof MediaUploadIntentResponseSchema>;
+export type MediaUploadCompletionResponse = z.output<typeof MediaUploadCompletionResponseSchema>;
+export type MediaAssetListResponse = z.output<typeof MediaAssetListResponseSchema>;
 export type PageVersionListResponse = z.output<typeof PageVersionListResponseSchema>;
 export type PageProposalSummary = z.output<typeof PageProposalSummarySchema>;
 export type PageProposalDetail = z.output<typeof PageProposalDetailSchema>;

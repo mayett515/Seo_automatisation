@@ -38,6 +38,21 @@ export const AppEnvSchema = z.object({
   AWS_REGION: z.string().min(1).default("eu-central-1"),
   S3_BUCKET: z.string().min(1).optional(),
   LOCAL_OBJECT_STORAGE_DIR: z.string().min(1).default(".local-object-storage"),
+  MEDIA_UPLOAD_GRANT_TTL_SECONDS: z.coerce.number().int().positive().max(600).default(600),
+  MEDIA_MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(10 * 1024 * 1024)
+    .default(10 * 1024 * 1024),
+  MEDIA_MAX_UNRESOLVED_ASSETS: z.coerce.number().int().positive().max(100).default(5),
+  MEDIA_MAX_RETAINED_ASSETS: z.coerce.number().int().positive().max(10_000).default(250),
+  MEDIA_MAX_DERIVATIVE_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(2 * 1024 * 1024 * 1024),
   NETLIFY_AUTH_TOKEN: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),

@@ -23,6 +23,7 @@ if (!env.REDIS_URL) {
 const connection = createRedisConnection(env.REDIS_URL);
 const recoveryQueues: WorkRecoveryQueues = {
   "page-generation": new Queue("page-generation", { connection }),
+  "media-processing": new Queue("media-processing", { connection }),
   "release-verification": new Queue("release-verification", { connection })
 };
 
@@ -48,7 +49,7 @@ const lifecycleReconcileInterval = setInterval(() => {
   isReconcilingLifecycle = true;
   void Promise.all([reconcileDeployments(), reconcileRollbacks(), recoverStaleWork(recoveryQueues)])
     .then(([, , recovery]) => {
-      if (recovery.checked > 0 || recovery.errors > 0) {
+      if (recovery.checked > 0 || recovery.expiredMediaUploads > 0 || recovery.errors > 0) {
         console.log("Bounded work recovery scan completed", recovery);
       }
     })

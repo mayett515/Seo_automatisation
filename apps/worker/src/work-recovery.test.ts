@@ -21,7 +21,7 @@ void describe("work recovery transport mapping", () => {
     const db = {
       select() {
         selectCount += 1;
-        const shouldFail = selectCount === 1;
+        const shouldFail = selectCount === 2;
         const builder: Record<string, (...args: unknown[]) => unknown> = {};
 
         for (const method of ["from", "innerJoin", "where", "orderBy"]) {
@@ -47,6 +47,7 @@ void describe("work recovery transport mapping", () => {
         db,
         queues: {
           "page-generation": queue,
+          "media-processing": queue,
           "release-verification": queue
         },
         now: new Date("2026-07-11T10:00:00.000Z"),
@@ -55,7 +56,7 @@ void describe("work recovery transport mapping", () => {
         batchSize: 25
       });
 
-      assert.equal(selectCount, 3);
+      assert.equal(selectCount, 5);
       assert.equal(result.errors, 1);
       assert.equal(result.checked, 0);
       assert.match(errors[0] ?? "", /page_proposal candidates/u);

@@ -72,6 +72,7 @@ import {
 } from "./handlers/website-import.js";
 import {
   classifyOpportunitySignals,
+  createObjectStorageAdapter,
   createReasoningAdapter,
   isTerminalWorkerError,
   parseGscSyncJobData,
@@ -79,6 +80,21 @@ import {
   routeJob,
   toWorkerRethrowError
 } from "./handlers.js";
+
+void describe("createObjectStorageAdapter", () => {
+  void it("fails closed instead of using filesystem object storage in production", () => {
+    assert.throws(
+      () =>
+        createObjectStorageAdapter({
+          NODE_ENV: "production",
+          S3_BUCKET: undefined,
+          AWS_REGION: "eu-central-1",
+          LOCAL_OBJECT_STORAGE_DIR: ".local-object-storage"
+        }),
+      /Production worker storage requires S3_BUCKET/u
+    );
+  });
+});
 
 void describe("parseGscSyncJobData", () => {
   void it("accepts valid GSC sync job data", () => {
@@ -415,6 +431,21 @@ void describe("routeJob", () => {
         }
       } as Job),
       /DATABASE_URL is required for page proposal jobs/u
+    );
+  });
+
+  void it("routes media processing jobs to the deterministic media handler", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "10000000-0000-4000-8000-000000000001",
+        queueName: "media-processing",
+        name: "media_processing",
+        data: {
+          projectId: "10000000-0000-4000-8000-000000000002",
+          assetId: "10000000-0000-4000-8000-000000000001"
+        }
+      } as Job),
+      /DATABASE_URL is required for media processing jobs/u
     );
   });
 

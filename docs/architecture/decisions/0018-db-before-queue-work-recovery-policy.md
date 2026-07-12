@@ -61,13 +61,13 @@ Implementation note, 2026-07-07:
 - The classifier has no Postgres, Redis, BullMQ, provider, or worker dependencies.
 - It distinguishes read/analyze, artifact capture, provider handoff warning, provider mutation, and projection/approval categories.
 - It permits deterministic re-enqueue only for safe/idempotent categories, routes provider mutation uncertainty to provider reconciliation/manual handling, and keeps projection/approval recovery manual.
-- `apps/worker/src/work-recovery.ts` is now the first procedural scanner around that policy. It reads stale Page Proposal `agent_runs` and `release_verifications`, combines durable `job_runs` evidence with BullMQ state, calls the classifier, and applies guarded effects.
+- `apps/worker/src/work-recovery.ts` is now the procedural scanner around that policy. It reads stale Page Proposal/Section Copy `agent_runs`, `media_assets`, and `release_verifications`, combines durable `job_runs` evidence with BullMQ state, calls the classifier, and applies guarded effects.
 - Recovery attempts are counted on the owning durable row, audited as system-triggered `job_runs`, and re-enqueued with the original deterministic run/verification id.
 - Competing scanners claim an attempt through recovery-count and stale-timestamp predicates. A lost claim is a stale no-op, not a second enqueue.
 - Unknown transport state is conservative `noop`. Completed transport without terminal product truth becomes a visible failure instead of an automatic replay.
-- The scanner deliberately registers only `page-generation` and `release-verification`; deploy and rollback remain owned by provider-state reconcilers/manual reconciliation.
+- The scanner deliberately registers only `page-generation`, `media-processing`, and `release-verification`; deploy and rollback remain owned by provider-state reconcilers/manual reconciliation.
 - Candidate discovery is isolated per registered lane, so one lane's query failure is recorded without suppressing the other lane for that scan.
-- `WORK_RECOVERY_BATCH_SIZE` is a per-lane cap. With the two registered lanes, one scan can inspect at most twice that configured count.
+- `WORK_RECOVERY_BATCH_SIZE` is a per-lane cap. Page Proposal, Section Copy, media processing, and release verification each apply the configured cap independently.
 
 ## Consequences
 
@@ -77,6 +77,7 @@ The first recovery implementation stays intentionally small:
 
 - Page Proposal read/analyze work may re-add `jobId = runId` after a guarded claim;
 - release verification may re-add `jobId = verificationId` because its provider handoff is warning-level/idempotent and its final product projection is transaction-guarded;
+- media processing may re-add `jobId = assetId` because source verification and deterministic derivative keys make the artifact-capture writes idempotent;
 - bounded Page Proposal exhaustion becomes a visible failed agent run;
 - bounded release-verification exhaustion becomes `execution_failed` plus warning evidence without claiming observed bad page health;
 - transport-completed inconsistency and bounded exhaustion retain distinct release-verification evidence messages;

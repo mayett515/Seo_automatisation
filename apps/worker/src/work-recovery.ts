@@ -1,11 +1,19 @@
 import { randomUUID } from "node:crypto";
 import {
   PageProposalJobDataSchema,
+  MediaProcessingJobDataSchema,
   ReleaseVerificationJobDataSchema,
   SectionCopySuggestionJobDataSchema,
   type AgentRunStatus
 } from "@localseo/contracts";
-import { agentRuns, jobRuns, pageSectionCopySuggestions, releasePlans, releaseVerifications } from "@localseo/db";
+import {
+  agentRuns,
+  jobRuns,
+  mediaAssets,
+  pageSectionCopySuggestions,
+  releasePlans,
+  releaseVerifications
+} from "@localseo/db";
 import { classifyWorkRecovery, type WorkRecoveryDecision, type WorkRecoveryTransportState } from "@localseo/domain";
 import type { JobsOptions } from "bullmq";
 import { and, asc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
@@ -14,6 +22,7 @@ import { markReleaseVerificationRecoveryFailure } from "./handlers/release-verif
 
 const pageProposalQueueName = "page-generation";
 const releaseVerificationQueueName = "release-verification";
+const mediaProcessingQueueName = "media-processing";
 const activeBullMqStates = new Set(["active", "waiting", "waiting-children", "delayed", "prioritized"]);
 const terminalJobRunStatuses = new Set(["completed", "failed", "cancelled", "dry_run"]);
 const activeAgentRunStatuses = ["queued", "running"] as const satisfies readonly AgentRunStatus[];
@@ -31,6 +40,7 @@ export type WorkRecoveryQueue = {
 
 export type WorkRecoveryQueues = {
   "page-generation": WorkRecoveryQueue;
+  "media-processing": WorkRecoveryQueue;
   "release-verification": WorkRecoveryQueue;
 };
 
@@ -44,6 +54,7 @@ export type WorkRecoveryScanResult = {
   staleNoop: number;
   enqueueFailed: number;
   errors: number;
+  expiredMediaUploads: number;
 };
 
 type PageProposalRecoveryCandidate = {
@@ -76,9 +87,18 @@ type ReleaseVerificationRecoveryCandidate = {
   recoveryCount: number;
 };
 
+type MediaProcessingRecoveryCandidate = {
+  kind: "media_processing";
+  id: string;
+  projectId: string;
+  durableState: "running";
+  recoveryCount: number;
+};
+
 type RecoveryCandidate =
   | PageProposalRecoveryCandidate
   | SectionCopySuggestionRecoveryCandidate
+  | MediaProcessingRecoveryCandidate
   | ReleaseVerificationRecoveryCandidate;
 
 type RecoveryJobSpec = {
@@ -101,9 +121,16 @@ export async function scanStaleWork(input: {
   const now = input.now ?? new Date();
   const staleBefore = new Date(now.getTime() - input.staleAfterMs);
   const result = emptyWorkRecoveryScanResult();
-  const [pageProposalLoad, sectionCopyLoad, releaseVerificationLoad] = await Promise.allSettled([
+  try {
+    result.expiredMediaUploads = await expirePendingMediaUploadIntents(input.db, now, input.batchSize);
+  } catch (error) {
+    result.errors += 1;
+    console.error("Work recovery failed to expire pending media uploads", normalizeErrorMessage(error));
+  }
+  const [pageProposalLoad, sectionCopyLoad, mediaProcessingLoad, releaseVerificationLoad] = await Promise.allSettled([
     loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
     loadSectionCopySuggestionRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadMediaProcessingRecoveryCandidates(input.db, staleBefore, input.batchSize),
     loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize)
   ]);
   const candidates: RecoveryCandidate[] = [];
@@ -135,6 +162,16 @@ export async function scanStaleWork(input: {
     console.error(
       "Work recovery failed to load section_copy_suggestion candidates",
       normalizeErrorMessage(sectionCopyLoad.reason)
+    );
+  }
+
+  if (mediaProcessingLoad.status === "fulfilled") {
+    candidates.push(...mediaProcessingLoad.value);
+  } else {
+    result.errors += 1;
+    console.error(
+      "Work recovery failed to load media_processing candidates",
+      normalizeErrorMessage(mediaProcessingLoad.reason)
     );
   }
 
@@ -170,8 +207,41 @@ export function emptyWorkRecoveryScanResult(): WorkRecoveryScanResult {
     coalesced: 0,
     staleNoop: 0,
     enqueueFailed: 0,
-    errors: 0
+    errors: 0,
+    expiredMediaUploads: 0
   };
+}
+
+async function expirePendingMediaUploadIntents(db: WorkerDb, now: Date, batchSize: number): Promise<number> {
+  const expiresBefore = new Date(now.getTime() - 24 * 60 * 60_000);
+  const candidates = await db
+    .select({ id: mediaAssets.id })
+    .from(mediaAssets)
+    .where(and(eq(mediaAssets.status, "pending_upload"), lte(mediaAssets.createdAt, expiresBefore)))
+    .orderBy(asc(mediaAssets.createdAt))
+    .limit(batchSize);
+  if (candidates.length === 0) {
+    return 0;
+  }
+  const updated = await db
+    .update(mediaAssets)
+    .set({
+      status: "failed",
+      failureCode: "upload_expired",
+      failureMessage: "Media upload intent expired before processing began.",
+      updatedAt: now
+    })
+    .where(
+      and(
+        inArray(
+          mediaAssets.id,
+          candidates.map((candidate) => candidate.id)
+        ),
+        eq(mediaAssets.status, "pending_upload")
+      )
+    )
+    .returning({ id: mediaAssets.id });
+  return updated.length;
 }
 
 export function transportStateFromBullMqJobState(state: string): WorkRecoveryTransportState {
@@ -203,7 +273,12 @@ async function recoverCandidate(input: {
   const queue = input.queues[spec.queueName];
   const transportState = await observeTransportState(input.db, queue, spec);
   const decision = classifyWorkRecovery({
-    workflowCategory: input.candidate.kind === "release_verification" ? "provider_handoff_warning" : "read_analyze",
+    workflowCategory:
+      input.candidate.kind === "release_verification"
+        ? "provider_handoff_warning"
+        : input.candidate.kind === "media_processing"
+          ? "artifact_capture"
+          : "read_analyze",
     durableState: input.candidate.durableState,
     transportState,
     workerFreshness: "stale",
@@ -411,6 +486,31 @@ async function loadSectionCopySuggestionRecoveryCandidates(
   );
 }
 
+async function loadMediaProcessingRecoveryCandidates(
+  db: WorkerDb,
+  staleBefore: Date,
+  batchSize: number
+): Promise<MediaProcessingRecoveryCandidate[]> {
+  const rows = await db
+    .select({
+      id: mediaAssets.id,
+      projectId: mediaAssets.projectId,
+      recoveryCount: mediaAssets.recoveryCount
+    })
+    .from(mediaAssets)
+    .where(and(eq(mediaAssets.status, "processing"), lte(mediaAssets.updatedAt, staleBefore)))
+    .orderBy(asc(mediaAssets.updatedAt))
+    .limit(batchSize);
+
+  return rows.map((row) => ({
+    kind: "media_processing" as const,
+    id: row.id,
+    projectId: row.projectId,
+    durableState: "running" as const,
+    recoveryCount: row.recoveryCount
+  }));
+}
+
 async function loadReleaseVerificationRecoveryCandidates(
   db: WorkerDb,
   staleBefore: Date,
@@ -482,6 +582,24 @@ async function claimRecoveryAttempt(
           )
         )
         .returning({ recoveryCount: releaseVerifications.recoveryCount });
+    } else if (candidate.kind === "media_processing") {
+      claimedRows = await tx
+        .update(mediaAssets)
+        .set({
+          recoveryCount: sql<number>`${mediaAssets.recoveryCount} + 1`,
+          lastRecoveryAt: now,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(mediaAssets.id, candidate.id),
+            eq(mediaAssets.projectId, candidate.projectId),
+            eq(mediaAssets.status, "processing"),
+            eq(mediaAssets.recoveryCount, candidate.recoveryCount),
+            lte(mediaAssets.updatedAt, staleBefore)
+          )
+        )
+        .returning({ recoveryCount: mediaAssets.recoveryCount });
     } else {
       const task = candidate.kind === "page_proposal" ? "page_brief_draft" : "section_text_generation";
       const subjectId = candidate.kind === "page_proposal" ? candidate.opportunityId : candidate.suggestionId;
@@ -581,6 +699,8 @@ async function markCandidateRecoveryFailed(
       input.staleBefore,
       reason
     );
+  } else if (input.candidate.kind === "media_processing") {
+    updated = await markMediaProcessingRecoveryFailed(input.db, input.candidate, input.now, input.staleBefore, reason);
   } else {
     updated = await markReleaseVerificationRecoveryFailure({
       db: input.db,
@@ -603,6 +723,40 @@ async function markCandidateRecoveryFailed(
   }
 
   return updated;
+}
+
+async function markMediaProcessingRecoveryFailed(
+  db: WorkerDb,
+  candidate: MediaProcessingRecoveryCandidate,
+  now: Date,
+  staleBefore: Date,
+  reason: string
+): Promise<boolean> {
+  const failureCode =
+    reason === "transport_completed_without_product_truth" ? "work_transport_inconsistent" : "work_recovery_exhausted";
+  const [updated] = await db
+    .update(mediaAssets)
+    .set({
+      status: "failed",
+      failureCode,
+      failureMessage:
+        failureCode === "work_transport_inconsistent"
+          ? "Queue transport completed without ready media asset truth."
+          : "Media processing exhausted bounded recovery.",
+      updatedAt: now
+    })
+    .where(
+      and(
+        eq(mediaAssets.id, candidate.id),
+        eq(mediaAssets.projectId, candidate.projectId),
+        eq(mediaAssets.status, "processing"),
+        eq(mediaAssets.recoveryCount, candidate.recoveryCount),
+        lte(mediaAssets.updatedAt, staleBefore)
+      )
+    )
+    .returning({ id: mediaAssets.id });
+
+  return Boolean(updated);
 }
 
 async function markSectionCopySuggestionRecoveryFailed(
@@ -801,6 +955,29 @@ function recoveryJobSpec(candidate: RecoveryCandidate, jobRunId?: string): Recov
         suggestionId: candidate.suggestionId,
         pageVersionId: candidate.pageVersionId,
         sectionId: candidate.sectionId,
+        maxAttempts: attempts,
+        ...(jobRunId ? { jobRunId } : {}),
+        triggeredByUserId: null,
+        triggerSource: "work_recovery"
+      }),
+      options: {
+        attempts,
+        jobId: candidate.id,
+        backoff: { type: "exponential", delay: 5000 }
+      }
+    };
+  }
+
+  if (candidate.kind === "media_processing") {
+    const attempts = 3;
+    return {
+      queueName: mediaProcessingQueueName,
+      jobName: "media_processing",
+      jobId: candidate.id,
+      jobType: "media_processing",
+      data: MediaProcessingJobDataSchema.parse({
+        projectId: candidate.projectId,
+        assetId: candidate.id,
         maxAttempts: attempts,
         ...(jobRunId ? { jobRunId } : {}),
         triggeredByUserId: null,

@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.9"
+version: "1.1.11"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -148,7 +148,7 @@ DB-before-queue recovery policy
   Durable run rows must define active guards, terminal states, and stale recovery behavior.
   Recovery decisions belong in pure domain policy; recovery controllers are procedural shells.
   Read/analyze work may be re-enqueued by deterministic job id when safe.
-  The bounded scanner currently owns Page Proposal and release-verification transport gaps only.
+  The bounded scanner currently owns Page Proposal, Section Copy, media-processing artifact capture, and release-verification transport gaps only.
   A candidate-load failure in one registered lane must not suppress scanning another registered lane.
   Recovery attempts must be durably counted and claimed before re-enqueue.
   `job_runs` must record each recovered enqueue as system-triggered recovery audit.
@@ -190,6 +190,14 @@ Project-scoped media asset boundary
   Static release artifacts must use an explicit binary-safe file encoding before media can reach provider handoff.
   Provider file digests and uploads must use the same decoded bytes, never the base64 transport text.
   Ready status requires the exact DB-checked derivative key set, and ready/archived variants are append-only.
+  Upload intent requires persisted actor, media:write permission, configured storage/queue, project quota, exact byte count, allow-listed claimed type, and SHA-256 before a pending row is accepted.
+  Completion performs metadata reads only, moves pending_upload to processing, and enqueues media-processing with jobId = assetId; image decoding remains worker-only.
+  The media worker re-identifies decoded type, recomputes source SHA-256, rejects animation and decoder/pixel overflow, strips metadata, and writes deterministic versioned WebP variants.
+  Media API summaries must not expose quarantine keys or derivative storage keys.
+  Production API and worker storage composition must fail closed without S3_BUCKET; filesystem media storage is local/test only.
+  S3 upload grants and derivative writes must bind native SHA-256 checksums in addition to audit metadata.
+  Ready and archived media assets must not be hard-deleted at the database boundary.
+  Pending upload intents expire to visible failed truth after 24 hours so abandoned uploads cannot hold project quota forever; byte deletion remains a separate idempotent cleanup workflow.
 ```
 
 </context>

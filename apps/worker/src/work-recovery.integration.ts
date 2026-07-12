@@ -7,6 +7,7 @@ import {
   customers,
   deployments,
   jobRuns,
+  mediaAssets,
   opportunities,
   pageProposals,
   pageSectionCopySuggestions,
@@ -144,6 +145,48 @@ void describe(
         .where(eq(pageSectionCopySuggestions.id, fixture.suggestionId));
       assert.equal(suggestion?.status, "failed");
       assert.equal(suggestion?.failureCode, "work_recovery_exhausted");
+    });
+
+    void it("re-enqueues stale media processing with the same asset id", async () => {
+      const fixture = await createMediaRecoveryFixture(db);
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.reEnqueued, 1);
+      assert.equal(queues["media-processing"].addCalls.length, 1);
+      assert.equal(queues["media-processing"].addCalls[0]?.name, "media_processing");
+      assert.equal(queues["media-processing"].addCalls[0]?.options.jobId, fixture.assetId);
+      assert.equal(queues["media-processing"].addCalls[0]?.data.assetId, fixture.assetId);
+      assert.equal(queues["media-processing"].addCalls[0]?.data.triggerSource, "work_recovery");
+
+      const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.id, fixture.assetId));
+      assert.equal(asset?.status, "processing");
+      assert.equal(asset?.recoveryCount, 1);
+    });
+
+    void it("marks stale media processing failed after bounded recovery is exhausted", async () => {
+      const fixture = await createMediaRecoveryFixture(db, { recoveryCount: 3 });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues["media-processing"].addCalls.length, 0);
+      const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.id, fixture.assetId));
+      assert.equal(asset?.status, "failed");
+      assert.equal(asset?.failureCode, "work_recovery_exhausted");
+    });
+
+    void it("expires abandoned pending media upload intents after the bounded retention window", async () => {
+      const fixture = await createPendingMediaUploadFixture(db);
+
+      const result = await scan(db, fakeQueues());
+
+      assert.equal(result.expiredMediaUploads, 1);
+      const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.id, fixture.assetId));
+      assert.equal(asset?.status, "failed");
+      assert.equal(asset?.failureCode, "upload_expired");
     });
 
     void it("records warning evidence and execution_failed after release verification recovery is exhausted", async () => {
@@ -447,8 +490,67 @@ async function createSectionCopyRecoveryFixture(
   return { projectId, pageVersionId: version.id, suggestionId, runId: run.id };
 }
 
+async function createMediaRecoveryFixture(
+  db: DatabaseClient,
+  input: { recoveryCount?: number } = {}
+): Promise<{ projectId: string; assetId: string }> {
+  const projectId = await createProject(db);
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${randomUUID()}@example.com`, name: "Recovery Media Operator" })
+    .returning();
+  assert.ok(user);
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId,
+      status: "pending_upload",
+      displayName: "recovery.png",
+      claimedContentType: "image/png",
+      expectedBytes: 4,
+      expectedSha256: "a".repeat(64),
+      sourceStorageKey: `media/quarantine/${projectId}/${randomUUID()}/source`,
+      createdByUserId: user.id,
+      recoveryCount: input.recoveryCount ?? 0
+    })
+    .returning();
+  assert.ok(asset);
+  await db
+    .update(mediaAssets)
+    .set({ status: "processing", updatedAt: staleUpdatedAt })
+    .where(eq(mediaAssets.id, asset.id));
+  return { projectId, assetId: asset.id };
+}
+
+async function createPendingMediaUploadFixture(db: DatabaseClient): Promise<{ assetId: string }> {
+  const projectId = await createProject(db);
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${randomUUID()}@example.com`, name: "Expired Media Operator" })
+    .returning();
+  assert.ok(user);
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId,
+      status: "pending_upload",
+      displayName: "abandoned.png",
+      claimedContentType: "image/png",
+      expectedBytes: 4,
+      expectedSha256: "b".repeat(64),
+      sourceStorageKey: `media/quarantine/${projectId}/${randomUUID()}/source`,
+      createdByUserId: user.id,
+      createdAt: new Date("2026-07-08T10:00:00.000Z"),
+      updatedAt: new Date("2026-07-08T10:00:00.000Z")
+    })
+    .returning();
+  assert.ok(asset);
+  return { assetId: asset.id };
+}
+
 type FakeWorkRecoveryQueues = WorkRecoveryQueues & {
   "page-generation": FakeQueue;
+  "media-processing": FakeQueue;
   "release-verification": FakeQueue;
 };
 
@@ -457,6 +559,7 @@ function fakeQueues(
 ): FakeWorkRecoveryQueues {
   return {
     "page-generation": input.pageQueue ?? new FakeQueue(),
+    "media-processing": new FakeQueue(),
     "release-verification": input.releaseVerificationQueue ?? new FakeQueue()
   };
 }

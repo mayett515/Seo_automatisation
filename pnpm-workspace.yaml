@@ -4,6 +4,7 @@ packages:
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
+  sharp: true
 minimumReleaseAgeExclude:
   - "@turbo/darwin-64@2.10.0"
   - "@turbo/darwin-arm64@2.10.0"

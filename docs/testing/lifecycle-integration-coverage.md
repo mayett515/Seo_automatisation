@@ -324,6 +324,25 @@ Implemented tests prove:
 
 DB-free contract, AI, registry, domain, adapter, and web-state tests additionally pin the strict output shape, bounded prompt/evidence packet, protected-field merge, AI-copy field metadata, exact-versus-modified provenance, task-aware mock output, and latest-suggestion selection. The 390px Playwright flow proves generate creates no version, ready output is reviewed in the structured form, and one explicit apply sends `suggestionId` through the existing edit command before navigating to N+1.
 
+### Media Asset Backend Foundation
+
+Files:
+
+- [media.integration.ts](/C:/localseoproject/apps/api/src/modules/media.integration.ts)
+- [media-processing.integration.ts](/C:/localseoproject/apps/worker/src/handlers/media-processing.integration.ts)
+- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
+
+Implemented tests prove:
+
+1. Upload intent requires persisted actor, configured queue, project scope, bounded allow-listed metadata, and SHA-256 before a `pending_upload` row is accepted; API responses never expose storage keys.
+2. Local/test binary upload enforces the persisted size/type/checksum, and completion moves the row to `processing` before one deterministic `media-processing` enqueue with `jobId = assetId`.
+3. Provider metadata mismatch leaves the upload pending, and media-library reads remain tenant-scoped.
+4. The worker recomputes the source checksum, decodes static raster content under byte/pixel limits, emits deterministic WebP variants, and promotes only the exact persisted derivative set to `ready`.
+5. Database triggers reject incomplete ready transitions and all variant mutation after ready; deterministic checksum failure writes visible failed product truth without derivative rows.
+6. Bounded recovery re-enqueues stale processing by the same asset id, terminalizes exhausted processing as `work_recovery_exhausted`, and expires 24-hour abandoned pending intents so quota cannot remain occupied forever, without touching deploy/rollback lanes.
+
+DB-free contracts, filesystem-storage, worker, permission, and routing tests additionally pin strict request/response shapes, raw-byte metadata, derivative width behavior, editor authorization, and worker queue ownership. Renderer resolution, binary release artifacts, authenticated preview asset serving, and Page Studio media controls remain intentionally outside this backend slice.
+
 ### Tracking Ingestion
 
 File:

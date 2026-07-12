@@ -11,6 +11,7 @@ import {
   gscOpportunitySignalTypes,
   gscSyncStatuses,
   jobStatuses,
+  mediaAssetStatuses,
   providerOperationStatuses,
   pageVersionStatuses,
   reasoningTasks,
@@ -88,6 +89,7 @@ export const pageSectionNoteInstructionTypeEnum = pgEnum(
   pageSectionNoteInstructionTypes
 );
 export const sectionCopySuggestionStatusEnum = pgEnum("section_copy_suggestion_status", sectionCopySuggestionStatuses);
+export const mediaAssetStatusEnum = pgEnum("media_asset_status", mediaAssetStatuses);
 export const approvalStatusEnum = pgEnum("approval_status", approvalStatuses);
 export const customerMembershipRoleEnum = pgEnum("customer_membership_role", customerMembershipRoles);
 
@@ -491,6 +493,86 @@ export const pageVersions = pgTable(
   (table) => [
     uniqueIndex("page_versions_proposal_version_idx").on(table.pageProposalId, table.versionNumber),
     index("page_versions_based_on_version_idx").on(table.basedOnVersionId)
+  ]
+);
+
+export const mediaAssets = pgTable(
+  "media_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    kind: text("kind").notNull().default("image"),
+    status: mediaAssetStatusEnum("status").notNull().default("pending_upload"),
+    displayName: text("display_name").notNull(),
+    claimedContentType: text("claimed_content_type").notNull(),
+    expectedBytes: integer("expected_bytes").notNull(),
+    expectedSha256: text("expected_sha256").notNull(),
+    detectedContentType: text("detected_content_type"),
+    sourceStorageKey: text("source_storage_key").notNull(),
+    sourceBytes: integer("source_bytes"),
+    width: integer("width"),
+    height: integer("height"),
+    checksumSha256: text("checksum_sha256"),
+    processorVersion: text("processor_version"),
+    requiredVariantKeys: text("required_variant_keys").array(),
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    archivedByUserId: uuid("archived_by_user_id").references(() => users.id),
+    recoveryCount: integer("recovery_count").default(0).notNull(),
+    lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    index("media_assets_project_status_created_idx").on(table.projectId, table.status, table.createdAt),
+    index("media_assets_recovery_scan_idx")
+      .on(table.status, table.updatedAt)
+      .where(sql`${table.status} = 'processing'`)
+  ]
+);
+
+export const mediaAssetVariants = pgTable(
+  "media_asset_variants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: "cascade" }),
+    variantKey: text("variant_key").notNull(),
+    storageKey: text("storage_key").notNull(),
+    contentType: text("content_type").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    bytes: integer("bytes").notNull(),
+    checksumSha256: text("checksum_sha256").notNull(),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("media_asset_variants_asset_key_idx").on(table.mediaAssetId, table.variantKey),
+    uniqueIndex("media_asset_variants_storage_key_idx").on(table.storageKey)
+  ]
+);
+
+export const pageVersionMediaAssets = pgTable(
+  "page_version_media_assets",
+  {
+    pageVersionId: uuid("page_version_id")
+      .notNull()
+      .references(() => pageVersions.id),
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("page_version_media_assets_version_asset_idx").on(table.pageVersionId, table.mediaAssetId),
+    index("page_version_media_assets_asset_idx").on(table.mediaAssetId)
   ]
 );
 
@@ -899,7 +981,8 @@ export const projectRelations = relations(projects, ({ many, one }) => ({
   agentRuns: many(agentRuns),
   rankingProofs: many(rankingProofs),
   trackingKeys: many(projectTrackingKeys),
-  reports: many(reports)
+  reports: many(reports),
+  mediaAssets: many(mediaAssets)
 }));
 
 export const mainWebsiteRelations = relations(mainWebsites, ({ many, one }) => ({
@@ -929,7 +1012,9 @@ export const userRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   sessions: many(sessions),
   ownedCustomers: many(customers),
-  memberships: many(customerMemberships)
+  memberships: many(customerMemberships),
+  createdMediaAssets: many(mediaAssets, { relationName: "mediaAssetCreator" }),
+  archivedMediaAssets: many(mediaAssets, { relationName: "mediaAssetArchiver" })
 }));
 
 export const sessionRelations = relations(sessions, ({ one }) => ({
@@ -967,7 +1052,42 @@ export const pageVersionRelations = relations(pageVersions, ({ many, one }) => (
   createdBy: one(users, { fields: [pageVersions.createdByUserId], references: [users.id] }),
   sectionNotes: many(pageSectionNotes),
   copySuggestions: many(pageSectionCopySuggestions, { relationName: "copySuggestionBaseVersion" }),
-  appliedCopySuggestions: many(pageSectionCopySuggestions, { relationName: "copySuggestionAppliedVersion" })
+  appliedCopySuggestions: many(pageSectionCopySuggestions, { relationName: "copySuggestionAppliedVersion" }),
+  mediaAssets: many(pageVersionMediaAssets)
+}));
+
+export const mediaAssetRelations = relations(mediaAssets, ({ many, one }) => ({
+  project: one(projects, { fields: [mediaAssets.projectId], references: [projects.id] }),
+  createdBy: one(users, {
+    fields: [mediaAssets.createdByUserId],
+    references: [users.id],
+    relationName: "mediaAssetCreator"
+  }),
+  archivedBy: one(users, {
+    fields: [mediaAssets.archivedByUserId],
+    references: [users.id],
+    relationName: "mediaAssetArchiver"
+  }),
+  variants: many(mediaAssetVariants),
+  pageVersions: many(pageVersionMediaAssets)
+}));
+
+export const mediaAssetVariantRelations = relations(mediaAssetVariants, ({ one }) => ({
+  mediaAsset: one(mediaAssets, {
+    fields: [mediaAssetVariants.mediaAssetId],
+    references: [mediaAssets.id]
+  })
+}));
+
+export const pageVersionMediaAssetRelations = relations(pageVersionMediaAssets, ({ one }) => ({
+  pageVersion: one(pageVersions, {
+    fields: [pageVersionMediaAssets.pageVersionId],
+    references: [pageVersions.id]
+  }),
+  mediaAsset: one(mediaAssets, {
+    fields: [pageVersionMediaAssets.mediaAssetId],
+    references: [mediaAssets.id]
+  })
 }));
 
 export const pageSectionCopySuggestionRelations = relations(pageSectionCopySuggestions, ({ one }) => ({

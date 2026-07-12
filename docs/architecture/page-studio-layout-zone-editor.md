@@ -36,7 +36,7 @@ Slice 8: Page Studio, Notes, Approval, And Versioning
   editing, notes, approval, and version freezing.
 ```
 
-Implementation checkpoint (2026-07-12): the controlled backend accepts explicit prop, movement, variant, and section-replacement commands and creates append-only preview versions. The visual workspace exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, controlled replacement targets, the shared rendered preview, and predecessor-blocker context. Replacement selection is staged locally and creates an N+1 preview only after explicit confirmation. Media and AI text-revision actions remain separate slices.
+Implementation checkpoint (2026-07-12): the controlled backend accepts explicit prop, movement, variant, and section-replacement commands and creates append-only preview versions. The visual workspace exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, controlled replacement targets, the shared rendered preview, and predecessor-blocker context. AI text revision is implemented as a separate suggest/review/apply workflow. The media ingestion and deterministic processing backend is implemented, while renderer parity and visual media controls remain separate slices.
 
 ## Page Structure
 

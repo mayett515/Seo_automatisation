@@ -1443,6 +1443,146 @@ requireIncludes(
   "Deployment-agent rules must document re-preflight requiring fresh deploy approval"
 );
 
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "CreateMediaUploadIntentRequestSchema",
+  "media-asset-boundary",
+  "Media upload intent must stay behind the strict shared contract"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "PageMediaReferenceSchema",
+  "media-asset-boundary",
+  "Future PageJson media placement must use the opaque contracts-owned reference shape"
+);
+
+requireIncludes(
+  "packages/adapters/src/index.ts",
+  "export interface MediaAssetStoragePort",
+  "media-asset-boundary",
+  "Untrusted binary media must use a purpose-named storage port instead of widening JSON storage consumers"
+);
+
+requireIncludes(
+  "apps/api/src/modules/media.module.ts",
+  'isQueueConfigured("media-processing")',
+  "media-asset-boundary",
+  "Media upload intent must fail closed before persistence when processing transport is unavailable"
+);
+
+requireIncludes(
+  "apps/api/src/media-storage.module.ts",
+  "Production media storage requires S3_BUCKET",
+  "media-asset-boundary",
+  "Production API composition must not fall back to filesystem media storage"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers.ts",
+  "Production worker storage requires S3_BUCKET",
+  "media-asset-boundary",
+  "Production workers must not fall back to filesystem media storage"
+);
+
+requireIncludes(
+  "packages/adapters/src/s3-object-storage.ts",
+  '"x-amz-checksum-sha256"',
+  "media-asset-boundary",
+  "S3 upload grants must ask S3 to verify the source checksum"
+);
+
+requireIncludes(
+  "packages/adapters/src/s3-object-storage.ts",
+  "ChecksumSHA256: sha256HexToBase64(input.sha256)",
+  "media-asset-boundary",
+  "S3 derivative writes must bind the checksum of the uploaded bytes"
+);
+
+requireIncludes(
+  "apps/api/src/modules/media.module.ts",
+  "jobId: assetId",
+  "media-asset-boundary",
+  "Media upload completion must enqueue deterministic processing by asset id"
+);
+
+requireNotRegex(
+  "apps/api/src/modules/media.module.ts",
+  /pageVersions|pageProposals|releasePlans|deployments/u,
+  "media-asset-boundary",
+  "Media upload/completion must not create page, release, or deploy product truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/media-processing.ts",
+  "sourceSha256 !== asset.expectedSha256",
+  "media-asset-boundary",
+  "Media worker must recompute and verify the persisted source checksum"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/media-processing.ts",
+  ".webp({ quality: 82, effort: 4, smartSubsample: true })",
+  "media-asset-boundary",
+  "Media worker must pin the versioned deterministic WebP recipe"
+);
+
+requireIncludes(
+  "packages/db/migrations/0035_media_assets.sql",
+  "ready media asset requires the exact persisted derivative set",
+  "media-asset-boundary",
+  "Postgres must reject partial media readiness"
+);
+
+requireIncludes(
+  "packages/db/migrations/0035_media_assets.sql",
+  "ready media asset variants are immutable",
+  "media-asset-boundary",
+  "Postgres must freeze derivative rows after readiness"
+);
+
+requireIncludes(
+  "packages/db/migrations/0035_media_assets.sql",
+  "ready or archived media assets cannot be hard-deleted",
+  "media-asset-boundary",
+  "Postgres must prevent deletion of frozen media asset history"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/media-processing.integration.ts",
+  "ready or archived media assets cannot be hard-deleted",
+  "media-asset-boundary",
+  "Media integration must prove frozen asset rows cannot be deleted"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  'kind: "media_processing"',
+  "media-asset-boundary",
+  "Stale processing assets must use the bounded artifact-capture recovery lane"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/media-processing.integration.ts",
+  "promotes verified source bytes to an exact immutable ready derivative set",
+  "media-asset-boundary",
+  "Media worker integration must prove exact immutable ready derivatives"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "marks stale media processing failed after bounded recovery is exhausted",
+  "media-asset-boundary",
+  "Media recovery integration must prove bounded exhaustion becomes visible product truth"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "expires abandoned pending media upload intents after the bounded retention window",
+  "media-asset-boundary",
+  "Media recovery integration must prove abandoned upload intent quota is eventually released"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

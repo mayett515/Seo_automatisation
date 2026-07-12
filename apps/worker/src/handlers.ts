@@ -13,6 +13,7 @@ import {
   PlaywrightBrowserRuntimeVerifier,
   type CrawlerPort,
   type AiReasoningPort,
+  type MediaAssetStoragePort,
   S3ObjectStorageAdapter,
   type ObjectStoragePort,
   type SearchConsolePort,
@@ -23,6 +24,12 @@ import {
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { createDatabaseClient } from "@localseo/db";
 import { UnrecoverableError, type Job } from "bullmq";
+import {
+  handleMediaProcessingJob,
+  MediaProcessingConfigurationError,
+  MediaProcessingEvidenceError,
+  parseMediaProcessingJobData
+} from "./handlers/media-processing.js";
 import {
   DeployConfigurationError,
   DeployEvidenceError,
@@ -208,6 +215,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     });
   }
 
+  if (job.queueName === "media-processing" || job.name === "media_processing") {
+    return handleMediaProcessingJob(job, sharedDbHandle, sharedObjectStorage);
+  }
+
   if (job.queueName === "serp-scout" || job.name === "serp_scout") {
     return handleSerpScoutJob(job, sharedDbHandle, sharedSerpScout);
   }
@@ -235,6 +246,7 @@ export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-
 export { parseOpportunityScoutJobData } from "./handlers/opportunity-scout.js";
 export { parsePageProposalJobData } from "./handlers/page-proposal.js";
 export { parseSectionCopySuggestionJobData } from "./handlers/section-copy-suggestion.js";
+export { parseMediaProcessingJobData };
 export { parseSerpScoutJobData } from "./handlers/serp-scout.js";
 export { parseTechnicalAuditJobData } from "./handlers/technical-audit.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
@@ -260,6 +272,8 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof SectionCopySuggestionConfigurationError ||
     error instanceof SectionCopySuggestionEvidenceError ||
     error instanceof SectionCopySuggestionWorkflowError ||
+    error instanceof MediaProcessingConfigurationError ||
+    error instanceof MediaProcessingEvidenceError ||
     error instanceof SerpScoutConfigurationError ||
     error instanceof SerpScoutEvidenceError ||
     error instanceof SerpScoutTerminalError ||
@@ -295,15 +309,21 @@ function createSiteHostingAdapter(
     : new NotConfiguredSiteHostingAdapter();
 }
 
-function createObjectStorageAdapter(): ObjectStoragePort {
-  if (env.NODE_ENV === "production" && env.S3_BUCKET) {
+export function createObjectStorageAdapter(
+  input: Pick<AppEnv, "NODE_ENV" | "S3_BUCKET" | "AWS_REGION" | "LOCAL_OBJECT_STORAGE_DIR"> = env
+): ObjectStoragePort & MediaAssetStoragePort {
+  if (input.NODE_ENV === "production") {
+    if (!input.S3_BUCKET) {
+      throw new Error("Production worker storage requires S3_BUCKET.");
+    }
+
     return new S3ObjectStorageAdapter({
-      bucket: env.S3_BUCKET,
-      region: env.AWS_REGION
+      bucket: input.S3_BUCKET,
+      region: input.AWS_REGION
     });
   }
 
-  return new FileSystemObjectStorageAdapter(env.LOCAL_OBJECT_STORAGE_DIR);
+  return new FileSystemObjectStorageAdapter(input.LOCAL_OBJECT_STORAGE_DIR);
 }
 
 function createCrawlerAdapter(objectStorage: ObjectStoragePort): CrawlerPort {

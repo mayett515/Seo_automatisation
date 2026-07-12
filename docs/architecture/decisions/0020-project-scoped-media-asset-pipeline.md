@@ -87,7 +87,7 @@ New edits may select only `ready` assets. Existing versions may continue resolvi
 
 ### Upload Transport
 
-Production upload uses a purpose-named `MediaAssetStoragePort` implemented by the S3 adapter. The existing JSON-focused `ObjectStoragePort` remains unchanged so evidence/artifact consumers and their test fakes do not gain unrelated binary methods.
+Production upload uses a purpose-named `MediaAssetStoragePort` implemented by the S3 adapter. Production API and worker composition fail closed when `S3_BUCKET` is missing; filesystem storage remains local/test-only. The existing JSON-focused `ObjectStoragePort` remains unchanged so evidence/artifact consumers and their test fakes do not gain unrelated binary methods.
 
 The API creates a persisted upload intent only for a persisted actor with explicit media-write permission and project membership. Storage and the media-processing queue must both be configured before it accepts an upload; an unavailable dependency returns an explicit unavailable response without a pending asset row. The request includes the selected file's byte count, claimed allow-listed content type, and browser-computed SHA-256. Those values are upload constraints, not trusted media truth. The API generates the asset id and quarantine key. Production returns a short-lived presigned POST bound to:
 
@@ -95,7 +95,7 @@ The API creates a persisted upload intent only for a persisted actor with explic
 - a maximum ten-minute validity,
 - a 1-byte through 10 MiB content-length range,
 - one allow-listed claimed content type,
-- the expected SHA-256 checksum,
+- the expected SHA-256 checksum through both S3-native checksum validation and persisted audit metadata,
 - server-owned project/asset metadata.
 
 The client never chooses the bucket, object key, ACL, or storage path. The bucket is private. A presigned upload is staging transport, not a live page mutation: it cannot make an asset selectable, alter PageJson, approve a version, or publish bytes.
@@ -160,7 +160,7 @@ For MVP:
 - pending uploads may expire and be cleaned after 24 hours;
 - successfully normalized quarantine originals are deleted by an idempotent cleanup step within 24 hours of readiness;
 - failed/unreferenced quarantine objects may be cleaned after a seven-day diagnostic window;
-- ready assets may be archived but not hard-deleted while any page version references them;
+- ready and archived assets are protected from hard deletion at the database boundary; future deletion requires a deliberate migration after reference and rollback retention prove safety;
 - assets referenced by approved, release-candidate, released, superseded, or rollback-relevant versions retain their derivatives;
 - hard deletion and deduplication remain deferred until reference projection and rollback retention are operationally proven.
 
@@ -186,9 +186,11 @@ The first implementation adds image media only. AI image generation, stock-provi
 
 Implementation should proceed in three slices:
 
-1. Backend foundation: contracts, permissions, DB tables/indexes, narrow binary storage port/adapters, upload intent/completion, media-processing worker, bounded recovery, and media library reads.
+1. Backend foundation: contracts, permissions, DB tables/indexes, narrow binary storage port/adapters, upload intent/completion, media-processing worker, bounded recovery, and media library reads. Implemented on 2026-07-12.
 2. Renderer parity: binary-safe static artifacts, decoded-byte digest/upload parity in the hosting adapter, resolved media manifests, sandbox-preserving signed preview capability, authenticated preview document/asset serving, and deploy artifact bytes.
 3. Page Studio media controls: first `ImageText` registry entry, asset editor control, upload/select/alt/focal-point UX, and N+1 application through the existing command endpoint.
+
+The backend foundation uses `media-processing` with `jobId = media_assets.id`, a separate `MediaAssetStoragePort`, S3-native and worker-recomputed checksum binding, local API PUT parity, worker-owned Sharp normalization, DB-checked exact variant readiness, append-only ready manifests, DB-protected ready/archived rows, project-scoped library reads/archive, 24-hour abandoned-intent expiration, and bounded artifact-capture recovery. Production composition fails closed without S3. Quarantine/derivative byte deletion remains the separate idempotent cleanup workflow specified under retention. The slice does not add PageJson media props, preview serving, renderer resolution, binary release artifacts, or Page Studio media controls; those remain slices 2 and 3.
 
 ## Alternatives Considered
 

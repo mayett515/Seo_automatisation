@@ -16,6 +16,7 @@ export type ApiQueueName = Extract<
   | "website-import"
   | "opportunity-scout"
   | "page-generation"
+  | "media-processing"
   | "serp-scout"
   | "technical-audit"
   | "deploy"
@@ -56,6 +57,7 @@ export class QueueProducerService implements OnModuleDestroy {
           "website-import": new Queue("website-import", { connection: redisConnection }),
           "opportunity-scout": new Queue("opportunity-scout", { connection: redisConnection }),
           "page-generation": new Queue("page-generation", { connection: redisConnection }),
+          "media-processing": new Queue("media-processing", { connection: redisConnection }),
           "serp-scout": new Queue("serp-scout", { connection: redisConnection }),
           "technical-audit": new Queue("technical-audit", { connection: redisConnection }),
           deploy: new Queue("deploy", { connection: redisConnection }),

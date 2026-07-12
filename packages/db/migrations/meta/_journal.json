@@ -246,6 +246,13 @@
       "when": 1783880238078,
       "tag": "0034_section_copy_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783892227203,
+      "tag": "0035_media_assets",
+      "breakpoints": true
     }
   ]
 }

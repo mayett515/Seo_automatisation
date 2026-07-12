@@ -61,6 +61,12 @@ void describe("PermissionGuard", () => {
     assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
   });
 
+  void it("allows editors to manage project media assets", () => {
+    const guard = new PermissionGuard(new TestReflector(["media:write"]));
+
+    assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
+  });
+
   void it("rejects viewers on privileged project actions", () => {
     const guard = new PermissionGuard(new TestReflector(["release:approve"]));
 
@@ -87,6 +93,12 @@ void describe("PermissionGuard", () => {
 
   void it("rejects viewers from Page Studio edits", () => {
     const guard = new PermissionGuard(new TestReflector(["page:edit"]));
+
+    assert.throws(() => guard.canActivate(contextFor({ role: "viewer" })), ForbiddenException);
+  });
+
+  void it("rejects viewers from project media mutations", () => {
+    const guard = new PermissionGuard(new TestReflector(["media:write"]));
 
     assert.throws(() => guard.canActivate(contextFor({ role: "viewer" })), ForbiddenException);
   });

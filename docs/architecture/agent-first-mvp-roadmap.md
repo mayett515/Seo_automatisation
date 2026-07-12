@@ -651,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, and bounded AI section-copy revision are implemented. The project-scoped media asset architecture is accepted in ADR 0020; media implementation remains staged.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, and the media ingestion/processing backend are implemented. Renderer/deploy media parity and Page Studio media controls remain staged under ADR 0020.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -736,13 +736,14 @@ implemented now
   exact application records durable agent-run provenance; operator-modified application records human provenance
   stale queued/generating section-copy work participates in bounded read/analyze recovery
   media architecture fixes opaque project-scoped references, private quarantine upload, worker normalization, immutable derivatives, and preview/deploy manifest parity
+  media backend accepts checksum-bound private upload intents, processes static raster input through a deterministic worker, exposes project-scoped library state, and recovers stale processing by asset id
 
 still deferred
   agent_run_events streaming timeline
   credentialed Page Proposal smoke execution and model calibration note
-  media backend upload/processing and bounded recovery
   binary-safe static artifacts plus authenticated preview media delivery
   Page Studio media library, ImageText registry entry, and versioned media controls
+  idempotent quarantine/derivative byte-retention cleanup beyond 24-hour pending-intent expiration
 ```
 
 ### 10. Page Studio, Notes, Approval, And Versioning
