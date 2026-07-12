@@ -34,6 +34,7 @@ export type PageRegistryEditorField =
       control: "list";
       itemLabel: string;
       itemTemplate: string | Readonly<Record<string, string>>;
+      minItems?: number;
       multilineItemKeys?: readonly string[];
       optionalItemKeys?: readonly string[];
     };
@@ -249,7 +250,8 @@ export const pageRegistryEntries = [
         label: "Paragraphs",
         control: "list",
         itemLabel: "Paragraph",
-        itemTemplate: ""
+        itemTemplate: "",
+        minItems: 1
       }
     ]
   }),
@@ -275,6 +277,7 @@ export const pageRegistryEntries = [
         control: "list",
         itemLabel: "Benefit",
         itemTemplate: { title: "", body: "" },
+        minItems: 2,
         multilineItemKeys: ["body"]
       }
     ]
@@ -301,6 +304,7 @@ export const pageRegistryEntries = [
         control: "list",
         itemLabel: "Question",
         itemTemplate: { question: "", answer: "" },
+        minItems: 1,
         multilineItemKeys: ["answer"]
       }
     ],
@@ -328,6 +332,7 @@ export const pageRegistryEntries = [
         control: "list",
         itemLabel: "Area",
         itemTemplate: { name: "", route: "/" },
+        minItems: 1,
         optionalItemKeys: ["route"]
       }
     ],
@@ -1052,6 +1057,28 @@ export function createPageRegistry(entries: readonly PageRegistryEntry[]): PageR
       throw new Error(`Page registry key '${entry.registryKey}' editor fields must match its prop schema.`);
     }
 
+    for (const field of entry.editorFields) {
+      const fieldSchema: unknown = entry.propsSchema.shape[field.key];
+      const schemaKind = pageRegistryEditorSchemaKind(fieldSchema);
+      const controlKind = field.control === "list" ? "list" : "text";
+
+      if (schemaKind !== controlKind) {
+        throw new Error(
+          `Page registry key '${entry.registryKey}' editor field '${field.key}' control must match its prop schema.`
+        );
+      }
+
+      if (
+        field.control === "list" &&
+        field.minItems !== undefined &&
+        (!Number.isInteger(field.minItems) || field.minItems < 0)
+      ) {
+        throw new Error(
+          `Page registry key '${entry.registryKey}' editor field '${field.key}' minItems must be non-negative.`
+        );
+      }
+    }
+
     byKey.set(entry.registryKey, entry);
   }
 
@@ -1068,4 +1095,20 @@ function toRegistryIssuePath(path: readonly PropertyKey[]): Array<string | numbe
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pageRegistryEditorSchemaKind(schema: unknown): "text" | "list" | "unsupported" {
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) {
+    return pageRegistryEditorSchemaKind(schema.unwrap());
+  }
+
+  if (schema instanceof z.ZodString) {
+    return "text";
+  }
+
+  if (schema instanceof z.ZodArray) {
+    return "list";
+  }
+
+  return "unsupported";
 }

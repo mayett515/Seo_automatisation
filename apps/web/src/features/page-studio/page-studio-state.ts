@@ -1,5 +1,6 @@
-import type { PageSectionInstance, PageVersionDetail, PageVersionSummary } from "@localseo/contracts";
-import type { PageRegistryEditorField } from "@localseo/page-registry";
+import type { PageJson, PageSectionInstance, PageVersionDetail, PageVersionSummary } from "@localseo/contracts";
+import { decideReplacePageSection } from "@localseo/domain";
+import type { PageRegistryEditorField, PageRegistryEntrySummary } from "@localseo/page-registry";
 
 export function latestVersionForProposal(
   selected: Pick<PageVersionSummary, "pageProposalId">,
@@ -65,6 +66,50 @@ export function normalizeEditorProps(
   }
 
   return normalized;
+}
+
+export function createEmptyEditorProps(fields: readonly PageRegistryEditorField[]): Record<string, unknown> {
+  return Object.fromEntries(
+    fields.map((field) => [
+      field.key,
+      field.control === "list"
+        ? Array.from({ length: field.minItems ?? 0 }, () => cloneEditorValue(field.itemTemplate))
+        : ""
+    ])
+  );
+}
+
+export function legalReplacementEntries(
+  pageJson: PageJson,
+  sectionId: string,
+  registryEntries: readonly PageRegistryEntrySummary[]
+): PageRegistryEntrySummary[] {
+  const current = pageJson.sections.find((section) => section.id === sectionId);
+  if (!current) {
+    return [];
+  }
+
+  return registryEntries.filter((entry) => {
+    if (entry.registryKey === current.registryKey) {
+      return false;
+    }
+
+    return (
+      decideReplacePageSection({
+        pageJson,
+        sectionId,
+        replacement: {
+          type: entry.type,
+          registryKey: entry.registryKey,
+          schemaVersion: entry.schemaVersion,
+          zone: current.zone,
+          variant: entry.defaultVariant,
+          props: {}
+        },
+        registryEntries
+      }).kind === "allow"
+    );
+  });
 }
 
 function normalizeListItem(item: unknown, optionalKeys: readonly string[]): unknown {

@@ -688,6 +688,83 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/contracts/src/index.ts",
+  'type: z.literal("replace_section")',
+  "page-studio-section-replacement",
+  "section replacement must remain a named strict Page Studio command"
+);
+
+requireIncludes(
+  "packages/domain/src/page-studio.ts",
+  'case "replace_section"',
+  "page-studio-section-replacement",
+  "section replacement must derive structure through pure domain command behavior"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  "control must match its prop schema",
+  "page-studio-section-replacement",
+  "registry editor control kinds must fail fast when they drift from prop schemas"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.test.ts",
+  "fails fast when editor control types drift from registry prop schemas",
+  "page-studio-section-replacement",
+  "Page Registry tests must pin editor control-kind alignment"
+);
+
+requireIncludes(
+  "packages/domain/src/page-studio.test.ts",
+  "derives controlled replacement structure from the registry and preserves the section slot",
+  "page-studio-section-replacement",
+  "domain tests must prove replacement structure is server-derived and slot-stable"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "replaces a flexible section through registry-derived structure without mutating its base",
+  "page-studio-section-replacement",
+  "DB integration must prove controlled replacement creates an append-only preview"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "rejects invalid props, illegal movement, and illegal replacement without creating a version",
+  "page-studio-section-replacement",
+  "DB integration must prove illegal replacement leaves product rows unchanged"
+);
+
+requireIncludes(
+  "apps/web/src/features/page-studio/page-studio-state.ts",
+  "legalReplacementEntries",
+  "page-studio-section-replacement",
+  "replacement choices must derive from the pure domain legality decision"
+);
+
+requireIncludes(
+  "apps/web/src/features/page-studio/page-studio-editor.tsx",
+  "Create replacement version",
+  "page-studio-section-replacement",
+  "staged replacement must require one explicit version-creation command"
+);
+
+requireIncludes(
+  "apps/web/src/features/page-studio/page-studio-state.test.ts",
+  "offers only domain-approved replacements for the selected section slot",
+  "page-studio-section-replacement",
+  "web state tests must pin legal replacement filtering"
+);
+
+requireIncludes(
+  "apps/web/e2e/page-studio-replacement.spec.ts",
+  "stages controlled section replacement before creating one next version",
+  "page-studio-section-replacement",
+  "browser coverage must prove replacement staging does not persist before explicit confirmation"
+);
+
+requireIncludes(
   "packages/domain/src/page-studio.ts",
   "applyPageStudioEditCommand",
   "page-studio-versioning",

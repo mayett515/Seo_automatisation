@@ -234,6 +234,18 @@ void describe("EditPageVersionRequestSchema", () => {
       }).success,
       true
     );
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        command: {
+          type: "replace_section",
+          sectionId: "benefits-1",
+          registryKey: "ServiceDescription.default",
+          variant: "detailed",
+          props: { heading: "Mehr Details", paragraphs: ["Lokale Details fuer Dachau."] }
+        }
+      }).success,
+      true
+    );
   });
 
   void it("rejects unrestricted patch commands and extra fields", () => {
@@ -246,6 +258,19 @@ void describe("EditPageVersionRequestSchema", () => {
     assert.equal(
       EditPageVersionRequestSchema.safeParse({
         command: { type: "move_section", sectionId: "benefits-1", direction: "up", html: "<script>" }
+      }).success,
+      false
+    );
+    assert.equal(
+      EditPageVersionRequestSchema.safeParse({
+        command: {
+          type: "replace_section",
+          sectionId: "benefits-1",
+          registryKey: "ServiceDescription.default",
+          variant: "detailed",
+          props: { heading: "Mehr Details", paragraphs: ["Lokale Details fuer Dachau."] },
+          zone: "body_main"
+        }
       }).success,
       false
     );

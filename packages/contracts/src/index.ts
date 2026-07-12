@@ -836,6 +836,15 @@ export const PageStudioEditCommandSchema = z.discriminatedUnion("type", [
       sectionId: PageStudioSectionIdSchema,
       variant: PageSectionInstanceSchema.shape.variant
     })
+    .strict(),
+  z
+    .object({
+      type: z.literal("replace_section"),
+      sectionId: PageStudioSectionIdSchema,
+      registryKey: PageSectionInstanceSchema.shape.registryKey,
+      variant: PageSectionInstanceSchema.shape.variant,
+      props: PageSectionInstanceSchema.shape.props
+    })
     .strict()
 ]);
 

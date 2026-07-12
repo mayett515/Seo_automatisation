@@ -292,6 +292,57 @@ void describe("Page Studio version edit commands", () => {
     }
   });
 
+  void it("derives controlled replacement structure from the registry and preserves the section slot", () => {
+    const original = pageJson();
+    const result = applyPageStudioEditCommand({
+      pageJson: original,
+      command: {
+        type: "replace_section",
+        sectionId: "benefits-1",
+        registryKey: "ServiceDescription.default",
+        variant: "detailed",
+        props: { heading: "Mehr Details", paragraphs: ["Lokale Details fuer Dachau."] }
+      },
+      generation: { source: "human", reason: "page_studio:replace_section" },
+      registryEntries
+    });
+
+    assert.equal(result.success, true);
+    if (result.success) {
+      const replaced = result.pageJson.sections.find((section) => section.id === "benefits-1");
+      assert.deepEqual(replaced, {
+        id: "benefits-1",
+        type: "ServiceDescription",
+        registryKey: "ServiceDescription.default",
+        schemaVersion: 1,
+        zone: "body_main",
+        order: 4,
+        variant: "detailed",
+        props: { heading: "Mehr Details", paragraphs: ["Lokale Details fuer Dachau."] },
+        evidenceRefs: [],
+        generation: { source: "human", reason: "page_studio:replace_section" }
+      });
+    }
+  });
+
+  void it("rejects replacement commands for locked sections", () => {
+    assert.deepEqual(
+      applyPageStudioEditCommand({
+        pageJson: pageJson(),
+        command: {
+          type: "replace_section",
+          sectionId: "hero-1",
+          registryKey: "ServiceDescription.default",
+          variant: "detailed",
+          props: { heading: "Mehr Details", paragraphs: ["Lokale Details fuer Dachau."] }
+        },
+        generation: { source: "human", reason: "page_studio:replace_section" },
+        registryEntries
+      }),
+      { success: false, decision: { kind: "deny", reason: "section_locked" } }
+    );
+  });
+
   void it("rejects structured prop edits for missing sections", () => {
     assert.deepEqual(updatePageSectionProps({ pageJson: pageJson(), sectionId: "missing", props: {} }), {
       success: false,

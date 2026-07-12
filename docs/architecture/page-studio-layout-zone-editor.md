@@ -36,7 +36,7 @@ Slice 8: Page Studio, Notes, Approval, And Versioning
   editing, notes, approval, and version freezing.
 ```
 
-Implementation checkpoint (2026-07-12): the controlled backend accepts explicit prop, movement, and variant commands and creates append-only preview versions. The first visual workspace now exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, the shared rendered preview, and predecessor-blocker context. Media, section replacement, and AI text-revision actions remain separate slices.
+Implementation checkpoint (2026-07-12): the controlled backend accepts explicit prop, movement, variant, and section-replacement commands and creates append-only preview versions. The visual workspace exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, controlled replacement targets, the shared rendered preview, and predecessor-blocker context. Replacement selection is staged locally and creates an N+1 preview only after explicit confirmation. Media and AI text-revision actions remain separate slices.
 
 ## Page Structure
 
@@ -195,6 +195,8 @@ Replace Section
   Swap section type only when the target type is legal for the current zone.
 ```
 
+Controlled replacement preserves the current section id, order, zone, and page slot. The client submits only the target registry key, target variant, and complete props; the domain derives type/schema structure from the registry, clears evidence attached to the replaced content, and runs the same contract, registry, composition, and preview-render gates as every other edit. Choosing a type or variant in the form is staging, not persistence.
+
 ## LLM Boundary
 
 The LLM may suggest a page template or section changes, but it must output structured JSON that validates against the same registry rules as the UI.
@@ -294,6 +296,8 @@ Deploy publishes only approved versions.
 - Do not expose arbitrary PageJson replacement or JSON Patch as an edit command.
 - Do not allow edits or review from a stale, non-latest version.
 - Treat `update_section_props` as complete replacement and preserve all unremoved fields in the form payload.
+- Derive replacement type, schema version, and legal zone from registry/domain truth; do not accept those structural fields from the client.
+- Require explicit confirmation before a staged section replacement creates a new version.
 - Do not copy competitor content.
 - Do not publish preview pages as indexable.
 - Do not claim ranking success from weak opportunity evidence.

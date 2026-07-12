@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.4"
+version: "1.1.5"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -196,6 +196,9 @@ Controlled Page Studio editing
   Editing a frozen artifact branches to a new preview and never mutates the source.
   Existing notes remain attached to their source version; edit persistence must not silently copy blocker truth.
   Visual controls derive movement legality and variants from domain/registry metadata and post only explicit commands.
+  Section replacement accepts only a target registry key, variant, and complete props; domain/registry truth derives type, schema version, and legal zone while preserving the section id, order, and page slot.
+  Selecting a replacement type or variant is local staging; only explicit confirmation may create the next preview version.
+  Registry editor control kinds must fail fast when they drift from the corresponding string or list prop schema.
   Section prop edits are complete object replacements; the form must preserve fields the operator did not remove.
   The UI treats stale-base conflicts as durable server truth and navigates operators to the latest version.
   Unresolved predecessor blockers are bounded display-only context; they are not copied or silently promoted into current-version approval truth.

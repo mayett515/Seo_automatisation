@@ -167,7 +167,7 @@ apps/web/src/features/
 
 ## Customer-Page Registry
 
-The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, editor metadata, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app reads page proposals/page versions, renders API-produced preview HTML, records section notes, reviews concrete versions, and exposes a constrained Page Studio workspace. Movement buttons use pure domain decisions, variant menus and prop fields use registry metadata, complete props are validated through the registry, and successful commands navigate to the new append-only preview. Opportunity Explorer continues to queue Page Proposal runs through durable subject-scoped agent runs. Media, section replacement, AI copy actions, and richer section families remain future slices.
+The customer-page registry exists as a schema-first controlled baseline in `packages/page-registry`. It owns the first deployable Local SEO section set, strict prop schemas, editor metadata, registry validation, registry-derived SEO facts, release-action robots resolution, deterministic static rendering/CSS for approved PageJson, and pure preview rendering over the same renderer core. The operator app reads page proposals/page versions, renders API-produced preview HTML, records section notes, reviews concrete versions, and exposes a constrained Page Studio workspace. Movement buttons and legal replacement targets use pure domain decisions; variant menus and prop fields use registry metadata; complete props are validated through the registry; and successful commands navigate to the new append-only preview. Replacement choices remain local until the operator explicitly confirms creation of the next version. Opportunity Explorer continues to queue Page Proposal runs through durable subject-scoped agent runs. Media, AI copy actions, and richer section families remain future slices.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
@@ -289,6 +289,8 @@ The API serializes edit and review decisions on the page proposal. Only the late
 
 `update_section_props` replaces the complete props object for one section; it is not a partial merge. Registry editor metadata owns field order, labels, list templates, and optional-field handling so the form preserves fields the operator did not remove. Client registry validation gives immediate feedback, but the API and DB remain authoritative.
 
+`replace_section` is also a complete, explicit command rather than a document patch. The client sends the selected section id plus a legal target registry key, variant, and complete props. Domain and registry truth derive type, schema version, and legal zone; replacement preserves the section id and order, clears stale evidence references, and passes the normal composition/render gates before the N+1 preview is inserted. Target and variant selection alone never persist a version.
+
 Version notes are not inherited as new rows. The review panel loads at most the nearest 20 lineage ancestors and displays unresolved predecessor blockers as historical context. Those rows do not disable approval of the child; an authoritative blocker must be attached to the concrete version under review.
 
 Section notes are persisted as PageJson anchors, not component-instance projection anchors:
@@ -364,7 +366,7 @@ Hero stays first after header.
 Final CTA stays late/bottom for MVP.
 FAQ and map sections can move only in legal late-body zones.
 Variant arrows switch variants, not section types.
-Section replacement is separate and must validate against the zone rules.
+Section replacement is a separate, explicitly confirmed command and must validate against the zone rules.
 ```
 
 LLM-generated page proposals must validate against the same section schemas and movement rules before preview.

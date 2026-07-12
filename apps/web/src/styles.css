@@ -612,6 +612,19 @@ a {
   padding-top: 14px;
 }
 
+.page-studio-mode-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid #d9ddd5;
+  padding-top: 14px;
+}
+
+.page-studio-replacement {
+  display: grid;
+  gap: 14px;
+}
+
 .page-studio-props-heading h3 {
   margin: 0;
   font-size: 16px;

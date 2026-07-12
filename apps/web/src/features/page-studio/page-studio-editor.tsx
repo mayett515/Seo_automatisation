@@ -8,15 +8,24 @@ import type {
   PageVersionSummary
 } from "@localseo/contracts";
 import { decideMovePageSection, getPageStudioSectionCapabilities } from "@localseo/domain";
-import { pageRegistrySummary, validatePageSectionProps, type PageRegistryEditorField } from "@localseo/page-registry";
+import {
+  pageRegistrySummary,
+  validatePageSectionProps,
+  type PageRegistryEditorField,
+  type PageRegistryEntrySummary
+} from "@localseo/page-registry";
 import { StatusPill } from "@localseo/ui";
 import {
   cloneEditorValue,
+  createEmptyEditorProps,
   editorListItemValue,
   isRecord,
+  legalReplacementEntries,
   normalizeEditorProps,
   orderedPageSections
 } from "./page-studio-state.js";
+
+type PageStudioPanelMode = "properties" | "replacement";
 
 export function PageStudioEditor(props: {
   error: Error | null;
@@ -30,7 +39,12 @@ export function PageStudioEditor(props: {
 }) {
   const sections = orderedPageSections(props.pageVersion);
   const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.id ?? "");
+  const [panelMode, setPanelMode] = useState<PageStudioPanelMode>("properties");
   const selectedSection = sections.find((section) => section.id === selectedSectionId) ?? sections[0];
+  const replacementEntries = selectedSection
+    ? legalReplacementEntries(props.pageVersion.pageJson, selectedSection.id, pageRegistrySummary)
+    : [];
+  const activePanelMode = panelMode === "replacement" && replacementEntries.length > 0 ? panelMode : "properties";
   const isLatest = props.latestVersion?.id === props.pageVersion.id;
   const canEdit = isLatest && props.pageVersion.status !== "superseded" && !props.isVersionListPending;
   const editorState = props.isVersionListPending
@@ -81,23 +95,80 @@ export function PageStudioEditor(props: {
             pageVersion={props.pageVersion}
             section={section}
             onCommand={props.onCommand}
-            onSelect={() => setSelectedSectionId(section.id)}
+            onSelect={() => {
+              setSelectedSectionId(section.id);
+              setPanelMode("properties");
+            }}
           />
         ))}
       </div>
 
       {selectedSection ? (
-        <SectionPropsForm
-          canEdit={canEdit}
-          isSaving={props.isSaving}
-          key={`${props.pageVersion.id}:${selectedSection.id}`}
-          section={selectedSection}
-          onSubmit={(sectionProps) =>
-            props.onCommand({ type: "update_section_props", sectionId: selectedSection.id, props: sectionProps })
-          }
-        />
+        <>
+          <PageStudioPanelModeControl
+            canReplace={replacementEntries.length > 0}
+            mode={activePanelMode}
+            onChange={setPanelMode}
+          />
+          {activePanelMode === "properties" ? (
+            <SectionPropsForm
+              canEdit={canEdit}
+              isSaving={props.isSaving}
+              key={`${props.pageVersion.id}:${selectedSection.id}:properties`}
+              section={selectedSection}
+              onSubmit={(sectionProps) =>
+                props.onCommand({ type: "update_section_props", sectionId: selectedSection.id, props: sectionProps })
+              }
+            />
+          ) : (
+            <SectionReplacementForm
+              canEdit={canEdit}
+              entries={replacementEntries}
+              isSaving={props.isSaving}
+              key={`${props.pageVersion.id}:${selectedSection.id}:replacement`}
+              section={selectedSection}
+              onSubmit={(entry, variant, sectionProps) =>
+                props.onCommand({
+                  type: "replace_section",
+                  sectionId: selectedSection.id,
+                  registryKey: entry.registryKey,
+                  variant,
+                  props: sectionProps
+                })
+              }
+            />
+          )}
+        </>
       ) : null}
     </section>
+  );
+}
+
+function PageStudioPanelModeControl(props: {
+  canReplace: boolean;
+  mode: PageStudioPanelMode;
+  onChange: (mode: PageStudioPanelMode) => void;
+}) {
+  return (
+    <div aria-label="Section editor mode" className="page-studio-mode-control" role="group">
+      <button
+        aria-pressed={props.mode === "properties"}
+        className={props.mode === "properties" ? "button-secondary button-secondary--active" : "button-secondary"}
+        type="button"
+        onClick={() => props.onChange("properties")}
+      >
+        Properties
+      </button>
+      <button
+        aria-pressed={props.mode === "replacement"}
+        className={props.mode === "replacement" ? "button-secondary button-secondary--active" : "button-secondary"}
+        disabled={!props.canReplace}
+        type="button"
+        onClick={() => props.onChange("replacement")}
+      >
+        Replace section
+      </button>
+    </div>
   );
 }
 
@@ -188,19 +259,130 @@ function SectionPropsForm(props: {
   section: PageSectionInstance;
   onSubmit: (props: Record<string, unknown>) => void;
 }) {
-  const [validationMessage, setValidationMessage] = useState<string>();
   const entry = pageRegistrySummary.find((candidate) => candidate.registryKey === props.section.registryKey);
-  const initialProps = cloneEditorValue(props.section.props);
+
+  if (!entry) {
+    return <div className="notice notice--danger">Section controls are unavailable for this registry entry.</div>;
+  }
+
+  return (
+    <RegistryPropsForm
+      canSubmit={props.canEdit}
+      description="Complete section properties"
+      entry={entry}
+      initialProps={props.section.props}
+      isSaving={props.isSaving}
+      savingLabel="Saving"
+      submitLabel="Create next version"
+      title={sectionLabel(props.section.type)}
+      variant={props.section.variant}
+      onSubmit={props.onSubmit}
+    />
+  );
+}
+
+function SectionReplacementForm(props: {
+  canEdit: boolean;
+  entries: readonly PageRegistryEntrySummary[];
+  isSaving: boolean;
+  section: PageSectionInstance;
+  onSubmit: (entry: PageRegistryEntrySummary, variant: string, props: Record<string, unknown>) => void;
+}) {
+  const [registryKey, setRegistryKey] = useState(props.entries[0]?.registryKey ?? "");
+  const entry = props.entries.find((candidate) => candidate.registryKey === registryKey) ?? props.entries[0];
+
+  if (!entry) {
+    return <div className="notice notice--neutral">No legal replacement is available for this section.</div>;
+  }
+
+  return (
+    <section className="page-studio-replacement">
+      <label className="form-field">
+        <span>Replacement type</span>
+        <select
+          disabled={!props.canEdit || props.isSaving}
+          value={entry.registryKey}
+          onChange={(event) => setRegistryKey(event.currentTarget.value)}
+        >
+          {props.entries.map((candidate) => (
+            <option key={candidate.registryKey} value={candidate.registryKey}>
+              {`${sectionLabel(candidate.type)} / ${candidate.registryKey}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      <ReplacementTargetForm
+        canEdit={props.canEdit}
+        entry={entry}
+        isSaving={props.isSaving}
+        key={entry.registryKey}
+        section={props.section}
+        onSubmit={(variant, sectionProps) => props.onSubmit(entry, variant, sectionProps)}
+      />
+    </section>
+  );
+}
+
+function ReplacementTargetForm(props: {
+  canEdit: boolean;
+  entry: PageRegistryEntrySummary;
+  isSaving: boolean;
+  section: PageSectionInstance;
+  onSubmit: (variant: string, props: Record<string, unknown>) => void;
+}) {
+  const [variant, setVariant] = useState(props.entry.defaultVariant);
+
+  return (
+    <>
+      <label className="form-field">
+        <span>Replacement variant</span>
+        <select
+          disabled={!props.canEdit || props.isSaving}
+          value={variant}
+          onChange={(event) => setVariant(event.currentTarget.value)}
+        >
+          {props.entry.variants.map((candidate) => (
+            <option key={candidate} value={candidate}>
+              {candidate}
+            </option>
+          ))}
+        </select>
+      </label>
+      <RegistryPropsForm
+        canSubmit={props.canEdit}
+        description={`Replaces ${sectionLabel(props.section.type)} in the same page slot`}
+        entry={props.entry}
+        initialProps={createEmptyEditorProps(props.entry.editorFields)}
+        isSaving={props.isSaving}
+        savingLabel="Replacing"
+        submitLabel="Create replacement version"
+        title={sectionLabel(props.entry.type)}
+        variant={variant}
+        onSubmit={(sectionProps) => props.onSubmit(variant, sectionProps)}
+      />
+    </>
+  );
+}
+
+function RegistryPropsForm(props: {
+  canSubmit: boolean;
+  description: string;
+  entry: PageRegistryEntrySummary;
+  initialProps: Record<string, unknown>;
+  isSaving: boolean;
+  savingLabel: string;
+  submitLabel: string;
+  title: string;
+  variant: string;
+  onSubmit: (props: Record<string, unknown>) => void;
+}) {
+  const [validationMessage, setValidationMessage] = useState<string>();
+  const initialProps = cloneEditorValue(props.initialProps);
   const form = useForm({
     defaultValues: { props: isRecord(initialProps) ? initialProps : {} },
     onSubmit: ({ value }) => {
-      if (!entry) {
-        setValidationMessage("This section is not available in the Page Registry.");
-        return;
-      }
-
-      const normalized = normalizeEditorProps(value.props, entry.editorFields);
-      const validation = validatePageSectionProps(entry.registryKey, normalized);
+      const normalized = normalizeEditorProps(value.props, props.entry.editorFields);
+      const validation = validatePageSectionProps(props.entry.registryKey, normalized);
       if (!validation.success) {
         setValidationMessage(validation.message);
         return;
@@ -210,10 +392,6 @@ function SectionPropsForm(props: {
       props.onSubmit(validation.props);
     }
   });
-
-  if (!entry) {
-    return <div className="notice notice--danger">Section controls are unavailable for this registry entry.</div>;
-  }
 
   return (
     <form
@@ -225,17 +403,17 @@ function SectionPropsForm(props: {
     >
       <div className="page-studio-props-heading">
         <div>
-          <h3>{sectionLabel(props.section.type)}</h3>
-          <p>Complete section properties</p>
+          <h3>{props.title}</h3>
+          <p>{props.description}</p>
         </div>
-        <StatusPill tone="neutral">{props.section.variant}</StatusPill>
+        <StatusPill tone="neutral">{props.variant}</StatusPill>
       </div>
 
       <form.Field name="props">
         {(field) => (
           <RegistryPropsFields
-            disabled={!props.canEdit || props.isSaving}
-            fields={entry.editorFields}
+            disabled={!props.canSubmit || props.isSaving}
+            fields={props.entry.editorFields}
             value={field.state.value}
             onChange={field.handleChange}
           />
@@ -248,10 +426,10 @@ function SectionPropsForm(props: {
         {(state) => (
           <button
             className="button-primary"
-            disabled={!props.canEdit || props.isSaving || state.isSubmitting || !state.isDirty}
+            disabled={!props.canSubmit || props.isSaving || state.isSubmitting || !state.isDirty}
             type="submit"
           >
-            {props.isSaving ? "Saving" : "Create next version"}
+            {props.isSaving ? props.savingLabel : props.submitLabel}
           </button>
         )}
       </form.Subscribe>

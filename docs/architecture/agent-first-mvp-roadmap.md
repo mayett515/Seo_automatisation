@@ -651,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, and controlled Page Studio backend/visual editing are implemented.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, and controlled section replacement are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -731,7 +731,7 @@ implemented now
 still deferred
   agent_run_events streaming timeline
   credentialed Page Proposal smoke execution and model calibration note
-  Page Studio media, section replacement, and AI section-copy revision actions
+  Page Studio media and AI section-copy revision actions
 ```
 
 ### 10. Page Studio, Notes, Approval, And Versioning
@@ -778,7 +778,7 @@ Controlled editing backend implemented 2026-07-12:
 ```text
 POST /projects/:projectId/pages/:basePageVersionId/edits
   page:edit permission and persisted actor required
-  explicit update_section_props | move_section | switch_section_variant command only
+  explicit update_section_props | move_section | switch_section_variant | replace_section command only
   pure domain command application
   PageJson contract/projection + registry + composition + preview-render gates
   page-proposal FOR UPDATE lock serializes edit and review
@@ -788,7 +788,7 @@ POST /projects/:projectId/pages/:basePageVersionId/edits
   DB trigger enforces immediate same-proposal lineage and freezes lineage evidence
 ```
 
-Visual outline, legal movement, registry variant, structured complete-props, stale-version, and rendered-preview controls are implemented. Media controls, section replacement, and AI text actions remain follow-up work. They must call this command boundary or a future equally explicit command contract; they must not write PageJson directly.
+Visual outline, legal movement, registry variant, structured complete-props, controlled section replacement, stale-version, and rendered-preview controls are implemented. Replacement targets are filtered through the pure domain decision; target/variant/props are staged locally and only an explicit confirmation posts the command. The server derives type, schema version, and legal zone while preserving the section id, order, and page slot. Media controls and AI text actions remain follow-up work. They must call this command boundary or a future equally explicit command contract; they must not write PageJson directly.
 
 Unresolved predecessor approval blockers remain attached to their source versions. The review UI reads a bounded lineage chain and shows those blockers as historical context without copying rows or turning old concerns into a chain-wide durable gate. Only blockers on the concrete version being approved are authoritative.
 

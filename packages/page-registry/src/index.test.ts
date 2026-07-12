@@ -190,6 +190,32 @@ void describe("page registry", () => {
     assert.equal(rejected.success, false);
   });
 
+  void it("fails fast when editor control types drift from registry prop schemas", () => {
+    const hero = pageRegistryEntries.find((entry) => entry.registryKey === "Hero.default");
+    assert.ok(hero);
+
+    assert.throws(
+      () =>
+        createPageRegistry([
+          {
+            ...hero,
+            editorFields: hero.editorFields.map((field) =>
+              field.key === "h1"
+                ? {
+                    key: "h1",
+                    label: "Headline",
+                    control: "list" as const,
+                    itemLabel: "Headline",
+                    itemTemplate: ""
+                  }
+                : field
+            )
+          }
+        ]),
+      /control must match its prop schema/u
+    );
+  });
+
   void it("keeps registry keys unique and internally consistent", () => {
     assert.doesNotThrow(() => createPageRegistry(pageRegistryEntries));
 

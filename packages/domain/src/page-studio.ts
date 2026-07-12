@@ -450,7 +450,53 @@ function applyPageStudioMutation(input: {
         variant: input.command.variant,
         registryEntries: input.registryEntries
       });
+    case "replace_section":
+      return replacePageSectionFromCommand({
+        pageJson: input.pageJson,
+        sectionId: input.command.sectionId,
+        registryKey: input.command.registryKey,
+        variant: input.command.variant,
+        props: input.command.props,
+        registryEntries: input.registryEntries
+      });
   }
+}
+
+function replacePageSectionFromCommand(input: {
+  pageJson: PageJson;
+  sectionId: string;
+  registryKey: string;
+  variant: string;
+  props: Record<string, unknown>;
+  registryEntries: readonly PageStudioRegistryEntry[];
+}): PageStudioMutationResult {
+  const current = findSection(input.pageJson, input.sectionId)?.section;
+  if (!current) {
+    return { success: false, decision: { kind: "deny", reason: "section_not_found" } };
+  }
+
+  const entry = findRegistryEntry(input.registryEntries, input.registryKey);
+  if (!entry) {
+    return { success: false, decision: { kind: "deny", reason: "unknown_registry_key" } };
+  }
+
+  if (entry.registryKey === current.registryKey) {
+    return { success: false, decision: { kind: "noop", reason: "already_selected" } };
+  }
+
+  return replacePageSection({
+    pageJson: input.pageJson,
+    sectionId: input.sectionId,
+    replacement: {
+      type: entry.type,
+      registryKey: entry.registryKey,
+      schemaVersion: entry.schemaVersion,
+      zone: current.zone,
+      variant: input.variant,
+      props: input.props
+    },
+    registryEntries: input.registryEntries
+  });
 }
 
 function addOrderNumberIssues(ordered: readonly IndexedSection[], issues: PageStudioCompositionIssue[]): void {

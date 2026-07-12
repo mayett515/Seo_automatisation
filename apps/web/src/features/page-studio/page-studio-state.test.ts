@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { PageVersionSummary } from "@localseo/contracts";
+import type { PageJson, PageSectionInstance, PageVersionSummary } from "@localseo/contracts";
+import { pageRegistrySummary } from "@localseo/page-registry";
 import {
+  createEmptyEditorProps,
   editorListItemValue,
+  legalReplacementEntries,
   latestVersionForProposal,
   normalizeEditorProps,
   pageVersionAncestors
@@ -55,6 +58,29 @@ void describe("Page Studio client state", () => {
       route: "/"
     });
   });
+
+  void it("creates required replacement rows from registry editor metadata", () => {
+    const benefits = pageRegistrySummary.find((entry) => entry.registryKey === "BenefitsGrid.default");
+    assert.ok(benefits);
+
+    assert.deepEqual(createEmptyEditorProps(benefits.editorFields), {
+      heading: "",
+      benefits: [
+        { title: "", body: "" },
+        { title: "", body: "" }
+      ]
+    });
+  });
+
+  void it("offers only domain-approved replacements for the selected section slot", () => {
+    const page = replacementPageJson();
+
+    assert.deepEqual(
+      legalReplacementEntries(page, "benefits-1", pageRegistrySummary).map((entry) => entry.registryKey),
+      ["ServiceIntro.default", "ServiceDescription.default"]
+    );
+    assert.deepEqual(legalReplacementEntries(page, "hero-1", pageRegistrySummary), []);
+  });
 });
 
 function version(
@@ -77,5 +103,55 @@ function version(
     basedOnVersionId,
     createdAt: "2026-07-12T00:00:00.000Z",
     updatedAt: "2026-07-12T00:00:00.000Z"
+  };
+}
+
+function replacementPageJson(): PageJson {
+  return {
+    schemaVersion: 1,
+    route: "/dachreinigung/",
+    pageType: "service_area_page",
+    target: {
+      service: "Dachreinigung",
+      primaryKeyword: "Dachreinigung Muenchen",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Dachreinigung Muenchen",
+      metaDescription: "Lokale Dachreinigung in Muenchen.",
+      canonicalPath: "/dachreinigung/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: false
+    },
+    sections: [
+      replacementSection("header-1", "Header", "Header.default", "frame_top", 0),
+      replacementSection("hero-1", "Hero", "Hero.default", "hero", 1),
+      replacementSection("benefits-1", "BenefitsGrid", "BenefitsGrid.default", "body_main", 2),
+      replacementSection("cta-1", "FinalCTA", "FinalCTA.default", "cta_late", 3),
+      replacementSection("footer-1", "Footer", "Footer.default", "frame_bottom", 4)
+    ],
+    internalLinks: [],
+    evidenceRefs: []
+  };
+}
+
+function replacementSection(
+  id: string,
+  type: PageSectionInstance["type"],
+  registryKey: string,
+  zone: PageSectionInstance["zone"],
+  order: number
+): PageSectionInstance {
+  return {
+    id,
+    type,
+    registryKey,
+    schemaVersion: 1,
+    zone,
+    order,
+    variant: "default",
+    props: {},
+    evidenceRefs: []
   };
 }

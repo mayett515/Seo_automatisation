@@ -288,7 +288,7 @@ Implemented tests:
 
 1. Structured prop edits create an N+1 preview with persisted actor and base-version lineage while leaving the base PageJson unchanged.
 2. Legal movement and variant commands chain only from the latest version.
-3. Registry-invalid props and illegal movement fail without creating product rows.
+3. Registry-invalid props, illegal movement, and illegal replacement fail without creating product rows.
 4. Editing an approved version creates a new preview while preserving the frozen approved artifact.
 5. Editing is project-scoped and requires persisted actor evidence.
 6. Two concurrent edits from one base serialize so exactly one N+1 version is created.
@@ -296,10 +296,13 @@ Implemented tests:
 8. Once a newer version exists, review of the stale base is rejected.
 9. Edit-first lock ordering makes a concurrently waiting review stale after the N+1 version commits.
 10. Review-first lock ordering approves the base before the waiting edit branches to a new preview.
+11. Controlled replacement derives target structure from the registry, preserves the existing section slot, clears stale evidence, records human provenance, and leaves the base version unchanged.
 
 These tests run the real migrations and transactions. They prove that Page Studio commands are append-only product decisions rather than in-place JSON mutation.
 
-DB-free Page Registry and web tests additionally prove that registry editor metadata stays aligned with prop-schema keys, latest-version selection does not depend on API arrival order, lineage traversal is bounded/cycle-safe, complete props normalization removes only explicitly optional blank fields, and registry templates restore absent optional list controls without changing the durable schema.
+DB-free Page Registry and web tests additionally prove that registry editor metadata stays aligned with prop-schema keys and control kinds, latest-version selection does not depend on API arrival order, lineage traversal is bounded/cycle-safe, complete props normalization removes only explicitly optional blank fields, registry templates restore absent optional list controls without changing the durable schema, and replacement controls expose only domain-approved targets with schema-valid minimum form rows.
+
+The Playwright replacement test runs the visual workspace at 390px and proves target/variant/prop staging makes no request, one explicit confirmation sends exactly one narrow `replace_section` command, the UI navigates to the N+1 preview, the shared preview reflects the replacement, and the page has no horizontal overflow.
 
 ### Tracking Ingestion
 

@@ -354,7 +354,53 @@ void describe(
       );
     });
 
-    void it("rejects invalid props and illegal movement without creating a version", async () => {
+    void it("replaces a flexible section through registry-derived structure without mutating its base", async () => {
+      const fixture = await createPageVersionFixture(db, {
+        name: "Section replacement",
+        route: "/section-replacement/"
+      });
+      const edited = await service.editPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          command: {
+            type: "replace_section",
+            sectionId: "benefits-1",
+            registryKey: "ServiceDescription.default",
+            variant: "detailed",
+            props: {
+              heading: "Dachpflege im Detail",
+              paragraphs: ["Wir pruefen das Dach und stimmen die Reinigung auf den Zustand ab."]
+            }
+          }
+        },
+        fixture.userId
+      );
+
+      const replacement = edited.pageVersion.pageJson.sections.find((section) => section.id === "benefits-1");
+      assert.equal(edited.pageVersion.versionNumber, 2);
+      assert.equal(edited.pageVersion.basedOnVersionId, fixture.pageVersionId);
+      assert.deepEqual(replacement, {
+        id: "benefits-1",
+        type: "ServiceDescription",
+        registryKey: "ServiceDescription.default",
+        schemaVersion: 1,
+        zone: "body_main",
+        order: 4,
+        variant: "detailed",
+        props: {
+          heading: "Dachpflege im Detail",
+          paragraphs: ["Wir pruefen das Dach und stimmen die Reinigung auf den Zustand ab."]
+        },
+        evidenceRefs: [],
+        generation: { source: "human", reason: "page_studio:replace_section" }
+      });
+
+      const [base] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(base?.pageJson.sections.find((section) => section.id === "benefits-1")?.type, "BenefitsGrid");
+    });
+
+    void it("rejects invalid props, illegal movement, and illegal replacement without creating a version", async () => {
       const fixture = await createPageVersionFixture(db, { name: "Invalid edits", route: "/invalid-edits/" });
 
       await assert.rejects(
@@ -389,6 +435,44 @@ void describe(
             fixture.userId
           ),
         matchesErrorMessage(/would_break_composition/u)
+      );
+
+      await assert.rejects(
+        () =>
+          service.editPageVersion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            {
+              command: {
+                type: "replace_section",
+                sectionId: "benefits-1",
+                registryKey: "ServiceDescription.default",
+                variant: "detailed",
+                props: { heading: "Missing paragraphs", paragraphs: [] }
+              }
+            },
+            fixture.userId
+          ),
+        matchesErrorMessage(/registry validation/u)
+      );
+
+      await assert.rejects(
+        () =>
+          service.editPageVersion(
+            fixture.projectId,
+            fixture.pageVersionId,
+            {
+              command: {
+                type: "replace_section",
+                sectionId: "hero-1",
+                registryKey: "ServiceDescription.default",
+                variant: "detailed",
+                props: { heading: "Locked", paragraphs: ["Locked section replacement."] }
+              }
+            },
+            fixture.userId
+          ),
+        matchesErrorMessage(/section_locked/u)
       );
 
       const versions = await db
