@@ -75,12 +75,17 @@ a {
 .form-field,
 .shell-user {
   display: grid;
+  min-width: 0;
   gap: 10px;
 }
 
 .form-field input,
 .form-field textarea,
 .form-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 40px;
   border: 1px solid #c7cec4;
   border-radius: 8px;
@@ -654,6 +659,10 @@ a {
 }
 
 .page-studio-list-item > textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 88px;
   border: 1px solid #c7cec4;
   border-radius: 8px;
