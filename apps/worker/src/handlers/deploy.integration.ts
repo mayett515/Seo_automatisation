@@ -622,7 +622,55 @@ async function attachReadyMediaFixture(db: DatabaseClient, fixture: DeployFixtur
       processedAt: new Date()
     })
     .where(eq(mediaAssets.id, asset.id));
-  await db.insert(pageVersionMediaAssets).values({ pageVersionId: fixture.pageVersionId, mediaAssetId: asset.id });
+
+  const [baseVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+  assert.ok(baseVersion);
+  const [mediaVersion] = await db
+    .insert(pageVersions)
+    .values({
+      pageProposalId: baseVersion.pageProposalId,
+      versionNumber: baseVersion.versionNumber + 1,
+      status: "approved",
+      approvedAt: new Date("2026-07-15T11:00:00.000Z"),
+      basedOnVersionId: baseVersion.id,
+      createdByUserId: actor.id,
+      pageJson: pageJson({
+        sections: [
+          ...baseVersion.pageJson.sections,
+          {
+            id: "media-1",
+            type: "ImageText",
+            registryKey: "ImageText.default",
+            schemaVersion: 1,
+            zone: "proof_media",
+            order: 1,
+            variant: "media_left",
+            props: {
+              body: "Immutable project media included in the release artifact.",
+              media: {
+                assetId: asset.id,
+                purpose: "content",
+                alt: "Completed local roof cleaning"
+              }
+            },
+            evidenceRefs: []
+          }
+        ]
+      })
+    })
+    .returning();
+  assert.ok(mediaVersion);
+  await db.insert(pageVersionMediaAssets).values({ pageVersionId: mediaVersion.id, mediaAssetId: asset.id });
+  await db.insert(approvals).values({
+    pageVersionId: mediaVersion.id,
+    releasePlanId: fixture.releasePlanId,
+    status: "approved",
+    decidedAt: new Date("2026-07-15T11:00:00.000Z")
+  });
+  await db
+    .update(releasePlanItems)
+    .set({ pageVersionId: mediaVersion.id })
+    .where(eq(releasePlanItems.releasePlanId, fixture.releasePlanId));
   return {
     storageKey,
     publicPath: `/assets/${asset.id}/${checksumSha256}-640.webp`

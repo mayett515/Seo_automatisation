@@ -19,14 +19,18 @@ import { applyPageStudioEditCommand, decidePageStudioPublishReadiness } from "@l
 import {
   agentRuns,
   isDatabaseUniqueViolation,
+  loadResolvedPageVersionMediaVariants,
   pageProposals,
   pageSectionCopySuggestions,
   pageVersions
 } from "@localseo/db";
 import {
+  buildPageMediaVariantPath,
+  collectPageMediaAssetIds,
   getPageRegistryAiCopyFieldKeys,
   pageRegistrySummary,
   renderPagePreviewFile,
+  type ResolvedPageMediaVariant,
   validatePageJsonAgainstRegistry,
   validatePageSectionProps
 } from "@localseo/page-registry";
@@ -42,6 +46,7 @@ export type SectionCopySuggestionEvidence = {
   pageJson: PageJson;
   currentProps: Record<string, unknown>;
   allowedCopyFields: string[];
+  mediaVariants: ResolvedPageMediaVariant[];
 };
 
 export type SectionCopySuggestionRepository = {
@@ -284,7 +289,8 @@ export async function executeSectionCopySuggestion(input: {
       pageVersionId: input.data.pageVersionId,
       previewId: input.data.suggestionId,
       targetUrl: candidatePage.data.route,
-      mode: "editor"
+      mode: "editor",
+      mediaVariants: evidence.mediaVariants
     });
   } catch (error) {
     const message = normalizeFailureMessage(error, "Section copy preview render failed.");
@@ -580,6 +586,30 @@ async function loadSectionCopySuggestionEvidence(
     throw new SectionCopySuggestionEvidenceError("Stored PageJson failed registry validation for section copy.");
   }
 
+  const mediaRecords = await loadResolvedPageVersionMediaVariants(db, {
+    projectId: data.projectId,
+    pageVersions: [
+      {
+        pageVersionId: data.pageVersionId,
+        assetIds: collectPageMediaAssetIds(registryValidation.pageJson)
+      }
+    ]
+  });
+  const mediaVariants = mediaRecords.map((record) => ({
+    assetId: record.assetId,
+    variantKey: record.variantKey,
+    width: record.width,
+    height: record.height,
+    contentType: record.contentType,
+    byteSize: record.bytes,
+    sha256: record.checksumSha256,
+    path: buildPageMediaVariantPath({
+      assetId: record.assetId,
+      sha256: record.checksumSha256,
+      width: record.width
+    })
+  }));
+
   const currentSection = pageJson.data.sections.find((section) => section.id === data.sectionId);
   if (!currentSection) {
     throw new SectionCopySuggestionEvidenceError(
@@ -645,7 +675,8 @@ async function loadSectionCopySuggestionEvidence(
     packet,
     pageJson: pageJson.data,
     currentProps: currentSection.props,
-    allowedCopyFields
+    allowedCopyFields,
+    mediaVariants
   };
 }
 

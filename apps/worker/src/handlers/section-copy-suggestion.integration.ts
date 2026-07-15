@@ -1,13 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { MockReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
 import { buildCanonicalPageProposalOutputExample } from "@localseo/ai";
+import { PageJsonSchema } from "@localseo/contracts";
 import {
   agentRuns,
   customers,
+  mediaAssets,
+  mediaAssetVariants,
   pageProposals,
   pageSectionCopySuggestions,
+  pageVersionMediaAssets,
   pageVersions,
   projects,
   users,
@@ -163,6 +167,46 @@ void describe(
       assert.equal(versions.length, 1);
     });
 
+    void it("validates copy on a media-backed page without changing media truth", async () => {
+      const fixture = await createSectionCopyFixture(db, { withMedia: true });
+      const reasoning = new MockReasoningAdapter({
+        ok: true,
+        provider: "mock",
+        model: "mock-section-copy",
+        outputJson: {
+          schemaVersion: 1,
+          sectionId: fixture.sectionId,
+          suggestedFields: {
+            h1: "Dachreinigung mit lokaler Medienreferenz",
+            lead: "Der Textvorschlag bleibt von der unveraenderten Bildauswahl getrennt."
+          }
+        },
+        diagnostics: { latencyMs: 4, finishReason: "stop" }
+      });
+
+      const result = await executeSectionCopySuggestion({
+        data: {
+          projectId: fixture.projectId,
+          runId: fixture.runId,
+          suggestionId: fixture.suggestionId,
+          pageVersionId: fixture.pageVersionId,
+          sectionId: fixture.sectionId
+        },
+        repository: createDrizzleSectionCopySuggestionRepository(db),
+        reasoning,
+        objectStorage: new MemoryObjectStorage()
+      });
+
+      assert.equal(result.status, "succeeded");
+      const versions = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(versions.length, 1);
+      const projection = await db
+        .select()
+        .from(pageVersionMediaAssets)
+        .where(eq(pageVersionMediaAssets.pageVersionId, fixture.pageVersionId));
+      assert.equal(projection.length, 1);
+    });
+
     void it("does not resurrect an operator-cancelled suggestion", async () => {
       const fixture = await createSectionCopyFixture(db);
       const now = new Date("2026-07-12T14:00:00.000Z");
@@ -251,7 +295,10 @@ void describe(
   }
 );
 
-async function createSectionCopyFixture(db: DatabaseClient): Promise<SectionCopyFixture> {
+async function createSectionCopyFixture(
+  db: DatabaseClient,
+  input: { withMedia?: boolean } = {}
+): Promise<SectionCopyFixture> {
   const [user] = await db
     .insert(users)
     .values({ email: `${randomUUID()}@example.com`, name: "Copy Operator" })
@@ -262,11 +309,37 @@ async function createSectionCopyFixture(db: DatabaseClient): Promise<SectionCopy
   const [project] = await db.insert(projects).values({ customerId: customer.id, name: "Copy Project" }).returning();
   assert.ok(project);
 
-  const page = buildCanonicalPageProposalOutputExample({
+  let page = buildCanonicalPageProposalOutputExample({
     projectId: project.id,
     opportunityId: randomUUID(),
     agentRunId: randomUUID()
   }).page;
+  let mediaAssetId: string | undefined;
+  if (input.withMedia) {
+    mediaAssetId = await createReadyMediaAsset(db, project.id, user.id);
+    page = PageJsonSchema.parse({
+      ...page,
+      sections: page.sections.map((section) =>
+        section.id === "benefits-1"
+          ? {
+              ...section,
+              type: "ImageText",
+              registryKey: "ImageText.default",
+              variant: "media_left",
+              props: {
+                heading: "Lokales Projekt",
+                body: "Eine unveraenderliche Medienplatzierung bleibt waehrend der Textrevision erhalten.",
+                media: {
+                  assetId: mediaAssetId,
+                  purpose: "content",
+                  alt: "Lokales Referenzprojekt"
+                }
+              }
+            }
+          : section
+      )
+    });
+  }
   const [proposal] = await db
     .insert(pageProposals)
     .values({
@@ -284,6 +357,9 @@ async function createSectionCopyFixture(db: DatabaseClient): Promise<SectionCopy
     .values({ pageProposalId: proposal.id, versionNumber: 1, status: "preview", pageJson: page })
     .returning();
   assert.ok(pageVersion);
+  if (mediaAssetId) {
+    await db.insert(pageVersionMediaAssets).values({ pageVersionId: pageVersion.id, mediaAssetId });
+  }
 
   const suggestionId = randomUUID();
   const [run] = await db
@@ -314,6 +390,51 @@ async function createSectionCopyFixture(db: DatabaseClient): Promise<SectionCopy
     suggestionId,
     runId: run.id
   };
+}
+
+async function createReadyMediaAsset(db: DatabaseClient, projectId: string, userId: string): Promise<string> {
+  const body = new TextEncoder().encode("section copy immutable media variant");
+  const checksumSha256 = createHash("sha256").update(body).digest("hex");
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId,
+      status: "pending_upload",
+      displayName: "Section copy media",
+      claimedContentType: "image/webp",
+      expectedBytes: body.byteLength,
+      expectedSha256: checksumSha256,
+      sourceStorageKey: `media/quarantine/${projectId}/${randomUUID()}`,
+      createdByUserId: userId
+    })
+    .returning();
+  assert.ok(asset);
+  await db.update(mediaAssets).set({ status: "processing" }).where(eq(mediaAssets.id, asset.id));
+  await db.insert(mediaAssetVariants).values({
+    mediaAssetId: asset.id,
+    variantKey: "w640_webp",
+    storageKey: `media/ready/${asset.id}/w640.webp`,
+    contentType: "image/webp",
+    width: 640,
+    height: 480,
+    bytes: body.byteLength,
+    checksumSha256
+  });
+  await db
+    .update(mediaAssets)
+    .set({
+      status: "ready",
+      detectedContentType: "image/webp",
+      sourceBytes: body.byteLength,
+      width: 640,
+      height: 480,
+      checksumSha256,
+      processorVersion: "section-copy-integration-v1",
+      requiredVariantKeys: ["w640_webp"],
+      processedAt: new Date("2026-07-15T12:00:00.000Z")
+    })
+    .where(eq(mediaAssets.id, asset.id));
+  return asset.id;
 }
 
 class MemoryObjectStorage implements ObjectStoragePort {

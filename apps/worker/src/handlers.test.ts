@@ -1165,6 +1165,53 @@ void describe("executePageProposal", () => {
     assert.equal(repository.persistedOutput, undefined);
   });
 
+  void it("rejects model-selected project media before Page Proposal persistence", async () => {
+    const repository = new FakePageProposalRepository();
+    const output = validPageProposalJson();
+    const sections = output.page.sections.map((section) =>
+      section.id === "benefits-1"
+        ? {
+            ...section,
+            type: "ImageText" as const,
+            registryKey: "ImageText.default",
+            variant: "media_left",
+            props: {
+              body: "The model must not choose project-owned media.",
+              media: {
+                assetId: "10000000-0000-4000-8000-000000000001",
+                purpose: "content" as const,
+                alt: "Model-selected project image"
+              }
+            }
+          }
+        : section
+    );
+    const outputWithMedia = PageProposalJsonSchema.parse({
+      ...output,
+      page: { ...output.page, sections }
+    });
+
+    await assert.rejects(
+      executePageProposal({
+        data: { projectId: "project-1", runId: "run-1", opportunityId: "opportunity-1" },
+        repository,
+        reasoning: new MockReasoningAdapter({
+          ok: true,
+          provider: "mock",
+          model: "mock-page-proposal",
+          outputJson: outputWithMedia,
+          diagnostics: { latencyMs: 5 }
+        }),
+        objectStorage: new MemoryObjectStorage()
+      }),
+      /qa_rejected:media_selection/u
+    );
+
+    assert.equal(repository.failed?.failureCode, "qa_rejected");
+    assert.equal(recordFromUnknown(repository.failed?.diagnostics).gateId, "media_selection");
+    assert.equal(repository.persistedOutput, undefined);
+  });
+
   void it("marks preview render failures failed before persistence", async () => {
     const repository = new FakePageProposalRepository();
 

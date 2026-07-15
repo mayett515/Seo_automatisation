@@ -1744,6 +1744,97 @@ requireIncludes(
   "Slice 3 must cross-check PageJson media references against projection and manifest truth"
 );
 
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  'registryKey: "ImageText.default"',
+  "page-studio-media-placement",
+  "The first media placement must remain a registry-owned section rather than a raw PageJson escape hatch"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  'control: "asset"',
+  "page-studio-media-placement",
+  "Media selection must remain an explicit registry editor control"
+);
+
+requireIncludes(
+  "packages/page-registry/src/index.ts",
+  "collectPageMediaAssetIds",
+  "page-studio-media-placement",
+  "PageJson media references must have one registry-owned collector used by persistence and rendering gates"
+);
+
+requireIncludes(
+  "packages/db/src/media-manifest.ts",
+  "persistPageVersionMediaAssetProjection",
+  "page-studio-media-placement",
+  "Page-version creation must maintain the exact relational media projection transactionally"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "await persistPageVersionMediaAssetProjection(tx",
+  "page-studio-media-placement",
+  "Page Studio edits must persist media projection evidence in the N+1 transaction"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "projects selected media exactly and retains archived assets only through version lineage",
+  "page-studio-media-placement",
+  "DB coverage must pin ready-only selection, exact projection, and inherited archived retention"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "rejects release planning when PageJson and the immutable media projection differ",
+  "page-studio-media-placement",
+  "Release planning must fail closed when PageJson and projection evidence drift"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "persists a preflight blocker when media projection evidence drifts after planning",
+  "page-studio-media-placement",
+  "Release preflight must persist blocker evidence for post-plan media drift"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  'gateId: "media_selection"',
+  "page-studio-media-placement",
+  "Page Proposal AI must not select project media without an operator-owned command"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/section-copy-suggestion.integration.ts",
+  "validates copy on a media-backed page without changing media truth",
+  "page-studio-media-placement",
+  "Section-copy validation must preserve existing media truth without gaining a media persistence path"
+);
+
+requireIncludes(
+  "apps/web/src/features/page-studio/media-upload.ts",
+  "CreateMediaUploadIntentRequestSchema.parse",
+  "page-studio-media-placement",
+  "Page Studio media upload requests must cross the shared contract boundary"
+);
+
+requireIncludes(
+  "apps/web/e2e/page-studio-replacement.spec.ts",
+  "uploads and stages project media before one explicit ImageText version command",
+  "page-studio-media-placement",
+  "Browser coverage must prove upload and selection remain staging until explicit version creation"
+);
+
+requireNotIncludes(
+  "docs/architecture/agent-first-mvp-roadmap.md",
+  "Page Studio media controls remain",
+  "page-studio-media-placement",
+  "The roadmap must not describe shipped Page Studio media controls as deferred"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

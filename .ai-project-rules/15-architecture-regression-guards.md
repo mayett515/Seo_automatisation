@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.13"
+version: "1.1.14"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -183,9 +183,14 @@ Project-scoped media asset boundary
   Short-lived upload grants must bind an expected checksum; completion and worker processing must verify the bytes actually uploaded.
   Upload completion must not create a page version, approval, release plan, deploy, or public asset.
   New edits may select only ready assets; archived referenced assets remain resolvable for historical versions.
+  An archived asset may be retained only through the direct base-version lineage; it must not become a new selection on an unrelated edit.
   Ready asset manifests, processor versions, and derivative bytes are immutable; changed processing creates a new asset id.
   Page-version reference projection and rollback retention must block deletion of in-use derivatives.
   PageJson media references are renderer selection truth; the relational projection is retention/FK evidence and must match those references exactly before rendering.
+  Every page-version creation path must persist the exact reference projection in the same transaction as the version row, including the empty set.
+  Edit, approval, release planning, preflight, preview, and deploy must re-resolve exact project-scoped media truth and fail closed on status, projection, manifest, or byte drift.
+  Page Proposal AI must not select project media; media placement enters PageJson only through an explicit operator-owned version command.
+  Upload, selection, alt text, and focal-point changes are local staging until one explicit complete-props command creates N+1; upload completion alone never edits PageJson.
   Preview and deploy must use the same project-scoped media-manifest resolver and emit identical immutable asset paths.
   Static release artifacts use an explicit utf8/base64 file encoding, reject duplicate/unsafe paths, and enforce the decoded artifact budget before persistence or provider handoff.
   Provider file digests and uploads must use the same decoded bytes, never the base64 transport text.

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { MediaAssetStoragePort } from "@localseo/adapters";
 import {
   BadRequestException,
   Body,
@@ -78,14 +79,18 @@ import {
   agentRuns,
   approvals,
   isDatabaseUniqueViolation,
+  loadSelectablePageMediaVariants,
+  MediaAssetSelectionError,
   opportunities,
   pageProposals,
   pageSectionCopySuggestions,
   pageSectionNotes,
   pageVersions,
+  persistPageVersionMediaAssetProjection,
   type DatabaseClient
 } from "@localseo/db";
 import {
+  collectPageMediaAssetIds,
   getPageRegistryAiCopyFieldKeys,
   pageRegistrySummary,
   renderPagePreviewFile,
@@ -101,6 +106,7 @@ import { RequireProjectPermission } from "../auth/permissions/require-permission
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
+import { MEDIA_ASSET_STORAGE } from "../media-storage.module.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 import {
   previewAssetCookieName,
@@ -110,10 +116,18 @@ import {
   signPreviewCapability,
   verifyPreviewCapability
 } from "../preview-capability.js";
-import { loadPreviewMediaManifest } from "../preview-media.js";
+import {
+  loadPreviewMediaManifest,
+  mediaVariantRecordsToRenderVariants,
+  previewMediaManifestToRenderVariants,
+  verifyPreviewMediaManifestBytes
+} from "../preview-media.js";
 
 const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const unavailableMediaReader: Pick<MediaAssetStoragePort, "readPrivateObject"> = {
+  readPrivateObject: () => Promise.reject(new Error("Media storage reader is not configured."))
+};
 
 type Db = DatabaseClient;
 type PageProposalRow = Awaited<ReturnType<typeof selectPageProposalRows>>[number];
@@ -128,7 +142,9 @@ type PageVersionLockClient = Pick<DatabaseClient, "execute">;
 export class PagesService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(QueueProducerService) private readonly queues: QueueProducerService
+    @Inject(QueueProducerService) private readonly queues: QueueProducerService,
+    @Inject(MEDIA_ASSET_STORAGE)
+    private readonly mediaStorage: Pick<MediaAssetStoragePort, "readPrivateObject"> = unavailableMediaReader
   ) {}
 
   async listPageVersions(projectId: string): Promise<PageVersionListResponse> {
@@ -644,32 +660,21 @@ export class PagesService {
   }
 
   async previewPageVersion(projectId: string, pageVersionId: string): Promise<PageVersionPreviewResponse> {
-    const { row, file } = await this.renderPageVersionPreview(projectId, pageVersionId);
-
-    return PageVersionPreviewResponseSchema.parse({
-      projectId,
-      pageVersionId: row.id,
-      route: row.route,
-      mode: "editor",
-      documentPath: previewDocumentPath(projectId, row.id),
-      file: {
-        path: file.path,
-        contentType: file.contentType,
-        encoding: file.encoding,
-        decodedBytes: decodedStaticSiteFileByteLength(file)
-      }
-    });
+    const rendered = await this.renderPageVersionPreview(projectId, pageVersionId);
+    await this.assertPreviewMediaBytes(rendered.manifest);
+    return pageVersionPreviewResponse(projectId, rendered.row, rendered.file);
   }
 
   async preparePageVersionPreview(projectId: string, pageVersionId: string) {
-    const response = await this.previewPageVersion(projectId, pageVersionId);
-    const manifest = await loadPreviewMediaManifest(this.database.requireDb(), projectId, pageVersionId);
+    const rendered = await this.renderPageVersionPreview(projectId, pageVersionId);
+    await this.assertPreviewMediaBytes(rendered.manifest);
+    const response = pageVersionPreviewResponse(projectId, rendered.row, rendered.file);
     const documentToken = signPreviewCapability(
       {
         kind: "document",
         projectId,
         pageVersionId,
-        manifestSha256: manifest.sha256
+        manifestSha256: rendered.manifest.sha256
       },
       env.PREVIEW_CAPABILITY_SECRET
     );
@@ -685,10 +690,7 @@ export class PagesService {
       throw new UnauthorizedException("Preview document capability is invalid or expired.");
     }
 
-    const [{ file }, manifest] = await Promise.all([
-      this.renderPageVersionPreview(projectId, pageVersionId),
-      loadPreviewMediaManifest(this.database.requireDb(), projectId, pageVersionId)
-    ]);
+    const { file, manifest } = await this.renderPageVersionPreview(projectId, pageVersionId);
     if (claims.manifestSha256 !== manifest.sha256) {
       throw new UnauthorizedException("Preview document capability no longer matches the media manifest.");
     }
@@ -834,6 +836,7 @@ export class PagesService {
       }
 
       const basePageJson = parseStoredPageJson(base);
+      const baseMediaAssetIds = collectPageMediaAssetIds(basePageJson);
       let generation: PageGeneration = {
         source: "human",
         reason: `page_studio:${input.command.type}`
@@ -886,6 +889,7 @@ export class PagesService {
       }
 
       const editedPageJson = parseStoredPageJson({ ...base, pageJson: mutation.pageJson });
+      const editedMediaAssetIds = collectPageMediaAssetIds(editedPageJson);
       const readiness = decidePageStudioPublishReadiness(editedPageJson, pageRegistrySummary);
       if (readiness.kind === "blocked") {
         throw new UnprocessableEntityException(
@@ -894,14 +898,23 @@ export class PagesService {
       }
 
       try {
+        const candidateMediaVariants = await loadSelectablePageMediaVariants(tx, {
+          projectId,
+          assetIds: editedMediaAssetIds,
+          inheritedAssetIds: baseMediaAssetIds
+        });
         renderPagePreviewFile({
           pageJson: editedPageJson,
           pageVersionId: base.id,
           previewId: base.id,
           targetUrl: base.route,
-          mode: "editor"
+          mode: "editor",
+          mediaVariants: mediaVariantRecordsToRenderVariants(candidateMediaVariants)
         });
-      } catch {
+      } catch (error) {
+        if (error instanceof MediaAssetSelectionError) {
+          throw new UnprocessableEntityException(error.message);
+        }
         throw new UnprocessableEntityException("Edited PageJson cannot be rendered as a preview.");
       }
 
@@ -922,6 +935,13 @@ export class PagesService {
       if (!created) {
         throw new Error("Failed to create edited page version.");
       }
+
+      await persistPageVersionMediaAssetProjection(tx, {
+        projectId,
+        pageVersionId: created.id,
+        assetIds: editedMediaAssetIds,
+        inheritedAssetIds: baseMediaAssetIds
+      });
 
       if (appliedSuggestion) {
         const [updatedSuggestion] = await tx
@@ -988,7 +1008,18 @@ export class PagesService {
     }
 
     const row = await this.loadPageVersion(projectId, pageVersionId);
-    parseStoredPageJson(row);
+    const pageJson = parseStoredPageJson(row);
+
+    if (input.decision === "approve") {
+      try {
+        const manifest = await loadPreviewMediaManifest(this.database.requireDb(), projectId, row.id, pageJson);
+        await verifyPreviewMediaManifestBytes(this.mediaStorage, manifest);
+      } catch {
+        throw new UnprocessableEntityException(
+          "Page version media references are not fully available from the immutable project manifest."
+        );
+      }
+    }
 
     if (row.status !== "preview" && row.status !== "changes_requested") {
       throw new BadRequestException("Only preview or changes-requested page versions can be reviewed.");
@@ -1090,18 +1121,31 @@ export class PagesService {
     const pageJson = parseStoredPageJson(row);
 
     try {
+      const manifest = await loadPreviewMediaManifest(this.database.requireDb(), projectId, row.id, pageJson);
       return {
         row,
+        manifest,
         file: renderPagePreviewFile({
           pageJson,
           pageVersionId: row.id,
           previewId: row.id,
           targetUrl: row.route,
-          mode: "editor"
+          mode: "editor",
+          mediaVariants: previewMediaManifestToRenderVariants(manifest)
         })
       };
     } catch {
       throw new UnprocessableEntityException("Page version cannot be rendered as a preview.");
+    }
+  }
+
+  private async assertPreviewMediaBytes(manifest: Awaited<ReturnType<typeof loadPreviewMediaManifest>>): Promise<void> {
+    try {
+      await verifyPreviewMediaManifestBytes(this.mediaStorage, manifest);
+    } catch {
+      throw new UnprocessableEntityException(
+        "Page version media bytes are unavailable or do not match the immutable manifest."
+      );
     }
   }
 
@@ -1317,6 +1361,26 @@ class PagePreviewDocumentController {
   providers: [PagesService]
 })
 export class PagesModule {}
+
+function pageVersionPreviewResponse(
+  projectId: string,
+  row: PageVersionRow,
+  file: ReturnType<typeof renderPagePreviewFile>
+): PageVersionPreviewResponse {
+  return PageVersionPreviewResponseSchema.parse({
+    projectId,
+    pageVersionId: row.id,
+    route: row.route,
+    mode: "editor",
+    documentPath: previewDocumentPath(projectId, row.id),
+    file: {
+      path: file.path,
+      contentType: file.contentType,
+      encoding: file.encoding,
+      decodedBytes: decodedStaticSiteFileByteLength(file)
+    }
+  });
+}
 
 function previewDocumentPath(projectId: string, pageVersionId: string): string {
   return `/projects/${encodeURIComponent(projectId)}/pages/${encodeURIComponent(pageVersionId)}/preview/document`;

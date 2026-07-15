@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { MediaAssetStoragePort } from "@localseo/adapters";
 import {
   BadRequestException,
   Body,
@@ -27,6 +28,7 @@ import {
   ReleaseVerificationQueueResponseSchema,
   RollbackJobDataSchema,
   RollbackPointSchema,
+  PageJsonSchema,
   VerifyReleaseRequestSchema,
   type DeploymentStatus,
   type ReleasePlan,
@@ -62,9 +64,14 @@ import { RequireProjectPermission } from "../auth/permissions/require-permission
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
+import { MEDIA_ASSET_STORAGE } from "../media-storage.module.js";
+import { loadPreviewMediaManifest, verifyPreviewMediaManifestBytes } from "../preview-media.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const unavailableMediaReader: Pick<MediaAssetStoragePort, "readPrivateObject"> = {
+  readPrivateObject: () => Promise.reject(new Error("Media storage reader is not configured."))
+};
 
 type Db = DatabaseClient;
 
@@ -115,7 +122,9 @@ export class ReleasesService {
     @Inject(QueueProducerService)
     private readonly queues: QueueProducerService,
     @Inject(DatabaseService)
-    private readonly database: DatabaseService
+    private readonly database: DatabaseService,
+    @Inject(MEDIA_ASSET_STORAGE)
+    private readonly mediaStorage: Pick<MediaAssetStoragePort, "readPrivateObject"> = unavailableMediaReader
   ) {}
 
   async createPlan(projectId: string, body: unknown, createdByUserId?: string): Promise<ReleasePlan> {
@@ -157,6 +166,7 @@ export class ReleasesService {
           pageVersionId: pageVersions.id,
           pageVersionStatus: pageVersions.status,
           pageVersionApprovedAt: pageVersions.approvedAt,
+          pageJson: pageVersions.pageJson,
           targetUrl: pageProposals.route
         })
         .from(pageVersions)
@@ -172,6 +182,15 @@ export class ReleasesService {
       );
       if (unapprovedRow) {
         throw new BadRequestException("Release plans can only include approved page versions with approval evidence.");
+      }
+
+      const validatedPageVersionRows = pageVersionRows.map((row) => ({
+        ...row,
+        targetUrl: normalizeRelativeReleaseTargetRoute(row.targetUrl)
+      }));
+
+      for (const row of validatedPageVersionRows) {
+        await assertReleasePageMediaAvailable(tx, this.mediaStorage, projectId, row.pageVersionId, row.pageJson);
       }
 
       const activePlanRows = await tx
@@ -214,10 +233,10 @@ export class ReleasesService {
       }
 
       await tx.insert(releasePlanItems).values(
-        pageVersionRows.map((row) => ({
+        validatedPageVersionRows.map((row) => ({
           releasePlanId,
           pageVersionId: row.pageVersionId,
-          targetUrl: normalizeRelativeReleaseTargetRoute(row.targetUrl),
+          targetUrl: row.targetUrl,
           action: "create" as const,
           status: "pending"
         }))
@@ -257,7 +276,7 @@ export class ReleasesService {
     const db = this.database.db;
     const evidence =
       db && isPersistedId(releasePlanId)
-        ? await loadPreparedReleasePreflightEvidence(db, projectId, releasePlanId)
+        ? await loadPreparedReleasePreflightEvidence(db, this.mediaStorage, projectId, releasePlanId)
         : {
             pages: [],
             rollbackPointCount: 0,
@@ -900,6 +919,28 @@ class ReleasesController {
 })
 export class ReleasesModule {}
 
+async function assertReleasePageMediaAvailable(
+  db: Pick<DatabaseClient, "select">,
+  storage: Pick<MediaAssetStoragePort, "readPrivateObject">,
+  projectId: string,
+  pageVersionId: string,
+  pageJsonInput: unknown
+): Promise<void> {
+  const pageJson = PageJsonSchema.safeParse(pageJsonInput);
+  if (!pageJson.success) {
+    throw new BadRequestException("Release page version does not contain valid PageJson.");
+  }
+
+  try {
+    const manifest = await loadPreviewMediaManifest(db, projectId, pageVersionId, pageJson.data);
+    await verifyPreviewMediaManifestBytes(storage, manifest);
+  } catch {
+    throw new BadRequestException(
+      "Release page media references are unavailable or do not match the immutable project manifest."
+    );
+  }
+}
+
 async function persistReleaseChecks(db: Db, releasePlanId: string, checks: ReleaseCheck[]): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(releaseChecks).where(eq(releaseChecks.releasePlanId, releasePlanId));
@@ -924,6 +965,7 @@ async function persistReleaseChecks(db: Db, releasePlanId: string, checks: Relea
 
 async function loadReleasePreflightEvidence(
   db: Db,
+  mediaStorage: Pick<MediaAssetStoragePort, "readPrivateObject">,
   projectId: string,
   releasePlanId: string
 ): Promise<ReleasePreflightEvidence> {
@@ -976,15 +1018,32 @@ async function loadReleasePreflightEvidence(
     );
 
   return {
-    pages: pageRows.map((row) => ({
-      pageVersionId: row.pageVersionId,
-      action: ReleaseItemActionSchema.parse(row.action),
-      targetUrl: row.targetUrl,
-      approvedAt: row.approvedAt,
-      pageJson: row.pageJson,
-      sitemapReady: row.sitemapReady ?? false,
-      uniquenessRationale: row.uniquenessRationale ?? null
-    })),
+    pages: await Promise.all(
+      pageRows.map(async (row) => {
+        const action = ReleaseItemActionSchema.parse(row.action);
+        let mediaManifestValid = action !== "create" && action !== "update";
+
+        if (row.pageVersionId && row.pageJson && (action === "create" || action === "update")) {
+          try {
+            await assertReleasePageMediaAvailable(db, mediaStorage, projectId, row.pageVersionId, row.pageJson);
+            mediaManifestValid = true;
+          } catch {
+            mediaManifestValid = false;
+          }
+        }
+
+        return {
+          pageVersionId: row.pageVersionId,
+          action,
+          targetUrl: row.targetUrl,
+          approvedAt: row.approvedAt,
+          pageJson: row.pageJson,
+          mediaManifestValid,
+          sitemapReady: row.sitemapReady ?? false,
+          uniquenessRationale: row.uniquenessRationale ?? null
+        };
+      })
+    ),
     rollbackPointCount: rollbackRows.length,
     priorSuccessfulDeploymentCount: priorDeploymentRows.length,
     usableTrackingKeyCount: activeTrackingKeyRows.filter((row) => hasUsableTrackingOrigins(row.allowedOrigins)).length
@@ -993,11 +1052,12 @@ async function loadReleasePreflightEvidence(
 
 async function loadPreparedReleasePreflightEvidence(
   db: Db,
+  mediaStorage: Pick<MediaAssetStoragePort, "readPrivateObject">,
   projectId: string,
   releasePlanId: string
 ): Promise<ReleasePreflightEvidence> {
   await prepareRollbackPointForReleasePreflight(db, projectId, releasePlanId);
-  return loadReleasePreflightEvidence(db, projectId, releasePlanId);
+  return loadReleasePreflightEvidence(db, mediaStorage, projectId, releasePlanId);
 }
 
 async function prepareRollbackPointForReleasePreflight(

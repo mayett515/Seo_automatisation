@@ -248,6 +248,20 @@ async function createReadyProjectedMediaFixture(
   body: Uint8Array
 ) {
   const sha256 = digest(body);
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId: fixture.projectId,
+      status: "pending_upload",
+      displayName: "preview.webp",
+      claimedContentType: "image/webp",
+      expectedBytes: body.byteLength,
+      expectedSha256: sha256,
+      sourceStorageKey: `media/quarantine/${fixture.projectId}/preview-media`,
+      createdByUserId: fixture.userId
+    })
+    .returning();
+  assert.ok(asset);
   const [proposal] = await db
     .insert(pageProposals)
     .values({
@@ -261,23 +275,14 @@ async function createReadyProjectedMediaFixture(
   assert.ok(proposal);
   const [version] = await db
     .insert(pageVersions)
-    .values({ pageProposalId: proposal.id, versionNumber: 1, status: "preview", pageJson: previewPageJson() })
-    .returning();
-  assert.ok(version);
-  const [asset] = await db
-    .insert(mediaAssets)
     .values({
-      projectId: fixture.projectId,
-      status: "pending_upload",
-      displayName: "preview.webp",
-      claimedContentType: "image/webp",
-      expectedBytes: body.byteLength,
-      expectedSha256: sha256,
-      sourceStorageKey: `media/quarantine/${fixture.projectId}/${version.id}`,
-      createdByUserId: fixture.userId
+      pageProposalId: proposal.id,
+      versionNumber: 1,
+      status: "preview",
+      pageJson: previewPageJson(asset.id)
     })
     .returning();
-  assert.ok(asset);
+  assert.ok(version);
   await db.update(mediaAssets).set({ status: "processing" }).where(eq(mediaAssets.id, asset.id));
   const storageKey = `media/ready/${asset.id}/w640.webp`;
   await db.insert(mediaAssetVariants).values({
@@ -308,7 +313,7 @@ async function createReadyProjectedMediaFixture(
   return { pageVersionId: version.id, assetId: asset.id, storageKey, sha256 };
 }
 
-function previewPageJson() {
+function previewPageJson(assetId: string) {
   return PageJsonSchema.parse({
     schemaVersion: 1,
     route: "/preview-media/",
@@ -338,6 +343,24 @@ function previewPageJson() {
         props: {
           brandName: "Media preview",
           navItems: []
+        },
+        evidenceRefs: []
+      },
+      {
+        id: "media-1",
+        type: "ImageText",
+        registryKey: "ImageText.default",
+        schemaVersion: 1,
+        zone: "proof_media",
+        order: 1,
+        variant: "media_left",
+        props: {
+          body: "Project-scoped immutable media preview.",
+          media: {
+            assetId,
+            purpose: "content",
+            alt: "A project-owned preview image"
+          }
         },
         evidenceRefs: []
       }

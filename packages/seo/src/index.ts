@@ -56,6 +56,7 @@ export type ReleasePreflightPageEvidence = {
   targetUrl: string;
   approvedAt: Date | null;
   pageJson: unknown;
+  mediaManifestValid: boolean;
   sitemapReady: boolean;
   uniquenessRationale: string | null;
 };
@@ -70,6 +71,7 @@ export type ReleasePreflightEvidence = {
 export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence): ReleaseCheck[] {
   const renderablePages = evidence.pages.filter(isRenderableReleasePage);
   const missingApproval = renderablePages.filter((page) => !page.pageVersionId || !page.approvedAt);
+  const invalidMediaManifests = renderablePages.filter((page) => !page.mediaManifestValid);
   const missingNoindex = renderablePages.filter((page) => !hasNoindexEvidence(page.pageJson));
   const unresolvedLiveRobots = evidence.pages.filter((page) => !hasResolvedRobotsForAction(page.action));
   const unmaterializedActions = evidence.pages.filter((page) => !hasMaterializedReleaseAction(page.action));
@@ -110,6 +112,21 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
         releaseItemCount,
         missingApprovalCount: missingApproval.length,
         missingApprovalPageVersionIds: missingApproval.map((page) => page.pageVersionId ?? "missing_page_version")
+      }
+    }),
+    ReleaseCheckSchema.parse({
+      checkKey: "media_manifest_check",
+      scope: "page",
+      severity: "blocker",
+      result: releaseItemCount > 0 && invalidMediaManifests.length === 0 ? "passed" : "failed",
+      message:
+        releaseItemCount > 0 && invalidMediaManifests.length === 0
+          ? "Every renderable release item has an exact, available immutable media manifest."
+          : "Every create/update page must resolve its exact PageJson media references before deploy approval.",
+      evidence: {
+        pageCount,
+        invalidMediaManifestCount: invalidMediaManifests.length,
+        invalidMediaPageVersionIds: invalidMediaManifests.map((page) => page.pageVersionId ?? "missing_page_version")
       }
     }),
     ReleaseCheckSchema.parse({

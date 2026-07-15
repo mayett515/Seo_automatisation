@@ -366,7 +366,26 @@ Implemented tests prove:
 7. Chromium keeps the preview iframe at `sandbox=""`, loads the document URL instead of `srcDoc`, and preserves the existing Page Studio flow at desktop and mobile widths.
 8. A real-network Chromium test proves the cross-site document capability is sent on sandboxed navigation and the document-issued `Secure; SameSite=None; Partitioned` `/assets` capability is sent by an image request from the opaque-origin iframe.
 
-The first PageJson media reference, `ImageText` registry entry, exact PageJson-reference/projection/manifest cross-check, upload/select/alt/focal-point UI, and physical byte-retention cleanup remain deferred.
+### Page Studio Media Placement
+
+Primary executable evidence:
+
+- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
+- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+- [deploy.integration.ts](/C:/localseoproject/apps/worker/src/handlers/deploy.integration.ts)
+- [index.test.ts](/C:/localseoproject/packages/page-registry/src/index.test.ts)
+- [page-studio-replacement.spec.ts](/C:/localseoproject/apps/web/e2e/page-studio-replacement.spec.ts)
+
+Covered behavior:
+
+1. `ImageText` accepts only the strict opaque `PageMediaReference` shape; raw URLs/object keys and registry/editor metadata drift are rejected.
+2. A version edit may newly select only ready project assets, retains an inherited archived reference through direct lineage, and persists the exact `page_version_media_assets` projection in the same N+1 transaction.
+3. Approval verifies the referenced immutable bytes; release-plan creation rejects PageJson/projection mismatch; preflight persists a blocker when media evidence drifts; deploy rechecks and embeds the exact referenced bytes.
+4. Rendering fails closed when PageJson references and the resolved manifest differ in either direction, while preview and deploy emit the same deterministic asset paths, responsive variants, alt semantics, and focal placement.
+5. Page Proposal output cannot select project media, and section-copy validation resolves existing media without gaining a media-write path.
+6. Chromium proves upload and durable library staging do not edit PageJson; one explicit `ImageText` confirmation submits one complete version command with content/decorative alt and focal-point data.
+
+Physical quarantine/derivative byte-retention cleanup, richer media section families, remote import, stock search, and AI image generation remain deferred.
 
 ### Tracking Ingestion
 

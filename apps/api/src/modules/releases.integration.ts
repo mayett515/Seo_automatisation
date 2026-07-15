@@ -1,5 +1,6 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createHash, randomUUID } from "node:crypto";
 import {
   type DeploymentStatus,
   type PageJson,
@@ -12,7 +13,10 @@ import {
   customers,
   deployments,
   jobRuns,
+  mediaAssets,
+  mediaAssetVariants,
   pageProposals,
+  pageVersionMediaAssets,
   pageVersions,
   projects,
   projectTrackingKeys,
@@ -265,6 +269,38 @@ void describe(
         .from(deployments)
         .where(eq(deployments.releasePlanId, result.releasePlanId));
       assert.equal(deploymentRows.length, 0);
+    });
+
+    void it("rejects release planning when PageJson and the immutable media projection differ", async () => {
+      const fixture = await createPageVersionFixture(db, { projectName: "Plan media mismatch" });
+      const assetId = await createReadyMediaAsset(db, fixture);
+      await db.insert(pageVersionMediaAssets).values({ pageVersionId: fixture.pageVersionId, mediaAssetId: assetId });
+
+      await assert.rejects(
+        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
+        /media references are unavailable or do not match/u
+      );
+
+      assert.equal((await db.select().from(releasePlans)).length, 0);
+      assert.equal((await db.select().from(releasePlanItems)).length, 0);
+    });
+
+    void it("persists a preflight blocker when media projection evidence drifts after planning", async () => {
+      const fixture = await createPageVersionFixture(db, { projectName: "Preflight media mismatch" });
+      const plan = await service.createPlan(
+        fixture.projectId,
+        { pageVersionIds: [fixture.pageVersionId] },
+        fixture.userId
+      );
+      const assetId = await createReadyMediaAsset(db, fixture);
+      await db.insert(pageVersionMediaAssets).values({ pageVersionId: fixture.pageVersionId, mediaAssetId: assetId });
+
+      const result = await service.preflight(fixture.projectId, plan.releasePlanId);
+      const mediaCheck = result.checks.find((check) => check.checkKey === "media_manifest_check");
+
+      assert.equal(result.readiness, "blocked");
+      assert.equal(mediaCheck?.severity, "blocker");
+      assert.equal(mediaCheck?.result, "failed");
     });
 
     void it("rejects release plan creation for page versions already in an active release plan", async () => {
@@ -906,6 +942,51 @@ async function createTestUser(db: DatabaseClient, email: string): Promise<typeof
   const [user] = await db.insert(users).values({ email }).returning();
   assert.ok(user);
   return user;
+}
+
+async function createReadyMediaAsset(db: DatabaseClient, fixture: PageVersionFixture): Promise<string> {
+  const body = new TextEncoder().encode(`release-media-${randomUUID()}`);
+  const checksumSha256 = createHash("sha256").update(body).digest("hex");
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId: fixture.projectId,
+      status: "pending_upload",
+      displayName: "release-proof.webp",
+      claimedContentType: "image/webp",
+      expectedBytes: body.byteLength,
+      expectedSha256: checksumSha256,
+      sourceStorageKey: `media/quarantine/${fixture.projectId}/${randomUUID()}`,
+      createdByUserId: fixture.userId
+    })
+    .returning();
+  assert.ok(asset);
+  await db.update(mediaAssets).set({ status: "processing" }).where(eq(mediaAssets.id, asset.id));
+  await db.insert(mediaAssetVariants).values({
+    mediaAssetId: asset.id,
+    variantKey: "w640_webp",
+    storageKey: `media/ready/${asset.id}/w640.webp`,
+    contentType: "image/webp",
+    width: 640,
+    height: 480,
+    bytes: body.byteLength,
+    checksumSha256
+  });
+  await db
+    .update(mediaAssets)
+    .set({
+      status: "ready",
+      detectedContentType: "image/webp",
+      sourceBytes: body.byteLength,
+      width: 640,
+      height: 480,
+      checksumSha256,
+      processorVersion: "integration-v1",
+      requiredVariantKeys: ["w640_webp"],
+      processedAt: new Date("2026-07-15T10:00:00.000Z")
+    })
+    .where(eq(mediaAssets.id, asset.id));
+  return asset.id;
 }
 
 async function createPreflightRollbackFixture(

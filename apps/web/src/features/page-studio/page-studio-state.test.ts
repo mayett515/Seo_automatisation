@@ -78,7 +78,7 @@ void describe("Page Studio client state", () => {
 
     assert.deepEqual(
       legalReplacementEntries(page, "benefits-1", pageRegistrySummary).map((entry) => entry.registryKey),
-      ["ServiceIntro.default", "ServiceDescription.default"]
+      ["ServiceIntro.default", "ServiceDescription.default", "ImageText.default"]
     );
     assert.deepEqual(legalReplacementEntries(page, "hero-1", pageRegistrySummary), []);
   });

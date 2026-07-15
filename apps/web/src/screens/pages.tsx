@@ -20,6 +20,7 @@ import {
   CreateSectionCopySuggestionRequestSchema,
   CreateReleasePlanRequestSchema,
   EditPageVersionRequestSchema,
+  MediaAssetListResponseSchema,
   PageVersionEditResponseSchema,
   pageSectionNoteInstructionTypes,
   type PageProposalSummary,
@@ -36,6 +37,7 @@ import {
 } from "@localseo/contracts";
 import { apiResourceUrl, getJson, patchJson, postJson } from "../lib/api";
 import { PageStudioEditor } from "../features/page-studio/page-studio-editor";
+import { uploadProjectMediaAsset } from "../features/page-studio/media-upload";
 import { latestVersionForProposal, pageVersionAncestors } from "../features/page-studio/page-studio-state";
 import { ReleaseLifecyclePanel } from "./release-detail";
 
@@ -143,6 +145,7 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
     retry: false
   });
   const copySuggestionsQueryKey = ["page-section-copy-suggestions", projectId, pageVersionId] as const;
+  const mediaAssetsQueryKey = ["media-assets", projectId] as const;
   const copySuggestions = useQuery({
     queryKey: copySuggestionsQueryKey,
     queryFn: () =>
@@ -156,6 +159,15 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
       query.state.data?.suggestions.some(
         (suggestion) => suggestion.status === "queued" || suggestion.status === "generating"
       )
+        ? 3000
+        : false
+  });
+  const mediaAssets = useQuery({
+    queryKey: mediaAssetsQueryKey,
+    queryFn: () => getJson(projectApiPath(projectId, "/media/assets"), MediaAssetListResponseSchema),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.assets.some((asset) => asset.status === "pending_upload" || asset.status === "processing")
         ? 3000
         : false
   });
@@ -213,6 +225,12 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: copySuggestionsQueryKey });
+    }
+  });
+  const uploadMedia = useMutation({
+    mutationFn: (file: File) => uploadProjectMediaAsset(projectId, file),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: mediaAssetsQueryKey });
     }
   });
 
@@ -326,11 +344,16 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
               isCopyActionPending={requestCopySuggestion.isPending || dismissCopySuggestion.isPending}
               isCopySuggestionsError={copySuggestions.isError}
               isCopySuggestionsPending={copySuggestions.isPending}
+              isMediaLibraryError={mediaAssets.isError}
+              isMediaLibraryPending={mediaAssets.isPending}
+              isMediaUploadPending={uploadMedia.isPending}
               error={editVersion.error}
               isSaving={editVersion.isPending}
               isVersionListError={versions.isError}
               isVersionListPending={versions.isPending}
               latestVersion={latestVersion}
+              mediaAssets={mediaAssets.data?.assets ?? []}
+              mediaUploadError={uploadMedia.error}
               pageVersion={version.data}
               projectId={projectId}
               onApplyCopySuggestion={(suggestion: SectionCopySuggestion, sectionProps: Record<string, unknown>) =>
@@ -348,6 +371,7 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
               onRequestCopySuggestion={(sectionId, instruction) =>
                 requestCopySuggestion.mutate({ sectionId, instruction: normalizedText(instruction) })
               }
+              onUploadMedia={(file) => uploadMedia.mutate(file)}
             />
             <div className="page-studio-preview-pane">
               <div className="page-studio-preview-heading">

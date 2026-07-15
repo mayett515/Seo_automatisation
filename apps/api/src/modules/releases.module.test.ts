@@ -14,6 +14,7 @@ void describe("buildReleasePreflightChecks", () => {
           targetUrl: "/dachreinigung-muenchen/",
           approvedAt: null,
           pageJson: {},
+          mediaManifestValid: false,
           sitemapReady: false,
           uniquenessRationale: null
         }
@@ -99,6 +100,7 @@ function readyEvidence(): ReleasePreflightEvidence {
         targetUrl: "/dachreinigung-muenchen/",
         approvedAt: new Date("2026-01-01T00:00:00.000Z"),
         pageJson: pageJson(),
+        mediaManifestValid: true,
         sitemapReady: true,
         uniquenessRationale: "Dedicated local proof for Muenchen."
       }

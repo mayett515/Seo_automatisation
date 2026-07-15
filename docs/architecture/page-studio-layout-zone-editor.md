@@ -36,7 +36,7 @@ Slice 8: Page Studio, Notes, Approval, And Versioning
   editing, notes, approval, and version freezing.
 ```
 
-Implementation checkpoint (2026-07-13): the controlled backend accepts explicit prop, movement, variant, and section-replacement commands and creates append-only preview versions. The visual workspace exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, controlled replacement targets, the shared rendered preview, and predecessor-blocker context. AI text revision is implemented as a separate suggest/review/apply workflow. Media ingestion/processing and binary renderer/preview/deploy parity are implemented; visual media controls remain the final ADR 0020 slice.
+Implementation checkpoint (2026-07-15): the controlled backend accepts explicit prop, movement, variant, and section-replacement commands and creates append-only preview versions. The visual workspace exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, controlled replacement targets, the shared rendered preview, and predecessor-blocker context. AI text revision is implemented as a separate suggest/review/apply workflow. ADR 0020's media ingestion/processing, binary renderer/preview/deploy parity, and first `ImageText` upload/select/alt/focal-point controls are implemented.
 
 ## Page Structure
 
@@ -199,7 +199,7 @@ Controlled replacement preserves the current section id, order, zone, and page s
 
 `Generate Text` is implemented as a durable suggest-review-apply workflow. The request is pinned to the latest page version and selected section. Registry metadata supplies the only fields the model may revise, and the worker merges those fields into protected stored props before rerunning registry, composition, and preview-render gates. A ready suggestion still does not change PageJson. The operator may cancel queued/generating work, edit and apply a ready structured suggestion through the normal `update_section_props` command, or dismiss it. Cancellation prevents late persistence and frees the section slot but may not abort a provider request already in flight. Exact application carries the durable agent run id; modified application is attributed to the human editor. No AI task may auto-apply, approve, or deploy the result.
 
-`Media` is governed by ADR 0020 and is not a URL editor. The future control lists only project-owned assets that completed deterministic worker normalization. Uploading creates private quarantine/processing state only; it does not edit a page. Selecting an asset, writing placement-specific alt text, and choosing a normalized focal point remain local staging until explicit confirmation creates N+1 through the existing complete-props command. Archived assets remain resolvable for historical versions but disappear from new selection.
+`Media` is governed by ADR 0020 and is not a URL editor. The asset control lists only project-owned durable media state and allows new selection only after deterministic worker normalization reaches `ready`. Uploading creates private quarantine/processing state only; it does not edit a page. Selecting an asset, writing placement-specific alt text, and choosing a normalized focal point remain local staging until explicit confirmation creates N+1 through the existing complete-props command. Archived assets remain resolvable for historical versions and visible when already selected, but cannot be newly selected.
 
 The media implementation is deliberately ordered:
 
@@ -209,7 +209,7 @@ backend asset/upload/processing foundation
 -> ImageText registry entry and Page Studio media controls
 ```
 
-The first two stages are implemented. The remaining control must select only ready project assets and apply a strict placement reference through the existing versioned command boundary.
+All three stages are implemented for the first `ImageText` section. PageJson references are renderer selection truth, every version transaction maintains an exact relational projection, and approval/release/preview/deploy gates re-resolve the exact project-scoped manifest before use.
 
 Raw external URLs, object keys, SVG, animation, video, stock search, and generated images remain outside the MVP media boundary.
 

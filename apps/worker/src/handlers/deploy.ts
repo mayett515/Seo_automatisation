@@ -26,7 +26,13 @@ import {
   type StaticSiteFile
 } from "@localseo/contracts";
 import { buildReleaseDeploymentKey, canDeployRelease } from "@localseo/domain";
-import { buildPageMediaVariantPath, renderApprovedReleaseArtifact } from "@localseo/page-registry";
+import {
+  buildPageMediaVariantPath,
+  collectPageMediaAssetIds,
+  pageRegistry,
+  renderApprovedReleaseArtifact,
+  type PageMediaRenderManifest
+} from "@localseo/page-registry";
 import {
   approvals,
   demoteReleaseCandidatePageVersionsForPlan,
@@ -251,7 +257,11 @@ export async function executeDeploy(input: {
     }
 
     const approvedArtifact = buildApprovedReleaseArtifact(input.data, context);
-    const renderedArtifact = renderApprovedReleaseArtifact(approvedArtifact);
+    const renderedArtifact = renderApprovedReleaseArtifact(
+      approvedArtifact,
+      pageRegistry,
+      buildPageMediaRenderManifests(context.mediaVariants)
+    );
     const mediaFiles = await buildReleaseMediaFiles(context.mediaVariants, input.objectStorage);
     const staticSiteArtifact = StaticSiteArtifactSchema.parse({
       files: [...renderedArtifact.files, ...mediaFiles]
@@ -527,6 +537,34 @@ export async function buildReleaseMediaFiles(
   return [...files.values()].sort((left, right) => left.path.localeCompare(right.path));
 }
 
+export function buildPageMediaRenderManifests(
+  variants: readonly ResolvedPageVersionMediaVariantRecord[]
+): PageMediaRenderManifest[] {
+  const byPageVersion = new Map<string, PageMediaRenderManifest["variants"]>();
+
+  for (const variant of variants) {
+    const renderedVariant = {
+      assetId: variant.assetId,
+      variantKey: variant.variantKey,
+      width: variant.width,
+      height: variant.height,
+      contentType: variant.contentType,
+      byteSize: variant.bytes,
+      sha256: variant.checksumSha256,
+      path: buildPageMediaVariantPath({
+        assetId: variant.assetId,
+        sha256: variant.checksumSha256,
+        width: variant.width
+      })
+    };
+    byPageVersion.set(variant.pageVersionId, [...(byPageVersion.get(variant.pageVersionId) ?? []), renderedVariant]);
+  }
+
+  return [...byPageVersion.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([pageVersionId, pageVariants]) => ({ pageVersionId, variants: pageVariants }));
+}
+
 function sha256Hex(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -567,9 +605,14 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         .from(releasePlanItems)
         .leftJoin(pageVersions, eq(pageVersions.id, releasePlanItems.pageVersionId))
         .where(eq(releasePlanItems.releasePlanId, data.releasePlanId));
+      const releaseItems = itemRows.map(mapReleaseArtifactItem);
       const mediaVariants = await loadResolvedPageVersionMediaVariants(db, {
         projectId: data.projectId,
-        pageVersionIds: itemRows.flatMap((item) => (item.pageVersionId ? [item.pageVersionId] : []))
+        pageVersions: releaseItems.flatMap((item) =>
+          item.pageVersionId && item.pageJson
+            ? [{ pageVersionId: item.pageVersionId, assetIds: collectPageMediaAssetIds(item.pageJson) }]
+            : []
+        )
       });
       const rollbackRows = await db
         .select({ id: rollbackPoints.id })
@@ -607,7 +650,7 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         hasApproval: Boolean(approval),
         checks: checkRows.map(mapReleaseCheck),
         hostingSiteId: website?.hostingSiteId ?? undefined,
-        releaseItems: itemRows.map(mapReleaseArtifactItem),
+        releaseItems,
         mediaVariants,
         rollbackPointCount: rollbackRows.length,
         priorSuccessfulDeploymentCount: priorDeploymentRows.length,

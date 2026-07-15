@@ -1,9 +1,11 @@
 import {
   type ApprovedReleaseArtifact,
   type ApprovedReleaseArtifactPage,
+  PageMediaReferenceSchema,
   PageJsonSchema,
   PagePathSchema,
   StaticSiteArtifactSchema,
+  type PageMediaReference,
   type PageJson,
   type PageSectionType,
   type PageZone,
@@ -39,6 +41,11 @@ export type PageRegistryEditorField =
       multilineItemKeys?: readonly string[];
       optionalItemKeys?: readonly string[];
       aiCopy?: boolean;
+    }
+  | {
+      key: string;
+      label: string;
+      control: "asset";
     };
 
 export type PageRegistryEntry = {
@@ -96,6 +103,7 @@ export type RenderPagePreviewInput = {
   action?: Extract<ReleaseItemAction, "create" | "update">;
   previewId?: string;
   pageVersionId?: string | null;
+  mediaVariants?: readonly ResolvedPageMediaVariant[];
 };
 
 export type ResolvedPageMediaVariant = {
@@ -107,6 +115,11 @@ export type ResolvedPageMediaVariant = {
   byteSize: number;
   sha256: string;
   path: string;
+};
+
+export type PageMediaRenderManifest = {
+  pageVersionId: string;
+  variants: readonly ResolvedPageMediaVariant[];
 };
 
 export function buildPageMediaVariantPath(input: { assetId: string; sha256: string; width: number }): string {
@@ -299,6 +312,27 @@ export const pageRegistryEntries = [
         multilineItemKeys: ["body"],
         aiCopy: true
       }
+    ]
+  }),
+  registryEntry({
+    type: "ImageText",
+    registryKey: "ImageText.default",
+    schemaVersion: 1,
+    defaultZone: "proof_media",
+    allowedZones: ["body_main", "proof_media", "body_late"],
+    variants: ["media_left", "media_right"],
+    defaultVariant: "media_left",
+    propsSchema: z
+      .object({
+        heading: textShort.optional(),
+        body: textLong,
+        media: PageMediaReferenceSchema
+      })
+      .strict(),
+    editorFields: [
+      { key: "heading", label: "Heading", control: "text", optional: true, aiCopy: true },
+      { key: "body", label: "Body", control: "textarea", aiCopy: true },
+      { key: "media", label: "Image", control: "asset" }
     ]
   }),
   registryEntry({
@@ -511,7 +545,38 @@ export function getPageRegistryEntry(
 
 export function getPageRegistryAiCopyFieldKeys(registryKey: string, registry: PageRegistry = pageRegistry): string[] {
   const entry = getPageRegistryEntry(registryKey, registry);
-  return entry ? entry.editorFields.filter((field) => field.aiCopy).map((field) => field.key) : [];
+  return entry ? entry.editorFields.filter((field) => "aiCopy" in field && field.aiCopy).map((field) => field.key) : [];
+}
+
+export function collectPageMediaReferences(
+  pageJson: PageJson,
+  registry: PageRegistry = pageRegistry
+): PageMediaReference[] {
+  const references: PageMediaReference[] = [];
+
+  for (const section of pageJson.sections) {
+    const entry = registry.byKey.get(section.registryKey);
+    if (!entry) {
+      throw new Error(`Cannot collect media references for unknown registry key '${section.registryKey}'.`);
+    }
+
+    const parsedProps = entry.propsSchema.parse(section.props);
+    if (!isRecord(parsedProps)) {
+      throw new Error(`Registry key '${section.registryKey}' did not produce object props.`);
+    }
+
+    for (const field of entry.editorFields) {
+      if (field.control === "asset") {
+        references.push(PageMediaReferenceSchema.parse(parsedProps[field.key]));
+      }
+    }
+  }
+
+  return references;
+}
+
+export function collectPageMediaAssetIds(pageJson: PageJson, registry: PageRegistry = pageRegistry): string[] {
+  return [...new Set(collectPageMediaReferences(pageJson, registry).map((reference) => reference.assetId))].sort();
 }
 
 export function validatePageSectionProps(
@@ -614,10 +679,17 @@ export function resolveRenderedRobots(action: ReleaseItemAction): "index" | "noi
 
 export function renderApprovedReleaseArtifact(
   artifact: ApprovedReleaseArtifact,
-  registry: PageRegistry = pageRegistry
+  registry: PageRegistry = pageRegistry,
+  mediaManifests: readonly PageMediaRenderManifest[] = []
 ): StaticSiteArtifact {
+  const manifestsByVersion = new Map(mediaManifests.map((manifest) => [manifest.pageVersionId, manifest.variants]));
+
   return StaticSiteArtifactSchema.parse({
-    files: artifact.pages.filter(isRenderableArtifactPage).map((page) => renderStaticSiteFile(page, registry))
+    files: artifact.pages.filter(isRenderableArtifactPage).map((page) =>
+      renderStaticSiteFile(page, registry, {
+        mediaVariants: page.pageVersionId ? (manifestsByVersion.get(page.pageVersionId) ?? []) : []
+      })
+    )
   });
 }
 
@@ -648,7 +720,8 @@ export function renderPagePreviewFile(
 
   return renderStaticSiteFile(page, registry, {
     failureContext: `preview '${targetUrl}'`,
-    robots
+    robots,
+    mediaVariants: input.mediaVariants ?? []
   });
 }
 
@@ -669,7 +742,11 @@ export function targetUrlToHtmlPath(targetUrl: string): string {
 function renderStaticSiteFile(
   page: RenderableArtifactPage,
   registry: PageRegistry,
-  options: { failureContext?: string; robots?: "index" | "noindex" } = {}
+  options: {
+    failureContext?: string;
+    robots?: "index" | "noindex";
+    mediaVariants?: readonly ResolvedPageMediaVariant[];
+  } = {}
 ): StaticSiteFile {
   const validation = validatePageJsonAgainstRegistry(page.pageJson, registry);
 
@@ -681,10 +758,13 @@ function renderStaticSiteFile(
     );
   }
 
+  const mediaVariants = options.mediaVariants ?? [];
+  assertPageMediaManifestMatches(validation.pageJson, mediaVariants, registry);
+
   return {
     path: targetUrlToHtmlPath(page.targetUrl),
     encoding: "utf8",
-    body: renderPageHtml(page, validation.pageJson, options.robots),
+    body: renderPageHtml(page, validation.pageJson, mediaVariants, options.robots),
     contentType: "text/html; charset=utf-8"
   };
 }
@@ -696,6 +776,7 @@ function isRenderableArtifactPage(page: ApprovedReleaseArtifactPage): page is Re
 function renderPageHtml(
   page: RenderableArtifactPage,
   pageJson: PageJson,
+  mediaVariants: readonly ResolvedPageMediaVariant[],
   robotsOverride?: "index" | "noindex"
 ): string {
   const facts = derivePageRegistrySeoFacts(pageJson);
@@ -717,13 +798,16 @@ ${jsonLdScript ? `  ${jsonLdScript}\n` : ""}  <style>${customerPageCss}</style>
 </head>
 <body>
   <main class="ls-page" data-page-type="${escapeHtml(pageJson.pageType)}">
-${sections.map(renderSection).join("\n")}
+${sections.map((section) => renderSection(section, mediaVariants)).join("\n")}
   </main>
 </body>
 </html>`;
 }
 
-function renderSection(section: PageJson["sections"][number]): string {
+function renderSection(
+  section: PageJson["sections"][number],
+  mediaVariants: readonly ResolvedPageMediaVariant[]
+): string {
   const attrs = `class="ls-section ${sectionClass(section.type)}" data-section="${escapeHtml(section.registryKey)}" data-section-id="${escapeHtml(section.id)}" data-zone="${escapeHtml(section.zone)}" data-variant="${escapeHtml(section.variant)}"`;
 
   if (section.registryKey === "Header.default") {
@@ -806,6 +890,33 @@ function renderSection(section: PageJson["sections"][number]): string {
     </section>`;
   }
 
+  if (section.registryKey === "ImageText.default") {
+    const props = asRecord(section.props);
+    const media = PageMediaReferenceSchema.parse(props.media);
+    const variants = mediaVariants
+      .filter((variant) => variant.assetId === media.assetId)
+      .sort((left, right) => left.width - right.width || left.path.localeCompare(right.path));
+    const largest = variants.at(-1);
+
+    if (!largest) {
+      throw new Error(`ImageText section '${section.id}' is missing its resolved media variants.`);
+    }
+
+    const srcset = variants.map((variant) => `${escapeHtml(variant.path)} ${variant.width}w`).join(", ");
+    const focalPoint = media.focalPoint ?? { x: 0.5, y: 0.5 };
+    const image = `<img src="${escapeHtml(largest.path)}" srcset="${srcset}" sizes="(max-width: 720px) 100vw, 50vw" width="${largest.width}" height="${largest.height}" alt="${escapeHtml(media.alt)}"${media.purpose === "decorative" ? ' aria-hidden="true"' : ""} loading="lazy" decoding="async" style="object-position: ${formatPercentage(focalPoint.x)} ${formatPercentage(focalPoint.y)};">`;
+
+    return `    <section ${attrs}>
+      <div class="ls-container ls-media-layout">
+        <figure class="ls-media-frame">${image}</figure>
+        <div class="ls-stack ls-media-copy">
+          ${stringProp(props, "heading") ? `<h2>${escapeHtml(stringProp(props, "heading") ?? "")}</h2>` : ""}
+          <p>${escapeHtml(stringProp(props, "body") ?? "")}</p>
+        </div>
+      </div>
+    </section>`;
+  }
+
   if (section.registryKey === "FAQ.default") {
     const props = asRecord(section.props);
     const items = arrayProp(props, "items")
@@ -876,6 +987,38 @@ function renderSection(section: PageJson["sections"][number]): string {
 
 function linkHtml(href: string | undefined, label: string | undefined): string {
   return href && label ? `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>` : "";
+}
+
+function assertPageMediaManifestMatches(
+  pageJson: PageJson,
+  variants: readonly ResolvedPageMediaVariant[],
+  registry: PageRegistry
+): void {
+  const expectedAssetIds = collectPageMediaAssetIds(pageJson, registry);
+  const actualAssetIds = [...new Set(variants.map((variant) => variant.assetId))].sort();
+
+  if (JSON.stringify(expectedAssetIds) !== JSON.stringify(actualAssetIds)) {
+    throw new Error("PageJson media references do not exactly match the resolved media manifest.");
+  }
+
+  const seenPaths = new Set<string>();
+  for (const assetId of expectedAssetIds) {
+    const assetVariants = variants.filter((variant) => variant.assetId === assetId);
+    if (assetVariants.length === 0) {
+      throw new Error(`Resolved media asset '${assetId}' has no variants.`);
+    }
+
+    for (const variant of assetVariants) {
+      if (seenPaths.has(variant.path)) {
+        throw new Error(`Resolved media manifest contains duplicate path '${variant.path}'.`);
+      }
+      seenPaths.add(variant.path);
+    }
+  }
+}
+
+function formatPercentage(value: number): string {
+  return `${Number((value * 100).toFixed(2))}%`;
 }
 
 function sectionClass(type: PageSectionType): string {
@@ -1033,6 +1176,9 @@ const customerPageCss = `@layer reset, tokens, base, primitives, components, sec
   .ls-cluster { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
   .ls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 18px; }
   .ls-card { background: var(--ls-color-surface); border: 1px solid var(--ls-color-border); border-radius: var(--ls-radius); padding: clamp(18px, 2.5vw, 28px); box-shadow: var(--ls-shadow-card); }
+  .ls-media-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); gap: clamp(24px, 5vw, 64px); align-items: center; }
+  .ls-media-frame { margin: 0; overflow: hidden; border-radius: var(--ls-radius); background: var(--ls-color-surface); box-shadow: var(--ls-shadow-card); aspect-ratio: 4 / 3; }
+  .ls-media-frame img { width: 100%; height: 100%; object-fit: cover; }
   .ls-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border-radius: 6px; font-weight: 700; text-decoration: none; }
   .ls-button-primary { background: var(--ls-color-primary); color: #fff; }
 }
@@ -1051,10 +1197,13 @@ const customerPageCss = `@layer reset, tokens, base, primitives, components, sec
   .ls-section-hero { min-height: 68vh; display: grid; align-items: center; background: linear-gradient(135deg, #f7f2e8 0%, #eef6f1 100%); }
   .ls-section-final-c-t-a { background: var(--ls-color-primary-strong); color: #fff; }
   .ls-section-final-c-t-a p { color: rgba(255, 255, 255, 0.82); }
+  .ls-section-image-text[data-variant="media_right"] .ls-media-frame { order: 2; }
 }
 @media (max-width: 720px) {
   .ls-nav { width: 100%; }
   .ls-area-list { columns: 1; }
+  .ls-media-layout { grid-template-columns: 1fr; }
+  .ls-section-image-text[data-variant="media_right"] .ls-media-frame { order: 0; }
 }`;
 
 export function createPageRegistry(entries: readonly PageRegistryEntry[]): PageRegistry {
@@ -1086,7 +1235,7 @@ export function createPageRegistry(entries: readonly PageRegistryEntry[]): PageR
     for (const field of entry.editorFields) {
       const fieldSchema: unknown = entry.propsSchema.shape[field.key];
       const schemaKind = pageRegistryEditorSchemaKind(fieldSchema);
-      const controlKind = field.control === "list" ? "list" : "text";
+      const controlKind = field.control === "list" ? "list" : field.control === "asset" ? "asset" : "text";
 
       if (schemaKind !== controlKind) {
         throw new Error(
@@ -1123,7 +1272,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function pageRegistryEditorSchemaKind(schema: unknown): "text" | "list" | "unsupported" {
+function pageRegistryEditorSchemaKind(schema: unknown): "text" | "list" | "asset" | "unsupported" {
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) {
     return pageRegistryEditorSchemaKind(schema.unwrap());
   }
@@ -1134,6 +1283,10 @@ function pageRegistryEditorSchemaKind(schema: unknown): "text" | "list" | "unsup
 
   if (schema instanceof z.ZodArray) {
     return "list";
+  }
+
+  if (schema === PageMediaReferenceSchema) {
+    return "asset";
   }
 
   return "unsupported";

@@ -1,15 +1,19 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import type { MediaAssetStoragePort } from "@localseo/adapters";
 import { OpportunityBriefSchema, type PageJson, type PageProposalJson } from "@localseo/contracts";
 import {
   agentRuns,
   approvals,
   customers,
   jobRuns,
+  mediaAssets,
+  mediaAssetVariants,
   opportunities,
   pageProposals,
   pageSectionCopySuggestions,
+  pageVersionMediaAssets,
   pageVersions,
   projects,
   users,
@@ -586,6 +590,141 @@ void describe(
           service.reviewPageVersion(fixture.projectId, fixture.pageVersionId, { decision: "approve" }, fixture.userId),
         matchesErrorMessage(/Only the latest page version can be reviewed/u)
       );
+    });
+
+    void it("projects selected media exactly and retains archived assets only through version lineage", async () => {
+      const fixture = await createPageVersionFixture(db, { name: "Media edit", route: "/media-edit/" });
+      const firstBody = new TextEncoder().encode("first immutable media variant");
+      const secondBody = new TextEncoder().encode("second immutable media variant");
+      const firstAsset = await createReadyMediaAsset(db, fixture, firstBody, "first-proof.webp");
+      const secondAsset = await createReadyMediaAsset(db, fixture, secondBody, "second-proof.webp");
+      const bodyByStorageKey = new Map([
+        [firstAsset.storageKey, firstBody],
+        [secondAsset.storageKey, secondBody]
+      ]);
+      const mediaReader: Pick<MediaAssetStoragePort, "readPrivateObject"> = {
+        readPrivateObject: ({ key }) => {
+          const body = bodyByStorageKey.get(key);
+          return body ? Promise.resolve(body) : Promise.reject(new Error(`Missing media bytes for ${key}.`));
+        }
+      };
+      service = new PagesService(
+        testDatabaseService(db),
+        new QueueProducerService(testDatabaseService(db)),
+        mediaReader
+      );
+
+      const mediaVersion = await service.editPageVersion(
+        fixture.projectId,
+        fixture.pageVersionId,
+        {
+          command: {
+            type: "replace_section",
+            sectionId: "benefits-1",
+            registryKey: "ImageText.default",
+            variant: "media_left",
+            props: {
+              heading: "Recent local work",
+              body: "A completed Dachau project with immutable media evidence.",
+              media: {
+                assetId: firstAsset.assetId,
+                purpose: "content",
+                alt: "Completed roof cleaning in Dachau",
+                focalPoint: { x: 0.4, y: 0.6 }
+              }
+            }
+          }
+        },
+        fixture.userId
+      );
+      const projected = await db
+        .select()
+        .from(pageVersionMediaAssets)
+        .where(eq(pageVersionMediaAssets.pageVersionId, mediaVersion.pageVersion.id));
+
+      assert.deepEqual(
+        projected.map((row) => row.mediaAssetId),
+        [firstAsset.assetId]
+      );
+      assert.equal(
+        mediaVersion.pageVersion.pageJson.sections.find((section) => section.id === "benefits-1")?.registryKey,
+        "ImageText.default"
+      );
+
+      const approved = await service.reviewPageVersion(
+        fixture.projectId,
+        mediaVersion.pageVersion.id,
+        { decision: "approve" },
+        fixture.userId
+      );
+      assert.equal(approved.pageVersion.status, "approved");
+
+      const archivedAt = new Date("2026-07-15T12:00:00.000Z");
+      await db
+        .update(mediaAssets)
+        .set({ status: "archived", archivedAt, archivedByUserId: fixture.userId })
+        .where(eq(mediaAssets.id, firstAsset.assetId));
+      await db
+        .update(mediaAssets)
+        .set({ status: "archived", archivedAt, archivedByUserId: fixture.userId })
+        .where(eq(mediaAssets.id, secondAsset.assetId));
+
+      const inherited = await service.editPageVersion(
+        fixture.projectId,
+        mediaVersion.pageVersion.id,
+        {
+          command: {
+            type: "update_section_props",
+            sectionId: "hero-1",
+            props: {
+              h1: "Dachreinigung with retained media",
+              lead: "The approved media remains resolvable through immutable lineage.",
+              primaryCtaLabel: "Anfragen",
+              primaryCtaHref: "/kontakt/"
+            }
+          }
+        },
+        fixture.userId
+      );
+      const inheritedProjection = await db
+        .select()
+        .from(pageVersionMediaAssets)
+        .where(eq(pageVersionMediaAssets.pageVersionId, inherited.pageVersion.id));
+      assert.deepEqual(
+        inheritedProjection.map((row) => row.mediaAssetId),
+        [firstAsset.assetId]
+      );
+
+      await assert.rejects(
+        () =>
+          service.editPageVersion(
+            fixture.projectId,
+            inherited.pageVersion.id,
+            {
+              command: {
+                type: "update_section_props",
+                sectionId: "benefits-1",
+                props: {
+                  heading: "Recent local work",
+                  body: "This tries to select a newly archived asset.",
+                  media: {
+                    assetId: secondAsset.assetId,
+                    purpose: "content",
+                    alt: "A different archived project image"
+                  }
+                }
+              }
+            },
+            fixture.userId
+          ),
+        matchesErrorMessage(/archived assets may only be retained from the base version/u)
+      );
+
+      const allVersions = await db
+        .select()
+        .from(pageVersions)
+        .where(eq(pageVersions.pageProposalId, fixture.pageProposalId));
+      assert.equal(allVersions.length, 3);
     });
 
     void it("chains legal movement and variant commands from the latest version", async () => {
@@ -1644,6 +1783,58 @@ async function createReadyCopySuggestion(
     .returning();
   assert.ok(suggestion);
   return suggestion;
+}
+
+async function createReadyMediaAsset(
+  db: DatabaseClient,
+  fixture: Pick<PageVersionFixture, "projectId" | "userId">,
+  body: Uint8Array,
+  displayName: string
+): Promise<{ assetId: string; storageKey: string }> {
+  const checksumSha256 = createHash("sha256").update(body).digest("hex");
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId: fixture.projectId,
+      status: "pending_upload",
+      displayName,
+      claimedContentType: "image/webp",
+      expectedBytes: body.byteLength,
+      expectedSha256: checksumSha256,
+      sourceStorageKey: `media/quarantine/${fixture.projectId}/${randomUUID()}`,
+      createdByUserId: fixture.userId
+    })
+    .returning();
+  assert.ok(asset);
+  await db.update(mediaAssets).set({ status: "processing" }).where(eq(mediaAssets.id, asset.id));
+
+  const storageKey = `media/ready/${asset.id}/w640.webp`;
+  await db.insert(mediaAssetVariants).values({
+    mediaAssetId: asset.id,
+    variantKey: "w640_webp",
+    storageKey,
+    contentType: "image/webp",
+    width: 640,
+    height: 480,
+    bytes: body.byteLength,
+    checksumSha256
+  });
+  await db
+    .update(mediaAssets)
+    .set({
+      status: "ready",
+      detectedContentType: "image/webp",
+      sourceBytes: body.byteLength,
+      width: 640,
+      height: 480,
+      checksumSha256,
+      processorVersion: "integration-v1",
+      requiredVariantKeys: ["w640_webp"],
+      processedAt: new Date("2026-07-15T10:00:00.000Z")
+    })
+    .where(eq(mediaAssets.id, asset.id));
+
+  return { assetId: asset.id, storageKey };
 }
 
 async function createOpportunityFixture(db: DatabaseClient, input: { name: string }): Promise<OpportunityFixture> {

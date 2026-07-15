@@ -659,6 +659,112 @@ a {
   padding: 0;
 }
 
+.page-studio-media-field {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.page-studio-media-field > legend {
+  margin-bottom: 8px;
+  color: #4f5f59;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.page-studio-upload-control {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed #9ca9a1;
+  border-radius: 8px;
+  padding: 12px;
+  color: #263b34;
+  font-size: 13px;
+  font-weight: 700;
+  background: #f7faf7;
+}
+
+.page-studio-upload-control input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+}
+
+.page-studio-media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.page-studio-media-item {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  border: 1px solid #d4dad2;
+  border-radius: 8px;
+  padding: 8px;
+  color: inherit;
+  text-align: left;
+  background: #ffffff;
+}
+
+.page-studio-media-item:not(:disabled) {
+  cursor: pointer;
+}
+
+.page-studio-media-item--selected {
+  border-color: #1d6b51;
+  box-shadow: 0 0 0 2px rgba(29, 107, 81, 0.16);
+}
+
+.page-studio-media-item > img,
+.page-studio-media-placeholder {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  object-fit: cover;
+  place-items: center;
+  color: #52615b;
+  font-size: 12px;
+  background: #edf1ec;
+}
+
+.page-studio-media-item-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.page-studio-media-item-copy strong,
+.page-studio-media-item-copy small {
+  overflow-wrap: anywhere;
+}
+
+.page-studio-media-item-copy small {
+  color: #5c6964;
+}
+
+.page-studio-media-placement,
+.page-studio-focal-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.page-studio-media-purpose {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.page-studio-focal-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .page-studio-list-field legend {
   margin-bottom: 8px;
   color: #4f5f59;
@@ -822,7 +928,9 @@ a {
   }
 
   .page-studio-workspace,
-  .page-studio-section-row {
+  .page-studio-section-row,
+  .page-studio-media-grid,
+  .page-studio-focal-controls {
     grid-template-columns: minmax(0, 1fr);
   }
 

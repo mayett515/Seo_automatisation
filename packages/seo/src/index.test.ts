@@ -47,6 +47,7 @@ void describe("buildReleasePreflightChecks", () => {
           targetUrl: "/entruempelung-dachau/",
           approvedAt: null,
           pageJson: null,
+          mediaManifestValid: true,
           sitemapReady: false,
           uniquenessRationale: null
         }
@@ -67,7 +68,24 @@ void describe("buildReleasePreflightChecks", () => {
     const checks = buildReleasePreflightChecks(readyEvidence());
 
     assert.equal(checks.find((check) => check.checkKey === "local_seo_page_quality_gate")?.result, "passed");
+    assert.equal(checks.find((check) => check.checkKey === "media_manifest_check")?.result, "passed");
     assert.equal(checks.find((check) => check.checkKey === "release_action_materialization_check")?.result, "passed");
+  });
+
+  void it("blocks renderable actions when immutable media references cannot be resolved exactly", () => {
+    const evidence = readyEvidence();
+    const page = evidence.pages[0];
+
+    assert.ok(page);
+
+    const checks = buildReleasePreflightChecks({
+      ...evidence,
+      pages: [{ ...page, mediaManifestValid: false }]
+    });
+    const media = checks.find((check) => check.checkKey === "media_manifest_check");
+
+    assert.equal(media?.severity, "blocker");
+    assert.equal(media?.result, "failed");
   });
 });
 
@@ -125,6 +143,7 @@ function readyEvidence(): ReleasePreflightEvidence {
         targetUrl: "/entruempelung-dachau/",
         approvedAt: new Date("2026-01-01T00:00:00.000Z"),
         pageJson: pageJson(),
+        mediaManifestValid: true,
         sitemapReady: true,
         uniquenessRationale: "Dedicated local proof for Dachau."
       }

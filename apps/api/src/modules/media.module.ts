@@ -338,6 +338,26 @@ export class MediaService {
     return MediaAssetSummarySchema.parse(mediaAssetToResponse(updated, variants.get(assetId) ?? []));
   }
 
+  async readLibraryThumbnail(projectId: string, assetId: string) {
+    const asset = await loadProjectMediaAsset(this.database.requireDb(), projectId, assetId);
+    if (asset.status !== "ready" && asset.status !== "archived") {
+      throw new ConflictException("Only ready or archived media assets have library thumbnails.");
+    }
+
+    const variants = (await loadVariantsForAssets(this.database.requireDb(), [asset.id])).get(asset.id) ?? [];
+    const thumbnail = [...variants].sort((left, right) => left.width - right.width)[0];
+    if (!thumbnail || thumbnail.contentType !== "image/webp") {
+      throw new ServiceUnavailableException("Media asset thumbnail is unavailable.");
+    }
+
+    const body = await this.storage.readPrivateObject({ key: thumbnail.storageKey, maxBytes: thumbnail.bytes });
+    if (body.byteLength !== thumbnail.bytes || sha256Hex(body) !== thumbnail.checksumSha256) {
+      throw new ServiceUnavailableException("Media asset thumbnail does not match its immutable manifest.");
+    }
+
+    return { body, contentType: "image/webp" as const };
+  }
+
   async readPreviewAsset(capabilityTokens: string[], assetId: string, fileName: string) {
     assertPersistedId(assetId, "Preview media asset id must be a UUID.");
     if (!/^[0-9a-f]{64}-[1-9][0-9]*\.webp$/u.test(fileName)) {
@@ -385,6 +405,20 @@ class MediaController {
   @Get("assets")
   listAssets(@Param("projectId") projectId: string) {
     return this.media.listAssets(projectId);
+  }
+
+  @Get("assets/:assetId/thumbnail")
+  async thumbnail(
+    @Param("projectId") projectId: string,
+    @Param("assetId") assetId: string,
+    @Res() reply: FastifyReply
+  ) {
+    const thumbnail = await this.media.readLibraryThumbnail(projectId, assetId);
+    reply.header("content-type", thumbnail.contentType);
+    reply.header("content-length", thumbnail.body.byteLength);
+    reply.header("cache-control", "private, no-store");
+    reply.header("x-content-type-options", "nosniff");
+    return reply.send(Buffer.from(thumbnail.body));
   }
 
   @Post("upload-intents")

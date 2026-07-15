@@ -17,8 +17,20 @@ import {
   type ResolvableEvidenceRef
 } from "@localseo/ai";
 import { decidePageStudioPublishReadiness } from "@localseo/domain";
-import { agentRuns, isDatabaseUniqueViolation, opportunities, pageProposals, pageVersions } from "@localseo/db";
-import { pageRegistrySummary, renderPagePreviewFile, validatePageJsonAgainstRegistry } from "@localseo/page-registry";
+import {
+  agentRuns,
+  isDatabaseUniqueViolation,
+  opportunities,
+  pageProposals,
+  pageVersions,
+  persistPageVersionMediaAssetProjection
+} from "@localseo/db";
+import {
+  collectPageMediaAssetIds,
+  pageRegistrySummary,
+  renderPagePreviewFile,
+  validatePageJsonAgainstRegistry
+} from "@localseo/page-registry";
 import type { Job } from "bullmq";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
@@ -211,6 +223,18 @@ export async function executePageProposal(input: {
       outputJson: compactOutputJson(qaResult.output)
     });
     throw new PageProposalWorkflowError("qa_rejected:registry_validation");
+  }
+
+  if (collectPageMediaAssetIds(registryValidation.pageJson).length > 0) {
+    await markWorkflowFailure(input.repository, input.data, reasoningResult, {
+      failureCode: "qa_rejected",
+      diagnostics: {
+        gateId: "media_selection",
+        message: "Page Proposal cannot select project media without an operator-owned asset decision."
+      },
+      outputJson: compactOutputJson(qaResult.output)
+    });
+    throw new PageProposalWorkflowError("qa_rejected:media_selection");
   }
 
   const publishReadiness = decidePageStudioPublishReadiness(qaResult.output.page, pageRegistrySummary);
@@ -440,6 +464,12 @@ export function createDrizzlePageProposalRepository(db: WorkerDb): PageProposalR
           if (!version) {
             throw new PageProposalEvidenceError("Failed to persist page proposal version.");
           }
+
+          await persistPageVersionMediaAssetProjection(tx, {
+            projectId: input.data.projectId,
+            pageVersionId: version.id,
+            assetIds: collectPageMediaAssetIds(input.output.page)
+          });
 
           const [updatedOpportunity] = await tx
             .update(opportunities)

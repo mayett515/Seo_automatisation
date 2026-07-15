@@ -13,7 +13,8 @@ import {
   renderPagePreviewArtifact,
   renderPagePreviewFile,
   validatePageJsonAgainstRegistry,
-  validatePageSectionProps
+  validatePageSectionProps,
+  type ResolvedPageMediaVariant
 } from "./index.js";
 
 void describe("page registry", () => {
@@ -179,6 +180,7 @@ void describe("page registry", () => {
     assert.equal(getPageRegistryAiCopyFieldKeys("Hero.default").includes("primaryCtaHref"), false);
     assert.deepEqual(getPageRegistryAiCopyFieldKeys("Header.default"), []);
     assert.deepEqual(getPageRegistryAiCopyFieldKeys("ServiceAreaList.default"), ["heading"]);
+    assert.deepEqual(getPageRegistryAiCopyFieldKeys("ImageText.default"), ["heading", "body"]);
   });
 
   void it("keeps editor metadata aligned with registry prop schemas", () => {
@@ -222,6 +224,50 @@ void describe("page registry", () => {
         ]),
       /control must match its prop schema/u
     );
+
+    const imageText = pageRegistryEntries.find((entry) => entry.registryKey === "ImageText.default");
+    assert.ok(imageText);
+    assert.throws(
+      () =>
+        createPageRegistry([
+          {
+            ...imageText,
+            editorFields: imageText.editorFields.map((field) =>
+              field.key === "media" ? { key: "media", label: "Image", control: "text" as const } : field
+            )
+          }
+        ]),
+      /control must match its prop schema/u
+    );
+  });
+
+  void it("keeps ImageText media props opaque and registry-owned", () => {
+    const accepted = validatePageJsonAgainstRegistry(
+      pageJson({ sections: [heroSection(), imageTextSection(), faqSection({ order: 2 })] })
+    );
+    const rejected = validatePageJsonAgainstRegistry(
+      pageJson({
+        sections: [
+          heroSection(),
+          imageTextSection({
+            props: {
+              heading: "Proof",
+              body: "Verified work in Dachau.",
+              media: {
+                assetId: mediaAssetId,
+                purpose: "content",
+                alt: "A completed project",
+                url: "https://example.test/untrusted.webp"
+              }
+            }
+          }),
+          faqSection({ order: 2 })
+        ]
+      })
+    );
+
+    assert.equal(accepted.success, true);
+    assertIssue(rejected, "invalid_props");
   });
 
   void it("keeps registry keys unique and internally consistent", () => {
@@ -422,6 +468,69 @@ void describe("page registry", () => {
     assert.deepEqual(previewArtifact, deployArtifact);
   });
 
+  void it("renders exact media manifests with deterministic paths and focal placement", () => {
+    const page = pageJson({ sections: [heroSection(), imageTextSection(), faqSection({ order: 2 })] });
+    const variants = mediaVariants();
+    const deployArtifact = renderApprovedReleaseArtifact(
+      {
+        projectId: "project-1",
+        releasePlanId: "release-1",
+        deploymentKey: "release_plan:release-1",
+        createdAt: "2026-07-15T00:00:00.000Z",
+        pages: [
+          {
+            releasePlanItemId: "item-1",
+            pageVersionId: "version-1",
+            targetUrl: "/entruempelung-dachau/",
+            targetSubdomain: null,
+            action: "create",
+            pageJson: page
+          }
+        ]
+      },
+      pageRegistry,
+      [{ pageVersionId: "version-1", variants }]
+    );
+    const previewArtifact = renderPagePreviewArtifact({
+      pageJson: page,
+      targetUrl: "/entruempelung-dachau/",
+      mode: "deploy",
+      previewId: "item-1",
+      pageVersionId: "version-1",
+      mediaVariants: variants
+    });
+    const body = deployArtifact.files[0]?.body ?? "";
+
+    assert.deepEqual(previewArtifact, deployArtifact);
+    assert.match(body, new RegExp(`src="${escapeRegExp(variants[1]?.path ?? "missing")}"`, "u"));
+    assert.match(body, /srcset="[^"]+ 640w, [^"]+ 1280w"/u);
+    assert.match(body, /alt="Completed courtyard clearance in Dachau"/u);
+    assert.match(body, /object-position: 25% 75%/u);
+  });
+
+  void it("fails closed when media references and resolved manifests differ", () => {
+    const pageWithMedia = pageJson({ sections: [heroSection(), imageTextSection(), faqSection({ order: 2 })] });
+
+    assert.throws(
+      () =>
+        renderPagePreviewFile({
+          pageJson: pageWithMedia,
+          targetUrl: "/entruempelung-dachau/",
+          mediaVariants: []
+        }),
+      /do not exactly match the resolved media manifest/u
+    );
+    assert.throws(
+      () =>
+        renderPagePreviewFile({
+          pageJson: pageJson(),
+          targetUrl: "/entruempelung-dachau/",
+          mediaVariants: mediaVariants()
+        }),
+      /do not exactly match the resolved media manifest/u
+    );
+  });
+
   void it("renders editor preview with noindex while sharing the static renderer", () => {
     const file = renderPagePreviewFile({
       pageJson: pageJson({
@@ -553,4 +662,59 @@ function faqSection(input: Partial<PageJson["sections"][number]> = {}): PageJson
     evidenceRefs: [],
     ...input
   };
+}
+
+const mediaAssetId = "10000000-0000-4000-8000-000000000001";
+
+function imageTextSection(input: Partial<PageJson["sections"][number]> = {}): PageJson["sections"][number] {
+  return {
+    id: "image-text-1",
+    type: "ImageText",
+    registryKey: "ImageText.default",
+    schemaVersion: 1,
+    zone: "proof_media",
+    order: 1,
+    variant: "media_left",
+    props: {
+      heading: "Local proof",
+      body: "Verified work completed for a customer in Dachau.",
+      media: {
+        assetId: mediaAssetId,
+        purpose: "content",
+        alt: "Completed courtyard clearance in Dachau",
+        focalPoint: { x: 0.25, y: 0.75 }
+      }
+    },
+    evidenceRefs: [],
+    ...input
+  };
+}
+
+function mediaVariants(): ResolvedPageMediaVariant[] {
+  return [
+    {
+      assetId: mediaAssetId,
+      variantKey: "640w",
+      contentType: "image/webp",
+      width: 640,
+      height: 480,
+      byteSize: 12,
+      sha256: "a".repeat(64),
+      path: `/assets/${mediaAssetId}/${"a".repeat(64)}-640.webp`
+    },
+    {
+      assetId: mediaAssetId,
+      variantKey: "1280w",
+      contentType: "image/webp",
+      width: 1280,
+      height: 960,
+      byteSize: 24,
+      sha256: "b".repeat(64),
+      path: `/assets/${mediaAssetId}/${"b".repeat(64)}-1280.webp`
+    }
+  ];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }

@@ -2,12 +2,15 @@ import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import type {
+  MediaAssetSummary,
+  PageMediaReference,
   PageSectionInstance,
   PageStudioEditCommand,
   SectionCopySuggestion,
   PageVersionDetail,
   PageVersionSummary
 } from "@localseo/contracts";
+import { PageMediaReferenceSchema } from "@localseo/contracts";
 import { decideMovePageSection, getPageStudioSectionCapabilities } from "@localseo/domain";
 import {
   pageRegistrySummary,
@@ -17,6 +20,7 @@ import {
   type PageRegistryEntrySummary
 } from "@localseo/page-registry";
 import { StatusPill } from "@localseo/ui";
+import { apiResourceUrl } from "../../lib/api.js";
 import {
   cloneEditorValue,
   createEmptyEditorProps,
@@ -30,6 +34,15 @@ import {
 
 type PageStudioPanelMode = "properties" | "replacement" | "copy";
 
+type PageStudioMediaLibrary = {
+  assets: readonly MediaAssetSummary[];
+  error: Error | null;
+  isLoading: boolean;
+  isUploading: boolean;
+  projectId: string;
+  onUpload: (file: File) => void;
+};
+
 export function PageStudioEditor(props: {
   copyActionError: Error | null;
   copySuggestions: readonly SectionCopySuggestion[];
@@ -37,16 +50,22 @@ export function PageStudioEditor(props: {
   isCopyActionPending: boolean;
   isCopySuggestionsError: boolean;
   isCopySuggestionsPending: boolean;
+  isMediaLibraryError: boolean;
+  isMediaLibraryPending: boolean;
+  isMediaUploadPending: boolean;
   isSaving: boolean;
   isVersionListError: boolean;
   isVersionListPending: boolean;
   latestVersion?: PageVersionSummary;
+  mediaAssets: readonly MediaAssetSummary[];
+  mediaUploadError: Error | null;
   pageVersion: PageVersionDetail;
   projectId: string;
   onApplyCopySuggestion: (suggestion: SectionCopySuggestion, props: Record<string, unknown>) => void;
   onCommand: (command: PageStudioEditCommand) => void;
   onDismissCopySuggestion: (suggestionId: string) => void;
   onRequestCopySuggestion: (sectionId: string, instruction: string) => void;
+  onUploadMedia: (file: File) => void;
 }) {
   const sections = orderedPageSections(props.pageVersion);
   const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.id ?? "");
@@ -73,6 +92,14 @@ export function PageStudioEditor(props: {
         : isLatest
           ? "locked"
           : "stale";
+  const mediaLibrary: PageStudioMediaLibrary = {
+    assets: props.mediaAssets,
+    error: props.mediaUploadError,
+    isLoading: props.isMediaLibraryPending,
+    isUploading: props.isMediaUploadPending,
+    projectId: props.projectId,
+    onUpload: props.onUploadMedia
+  };
 
   return (
     <section className="page-studio-panel detail-panel">
@@ -102,6 +129,9 @@ export function PageStudioEditor(props: {
       ) : null}
       {props.error ? <div className="notice notice--danger">{props.error.message}</div> : null}
       {props.copyActionError ? <div className="notice notice--danger">{props.copyActionError.message}</div> : null}
+      {props.isMediaLibraryError ? (
+        <div className="notice notice--danger">Project media library could not be loaded.</div>
+      ) : null}
 
       <div className="page-studio-outline" aria-label="Page section outline">
         {sections.map((section) => (
@@ -134,6 +164,7 @@ export function PageStudioEditor(props: {
               canEdit={canEdit}
               isSaving={props.isSaving}
               key={`${props.pageVersion.id}:${selectedSection.id}:properties`}
+              mediaLibrary={mediaLibrary}
               section={selectedSection}
               onSubmit={(sectionProps) =>
                 props.onCommand({ type: "update_section_props", sectionId: selectedSection.id, props: sectionProps })
@@ -145,6 +176,7 @@ export function PageStudioEditor(props: {
               entries={replacementEntries}
               isSaving={props.isSaving}
               key={`${props.pageVersion.id}:${selectedSection.id}:replacement`}
+              mediaLibrary={mediaLibrary}
               section={selectedSection}
               onSubmit={(entry, variant, sectionProps) =>
                 props.onCommand({
@@ -163,6 +195,7 @@ export function PageStudioEditor(props: {
               isSuggestionsError={props.isCopySuggestionsError}
               isSuggestionsPending={props.isCopySuggestionsPending}
               key={`${props.pageVersion.id}:${selectedSection.id}:copy`}
+              mediaLibrary={mediaLibrary}
               section={selectedSection}
               suggestions={props.copySuggestions}
               onApply={props.onApplyCopySuggestion}
@@ -219,6 +252,7 @@ function SectionCopySuggestionPanel(props: {
   isActionPending: boolean;
   isSuggestionsError: boolean;
   isSuggestionsPending: boolean;
+  mediaLibrary: PageStudioMediaLibrary;
   section: PageSectionInstance;
   suggestions: readonly SectionCopySuggestion[];
   onApply: (suggestion: SectionCopySuggestion, props: Record<string, unknown>) => void;
@@ -280,6 +314,7 @@ function SectionCopySuggestionPanel(props: {
             entry={entry}
             initialProps={suggestion.suggestedProps}
             isSaving={props.isActionPending}
+            mediaLibrary={props.mediaLibrary}
             requireDirty={false}
             savingLabel="Applying"
             submitLabel="Apply suggestion"
@@ -411,6 +446,7 @@ function PageStudioSectionRow(props: {
 function SectionPropsForm(props: {
   canEdit: boolean;
   isSaving: boolean;
+  mediaLibrary: PageStudioMediaLibrary;
   section: PageSectionInstance;
   onSubmit: (props: Record<string, unknown>) => void;
 }) {
@@ -427,6 +463,7 @@ function SectionPropsForm(props: {
       entry={entry}
       initialProps={props.section.props}
       isSaving={props.isSaving}
+      mediaLibrary={props.mediaLibrary}
       savingLabel="Saving"
       submitLabel="Create next version"
       title={sectionLabel(props.section.type)}
@@ -440,6 +477,7 @@ function SectionReplacementForm(props: {
   canEdit: boolean;
   entries: readonly PageRegistryEntrySummary[];
   isSaving: boolean;
+  mediaLibrary: PageStudioMediaLibrary;
   section: PageSectionInstance;
   onSubmit: (entry: PageRegistryEntrySummary, variant: string, props: Record<string, unknown>) => void;
 }) {
@@ -471,6 +509,7 @@ function SectionReplacementForm(props: {
         entry={entry}
         isSaving={props.isSaving}
         key={entry.registryKey}
+        mediaLibrary={props.mediaLibrary}
         section={props.section}
         onSubmit={(variant, sectionProps) => props.onSubmit(entry, variant, sectionProps)}
       />
@@ -482,6 +521,7 @@ function ReplacementTargetForm(props: {
   canEdit: boolean;
   entry: PageRegistryEntrySummary;
   isSaving: boolean;
+  mediaLibrary: PageStudioMediaLibrary;
   section: PageSectionInstance;
   onSubmit: (variant: string, props: Record<string, unknown>) => void;
 }) {
@@ -509,6 +549,7 @@ function ReplacementTargetForm(props: {
         entry={props.entry}
         initialProps={createEmptyEditorProps(props.entry.editorFields)}
         isSaving={props.isSaving}
+        mediaLibrary={props.mediaLibrary}
         savingLabel="Replacing"
         submitLabel="Create replacement version"
         title={sectionLabel(props.entry.type)}
@@ -525,6 +566,7 @@ function RegistryPropsForm(props: {
   entry: PageRegistryEntrySummary;
   initialProps: Record<string, unknown>;
   isSaving: boolean;
+  mediaLibrary: PageStudioMediaLibrary;
   requireDirty?: boolean;
   savingLabel: string;
   submitLabel: string;
@@ -570,6 +612,7 @@ function RegistryPropsForm(props: {
           <RegistryPropsFields
             disabled={!props.canSubmit || props.isSaving}
             fields={props.entry.editorFields}
+            mediaLibrary={props.mediaLibrary}
             value={field.state.value}
             onChange={field.handleChange}
           />
@@ -601,6 +644,7 @@ function RegistryPropsForm(props: {
 function RegistryPropsFields(props: {
   disabled: boolean;
   fields: readonly PageRegistryEditorField[];
+  mediaLibrary: PageStudioMediaLibrary;
   value: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
 }) {
@@ -611,6 +655,7 @@ function RegistryPropsFields(props: {
           disabled={props.disabled}
           field={field}
           key={field.key}
+          mediaLibrary={props.mediaLibrary}
           value={props.value[field.key]}
           onChange={(value) => props.onChange({ ...props.value, [field.key]: value })}
         />
@@ -622,10 +667,23 @@ function RegistryPropsFields(props: {
 function RegistryField(props: {
   disabled: boolean;
   field: PageRegistryEditorField;
+  mediaLibrary: PageStudioMediaLibrary;
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
   const editorField = props.field;
+
+  if (editorField.control === "asset") {
+    return (
+      <MediaAssetField
+        disabled={props.disabled}
+        label={editorField.label}
+        library={props.mediaLibrary}
+        value={props.value}
+        onChange={props.onChange}
+      />
+    );
+  }
 
   if (editorField.control === "list") {
     const items: unknown[] = Array.isArray(props.value) ? (props.value as unknown[]) : [];
@@ -688,6 +746,211 @@ function RegistryField(props: {
       )}
     </label>
   );
+}
+
+function MediaAssetField(props: {
+  disabled: boolean;
+  label: string;
+  library: PageStudioMediaLibrary;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const reference = mediaReferenceDraft(props.value);
+  const visibleAssets = props.library.assets.filter(
+    (asset) => asset.status !== "archived" || asset.id === reference?.assetId
+  );
+
+  return (
+    <fieldset className="page-studio-media-field">
+      <legend>{props.label}</legend>
+
+      <label className="page-studio-upload-control">
+        <span>{props.library.isUploading ? "Uploading image" : "Upload image"}</span>
+        <input
+          accept="image/jpeg,image/png,image/webp"
+          disabled={props.disabled || props.library.isUploading}
+          type="file"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file) {
+              props.library.onUpload(file);
+            }
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
+
+      {props.library.error ? <div className="notice notice--danger">{props.library.error.message}</div> : null}
+      {props.library.isLoading ? <div className="notice notice--neutral">Loading project media</div> : null}
+
+      <div className="page-studio-media-grid" aria-label="Project media library">
+        {visibleAssets.map((asset) => {
+          const selected = asset.id === reference?.assetId;
+          const selectable = asset.status === "ready";
+          return (
+            <button
+              aria-pressed={selected}
+              className={`page-studio-media-item${selected ? " page-studio-media-item--selected" : ""}`}
+              disabled={props.disabled || !selectable}
+              key={asset.id}
+              type="button"
+              onClick={() =>
+                props.onChange({
+                  assetId: asset.id,
+                  purpose: "content",
+                  alt: selected && reference?.purpose === "content" ? reference.alt : "",
+                  focalPoint: reference?.focalPoint ?? { x: 0.5, y: 0.5 }
+                })
+              }
+            >
+              {asset.status === "ready" || asset.status === "archived" ? (
+                <img
+                  alt=""
+                  src={apiResourceUrl(
+                    `/projects/${encodeURIComponent(props.library.projectId)}/media/assets/${encodeURIComponent(asset.id)}/thumbnail`
+                  )}
+                />
+              ) : (
+                <span className="page-studio-media-placeholder">{asset.status.replaceAll("_", " ")}</span>
+              )}
+              <span className="page-studio-media-item-copy">
+                <strong>{asset.displayName}</strong>
+                <small>{asset.width && asset.height ? `${asset.width} x ${asset.height}` : asset.status}</small>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {!props.library.isLoading && visibleAssets.length === 0 ? (
+        <div className="notice notice--neutral">No project media has been uploaded yet.</div>
+      ) : null}
+
+      {reference ? (
+        <div className="page-studio-media-placement">
+          <div className="page-studio-media-purpose" aria-label="Image purpose" role="group">
+            <button
+              aria-pressed={reference.purpose === "content"}
+              className={
+                reference.purpose === "content" ? "button-secondary button-secondary--active" : "button-secondary"
+              }
+              disabled={props.disabled}
+              type="button"
+              onClick={() =>
+                props.onChange({
+                  ...reference,
+                  purpose: "content",
+                  alt: reference.purpose === "content" ? reference.alt : ""
+                })
+              }
+            >
+              Content image
+            </button>
+            <button
+              aria-pressed={reference.purpose === "decorative"}
+              className={
+                reference.purpose === "decorative" ? "button-secondary button-secondary--active" : "button-secondary"
+              }
+              disabled={props.disabled}
+              type="button"
+              onClick={() => props.onChange({ ...reference, purpose: "decorative", alt: "" })}
+            >
+              Decorative
+            </button>
+          </div>
+
+          <label className="form-field">
+            <span>Alternative text</span>
+            <input
+              disabled={props.disabled || reference.purpose === "decorative"}
+              placeholder={reference.purpose === "decorative" ? "Empty for decorative images" : "Describe the image"}
+              value={reference.alt}
+              onChange={(event) => props.onChange({ ...reference, purpose: "content", alt: event.currentTarget.value })}
+            />
+          </label>
+
+          <div className="page-studio-focal-controls">
+            <label className="form-field">
+              <span>{`Horizontal focus ${Math.round((reference.focalPoint?.x ?? 0.5) * 100)}%`}</span>
+              <input
+                disabled={props.disabled}
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value={reference.focalPoint?.x ?? 0.5}
+                onChange={(event) =>
+                  props.onChange({
+                    ...reference,
+                    focalPoint: {
+                      x: Number(event.currentTarget.value),
+                      y: reference.focalPoint?.y ?? 0.5
+                    }
+                  })
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>{`Vertical focus ${Math.round((reference.focalPoint?.y ?? 0.5) * 100)}%`}</span>
+              <input
+                disabled={props.disabled}
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value={reference.focalPoint?.y ?? 0.5}
+                onChange={(event) =>
+                  props.onChange({
+                    ...reference,
+                    focalPoint: {
+                      x: reference.focalPoint?.x ?? 0.5,
+                      y: Number(event.currentTarget.value)
+                    }
+                  })
+                }
+              />
+            </label>
+          </div>
+        </div>
+      ) : (
+        <div className="notice notice--neutral">Select a ready image before creating the next version.</div>
+      )}
+    </fieldset>
+  );
+}
+
+function mediaReferenceDraft(value: unknown): PageMediaReference | undefined {
+  const parsed = PageMediaReferenceSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  if (!isRecord(value) || typeof value.assetId !== "string") {
+    return undefined;
+  }
+
+  const focalPoint = isRecord(value.focalPoint)
+    ? {
+        x: boundedUnitValue(value.focalPoint.x, 0.5),
+        y: boundedUnitValue(value.focalPoint.y, 0.5)
+      }
+    : undefined;
+
+  if (value.purpose === "decorative") {
+    return { assetId: value.assetId, purpose: "decorative", alt: "", ...(focalPoint ? { focalPoint } : {}) };
+  }
+  if (value.purpose === "content") {
+    return {
+      assetId: value.assetId,
+      purpose: "content",
+      alt: typeof value.alt === "string" ? value.alt : "",
+      ...(focalPoint ? { focalPoint } : {})
+    };
+  }
+  return undefined;
+}
+
+function boundedUnitValue(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
 }
 
 function ListItemEditor(props: {

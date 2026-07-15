@@ -73,6 +73,11 @@ export function normalizeEditorProps(
   for (const field of fields) {
     const fieldValue = value[field.key];
 
+    if (field.control === "asset") {
+      normalized[field.key] = fieldValue;
+      continue;
+    }
+
     if (field.control !== "list") {
       if (field.optional && typeof fieldValue === "string" && fieldValue.trim().length === 0) {
         continue;
@@ -95,7 +100,9 @@ export function createEmptyEditorProps(fields: readonly PageRegistryEditorField[
       field.key,
       field.control === "list"
         ? Array.from({ length: field.minItems ?? 0 }, () => cloneEditorValue(field.itemTemplate))
-        : ""
+        : field.control === "asset"
+          ? undefined
+          : ""
     ])
   );
 }

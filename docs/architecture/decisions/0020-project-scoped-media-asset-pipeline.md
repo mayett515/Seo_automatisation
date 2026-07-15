@@ -23,7 +23,7 @@ A focused Good Artist Inspiration pass used the local multi-driver storage catal
 
 Postgres owns media-asset identity, project ownership, lifecycle, actor evidence, processing truth, and derivative metadata. Object storage owns bytes. PageJson owns only placement intent.
 
-The future persistence model is:
+The persistence model is:
 
 ```text
 media_assets
@@ -81,7 +81,7 @@ PageMediaReference
 
 The reference must not include a URL, object-storage key, provider name, MIME type, filename, responsive derivative, CSS class, style, crop expression, or arbitrary metadata. Alt text belongs to the concrete page placement, not the reusable asset row.
 
-Registry prop schemas decide which section fields accept a media reference. Registry editor metadata will gain an `asset` control only when a section actually uses it. PageJson contract and registry validation prove shape; API/worker gates prove that every referenced asset belongs to the route project and is selectable/renderable.
+Registry prop schemas decide which section fields accept a media reference. Registry editor metadata exposes an `asset` control only when a section actually uses it. PageJson contract and registry validation prove shape; API/worker gates prove that every referenced asset belongs to the route project and is selectable/renderable.
 
 New edits may select only `ready` assets. Existing versions may continue resolving `ready` or `archived` assets because archive is a library-visibility decision, not byte deletion.
 
@@ -168,7 +168,7 @@ Storage cleanup is a separate deterministic maintenance workflow. It must not in
 
 ### Page Studio UX
 
-The future media control is a project media library, not a URL input. Upload, processing, ready, failed, and archived states are durable server state owned by TanStack Query.
+The media control is a project media library, not a URL input. Upload, processing, ready, failed, and archived states are durable server state owned by TanStack Query.
 
 Selecting an asset, changing alt text, or setting a focal point is local staging. Only explicit confirmation posts the existing versioned Page Studio command with complete registry-owned props and creates N+1. Upload completion alone never creates or edits a page version.
 
@@ -184,13 +184,13 @@ The first implementation adds image media only. AI image generation, stock-provi
 - The additional asset, variant, reference-projection, queue, worker, and cleanup lifecycle is real infrastructure cost.
 - Archive is intentionally not deletion, preserving historical version and rollback integrity.
 
-Implementation should proceed in three slices:
+Implementation proceeded in three slices:
 
 1. Backend foundation: contracts, permissions, DB tables/indexes, narrow binary storage port/adapters, upload intent/completion, media-processing worker, bounded recovery, and media library reads. Implemented on 2026-07-12.
 2. Renderer parity: binary-safe static artifacts, decoded-byte digest/upload parity in the hosting adapter, resolved media manifests, sandbox-preserving signed preview capabilities, authenticated preview document/asset serving, and deploy artifact bytes. Implemented on 2026-07-13.
-3. Page Studio media controls: first `ImageText` registry entry, asset editor control, upload/select/alt/focal-point UX, and N+1 application through the existing command endpoint. PageJson references become renderer selection truth in this slice; every referenced asset must have an exact project-scoped manifest/projection match, and unreferenced projection rows must not create rendered media.
+3. Page Studio media controls: first `ImageText` registry entry, asset editor control, upload/select/alt/focal-point UX, and N+1 application through the existing command endpoint. PageJson references become renderer selection truth in this slice; every referenced asset must have an exact project-scoped manifest/projection match, and unreferenced projection rows must not create rendered media. Implemented on 2026-07-15.
 
-The backend foundation uses `media-processing` with `jobId = media_assets.id`, a separate `MediaAssetStoragePort`, S3-native and worker-recomputed checksum binding, local API PUT parity, worker-owned Sharp normalization, DB-checked exact variant readiness, append-only ready manifests, DB-protected ready/archived rows, project-scoped library reads/archive, 24-hour abandoned-intent expiration, and bounded artifact-capture recovery. Production composition fails closed without S3. Slice 2 adds the shared project-scoped manifest resolver, binary-safe self-contained release artifacts, decoded-byte Netlify handoff, and the signed document-to-assets preview capability chain while preserving `sandbox=""`. Quarantine/derivative byte deletion remains the separate idempotent cleanup workflow specified under retention. PageJson media props and Page Studio media controls remain slice 3.
+The backend foundation uses `media-processing` with `jobId = media_assets.id`, a separate `MediaAssetStoragePort`, S3-native and worker-recomputed checksum binding, local API PUT parity, worker-owned Sharp normalization, DB-checked exact variant readiness, append-only ready manifests, DB-protected ready/archived rows, project-scoped library reads/archive, 24-hour abandoned-intent expiration, and bounded artifact-capture recovery. Production composition fails closed without S3. Slice 2 adds the shared project-scoped manifest resolver, binary-safe self-contained release artifacts, decoded-byte Netlify handoff, and the signed document-to-assets preview capability chain while preserving `sandbox=""`. Slice 3 adds strict `ImageText` media props, exact transactional projection maintenance, renderer/reference/manifest equality checks, and explicit Page Studio upload/select/alt/focal-point application. Quarantine/derivative byte deletion remains the separate idempotent cleanup workflow specified under retention.
 
 ## Alternatives Considered
 
