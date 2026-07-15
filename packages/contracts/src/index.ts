@@ -999,22 +999,86 @@ export const ApprovedReleaseArtifactSchema = z.object({
   pages: z.array(ApprovedReleaseArtifactPageSchema).min(1)
 });
 
-export const StaticSiteFileSchema = z
-  .object({
-    path: z
+export const STATIC_SITE_ARTIFACT_MAX_DECODED_BYTES = 50 * 1024 * 1024;
+const staticSiteBase64BodyMaxLength = Math.ceil(STATIC_SITE_ARTIFACT_MAX_DECODED_BYTES / 3) * 4;
+
+const StaticSiteFilePathSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => value.startsWith("/"), "Static file paths must start with '/'.")
+  .refine((value) => !value.startsWith("//"), "Static file paths must not be protocol-relative.")
+  .refine((value) => !value.includes("\\"), "Static file paths must not contain backslashes.")
+  .refine((value) => !/[?#]/u.test(value), "Static file paths must not contain query or fragment syntax.")
+  .refine(
+    (value) => !value.split("/").some((segment) => segment === "." || segment === ".."),
+    "Static file paths must not contain traversal segments."
+  );
+
+const StaticSiteFileBaseSchema = z.object({
+  path: StaticSiteFilePathSchema,
+  contentType: z.string().trim().min(1).max(120)
+});
+
+export const StaticSiteFileSchema = z.discriminatedUnion("encoding", [
+  StaticSiteFileBaseSchema.extend({
+    encoding: z.literal("utf8"),
+    body: z.string().max(STATIC_SITE_ARTIFACT_MAX_DECODED_BYTES)
+  }).strict(),
+  StaticSiteFileBaseSchema.extend({
+    encoding: z.literal("base64"),
+    body: z
       .string()
-      .trim()
-      .min(1)
-      .max(500)
-      .refine((value) => value.startsWith("/"), "Static file paths must start with '/'."),
-    body: z.string(),
-    contentType: z.string().trim().min(1).max(120)
-  })
-  .strict();
+      .max(staticSiteBase64BodyMaxLength)
+      .refine(isCanonicalBase64, "Base64 static file bodies must use canonical padded encoding.")
+  }).strict()
+]);
+
+export function decodedStaticSiteFileByteLength(file: z.output<typeof StaticSiteFileSchema>): number {
+  if (file.encoding === "utf8") {
+    return new TextEncoder().encode(file.body).byteLength;
+  }
+
+  return decodedBase64ByteLength(file.body);
+}
 
 export const StaticSiteArtifactSchema = z
   .object({
     files: z.array(StaticSiteFileSchema).max(1_000)
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const seenPaths = new Set<string>();
+    let decodedBytes = 0;
+
+    for (const [index, file] of value.files.entries()) {
+      if (seenPaths.has(file.path)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["files", index, "path"],
+          message: `Static site artifact contains duplicate path '${file.path}'.`
+        });
+      }
+      seenPaths.add(file.path);
+      decodedBytes += decodedStaticSiteFileByteLength(file);
+    }
+
+    if (decodedBytes > STATIC_SITE_ARTIFACT_MAX_DECODED_BYTES) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["files"],
+        message: "Static site artifact exceeds the 50 MiB decoded-byte budget."
+      });
+    }
+  });
+
+export const StaticSiteFileDescriptorSchema = z
+  .object({
+    path: StaticSiteFilePathSchema,
+    contentType: z.string().trim().min(1).max(120),
+    encoding: z.enum(["utf8", "base64"]),
+    decodedBytes: z.number().int().nonnegative().max(STATIC_SITE_ARTIFACT_MAX_DECODED_BYTES)
   })
   .strict();
 
@@ -1124,9 +1188,23 @@ export const PageVersionPreviewResponseSchema = z
     pageVersionId: z.string().min(1),
     route: PagePathSchema,
     mode: z.literal("editor"),
-    file: StaticSiteFileSchema
+    documentPath: z.string().trim().min(1).max(1_000).startsWith("/"),
+    file: StaticSiteFileDescriptorSchema
   })
   .strict();
+
+function isCanonicalBase64(value: string): boolean {
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value);
+}
+
+function decodedBase64ByteLength(value: string): number {
+  if (value.length === 0) {
+    return 0;
+  }
+
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  return (value.length / 4) * 3 - padding;
+}
 
 export const PageSectionNoteFieldPathSchema = z
   .array(z.union([z.string().trim().min(1).max(120), z.number().int().nonnegative()]))
@@ -2031,6 +2109,7 @@ export type EditPageVersionRequest = z.output<typeof EditPageVersionRequestSchem
 export type ApprovedReleaseArtifact = z.output<typeof ApprovedReleaseArtifactSchema>;
 export type ApprovedReleaseArtifactPage = z.output<typeof ApprovedReleaseArtifactPageSchema>;
 export type StaticSiteFile = z.output<typeof StaticSiteFileSchema>;
+export type StaticSiteFileDescriptor = z.output<typeof StaticSiteFileDescriptorSchema>;
 export type StaticSiteArtifact = z.output<typeof StaticSiteArtifactSchema>;
 export type PageVersionSummary = z.output<typeof PageVersionSummarySchema>;
 export type PageVersionDetail = z.output<typeof PageVersionDetailSchema>;

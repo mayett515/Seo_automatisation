@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { StaticSiteArtifactSchema } from "@localseo/contracts";
+import { StaticSiteArtifactSchema, type StaticSiteFile } from "@localseo/contracts";
 import { ProviderRequestError, runProviderRequestWithTimeout } from "./provider-errors.js";
 import type {
   BeginDeployResult,
@@ -52,7 +52,7 @@ export type NetlifySiteHostingAdapterOptions = {
 
 type StaticFile = {
   path: string;
-  body: string;
+  body: Uint8Array<ArrayBuffer>;
   contentType: string;
 };
 
@@ -359,13 +359,24 @@ export class NetlifySiteHostingAdapter implements SiteHostingPort {
     const artifact = StaticSiteArtifactSchema.parse(
       await this.options.objectStorage.getJson({ key: buildArtifactKey })
     );
-    const files = artifact.files;
+    const files = artifact.files.map(decodeStaticSiteFile);
 
     return {
       digestByPath: Object.fromEntries(files.map((file) => [file.path, sha1(file.body)])),
       fileByDigest: new Map(files.map((file) => [sha1(file.body), file]))
     };
   }
+}
+
+function decodeStaticSiteFile(file: StaticSiteFile): StaticFile {
+  const decoded = Buffer.from(file.body, file.encoding === "base64" ? "base64" : "utf8");
+  const body = new Uint8Array(decoded.byteLength);
+  body.set(decoded);
+  return {
+    path: file.path,
+    contentType: file.contentType,
+    body
+  };
 }
 
 function buildNetlifyDeployTitle(input: Pick<CreateDeployInput, "deploymentId" | "deploymentKey">): string {
@@ -457,7 +468,7 @@ function encodeDeployFilePath(filePath: string): string {
     .join("/");
 }
 
-function sha1(body: string): string {
+function sha1(body: Uint8Array): string {
   return createHash("sha1").update(body).digest("hex");
 }
 

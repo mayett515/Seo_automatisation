@@ -25,10 +25,10 @@ test("stages controlled section replacement before creating one next version", a
     const request = route.request();
     const path = new URL(request.url()).pathname;
 
-    if (
-      !["fetch", "xhr"].includes(request.resourceType()) ||
-      (path !== "/health" && !path.startsWith(`/projects/${projectId}`))
-    ) {
+    const isApiRequest =
+      ["fetch", "xhr"].includes(request.resourceType()) ||
+      (request.resourceType() === "document" && path.endsWith("/preview/document"));
+    if (!isApiRequest || (path !== "/health" && !path.startsWith(`/projects/${projectId}`))) {
       await route.continue();
       return;
     }
@@ -63,12 +63,19 @@ test("stages controlled section replacement before creating one next version", a
         pageVersionId: version.id,
         route: version.route,
         mode: "editor",
+        documentPath: `/projects/${projectId}/pages/${version.id}/preview/document`,
         file: {
           path: "/dachreinigung-muenchen/index.html",
           contentType: "text/html; charset=utf-8",
-          body: `<main><h1>${previewHeading(version.pageJson)}</h1></main>`
+          encoding: "utf8",
+          decodedBytes: 100
         }
       });
+      return;
+    }
+
+    if (path.endsWith("/preview/document")) {
+      await html(route, `<main><h1>${previewHeading(version.pageJson)}</h1></main>`);
       return;
     }
 
@@ -107,6 +114,9 @@ test("stages controlled section replacement before creating one next version", a
 
   await expect(page).toHaveURL(new RegExp(`/pages/${replacementVersionId}/preview$`, "u"));
   await expect(page.getByText("Version 2", { exact: true })).toBeVisible();
+  const previewFrame = page.locator("iframe[title='Page preview']");
+  await expect(previewFrame).toHaveAttribute("sandbox", "");
+  await expect(previewFrame).toHaveAttribute("src", /\/preview\/document$/u);
   await expect(
     page.frameLocator("iframe[title='Page preview']").getByRole("heading", { name: "Dachpflege im Detail" })
   ).toBeVisible();
@@ -178,10 +188,10 @@ test("queues, reviews, and explicitly applies a section copy suggestion", async 
     const request = route.request();
     const path = new URL(request.url()).pathname;
 
-    if (
-      !["fetch", "xhr"].includes(request.resourceType()) ||
-      (path !== "/health" && !path.startsWith(`/projects/${projectId}`))
-    ) {
+    const isApiRequest =
+      ["fetch", "xhr"].includes(request.resourceType()) ||
+      (request.resourceType() === "document" && path.endsWith("/preview/document"));
+    if (!isApiRequest || (path !== "/health" && !path.startsWith(`/projects/${projectId}`))) {
       await route.continue();
       return;
     }
@@ -245,12 +255,19 @@ test("queues, reviews, and explicitly applies a section copy suggestion", async 
         pageVersionId: version.id,
         route: version.route,
         mode: "editor",
+        documentPath: `/projects/${projectId}/pages/${version.id}/preview/document`,
         file: {
           path: "/dachreinigung-muenchen/index.html",
           contentType: "text/html; charset=utf-8",
-          body: `<main><h1>${previewHeading(version.pageJson)}</h1></main>`
+          encoding: "utf8",
+          decodedBytes: 100
         }
       });
+      return;
+    }
+
+    if (path.endsWith("/preview/document")) {
+      await html(route, `<main><h1>${previewHeading(version.pageJson)}</h1></main>`);
       return;
     }
 
@@ -539,4 +556,8 @@ function section(
 
 async function json(route: Route, body: unknown): Promise<void> {
   await route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+}
+
+async function html(route: Route, body: string): Promise<void> {
+  await route.fulfill({ contentType: "text/html; charset=utf-8", body });
 }

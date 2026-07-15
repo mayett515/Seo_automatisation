@@ -495,19 +495,37 @@ void describe(
       );
     });
 
-    void it("renders editor preview through the page registry renderer", async () => {
+    void it("serves editor preview through metadata and signed document capabilities", async () => {
       const fixture = await createPageVersionFixture(db, { name: "Preview", route: "/dachreinigung/" });
 
-      const preview = await service.previewPageVersion(fixture.projectId, fixture.pageVersionId);
+      const prepared = await service.preparePageVersionPreview(fixture.projectId, fixture.pageVersionId);
+      const preview = prepared.response;
+      const document = await service.previewPageVersionDocument(
+        fixture.projectId,
+        fixture.pageVersionId,
+        prepared.documentToken
+      );
 
       assert.equal(preview.projectId, fixture.projectId);
       assert.equal(preview.pageVersionId, fixture.pageVersionId);
       assert.equal(preview.route, fixture.route);
       assert.equal(preview.mode, "editor");
+      assert.match(preview.documentPath, /\/preview\/document$/u);
       assert.equal(preview.file.contentType, "text/html; charset=utf-8");
+      assert.equal(preview.file.encoding, "utf8");
+      assert.ok(preview.file.decodedBytes > 0);
       assert.match(preview.file.path, /\/dachreinigung\/index\.html$/u);
-      assert.match(preview.file.body, /<meta name="robots" content="noindex">/u);
-      assert.match(preview.file.body, /Dachreinigung in Muenchen/u);
+      assert.match(document.file.body, /<meta name="robots" content="noindex">/u);
+      assert.match(document.file.body, /Dachreinigung in Muenchen/u);
+      assert.ok(document.assetToken.length > 0);
+      await assert.rejects(
+        service.previewPageVersionDocument(
+          fixture.projectId,
+          fixture.pageVersionId,
+          `${prepared.documentToken}tampered`
+        ),
+        /invalid or expired/u
+      );
     });
 
     void it("creates a new preview version for a structured props edit without mutating its base", async () => {

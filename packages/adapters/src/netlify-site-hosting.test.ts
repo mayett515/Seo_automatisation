@@ -216,7 +216,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       providerDeployId: "deploy-1",
       resumeToken: {
         adapter: "netlify",
-        requiredDigests: [sha1(file.body)]
+        requiredDigests: [sha1(staticFileBytes(file))]
       }
     });
 
@@ -224,6 +224,42 @@ void describe("NetlifySiteHostingAdapter", () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0]?.init.method, "PUT");
     assert.equal(headerValue(calls[0]?.init.headers, "content-type"), "application/octet-stream");
+  });
+
+  void it("hashes and uploads decoded base64 bytes instead of transport text", async () => {
+    const binary = Buffer.from([0, 255, 1, 254, 2, 253]);
+    const staticArtifact: StaticSiteArtifact = {
+      files: [
+        {
+          path: "/assets/example.webp",
+          contentType: "image/webp",
+          encoding: "base64",
+          body: binary.toString("base64")
+        }
+      ]
+    };
+    let uploadedBody: BodyInit | null | undefined;
+    const adapter = new NetlifySiteHostingAdapter({
+      authToken: "netlify-token",
+      objectStorage: createObjectStorage(staticArtifact),
+      fetchImpl: (_url, init = {}) => {
+        uploadedBody = init.body;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+    });
+
+    await adapter.uploadDeployFiles({
+      projectId: "project-1",
+      releasePlanId: "release-1",
+      deploymentKey: "release_plan:release-1",
+      buildArtifactKey: "releases/release-1/static-site-artifact.json",
+      providerDeployId: "deploy-1",
+      resumeToken: { adapter: "netlify", requiredDigests: [sha1(binary)] }
+    });
+
+    assert.ok(uploadedBody instanceof Uint8Array);
+    assert.deepEqual(Buffer.from(uploadedBody), binary);
+    assert.notEqual(sha1(binary), sha1(Buffer.from(staticArtifact.files[0]!.body, "utf8")));
   });
 
   void it("fails loudly when Netlify requests an unknown file digest", async () => {
@@ -522,6 +558,10 @@ function headerValue(headers: HeadersInit | undefined, name: string): string | u
   return headers[name];
 }
 
-function sha1(body: string): string {
+function staticFileBytes(file: StaticSiteArtifact["files"][number]): Buffer {
+  return Buffer.from(file.body, file.encoding === "base64" ? "base64" : "utf8");
+}
+
+function sha1(body: Uint8Array): string {
   return createHash("sha1").update(body).digest("hex");
 }

@@ -197,6 +197,21 @@ void describe("AppEnvSchema", () => {
 
     assert.throws(() => assertProductionRuntimeEnv(input), /S3_BUCKET/u);
   });
+
+  void it("requires a dedicated non-placeholder preview capability secret in production", () => {
+    const missing = productionEnv();
+    delete missing.PREVIEW_CAPABILITY_SECRET;
+    assert.throws(() => assertProductionRuntimeEnv(missing), /PREVIEW_CAPABILITY_SECRET/u);
+
+    assert.throws(
+      () =>
+        assertProductionRuntimeEnv({
+          ...productionEnv(),
+          PREVIEW_CAPABILITY_SECRET: "replace-with-at-least-32-characters"
+        }),
+      /PREVIEW_CAPABILITY_SECRET/u
+    );
+  });
 });
 
 function productionEnv(): NodeJS.ProcessEnv {
@@ -208,6 +223,7 @@ function productionEnv(): NodeJS.ProcessEnv {
     DATABASE_URL: "postgres://postgres:postgres@example.com:5432/local_seo",
     REDIS_URL: "redis://redis.example.com:6379",
     S3_BUCKET: "local-seo-artifacts",
+    PREVIEW_CAPABILITY_SECRET: "preview-capability-secret-1234567890",
     BETTER_AUTH_SECRET: "12345678901234567890123456789012",
     BETTER_AUTH_URL: "https://api.example.com",
     GOOGLE_OAUTH_CLIENT_ID: "google-client-id",

@@ -651,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, and the media ingestion/processing backend are implemented. Renderer/deploy media parity and Page Studio media controls remain staged under ADR 0020.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, media ingestion/processing, and binary renderer/preview/deploy media parity are implemented. Page Studio media controls remain staged under ADR 0020.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -737,11 +737,16 @@ implemented now
   stale queued/generating section-copy work participates in bounded read/analyze recovery
   media architecture fixes opaque project-scoped references, private quarantine upload, worker normalization, immutable derivatives, and preview/deploy manifest parity
   media backend accepts checksum-bound private upload intents, processes static raster input through a deterministic worker, exposes project-scoped library state, and recovers stale processing by asset id
+  static artifacts use explicit utf8/base64 files and enforce a 50 MiB decoded-byte budget
+  preview and deploy resolve the same project-scoped immutable media manifest and root-relative asset paths
+  session-authorized preview metadata issues a signed document capability; the sandboxed document issues a path-scoped asset capability
+  preview capability cookies remain Secure, SameSite=None, and Partitioned in local/test as well as production so opaque-origin iframe subresources remain authorized
+  deploy verifies projected derivative bytes and embeds them in the self-contained artifact before provider handoff
+  Netlify hashes and uploads the same once-decoded bytes rather than base64 transport text
 
 still deferred
   agent_run_events streaming timeline
   credentialed Page Proposal smoke execution and model calibration note
-  binary-safe static artifacts plus authenticated preview media delivery
   Page Studio media library, ImageText registry entry, and versioned media controls
   idempotent quarantine/derivative byte-retention cleanup beyond 24-hour pending-intent expiration
 ```
@@ -802,7 +807,7 @@ POST /projects/:projectId/pages/:basePageVersionId/edits
 
 Visual outline, legal movement, registry variant, structured complete-props, controlled section replacement, stale-version, rendered-preview, and AI copy-revision controls are implemented. Replacement targets are filtered through the pure domain decision; target/variant/props are staged locally and only an explicit confirmation posts the command. The server derives type, schema version, and legal zone while preserving the section id, order, and page slot. AI copy is a separate durable suggestion workflow pinned to one version and section; the model may revise only registry-marked copy props, never creates a version, and reaches persistence only when the operator explicitly applies the reviewed structured props through `update_section_props`.
 
-ADR 0020 now owns the media direction. PageJson will store placement-specific opaque asset references, never raw URLs or object keys. Private uploads must pass deterministic worker validation/normalization before selection. Preview and deploy must resolve the same immutable derivative manifest through the same renderer core. Implementation proceeds backend first, binary renderer parity second, and Page Studio media controls third.
+ADR 0020 owns the media direction. PageJson will store placement-specific opaque asset references, never raw URLs or object keys. Private uploads must pass deterministic worker validation/normalization before selection. The backend and binary renderer/preview/deploy parity slices are implemented: one project-scoped manifest resolver feeds signed sandboxed preview delivery and self-contained deploy artifacts with identical immutable asset paths and bytes. Page Studio media controls remain the third slice; that slice must make PageJson references renderer selection truth and fail closed unless the transactionally maintained projection and resolved manifest match those references exactly.
 
 Unresolved predecessor approval blockers remain attached to their source versions. The review UI reads a bounded lineage chain and shows those blockers as historical context without copying rows or turning old concerns into a chain-wide durable gate. Only blockers on the concrete version being approved are authoritative.
 

@@ -2,7 +2,20 @@ import { createHash, randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import type { MediaAssetStoragePort, MediaStoredObjectMetadata, MediaUploadGrant } from "@localseo/adapters";
-import { customers, jobRuns, mediaAssets, projects, users, type DatabaseClient } from "@localseo/db";
+import { parseAppEnv } from "@localseo/config";
+import { PageJsonSchema } from "@localseo/contracts";
+import {
+  customers,
+  jobRuns,
+  mediaAssets,
+  mediaAssetVariants,
+  pageProposals,
+  pageVersionMediaAssets,
+  pageVersions,
+  projects,
+  users,
+  type DatabaseClient
+} from "@localseo/db";
 import type { JobsOptions } from "bullmq";
 import { eq } from "drizzle-orm";
 import {
@@ -11,6 +24,8 @@ import {
 } from "../../../../packages/db/test-support/integration-database.js";
 import { DatabaseService } from "../database/database.service.js";
 import { QueueProducerService } from "../queue-producer.js";
+import { signPreviewCapability } from "../preview-capability.js";
+import { loadPreviewMediaManifest } from "../preview-media.js";
 import { MediaService } from "./media.module.js";
 
 type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDatabase>>;
@@ -182,6 +197,38 @@ void describe(
       assert.equal(result.assets[0]?.displayName, "first.png");
       assert.equal(result.assets[0]?.projectId, first.projectId);
     });
+
+    void it("serves only bytes authorized by the signed page-version manifest", async () => {
+      const fixture = await createProjectFixture(db, "Preview asset");
+      const storage = new MemoryMediaStorage();
+      const service = new MediaService(testDatabaseService(db), configuredQueueService(db), storage);
+      const body = Buffer.from([0, 1, 2, 253, 254, 255]);
+      const projected = await createReadyProjectedMediaFixture(db, fixture, body);
+      storage.objects.set(projected.storageKey, { body, contentType: "image/webp", sha256: projected.sha256 });
+      const manifest = await loadPreviewMediaManifest(db, fixture.projectId, projected.pageVersionId);
+      const token = signPreviewCapability(
+        {
+          kind: "assets",
+          projectId: fixture.projectId,
+          pageVersionId: projected.pageVersionId,
+          manifestSha256: manifest.sha256
+        },
+        parseAppEnv(process.env).PREVIEW_CAPABILITY_SECRET
+      );
+      const entry = manifest.entries[0];
+      assert.ok(entry);
+      const fileName = entry.path.split("/").at(-1);
+      assert.ok(fileName);
+
+      const asset = await service.readPreviewAsset([token], projected.assetId, fileName);
+
+      assert.equal(asset.contentType, "image/webp");
+      assert.deepEqual(asset.body, body);
+      await assert.rejects(
+        service.readPreviewAsset([`${token}tampered`], projected.assetId, fileName),
+        /invalid, expired, or does not authorize/u
+      );
+    });
   }
 );
 
@@ -193,6 +240,112 @@ async function createProjectFixture(db: DatabaseClient, name: string) {
   await db.insert(customers).values({ id: customerId, ownerUserId: userId, name: `${name} customer` });
   await db.insert(projects).values({ id: projectId, customerId, name: `${name} project`, status: "active" });
   return { userId, projectId };
+}
+
+async function createReadyProjectedMediaFixture(
+  db: DatabaseClient,
+  fixture: { userId: string; projectId: string },
+  body: Uint8Array
+) {
+  const sha256 = digest(body);
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId: fixture.projectId,
+      route: "/preview-media/",
+      primaryKeyword: "Preview media",
+      uniquenessRationale: "Preview media fixture",
+      status: "draft"
+    })
+    .returning();
+  assert.ok(proposal);
+  const [version] = await db
+    .insert(pageVersions)
+    .values({ pageProposalId: proposal.id, versionNumber: 1, status: "preview", pageJson: previewPageJson() })
+    .returning();
+  assert.ok(version);
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId: fixture.projectId,
+      status: "pending_upload",
+      displayName: "preview.webp",
+      claimedContentType: "image/webp",
+      expectedBytes: body.byteLength,
+      expectedSha256: sha256,
+      sourceStorageKey: `media/quarantine/${fixture.projectId}/${version.id}`,
+      createdByUserId: fixture.userId
+    })
+    .returning();
+  assert.ok(asset);
+  await db.update(mediaAssets).set({ status: "processing" }).where(eq(mediaAssets.id, asset.id));
+  const storageKey = `media/ready/${asset.id}/w640.webp`;
+  await db.insert(mediaAssetVariants).values({
+    mediaAssetId: asset.id,
+    variantKey: "w640_webp",
+    storageKey,
+    contentType: "image/webp",
+    width: 640,
+    height: 320,
+    bytes: body.byteLength,
+    checksumSha256: sha256
+  });
+  await db
+    .update(mediaAssets)
+    .set({
+      status: "ready",
+      detectedContentType: "image/webp",
+      sourceBytes: body.byteLength,
+      width: 640,
+      height: 320,
+      checksumSha256: sha256,
+      processorVersion: "integration-v1",
+      requiredVariantKeys: ["w640_webp"],
+      processedAt: new Date()
+    })
+    .where(eq(mediaAssets.id, asset.id));
+  await db.insert(pageVersionMediaAssets).values({ pageVersionId: version.id, mediaAssetId: asset.id });
+  return { pageVersionId: version.id, assetId: asset.id, storageKey, sha256 };
+}
+
+function previewPageJson() {
+  return PageJsonSchema.parse({
+    schemaVersion: 1,
+    route: "/preview-media/",
+    pageType: "service_page",
+    target: {
+      service: "Media preview",
+      primaryKeyword: "Preview media",
+      secondaryKeywords: []
+    },
+    seo: {
+      title: "Preview media",
+      metaDescription: "Project-scoped media preview fixture.",
+      canonicalPath: "/preview-media/",
+      robots: "noindex",
+      jsonLd: [],
+      sitemapReady: false
+    },
+    sections: [
+      {
+        id: "header-1",
+        type: "Header",
+        registryKey: "Header.default",
+        schemaVersion: 1,
+        zone: "frame_top",
+        order: 0,
+        variant: "default",
+        props: {
+          brandName: "Media preview",
+          navItems: []
+        },
+        evidenceRefs: []
+      }
+    ],
+    internalLinks: [],
+    evidenceRefs: [],
+    uniquenessRationale: "Project-scoped media preview fixture."
+  });
 }
 
 function testDatabaseService(db: DatabaseClient): DatabaseService {

@@ -5,6 +5,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  Headers,
   Inject,
   Injectable,
   Module,
@@ -13,9 +14,12 @@ import {
   Patch,
   Post,
   Req,
+  Res,
+  UnauthorizedException,
   UnprocessableEntityException,
   UseGuards
 } from "@nestjs/common";
+import { parseAppEnv } from "@localseo/config";
 import {
   type AiReasoningEnqueueFailureCode,
   CreatePageProposalRunRequestSchema,
@@ -43,6 +47,7 @@ import {
   PageVersionReviewResponseSchema,
   PageVersionSummarySchema,
   ReviewPageVersionRequestSchema,
+  decodedStaticSiteFileByteLength,
   type CreatePageProposalRunRequest,
   type CreatePageSectionNoteRequest,
   type CreateSectionCopySuggestionRequest,
@@ -88,6 +93,7 @@ import {
   validatePageSectionProps
 } from "@localseo/page-registry";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import type { FastifyReply } from "fastify";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -96,7 +102,17 @@ import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
+import {
+  previewAssetCookieName,
+  previewDocumentCookieName,
+  readCookieValue,
+  serializePreviewCapabilityCookie,
+  signPreviewCapability,
+  verifyPreviewCapability
+} from "../preview-capability.js";
+import { loadPreviewMediaManifest } from "../preview-media.js";
 
+const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type Db = DatabaseClient;
@@ -628,26 +644,70 @@ export class PagesService {
   }
 
   async previewPageVersion(projectId: string, pageVersionId: string): Promise<PageVersionPreviewResponse> {
-    const row = await this.loadPageVersion(projectId, pageVersionId);
-    const pageJson = parseStoredPageJson(row);
+    const { row, file } = await this.renderPageVersionPreview(projectId, pageVersionId);
 
-    try {
-      return PageVersionPreviewResponseSchema.parse({
+    return PageVersionPreviewResponseSchema.parse({
+      projectId,
+      pageVersionId: row.id,
+      route: row.route,
+      mode: "editor",
+      documentPath: previewDocumentPath(projectId, row.id),
+      file: {
+        path: file.path,
+        contentType: file.contentType,
+        encoding: file.encoding,
+        decodedBytes: decodedStaticSiteFileByteLength(file)
+      }
+    });
+  }
+
+  async preparePageVersionPreview(projectId: string, pageVersionId: string) {
+    const response = await this.previewPageVersion(projectId, pageVersionId);
+    const manifest = await loadPreviewMediaManifest(this.database.requireDb(), projectId, pageVersionId);
+    const documentToken = signPreviewCapability(
+      {
+        kind: "document",
         projectId,
-        pageVersionId: row.id,
-        route: row.route,
-        mode: "editor",
-        file: renderPagePreviewFile({
-          pageJson,
-          pageVersionId: row.id,
-          previewId: row.id,
-          targetUrl: row.route,
-          mode: "editor"
-        })
-      });
-    } catch {
-      throw new UnprocessableEntityException("Page version cannot be rendered as a preview.");
+        pageVersionId,
+        manifestSha256: manifest.sha256
+      },
+      env.PREVIEW_CAPABILITY_SECRET
+    );
+
+    return { response, documentToken };
+  }
+
+  async previewPageVersionDocument(projectId: string, pageVersionId: string, documentToken: string | undefined) {
+    const claims = documentToken
+      ? verifyPreviewCapability(documentToken, env.PREVIEW_CAPABILITY_SECRET, "document")
+      : undefined;
+    if (!claims || claims.projectId !== projectId || claims.pageVersionId !== pageVersionId) {
+      throw new UnauthorizedException("Preview document capability is invalid or expired.");
     }
+
+    const [{ file }, manifest] = await Promise.all([
+      this.renderPageVersionPreview(projectId, pageVersionId),
+      loadPreviewMediaManifest(this.database.requireDb(), projectId, pageVersionId)
+    ]);
+    if (claims.manifestSha256 !== manifest.sha256) {
+      throw new UnauthorizedException("Preview document capability no longer matches the media manifest.");
+    }
+    if (file.encoding !== "utf8") {
+      throw new UnprocessableEntityException("Preview document must use UTF-8 encoding.");
+    }
+
+    return {
+      file,
+      assetToken: signPreviewCapability(
+        {
+          kind: "assets",
+          projectId,
+          pageVersionId,
+          manifestSha256: manifest.sha256
+        },
+        env.PREVIEW_CAPABILITY_SECRET
+      )
+    };
   }
 
   async listPageSectionNotes(projectId: string, pageVersionId: string): Promise<PageSectionNoteListResponse> {
@@ -1025,6 +1085,26 @@ export class PagesService {
     return row;
   }
 
+  private async renderPageVersionPreview(projectId: string, pageVersionId: string) {
+    const row = await this.loadPageVersion(projectId, pageVersionId);
+    const pageJson = parseStoredPageJson(row);
+
+    try {
+      return {
+        row,
+        file: renderPagePreviewFile({
+          pageJson,
+          pageVersionId: row.id,
+          previewId: row.id,
+          targetUrl: row.route,
+          mode: "editor"
+        })
+      };
+    } catch {
+      throw new UnprocessableEntityException("Page version cannot be rendered as a preview.");
+    }
+  }
+
   private async loadPageProposal(projectId: string, pageProposalId: string): Promise<PageProposalRow> {
     if (!isPersistedId(pageProposalId)) {
       throw new BadRequestException("Page proposal id must be a UUID.");
@@ -1079,8 +1159,22 @@ class PagesController {
   }
 
   @Get(":pageVersionId/preview")
-  preview(@Param("projectId") projectId: string, @Param("pageVersionId") pageVersionId: string) {
-    return this.pages.previewPageVersion(projectId, pageVersionId);
+  async preview(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Res({ passthrough: true }) reply: FastifyReply
+  ) {
+    const prepared = await this.pages.preparePageVersionPreview(projectId, pageVersionId);
+    reply.header(
+      "set-cookie",
+      serializePreviewCapabilityCookie({
+        name: previewDocumentCookieName(pageVersionId),
+        token: prepared.documentToken,
+        path: "/"
+      })
+    );
+    reply.header("cache-control", "private, no-store");
+    return prepared.response;
   }
 
   @Get(":pageVersionId/copy-suggestions")
@@ -1182,11 +1276,51 @@ class PagesController {
   }
 }
 
+@Controller("projects/:projectId/pages")
+class PagePreviewDocumentController {
+  constructor(@Inject(PagesService) private readonly pages: PagesService) {}
+
+  @Get(":pageVersionId/preview/document")
+  async document(
+    @Param("projectId") projectId: string,
+    @Param("pageVersionId") pageVersionId: string,
+    @Headers("cookie") cookieHeader: string | undefined,
+    @Res() reply: FastifyReply
+  ) {
+    const result = await this.pages.previewPageVersionDocument(
+      projectId,
+      pageVersionId,
+      readCookieValue(cookieHeader, previewDocumentCookieName(pageVersionId))
+    );
+    reply.removeHeader("x-frame-options");
+    reply.header(
+      "content-security-policy",
+      `default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors ${env.WEB_ORIGIN}`
+    );
+    reply.header("referrer-policy", "no-referrer");
+    reply.header("cache-control", "private, no-store");
+    reply.header("content-type", result.file.contentType);
+    reply.header(
+      "set-cookie",
+      serializePreviewCapabilityCookie({
+        name: previewAssetCookieName(pageVersionId),
+        token: result.assetToken,
+        path: "/assets"
+      })
+    );
+    return reply.send(result.file.body);
+  }
+}
+
 @Module({
-  controllers: [PagesController],
+  controllers: [PagesController, PagePreviewDocumentController],
   providers: [PagesService]
 })
 export class PagesModule {}
+
+function previewDocumentPath(projectId: string, pageVersionId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}/pages/${encodeURIComponent(pageVersionId)}/preview/document`;
+}
 
 async function assertOpportunityForPageProposal(db: Db, projectId: string, opportunityId: string): Promise<void> {
   if (!isPersistedId(opportunityId)) {

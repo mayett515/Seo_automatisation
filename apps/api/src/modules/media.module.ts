@@ -14,7 +14,9 @@ import {
   Post,
   Put,
   Req,
+  Res,
   ServiceUnavailableException,
+  UnauthorizedException,
   UnprocessableEntityException,
   UseGuards,
   Module
@@ -38,6 +40,7 @@ import {
 } from "@localseo/contracts";
 import { mediaAssets, mediaAssetVariants, type DatabaseClient } from "@localseo/db";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import type { FastifyReply } from "fastify";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
@@ -47,6 +50,8 @@ import { DatabaseService } from "../database/database.service.js";
 import { MEDIA_ASSET_STORAGE } from "../media-storage.module.js";
 import { QueueProducerService } from "../queue-producer.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
+import { previewAssetCookiePrefix, readCookieValuesByPrefix, verifyPreviewCapability } from "../preview-capability.js";
+import { loadPreviewMediaManifest } from "../preview-media.js";
 
 const env = parseAppEnv(process.env);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -332,6 +337,43 @@ export class MediaService {
     const variants = await loadVariantsForAssets(db, [assetId]);
     return MediaAssetSummarySchema.parse(mediaAssetToResponse(updated, variants.get(assetId) ?? []));
   }
+
+  async readPreviewAsset(capabilityTokens: string[], assetId: string, fileName: string) {
+    assertPersistedId(assetId, "Preview media asset id must be a UUID.");
+    if (!/^[0-9a-f]{64}-[1-9][0-9]*\.webp$/u.test(fileName)) {
+      throw new UnauthorizedException("Preview media capability does not authorize this path.");
+    }
+    const requestedPath = `/assets/${assetId}/${fileName}`;
+    const db = this.database.requireDb();
+
+    for (const token of capabilityTokens) {
+      const claims = verifyPreviewCapability(token, env.PREVIEW_CAPABILITY_SECRET, "assets");
+      if (!claims) {
+        continue;
+      }
+      const manifest = await loadPreviewMediaManifest(db, claims.projectId, claims.pageVersionId);
+      if (manifest.sha256 !== claims.manifestSha256) {
+        continue;
+      }
+      const entry = manifest.entries.find((candidate) => candidate.path === requestedPath);
+      if (!entry) {
+        continue;
+      }
+
+      let body: Uint8Array;
+      try {
+        body = await this.storage.readPrivateObject({ key: entry.storageKey, maxBytes: entry.bytes });
+      } catch {
+        throw new ServiceUnavailableException("Preview media bytes are unavailable.");
+      }
+      if (body.byteLength !== entry.bytes || sha256Hex(body) !== entry.sha256) {
+        throw new ServiceUnavailableException("Preview media bytes do not match the immutable manifest.");
+      }
+      return { body, contentType: entry.contentType };
+    }
+
+    throw new UnauthorizedException("Preview media capability is invalid, expired, or does not authorize this path.");
+  }
 }
 
 @Controller("projects/:projectId/media")
@@ -387,8 +429,32 @@ class MediaController {
   }
 }
 
+@Controller("assets")
+class PreviewMediaAssetController {
+  constructor(@Inject(MediaService) private readonly media: MediaService) {}
+
+  @Get(":assetId/:fileName")
+  async get(
+    @Param("assetId") assetId: string,
+    @Param("fileName") fileName: string,
+    @Headers("cookie") cookieHeader: string | undefined,
+    @Res() reply: FastifyReply
+  ) {
+    const asset = await this.media.readPreviewAsset(
+      readCookieValuesByPrefix(cookieHeader, previewAssetCookiePrefix),
+      assetId,
+      fileName
+    );
+    reply.header("content-type", asset.contentType);
+    reply.header("content-length", asset.body.byteLength);
+    reply.header("cache-control", "private, no-store");
+    reply.header("x-content-type-options", "nosniff");
+    return reply.send(Buffer.from(asset.body));
+  }
+}
+
 @Module({
-  controllers: [MediaController],
+  controllers: [MediaController, PreviewMediaAssetController],
   providers: [MediaService]
 })
 export class MediaModule {}

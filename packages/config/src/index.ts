@@ -28,6 +28,7 @@ export const AppEnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
   API_PUBLIC_URL: z.string().url().default("http://localhost:4000"),
+  PREVIEW_CAPABILITY_SECRET: z.string().min(32).default("local-preview-capability-secret-at-least-32"),
   TRUST_PROXY: z.string().trim().min(1).default("false"),
   DATABASE_URL: DatabaseUrlSchema.optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
@@ -83,6 +84,7 @@ export type AppEnv = z.output<typeof AppEnvSchema>;
 export const productionRequiredEnvKeys = [
   "WEB_ORIGIN",
   "API_PUBLIC_URL",
+  "PREVIEW_CAPABILITY_SECRET",
   "TRUST_PROXY",
   "DATABASE_URL",
   "REDIS_URL",
@@ -96,7 +98,12 @@ export const productionRequiredEnvKeys = [
   "GSC_OAUTH_STATE_SECRET"
 ] as const;
 
-const productionSecretEnvKeys = ["BETTER_AUTH_SECRET", "GSC_TOKEN_ENCRYPTION_KEY", "GSC_OAUTH_STATE_SECRET"] as const;
+const productionSecretEnvKeys = [
+  "BETTER_AUTH_SECRET",
+  "GSC_TOKEN_ENCRYPTION_KEY",
+  "GSC_OAUTH_STATE_SECRET",
+  "PREVIEW_CAPABILITY_SECRET"
+] as const;
 
 const knownSecretPlaceholderValues = new Set(["replace-with-at-least-32-characters", "replace-me", "changeme"]);
 

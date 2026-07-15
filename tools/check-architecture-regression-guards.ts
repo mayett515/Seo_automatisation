@@ -1151,9 +1151,9 @@ requireIncludes(
 
 requireIncludes(
   "docs/architecture/decisions/0020-project-scoped-media-asset-pipeline.md",
-  "StaticSiteFile` must become binary-safe",
+  "`StaticSiteFile` is binary-safe",
   "media-asset-boundary",
-  "ADR 0020 must preserve the binary artifact migration prerequisite"
+  "ADR 0020 must record the implemented binary artifact boundary"
 );
 
 requireIncludes(
@@ -1165,7 +1165,7 @@ requireIncludes(
 
 requireIncludes(
   ".ai-project-rules/15-architecture-regression-guards.md",
-  "Preview and deploy must resolve the same media manifest",
+  "Preview and deploy must use the same project-scoped media-manifest resolver",
   "media-asset-boundary",
   "Rule 15 must preserve preview/deploy media manifest parity"
 );
@@ -1186,7 +1186,7 @@ requireIncludes(
 
 requireIncludes(
   ".ai-project-rules/15-architecture-regression-guards.md",
-  "Sandboxed preview media uses a short-lived path-scoped signed capability",
+  'Sandboxed preview media keeps sandbox="" and uses the document-to-assets capability chain',
   "media-asset-boundary",
   "Rule 15 must preserve empty-sandbox preview auth without changing rendered asset paths"
 );
@@ -1581,6 +1581,167 @@ requireIncludes(
   "expires abandoned pending media upload intents after the bounded retention window",
   "media-asset-boundary",
   "Media recovery integration must prove abandoned upload intent quota is eventually released"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  'z.discriminatedUnion("encoding"',
+  "media-renderer-parity",
+  "Static site files must use an explicit UTF-8/base64 encoding discriminator"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "STATIC_SITE_ARTIFACT_MAX_DECODED_BYTES = 50 * 1024 * 1024",
+  "media-renderer-parity",
+  "Static artifacts must enforce the accepted decoded-byte budget"
+);
+
+requireIncludes(
+  "packages/contracts/src/page-json.test.ts",
+  "requires explicit encoding and measures decoded bytes",
+  "media-renderer-parity",
+  "Contract tests must pin explicit static-file encoding and decoded-byte accounting"
+);
+
+requireIncludes(
+  "packages/adapters/src/netlify-site-hosting.ts",
+  "artifact.files.map(decodeStaticSiteFile)",
+  "media-renderer-parity",
+  "Netlify handoff must decode each artifact file before digest and upload"
+);
+
+requireIncludes(
+  "packages/adapters/src/netlify-site-hosting.test.ts",
+  "hashes and uploads decoded base64 bytes instead of transport text",
+  "media-renderer-parity",
+  "Netlify tests must prove byte digest/upload parity for base64 files"
+);
+
+requireNotRegex(
+  "packages/adapters/src/netlify-site-hosting.ts",
+  /@localseo\/(?:db|page-registry)/u,
+  "media-renderer-parity",
+  "The hosting adapter must not resolve media, query the database, or render PageJson"
+);
+
+requireIncludes(
+  "packages/db/src/media-manifest.ts",
+  "loadResolvedPageVersionMediaVariants",
+  "media-renderer-parity",
+  "Preview and deploy must share one project-scoped media-manifest resolver"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "loadPreviewMediaManifest",
+  "media-renderer-parity",
+  "Preview must resolve the immutable media projection through the shared manifest boundary"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  "loadResolvedPageVersionMediaVariants",
+  "media-renderer-parity",
+  "Deploy must resolve the same immutable media projection before artifact construction"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  "buildReleaseMediaFiles",
+  "media-renderer-parity",
+  "Deploy must verify and embed projected derivative bytes before provider handoff"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.integration.ts",
+  "embeds projected immutable media bytes in the persisted static artifact",
+  "media-renderer-parity",
+  "Deploy integration must prove media bytes are persisted in the self-contained artifact"
+);
+
+requireIncludes(
+  "apps/api/src/preview-capability.ts",
+  '"SameSite=None"',
+  "media-preview-capability",
+  "Preview capabilities must remain cross-site capable for opaque sandboxed subresources"
+);
+
+requireNotIncludes(
+  "apps/api/src/preview-capability.ts",
+  "SameSite=Lax",
+  "media-preview-capability",
+  "Local preview capability cookies must not be blocked by the iframe's opaque site-for-cookies"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  'path: "/assets"',
+  "media-preview-capability",
+  "The preview document must scope its asset capability to the asset route"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "previewPageVersionDocument",
+  "media-preview-capability",
+  "Preview HTML must be served through the capability-authorized document boundary"
+);
+
+requireIncludes(
+  "apps/api/src/modules/media.module.ts",
+  "readPreviewAsset",
+  "media-preview-capability",
+  "Preview asset bytes must pass capability, manifest, and byte-integrity checks"
+);
+
+requireIncludes(
+  "apps/api/src/modules/media.integration.ts",
+  "serves only bytes authorized by the signed page-version manifest",
+  "media-preview-capability",
+  "Media integration must reject paths outside the signed preview manifest"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "serves editor preview through metadata and signed document capabilities",
+  "media-preview-capability",
+  "Pages integration must prove metadata-to-document capability delivery"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  'sandbox=""',
+  "media-preview-capability",
+  "Page Studio preview must preserve the empty iframe sandbox"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "preview.data.documentPath",
+  "media-preview-capability",
+  "Page Studio preview must load the capability-authorized document URL"
+);
+
+requireNotIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "srcDoc=",
+  "media-preview-capability",
+  "Page Studio must not return to inline preview HTML transport"
+);
+
+requireIncludes(
+  "apps/web/e2e/preview-capability-cookie.spec.ts",
+  "sandboxed preview sends the partitioned asset capability from its opaque origin",
+  "media-preview-capability",
+  "Browser coverage must prove the document-to-assets cookie chain from sandboxed preview"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0020-project-scoped-media-asset-pipeline.md",
+  "PageJson references become renderer selection truth",
+  "media-asset-boundary",
+  "Slice 3 must cross-check PageJson media references against projection and manifest truth"
 );
 
 if (warnings.length > 0) {

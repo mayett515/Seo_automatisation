@@ -320,7 +320,7 @@ The first preview screen owns this review decision and, after approval, can crea
 
 Preview and deploy must share the same renderer core. The static release renderer now lives in the page-registry lane and is invoked before the site-hosting adapter; provider adapters upload rendered files and do not render page JSON. The pure preview renderer reuses that same core: editor/staging preview emits `noindex`, while deploy-preview mode is byte-identical to the deploy static artifact for the same PageJson and target URL.
 
-The first operator preview surface must not render PageJson in React. It calls the project-scoped API preview endpoint, receives the renderer-produced `StaticSiteFile`, and displays that HTML in a sandboxed frame. This keeps preview behavior tied to the deploy renderer and prevents a second browser-side rendering path from drifting.
+The operator preview surface must not render PageJson in React or inject renderer HTML through `srcDoc`. It calls the guarded project-scoped preview metadata endpoint, receives only a renderer-file descriptor plus a document path, and points a `sandbox=""` iframe at that capability-authorized document URL. The guarded metadata response issues a short-lived page-version document capability; the document response rechecks the immutable manifest and issues the separate `/assets` capability used by root-relative media requests. No token enters rendered HTML or an asset path. This keeps preview behavior tied to the deploy renderer and prevents a second browser-side rendering path from drifting.
 
 The first renderer CSS foundation should stay inside `packages/page-registry`:
 
@@ -377,7 +377,7 @@ LLM-generated page proposals must validate against the same section schemas and 
 
 ADR 0020 defines media before the UI exposes it. The Page Studio media surface is a project asset library, never a raw URL or storage-key field. PageJson stores a strict placement reference with an opaque asset id, explicit content/decorative alt semantics, and an optional normalized focal point.
 
-The future UI owns only staging and explicit selection:
+The future media-control UI owns only staging and explicit selection:
 
 ```text
 create upload intent
@@ -388,7 +388,7 @@ create upload intent
 -> explicitly create N+1 through the existing Page Studio edit command
 ```
 
-Upload completion never edits PageJson. The backend media worker validates and rewrites bytes before an asset becomes selectable. Preview must move to an authenticated document URL before media ships so the same root-relative asset paths and renderer output can be used in preview and deploy. The iframe keeps `sandbox=""`; a five-minute path-scoped signed partitioned capability cookie authorizes only the resolved preview manifest without changing HTML or asset paths.
+Upload completion never edits PageJson. The backend media worker validates and rewrites bytes before an asset becomes selectable. Preview now uses a capability-authorized document URL and the iframe keeps `sandbox=""`. A five-minute signed document capability leads to a separate path-scoped asset capability that authorizes only the resolved preview manifest without changing HTML or asset paths. Both cookies remain `Secure`, `SameSite=None`, and `Partitioned` locally and in production because the sandboxed document has an opaque site-for-cookies. Deploy resolves the same manifest, verifies the same immutable derivative bytes, and embeds them in the binary-safe static artifact before provider handoff. The remaining work in this surface is the first registry media section and its upload/select/alt/focal-point controls; PageJson references must match the relational projection and resolved manifest exactly before rendering.
 
 ## Opportunity Explorer MVP
 

@@ -98,6 +98,21 @@ export type RenderPagePreviewInput = {
   pageVersionId?: string | null;
 };
 
+export type ResolvedPageMediaVariant = {
+  assetId: string;
+  variantKey: string;
+  width: number;
+  height: number;
+  contentType: "image/webp";
+  byteSize: number;
+  sha256: string;
+  path: string;
+};
+
+export function buildPageMediaVariantPath(input: { assetId: string; sha256: string; width: number }): string {
+  return `/assets/${input.assetId}/${input.sha256}-${input.width}.webp`;
+}
+
 const textShort = z.string().trim().min(1).max(180);
 const textMedium = z.string().trim().min(1).max(500);
 const textLong = z.string().trim().min(1).max(1_500);
@@ -668,6 +683,7 @@ function renderStaticSiteFile(
 
   return {
     path: targetUrlToHtmlPath(page.targetUrl),
+    encoding: "utf8",
     body: renderPageHtml(page, validation.pageJson, options.robots),
     contentType: "text/html; charset=utf-8"
   };

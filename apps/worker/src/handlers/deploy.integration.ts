@@ -1,8 +1,10 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import type {
   BeginDeployResult,
   DeployReleaseResult,
+  MediaAssetStoragePort,
   ObjectStoragePort,
   ProviderDeploySnapshot,
   RollbackDeployInput,
@@ -11,18 +13,28 @@ import type {
   UploadDeployFilesResult
 } from "@localseo/adapters";
 import { ProviderRequestError } from "@localseo/adapters";
-import type { DeploymentStatus, DeployJobData, PageJson, ReleaseVerificationStatus } from "@localseo/contracts";
+import {
+  StaticSiteArtifactSchema,
+  type DeploymentStatus,
+  type DeployJobData,
+  type PageJson,
+  type ReleaseVerificationStatus
+} from "@localseo/contracts";
 import {
   approvals,
   customers,
   deployments,
   mainWebsites,
+  mediaAssets,
+  mediaAssetVariants,
   pageProposals,
+  pageVersionMediaAssets,
   pageVersions,
   projects,
   releaseChecks,
   releasePlanItems,
   releasePlans,
+  users,
   type DatabaseClient
 } from "@localseo/db";
 import { buildReleaseDeploymentKey } from "@localseo/domain";
@@ -33,6 +45,7 @@ import {
 } from "../../../../packages/db/test-support/integration-database.js";
 import {
   ManualReconciliationRequiredError,
+  buildStaticSiteArtifactKey,
   createDrizzleDeployRepository,
   executeDeploy,
   reconcilePendingDeployments
@@ -120,6 +133,40 @@ void describe(
 
       const deployment = await selectDeployment(db, fixture.deploymentKey);
       assert.equal(deployment?.status, "provider_succeeded");
+    });
+
+    void it("embeds projected immutable media bytes in the persisted static artifact", async () => {
+      const fixture = await createDeployFixture(db);
+      const storage = new MemoryObjectStorage();
+      const media = Buffer.from([0, 1, 2, 253, 254, 255]);
+      const expected = await attachReadyMediaFixture(db, fixture, media);
+      storage.media.set(expected.storageKey, media);
+
+      const result = await executeDeploy({
+        data: fixture.data,
+        jobId: fixture.deploymentKey,
+        objectStorage: storage,
+        repository: createDrizzleDeployRepository(db),
+        siteHosting: new StatefulSiteHosting({ snapshots: [providerSnapshot("provider-deploy-1", "ready")] })
+      });
+
+      assert.equal(result.status, "provider_succeeded");
+      const artifact = StaticSiteArtifactSchema.parse(
+        storage.values.get(buildStaticSiteArtifactKey(fixture.releasePlanId))
+      );
+      assert.equal(
+        artifact.files.some((file) => file.encoding === "utf8" && file.path.endsWith("index.html")),
+        true
+      );
+      assert.deepEqual(
+        artifact.files.find((file) => file.path === expected.publicPath),
+        {
+          path: expected.publicPath,
+          contentType: "image/webp",
+          encoding: "base64",
+          body: media.toString("base64")
+        }
+      );
     });
 
     void it("preserves deployedAt when replaying an already verified live deployment", async () => {
@@ -528,6 +575,60 @@ async function createDeployFixture(
   };
 }
 
+async function attachReadyMediaFixture(db: DatabaseClient, fixture: DeployFixture, body: Uint8Array) {
+  const checksumSha256 = createHash("sha256").update(body).digest("hex");
+  const [actor] = await db
+    .insert(users)
+    .values({ email: `media-${fixture.pageVersionId}@example.test`, name: "Media actor" })
+    .returning();
+  assert.ok(actor);
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({
+      projectId: fixture.projectId,
+      status: "pending_upload",
+      displayName: "approved.webp",
+      claimedContentType: "image/webp",
+      expectedBytes: body.byteLength,
+      expectedSha256: checksumSha256,
+      sourceStorageKey: `media/quarantine/${fixture.projectId}/${fixture.pageVersionId}`,
+      createdByUserId: actor.id
+    })
+    .returning();
+  assert.ok(asset);
+  await db.update(mediaAssets).set({ status: "processing" }).where(eq(mediaAssets.id, asset.id));
+  const storageKey = `media/ready/${asset.id}/w640.webp`;
+  await db.insert(mediaAssetVariants).values({
+    mediaAssetId: asset.id,
+    variantKey: "w640_webp",
+    storageKey,
+    contentType: "image/webp",
+    width: 640,
+    height: 320,
+    bytes: body.byteLength,
+    checksumSha256
+  });
+  await db
+    .update(mediaAssets)
+    .set({
+      status: "ready",
+      detectedContentType: "image/webp",
+      sourceBytes: body.byteLength,
+      width: 640,
+      height: 320,
+      checksumSha256,
+      processorVersion: "integration-v1",
+      requiredVariantKeys: ["w640_webp"],
+      processedAt: new Date()
+    })
+    .where(eq(mediaAssets.id, asset.id));
+  await db.insert(pageVersionMediaAssets).values({ pageVersionId: fixture.pageVersionId, mediaAssetId: asset.id });
+  return {
+    storageKey,
+    publicPath: `/assets/${asset.id}/${checksumSha256}-640.webp`
+  };
+}
+
 function pageJson(input: Partial<PageJson> = {}): PageJson {
   return {
     schemaVersion: 1,
@@ -643,8 +744,9 @@ function providerSnapshot(providerDeployId: string, status: ProviderDeploySnapsh
   };
 }
 
-class MemoryObjectStorage implements ObjectStoragePort {
+class MemoryObjectStorage implements ObjectStoragePort, Pick<MediaAssetStoragePort, "readPrivateObject"> {
   readonly values = new Map<string, unknown>();
+  readonly media = new Map<string, Uint8Array>();
 
   putJson(input: { key: string; value: unknown }): Promise<{ key: string }> {
     this.values.set(input.key, input.value);
@@ -653,6 +755,13 @@ class MemoryObjectStorage implements ObjectStoragePort {
 
   getJson(input: { key: string }): Promise<unknown> {
     return Promise.resolve(this.values.get(input.key));
+  }
+
+  readPrivateObject(input: { key: string; maxBytes: number }): Promise<Uint8Array> {
+    const value = this.media.get(input.key);
+    return value && value.byteLength <= input.maxBytes
+      ? Promise.resolve(value)
+      : Promise.reject(new Error("No media fixture configured"));
   }
 }
 

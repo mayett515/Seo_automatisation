@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import {
   isProviderRequestError,
   NotConfiguredSiteHostingAdapter,
   type BeginDeployResult,
   type DeployReleaseResult,
+  type MediaAssetStoragePort,
   type ObjectStoragePort,
   type ProviderDeploySnapshot,
   type ProviderUploadResumeToken,
@@ -12,6 +14,7 @@ import {
   DeployJobDataSchema,
   PageJsonSchema,
   ReleaseItemActionSchema,
+  StaticSiteArtifactSchema,
   type ApprovedReleaseArtifact,
   type DeployJobData,
   type DeploymentStatus,
@@ -19,21 +22,24 @@ import {
   type PageVersionStatus,
   type ReleaseCheck,
   type ReleaseItemAction,
-  type ReleasePlan
+  type ReleasePlan,
+  type StaticSiteFile
 } from "@localseo/contracts";
 import { buildReleaseDeploymentKey, canDeployRelease } from "@localseo/domain";
-import { renderApprovedReleaseArtifact } from "@localseo/page-registry";
+import { buildPageMediaVariantPath, renderApprovedReleaseArtifact } from "@localseo/page-registry";
 import {
   approvals,
   demoteReleaseCandidatePageVersionsForPlan,
   deployments,
   mainWebsites,
+  loadResolvedPageVersionMediaVariants,
   pageVersions,
   releaseChecks,
   releasePlanItems,
   releasePlans,
   rollbackPoints
 } from "@localseo/db";
+import type { ResolvedPageVersionMediaVariantRecord } from "@localseo/db";
 import type { Job } from "bullmq";
 import { and, eq, inArray, isNotNull, not, or, sql } from "drizzle-orm";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
@@ -47,6 +53,7 @@ export type DeployContext = {
   hasApproval: boolean;
   hostingSiteId?: string;
   releaseItems: ReleaseArtifactItem[];
+  mediaVariants: ResolvedPageVersionMediaVariantRecord[];
   rollbackPointCount: number;
   priorSuccessfulDeploymentCount: number;
   existingDeployment?: DeploymentRow;
@@ -159,7 +166,7 @@ export async function handleDeployJob(
   job: Job,
   dbHandle: WorkerDbHandle | undefined,
   siteHosting: SiteHostingPort = defaultSiteHosting,
-  objectStorage: ObjectStoragePort
+  objectStorage: ObjectStoragePort & Pick<MediaAssetStoragePort, "readPrivateObject">
 ): Promise<Record<string, unknown>> {
   const data = parseDeployJobData(job.data);
 
@@ -181,7 +188,7 @@ export async function executeDeploy(input: {
   data: DeployJobData;
   isFinalAttempt?: boolean;
   jobId: string;
-  objectStorage: ObjectStoragePort;
+  objectStorage: ObjectStoragePort & Pick<MediaAssetStoragePort, "readPrivateObject">;
   repository: DeployRepository;
   siteHosting: SiteHostingPort;
 }): Promise<Record<string, unknown>> {
@@ -244,7 +251,11 @@ export async function executeDeploy(input: {
     }
 
     const approvedArtifact = buildApprovedReleaseArtifact(input.data, context);
-    const staticSiteArtifact = renderApprovedReleaseArtifact(approvedArtifact);
+    const renderedArtifact = renderApprovedReleaseArtifact(approvedArtifact);
+    const mediaFiles = await buildReleaseMediaFiles(context.mediaVariants, input.objectStorage);
+    const staticSiteArtifact = StaticSiteArtifactSchema.parse({
+      files: [...renderedArtifact.files, ...mediaFiles]
+    });
     const approvedArtifactKey = buildReleaseArtifactKey(input.data.releasePlanId);
     const buildArtifactKey = buildStaticSiteArtifactKey(input.data.releasePlanId);
     const evidence = buildDeployEvidence(context, {
@@ -478,6 +489,48 @@ export function buildStaticSiteArtifactKey(releasePlanId: string): string {
   return `releases/${releasePlanId}/static-site-artifact.json`;
 }
 
+export async function buildReleaseMediaFiles(
+  variants: ResolvedPageVersionMediaVariantRecord[],
+  storage: Pick<MediaAssetStoragePort, "readPrivateObject">
+): Promise<StaticSiteFile[]> {
+  const files = new Map<string, StaticSiteFile>();
+
+  for (const variant of variants) {
+    const path = buildPageMediaVariantPath({
+      assetId: variant.assetId,
+      sha256: variant.checksumSha256,
+      width: variant.width
+    });
+    const existing = files.get(path);
+    if (existing) {
+      continue;
+    }
+
+    let body: Uint8Array;
+    try {
+      body = await storage.readPrivateObject({ key: variant.storageKey, maxBytes: variant.bytes });
+    } catch {
+      throw new DeployEvidenceError(`Release media bytes are unavailable: ${path}`);
+    }
+    if (body.byteLength !== variant.bytes || sha256Hex(body) !== variant.checksumSha256) {
+      throw new DeployEvidenceError(`Release media bytes do not match the approved manifest: ${path}`);
+    }
+
+    files.set(path, {
+      path,
+      contentType: variant.contentType,
+      encoding: "base64",
+      body: Buffer.from(body).toString("base64")
+    });
+  }
+
+  return [...files.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function sha256Hex(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
   return {
     async loadContext(data) {
@@ -514,6 +567,10 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         .from(releasePlanItems)
         .leftJoin(pageVersions, eq(pageVersions.id, releasePlanItems.pageVersionId))
         .where(eq(releasePlanItems.releasePlanId, data.releasePlanId));
+      const mediaVariants = await loadResolvedPageVersionMediaVariants(db, {
+        projectId: data.projectId,
+        pageVersionIds: itemRows.flatMap((item) => (item.pageVersionId ? [item.pageVersionId] : []))
+      });
       const rollbackRows = await db
         .select({ id: rollbackPoints.id })
         .from(rollbackPoints)
@@ -551,6 +608,7 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         checks: checkRows.map(mapReleaseCheck),
         hostingSiteId: website?.hostingSiteId ?? undefined,
         releaseItems: itemRows.map(mapReleaseArtifactItem),
+        mediaVariants,
         rollbackPointCount: rollbackRows.length,
         priorSuccessfulDeploymentCount: priorDeploymentRows.length,
         existingDeployment

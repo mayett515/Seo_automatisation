@@ -36,7 +36,7 @@ Slice 8: Page Studio, Notes, Approval, And Versioning
   editing, notes, approval, and version freezing.
 ```
 
-Implementation checkpoint (2026-07-12): the controlled backend accepts explicit prop, movement, variant, and section-replacement commands and creates append-only preview versions. The visual workspace exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, controlled replacement targets, the shared rendered preview, and predecessor-blocker context. AI text revision is implemented as a separate suggest/review/apply workflow. The media ingestion and deterministic processing backend is implemented, while renderer parity and visual media controls remain separate slices.
+Implementation checkpoint (2026-07-13): the controlled backend accepts explicit prop, movement, variant, and section-replacement commands and creates append-only preview versions. The visual workspace exposes a registry-owned section outline, legal move controls, registry variants, complete structured prop forms, controlled replacement targets, the shared rendered preview, and predecessor-blocker context. AI text revision is implemented as a separate suggest/review/apply workflow. Media ingestion/processing and binary renderer/preview/deploy parity are implemented; visual media controls remain the final ADR 0020 slice.
 
 ## Page Structure
 
@@ -201,13 +201,15 @@ Controlled replacement preserves the current section id, order, zone, and page s
 
 `Media` is governed by ADR 0020 and is not a URL editor. The future control lists only project-owned assets that completed deterministic worker normalization. Uploading creates private quarantine/processing state only; it does not edit a page. Selecting an asset, writing placement-specific alt text, and choosing a normalized focal point remain local staging until explicit confirmation creates N+1 through the existing complete-props command. Archived assets remain resolvable for historical versions but disappear from new selection.
 
-The first media implementation is deliberately ordered:
+The media implementation is deliberately ordered:
 
 ```text
 backend asset/upload/processing foundation
 -> binary-safe artifact plus authenticated preview media parity
 -> ImageText registry entry and Page Studio media controls
 ```
+
+The first two stages are implemented. The remaining control must select only ready project assets and apply a strict placement reference through the existing versioned command boundary.
 
 Raw external URLs, object keys, SVG, animation, video, stock search, and generated images remain outside the MVP media boundary.
 

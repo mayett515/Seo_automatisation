@@ -11,6 +11,8 @@ import {
   ReleasePreflightResponseSchema,
   ReviewPageVersionRequestSchema,
   SectionCopyRevisionOutputSchema,
+  StaticSiteArtifactSchema,
+  decodedStaticSiteFileByteLength,
   type PageJson
 } from "./index.js";
 
@@ -196,6 +198,61 @@ void describe("ApprovedReleaseArtifactPageSchema", () => {
         true
       );
     }
+  });
+});
+
+void describe("StaticSiteArtifactSchema", () => {
+  void it("requires explicit encoding and measures decoded bytes", () => {
+    const binary = Buffer.from([0, 1, 2, 253, 254, 255]);
+    const artifact = StaticSiteArtifactSchema.parse({
+      files: [
+        {
+          path: "/index.html",
+          contentType: "text/html; charset=utf-8",
+          encoding: "utf8",
+          body: "Gruesse"
+        },
+        {
+          path: "/assets/image.webp",
+          contentType: "image/webp",
+          encoding: "base64",
+          body: binary.toString("base64")
+        }
+      ]
+    });
+
+    assert.equal(decodedStaticSiteFileByteLength(artifact.files[0]!), 7);
+    assert.equal(decodedStaticSiteFileByteLength(artifact.files[1]!), binary.byteLength);
+  });
+
+  void it("rejects ambiguous encodings, duplicate paths, and traversal paths", () => {
+    assert.equal(
+      StaticSiteArtifactSchema.safeParse({
+        files: [{ path: "/index.html", contentType: "text/html", body: "missing encoding" }]
+      }).success,
+      false
+    );
+    assert.equal(
+      StaticSiteArtifactSchema.safeParse({
+        files: [{ path: "/asset.webp", contentType: "image/webp", encoding: "base64", body: "not-base64" }]
+      }).success,
+      false
+    );
+    assert.equal(
+      StaticSiteArtifactSchema.safeParse({
+        files: [
+          { path: "/same", contentType: "text/plain", encoding: "utf8", body: "one" },
+          { path: "/same", contentType: "text/plain", encoding: "utf8", body: "two" }
+        ]
+      }).success,
+      false
+    );
+    assert.equal(
+      StaticSiteArtifactSchema.safeParse({
+        files: [{ path: "/assets/../secret", contentType: "text/plain", encoding: "utf8", body: "no" }]
+      }).success,
+      false
+    );
   });
 });
 

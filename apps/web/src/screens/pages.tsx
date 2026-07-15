@@ -34,7 +34,7 @@ import {
   type PageVersionSummary,
   type ReleasePlan
 } from "@localseo/contracts";
-import { getJson, patchJson, postJson } from "../lib/api";
+import { apiResourceUrl, getJson, patchJson, postJson } from "../lib/api";
 import { PageStudioEditor } from "../features/page-studio/page-studio-editor";
 import { latestVersionForProposal, pageVersionAncestors } from "../features/page-studio/page-studio-state";
 import { ReleaseLifecyclePanel } from "./release-detail";
@@ -354,7 +354,12 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
                 <strong>Rendered preview</strong>
                 <StatusPill tone="neutral">noindex</StatusPill>
               </div>
-              <iframe className="preview-frame" sandbox="" srcDoc={preview.data.file.body} title="Page preview" />
+              <iframe
+                className="preview-frame"
+                sandbox=""
+                src={apiResourceUrl(preview.data.documentPath)}
+                title="Page preview"
+              />
             </div>
           </section>
 

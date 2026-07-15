@@ -341,7 +341,32 @@ Implemented tests prove:
 5. Database triggers reject incomplete ready transitions and all variant mutation after ready; deterministic checksum failure writes visible failed product truth without derivative rows.
 6. Bounded recovery re-enqueues stale processing by the same asset id, terminalizes exhausted processing as `work_recovery_exhausted`, and expires 24-hour abandoned pending intents so quota cannot remain occupied forever, without touching deploy/rollback lanes.
 
-DB-free contracts, filesystem-storage, worker, permission, and routing tests additionally pin strict request/response shapes, raw-byte metadata, derivative width behavior, editor authorization, and worker queue ownership. Renderer resolution, binary release artifacts, authenticated preview asset serving, and Page Studio media controls remain intentionally outside this backend slice.
+DB-free contracts, filesystem-storage, worker, permission, and routing tests additionally pin strict request/response shapes, raw-byte metadata, derivative width behavior, editor authorization, and worker queue ownership. Page Studio media placement and controls remain intentionally outside this backend slice.
+
+### Media Renderer, Preview, And Deploy Parity
+
+Files:
+
+- [page-json.test.ts](/C:/localseoproject/packages/contracts/src/page-json.test.ts)
+- [netlify-site-hosting.test.ts](/C:/localseoproject/packages/adapters/src/netlify-site-hosting.test.ts)
+- [preview-capability.test.ts](/C:/localseoproject/apps/api/src/preview-capability.test.ts)
+- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
+- [media.integration.ts](/C:/localseoproject/apps/api/src/modules/media.integration.ts)
+- [deploy.integration.ts](/C:/localseoproject/apps/worker/src/handlers/deploy.integration.ts)
+- [page-studio-replacement.spec.ts](/C:/localseoproject/apps/web/e2e/page-studio-replacement.spec.ts)
+
+Implemented tests prove:
+
+1. Static artifacts require explicit UTF-8 or canonical base64 files, reject unsafe/duplicate paths, and account against a 50 MiB decoded-byte budget.
+2. Netlify calculates SHA1 over decoded bytes and uploads those same bytes rather than the base64 transport text.
+3. Preview capabilities are signed, time-bounded, kind/project/version/manifest-bound, tamper-resistant, and production-cookie hardened.
+4. The guarded preview metadata call returns no HTML body, issues the document capability, and the capability-authorized document rechecks the current manifest before issuing the `/assets` capability.
+5. Preview asset delivery accepts only a manifest-authorized immutable path and verifies downloaded byte count plus SHA-256 before responding.
+6. Deploy resolves the same project-scoped media projection, verifies immutable derivative bytes, and persists UTF-8 HTML plus base64 media in one self-contained artifact before provider handoff.
+7. Chromium keeps the preview iframe at `sandbox=""`, loads the document URL instead of `srcDoc`, and preserves the existing Page Studio flow at desktop and mobile widths.
+8. A real-network Chromium test proves the cross-site document capability is sent on sandboxed navigation and the document-issued `Secure; SameSite=None; Partitioned` `/assets` capability is sent by an image request from the opaque-origin iframe.
+
+The first PageJson media reference, `ImageText` registry entry, exact PageJson-reference/projection/manifest cross-check, upload/select/alt/focal-point UI, and physical byte-retention cleanup remain deferred.
 
 ### Tracking Ingestion
 

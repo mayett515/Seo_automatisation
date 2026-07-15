@@ -2,6 +2,10 @@ import { applyLocalScaffoldHeaders } from "./local-scaffold";
 
 export const apiUrl = getApiUrl();
 
+export function apiResourceUrl(path: string): string {
+  return `${apiUrl}${path}`;
+}
+
 type JsonSchema<T> = {
   parse(input: unknown): T;
 };
@@ -109,5 +113,5 @@ function parseErrorMessage(body: unknown): string | undefined {
 
 function getApiUrl(): string {
   const configuredUrl: unknown = import.meta.env.VITE_API_URL;
-  return typeof configuredUrl === "string" ? configuredUrl : "http://localhost:4000";
+  return typeof configuredUrl === "string" ? configuredUrl.replace(/\/$/u, "") : "/api";
 }

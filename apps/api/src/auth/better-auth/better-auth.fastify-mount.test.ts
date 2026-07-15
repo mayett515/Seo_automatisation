@@ -30,6 +30,7 @@ function testEnv(): AppEnv {
     PORT: 4000,
     WEB_ORIGIN: "http://localhost:5173",
     API_PUBLIC_URL: "http://localhost:4000",
+    PREVIEW_CAPABILITY_SECRET: "local-preview-capability-secret-at-least-32",
     TRUST_PROXY: "false",
     DATABASE_POOL_MAX: 10,
     DATABASE_IDLE_TIMEOUT_SECONDS: 30,

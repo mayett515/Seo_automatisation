@@ -1,10 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { ObjectStoragePort, SiteHostingPort } from "@localseo/adapters";
+import { createHash } from "node:crypto";
+import type { MediaAssetStoragePort, ObjectStoragePort, SiteHostingPort } from "@localseo/adapters";
 import type { DeployJobData, PageJson, ReleaseCheck } from "@localseo/contracts";
 import { buildReleaseDeploymentKey } from "@localseo/domain";
 import {
   buildReleaseArtifactKey,
+  buildReleaseMediaFiles,
   buildStaticSiteArtifactKey,
   executeDeploy,
   parseDeployJobData,
@@ -13,6 +15,60 @@ import {
   type DeploymentRow,
   type ReleasePlanRow
 } from "./deploy.js";
+
+void describe("buildReleaseMediaFiles", () => {
+  void it("embeds verified immutable media bytes with deterministic public paths", async () => {
+    const bytes = Buffer.from([0, 1, 2, 253, 254, 255]);
+    const checksumSha256 = createHash("sha256").update(bytes).digest("hex");
+    const files = await buildReleaseMediaFiles(
+      [
+        {
+          pageVersionId: "page-version-1",
+          assetId: "11111111-1111-4111-8111-111111111111",
+          variantKey: "w640_webp",
+          storageKey: "media/ready/example.webp",
+          contentType: "image/webp",
+          width: 640,
+          height: 320,
+          bytes: bytes.byteLength,
+          checksumSha256
+        }
+      ],
+      { readPrivateObject: () => Promise.resolve(bytes) }
+    );
+
+    assert.deepEqual(files, [
+      {
+        path: `/assets/11111111-1111-4111-8111-111111111111/${checksumSha256}-640.webp`,
+        contentType: "image/webp",
+        encoding: "base64",
+        body: bytes.toString("base64")
+      }
+    ]);
+  });
+
+  void it("fails before provider handoff when media bytes drift from the manifest", async () => {
+    await assert.rejects(
+      buildReleaseMediaFiles(
+        [
+          {
+            pageVersionId: "page-version-1",
+            assetId: "11111111-1111-4111-8111-111111111111",
+            variantKey: "w640_webp",
+            storageKey: "media/ready/example.webp",
+            contentType: "image/webp",
+            width: 640,
+            height: 320,
+            bytes: 3,
+            checksumSha256: "0".repeat(64)
+          }
+        ],
+        { readPrivateObject: () => Promise.resolve(Buffer.from([1, 2, 3])) }
+      ),
+      /do not match the approved manifest/u
+    );
+  });
+});
 
 void describe("parseDeployJobData", () => {
   void it("accepts deploy jobs with a stable deployment key", () => {
@@ -1028,6 +1084,7 @@ function deployContext(input: Partial<DeployContext> = {}): DeployContext {
     hasApproval: true,
     hostingSiteId: "netlify-site-1",
     releaseItems: [releaseArtifactItem()],
+    mediaVariants: [],
     rollbackPointCount: 1,
     priorSuccessfulDeploymentCount: 1,
     ...input
@@ -1368,7 +1425,7 @@ function createSiteHosting(
   };
 }
 
-function createObjectStorage(): ObjectStoragePort {
+function createObjectStorage(): ObjectStoragePort & Pick<MediaAssetStoragePort, "readPrivateObject"> {
   const values = new Map<string, unknown>();
 
   return {
@@ -1376,6 +1433,7 @@ function createObjectStorage(): ObjectStoragePort {
       values.set(input.key, input.value);
       return Promise.resolve({ key: input.key });
     },
-    getJson: (input) => Promise.resolve(values.get(input.key))
+    getJson: (input) => Promise.resolve(values.get(input.key)),
+    readPrivateObject: () => Promise.reject(new Error("No media fixture configured"))
   };
 }

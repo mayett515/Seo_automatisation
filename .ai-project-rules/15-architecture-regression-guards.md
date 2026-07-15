@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.11"
+version: "1.1.13"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -185,10 +185,17 @@ Project-scoped media asset boundary
   New edits may select only ready assets; archived referenced assets remain resolvable for historical versions.
   Ready asset manifests, processor versions, and derivative bytes are immutable; changed processing creates a new asset id.
   Page-version reference projection and rollback retention must block deletion of in-use derivatives.
-  Preview and deploy must resolve the same media manifest through the same renderer and emit identical asset paths.
-  Sandboxed preview media uses a short-lived path-scoped signed capability; do not add allow-same-origin/scripts or credentials to rendered paths.
-  Static release artifacts must use an explicit binary-safe file encoding before media can reach provider handoff.
+  PageJson media references are renderer selection truth; the relational projection is retention/FK evidence and must match those references exactly before rendering.
+  Preview and deploy must use the same project-scoped media-manifest resolver and emit identical immutable asset paths.
+  Static release artifacts use an explicit utf8/base64 file encoding, reject duplicate/unsafe paths, and enforce the decoded artifact budget before persistence or provider handoff.
   Provider file digests and uploads must use the same decoded bytes, never the base64 transport text.
+  The deploy worker resolves and verifies projected derivative bytes before building the self-contained artifact; provider adapters must not import media, registry, or database logic.
+  The guarded preview metadata endpoint returns a descriptor/document path rather than HTML and issues a page-version-scoped signed document capability.
+  The capability-only preview document rechecks the current manifest before issuing a separate asset capability restricted to /assets.
+  The preview asset handler accepts only manifest-authorized immutable paths and verifies byte count plus SHA-256 before responding.
+  Sandboxed preview media keeps sandbox="" and uses the document-to-assets capability chain; do not add allow-same-origin/scripts, srcDoc, session authority to capability routes, or credentials to rendered paths.
+  Preview capabilities bind kind, project, page version, manifest hash, and expiry; cookies are HttpOnly, Secure, SameSite=None, Partitioned, and at most five minutes in every environment because sandboxed subresource requests have an opaque site-for-cookies.
+  Capability tokens must not enter rendered HTML or asset paths; local development uses same-origin /api and /assets proxies without weakening capability verification.
   Ready status requires the exact DB-checked derivative key set, and ready/archived variants are append-only.
   Upload intent requires persisted actor, media:write permission, configured storage/queue, project quota, exact byte count, allow-listed claimed type, and SHA-256 before a pending row is accepted.
   Completion performs metadata reads only, moves pending_upload to processing, and enqueues media-processing with jobId = assetId; image decoding remains worker-only.
