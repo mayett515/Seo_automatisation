@@ -2,11 +2,18 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
-import type { MediaAssetStoragePort, MediaStoredObjectMetadata, ObjectStoragePort } from "./index.js";
+import type {
+  MediaAssetCleanupStoragePort,
+  MediaAssetStoragePort,
+  MediaPrivateObjectListing,
+  MediaStoredObjectMetadata,
+  ObjectStoragePort
+} from "./index.js";
 
 export type S3ObjectStorageAdapterOptions = {
   bucket: string;
@@ -14,7 +21,7 @@ export type S3ObjectStorageAdapterOptions = {
   client?: S3Client;
 };
 
-export class S3ObjectStorageAdapter implements ObjectStoragePort, MediaAssetStoragePort {
+export class S3ObjectStorageAdapter implements ObjectStoragePort, MediaAssetStoragePort, MediaAssetCleanupStoragePort {
   private readonly client: S3Client;
 
   constructor(private readonly options: S3ObjectStorageAdapterOptions) {
@@ -171,6 +178,22 @@ export class S3ObjectStorageAdapter implements ObjectStoragePort, MediaAssetStor
         Key: input.key
       })
     );
+  }
+
+  async listPrivateObjectKeys(input: { prefix: string; maxKeys: number }): Promise<MediaPrivateObjectListing> {
+    const response = await this.client.send(
+      new ListObjectsV2Command({
+        Bucket: this.options.bucket,
+        Prefix: input.prefix,
+        MaxKeys: input.maxKeys + 1
+      })
+    );
+    const keys = (response.Contents ?? []).flatMap((object) => (object.Key ? [object.Key] : []));
+
+    return {
+      keys: keys.slice(0, input.maxKeys),
+      truncated: Boolean(response.IsTruncated) || keys.length > input.maxKeys
+    };
   }
 }
 

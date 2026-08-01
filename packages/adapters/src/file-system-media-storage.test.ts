@@ -67,4 +67,27 @@ void describe("filesystem media storage", () => {
 
     await assert.rejects(() => storage.readPrivateObject({ key: "media/source", maxBytes: 2 }), /bounded read limit/u);
   });
+
+  void it("lists bounded private object keys without exposing metadata sidecars", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "localseo-media-"));
+    roots.push(root);
+    const storage = new FileSystemObjectStorageAdapter(root);
+    for (const key of ["media/ready/project/asset/v1/a.webp", "media/ready/project/asset/v1/b.webp"]) {
+      await storage.putPrivateObject({
+        key,
+        body: new Uint8Array([1]),
+        contentType: "image/webp",
+        sha256: "d".repeat(64)
+      });
+    }
+
+    assert.deepEqual(await storage.listPrivateObjectKeys({ prefix: "media/ready/project/asset/", maxKeys: 5 }), {
+      keys: ["media/ready/project/asset/v1/a.webp", "media/ready/project/asset/v1/b.webp"],
+      truncated: false
+    });
+    assert.deepEqual(await storage.listPrivateObjectKeys({ prefix: "media/ready/project/asset/", maxKeys: 1 }), {
+      keys: ["media/ready/project/asset/v1/a.webp"],
+      truncated: true
+    });
+  });
 });

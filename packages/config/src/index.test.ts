@@ -66,9 +66,21 @@ void describe("AppEnvSchema", () => {
     assert.equal(defaults.MEDIA_MAX_UNRESOLVED_ASSETS, 5);
     assert.equal(defaults.MEDIA_MAX_RETAINED_ASSETS, 250);
     assert.equal(defaults.MEDIA_MAX_DERIVATIVE_BYTES, 2 * 1024 * 1024 * 1024);
+    assert.equal(defaults.MEDIA_CLEANUP_CLAIM_STALE_AFTER_MS, 15 * 60_000);
+    assert.equal(defaults.MEDIA_CLEANUP_MAX_ATTEMPTS, 3);
+    assert.equal(defaults.MEDIA_CLEANUP_BATCH_SIZE, 25);
 
     assert.throws(() => parseAppEnv({ MEDIA_UPLOAD_GRANT_TTL_SECONDS: "601" }));
     assert.throws(() => parseAppEnv({ MEDIA_MAX_UPLOAD_BYTES: String(10 * 1024 * 1024 + 1) }));
+
+    const configured = parseAppEnv({
+      MEDIA_CLEANUP_CLAIM_STALE_AFTER_MS: "300000",
+      MEDIA_CLEANUP_MAX_ATTEMPTS: "5",
+      MEDIA_CLEANUP_BATCH_SIZE: "40"
+    });
+    assert.equal(configured.MEDIA_CLEANUP_CLAIM_STALE_AFTER_MS, 300_000);
+    assert.equal(configured.MEDIA_CLEANUP_MAX_ATTEMPTS, 5);
+    assert.equal(configured.MEDIA_CLEANUP_BATCH_SIZE, 40);
   });
 
   void it("strips obsolete global tracking ingest token config", () => {

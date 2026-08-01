@@ -54,6 +54,13 @@ export const AppEnvSchema = z.object({
     .positive()
     .max(Number.MAX_SAFE_INTEGER)
     .default(2 * 1024 * 1024 * 1024),
+  MEDIA_CLEANUP_CLAIM_STALE_AFTER_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15 * 60_000),
+  MEDIA_CLEANUP_MAX_ATTEMPTS: z.coerce.number().int().positive().max(20).default(3),
+  MEDIA_CLEANUP_BATCH_SIZE: z.coerce.number().int().positive().max(100).default(25),
   NETLIFY_AUTH_TOKEN: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),

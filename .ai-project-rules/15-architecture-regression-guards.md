@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.14"
+version: "1.1.15"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -209,7 +209,11 @@ Project-scoped media asset boundary
   Production API and worker storage composition must fail closed without S3_BUCKET; filesystem media storage is local/test only.
   S3 upload grants and derivative writes must bind native SHA-256 checksums in addition to audit metadata.
   Ready and archived media assets must not be hard-deleted at the database boundary.
-  Pending upload intents expire to visible failed truth after 24 hours so abandoned uploads cannot hold project quota forever; byte deletion remains a separate idempotent cleanup workflow.
+  Pending upload intents expire to visible failed truth after 24 hours so abandoned uploads cannot hold project quota forever.
+  Private media byte cleanup is a worker-host maintenance workflow with a durable compare-and-swap claim on the owning media asset; it is not an API delete path or a generic queue-recovery lane.
+  Ready and archived cleanup deletes only the exact server-derived quarantine source key; immutable derivatives remain untouched.
+  Failed cleanup may delete the exact quarantine source and bounded asset-scoped derivative prefix only after the diagnostic window (or upload-intent expiry) and only when no page-version projection references the asset.
+  Cleanup attempts are bounded and leave durable completion or exhaustion evidence; crashes before or after idempotent storage deletion must converge through a stale-claim retry, while exhaustion requires explicit operator review rather than automatic reset.
 ```
 
 </context>

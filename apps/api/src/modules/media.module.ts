@@ -21,7 +21,7 @@ import {
   UseGuards,
   Module
 } from "@nestjs/common";
-import type { MediaAssetStoragePort } from "@localseo/adapters";
+import { mediaQuarantineStorageKey, type MediaAssetStoragePort } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import {
   CompleteMediaUploadRequestSchema,
@@ -87,7 +87,7 @@ export class MediaService {
     }
 
     const assetId = randomUUID();
-    const sourceStorageKey = mediaQuarantineKey(projectId, assetId);
+    const sourceStorageKey = mediaQuarantineStorageKey(projectId, assetId);
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + env.MEDIA_UPLOAD_GRANT_TTL_SECONDS * 1000);
 
@@ -606,10 +606,6 @@ function mediaCompletionResponse(
       createdAt: row.updatedAt.toISOString()
     }
   });
-}
-
-function mediaQuarantineKey(projectId: string, assetId: string): string {
-  return `media/quarantine/${projectId}/${assetId}/source`;
 }
 
 function requirePersistedActor(userId: string | undefined): string {

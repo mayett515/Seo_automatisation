@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { MediaAssetStoragePort } from "@localseo/adapters";
+import { mediaDerivativeStorageKey, type MediaAssetStoragePort } from "@localseo/adapters";
 import {
   MediaProcessingJobDataSchema,
   type MediaProcessingJobData,
@@ -146,7 +146,13 @@ export async function executeMediaProcessing(input: {
       const output = await renderMediaVariant(source, width);
       const variantKey = `w${output.info.width}_webp`;
       const checksumSha256 = sha256Hex(output.data);
-      const storageKey = mediaDerivativeKey(input.data.projectId, input.data.assetId, sourceSha256, output.info.width);
+      const storageKey = mediaDerivativeStorageKey({
+        projectId: input.data.projectId,
+        assetId: input.data.assetId,
+        processorVersion: mediaProcessorVersion,
+        sourceSha256,
+        width: output.info.width
+      });
       await input.storage.putPrivateObject({
         key: storageKey,
         body: output.data,
@@ -361,10 +367,6 @@ function orientedDimensions(width: number, height: number, orientation: number |
 export function requiredWidths(sourceWidth: number): number[] {
   const filtered = derivativeWidths.filter((width) => width <= sourceWidth);
   return filtered.length > 0 ? [...filtered] : [sourceWidth];
-}
-
-function mediaDerivativeKey(projectId: string, assetId: string, checksum: string, width: number): string {
-  return `media/ready/${projectId}/${assetId}/${mediaProcessorVersion}/${checksum}-w${width}.webp`;
 }
 
 function sha256Hex(value: Uint8Array): string {

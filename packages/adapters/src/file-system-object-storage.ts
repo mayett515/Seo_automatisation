@@ -1,8 +1,16 @@
-import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { MediaAssetStoragePort, MediaStoredObjectMetadata, ObjectStoragePort } from "./index.js";
+import type {
+  MediaAssetCleanupStoragePort,
+  MediaAssetStoragePort,
+  MediaPrivateObjectListing,
+  MediaStoredObjectMetadata,
+  ObjectStoragePort
+} from "./index.js";
 
-export class FileSystemObjectStorageAdapter implements ObjectStoragePort, MediaAssetStoragePort {
+export class FileSystemObjectStorageAdapter
+  implements ObjectStoragePort, MediaAssetStoragePort, MediaAssetCleanupStoragePort
+{
   constructor(private readonly rootDir: string) {}
 
   async putJson(input: { key: string; value: unknown }): Promise<{ key: string }> {
@@ -100,6 +108,25 @@ export class FileSystemObjectStorageAdapter implements ObjectStoragePort, MediaA
     await Promise.all([unlinkIfPresent(this.pathForKey(input.key)), unlinkIfPresent(this.metadataPath(input.key))]);
   }
 
+  async listPrivateObjectKeys(input: { prefix: string; maxKeys: number }): Promise<MediaPrivateObjectListing> {
+    const prefixPath = this.pathForKey(input.prefix);
+    const keys: string[] = [];
+
+    await visitFiles(prefixPath, (targetPath) => {
+      if (targetPath.endsWith(".metadata.json")) {
+        return true;
+      }
+
+      keys.push(path.relative(this.rootDir, targetPath).replaceAll("\\", "/"));
+      return keys.length <= input.maxKeys;
+    });
+
+    return {
+      keys: keys.slice(0, input.maxKeys).sort(),
+      truncated: keys.length > input.maxKeys
+    };
+  }
+
   private async readMetadata(key: string): Promise<{ contentType?: string; sha256?: string } | undefined> {
     try {
       return JSON.parse(await readFile(this.metadataPath(key), "utf8")) as {
@@ -142,4 +169,35 @@ async function unlinkIfPresent(targetPath: string): Promise<void> {
       throw error;
     }
   }
+}
+
+async function visitFiles(
+  targetPath: string,
+  visit: (filePath: string) => boolean | Promise<boolean>
+): Promise<boolean> {
+  let entries;
+  try {
+    entries = await readdir(targetPath, { withFileTypes: true });
+  } catch (error) {
+    if (isFileNotFound(error)) {
+      return true;
+    }
+    throw error;
+  }
+
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const entryPath = path.join(targetPath, entry.name);
+    if (entry.isDirectory()) {
+      if (!(await visitFiles(entryPath, visit))) {
+        return false;
+      }
+      continue;
+    }
+
+    if (entry.isFile() && !(await visit(entryPath))) {
+      return false;
+    }
+  }
+
+  return true;
 }

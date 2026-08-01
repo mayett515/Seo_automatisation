@@ -525,6 +525,12 @@ export const mediaAssets = pgTable(
     archivedByUserId: uuid("archived_by_user_id").references(() => users.id),
     recoveryCount: integer("recovery_count").default(0).notNull(),
     lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true }),
+    storageCleanupAttemptCount: integer("storage_cleanup_attempt_count").default(0).notNull(),
+    lastStorageCleanupAt: timestamp("last_storage_cleanup_at", { withTimezone: true }),
+    storageCleanupClaimedAt: timestamp("storage_cleanup_claimed_at", { withTimezone: true }),
+    storageCleanupCompletedAt: timestamp("storage_cleanup_completed_at", { withTimezone: true }),
+    storageCleanupFailureCode: text("storage_cleanup_failure_code"),
+    storageCleanupFailureMessage: text("storage_cleanup_failure_message"),
     processedAt: timestamp("processed_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps
@@ -533,7 +539,13 @@ export const mediaAssets = pgTable(
     index("media_assets_project_status_created_idx").on(table.projectId, table.status, table.createdAt),
     index("media_assets_recovery_scan_idx")
       .on(table.status, table.updatedAt)
-      .where(sql`${table.status} = 'processing'`)
+      .where(sql`${table.status} = 'processing'`),
+    index("media_assets_ready_cleanup_scan_idx")
+      .on(table.processedAt)
+      .where(sql`${table.storageCleanupCompletedAt} is null and ${table.status} in ('ready', 'archived')`),
+    index("media_assets_failed_cleanup_scan_idx")
+      .on(table.updatedAt)
+      .where(sql`${table.storageCleanupCompletedAt} is null and ${table.status} = 'failed'`)
   ]
 );
 

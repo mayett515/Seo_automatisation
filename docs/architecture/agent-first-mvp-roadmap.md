@@ -651,7 +651,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, media ingestion/processing, binary renderer/preview/deploy media parity, and the first versioned `ImageText` media controls are implemented.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, media ingestion/processing, binary renderer/preview/deploy media parity, the first versioned `ImageText` media controls, and bounded physical media cleanup are implemented.
 
 Turn an accepted opportunity into a structured page proposal:
 
@@ -743,11 +743,11 @@ implemented now
   preview capability cookies remain Secure, SameSite=None, and Partitioned in local/test as well as production so opaque-origin iframe subresources remain authorized
   deploy verifies projected derivative bytes and embeds them in the self-contained artifact before provider handoff
   Netlify hashes and uploads the same once-decoded bytes rather than base64 transport text
+  worker-owned cleanup removes successful quarantine sources and failed unreferenced object prefixes through bounded durable claims without deleting immutable derivatives
 
 still deferred
   agent_run_events streaming timeline
   credentialed Page Proposal smoke execution and model calibration note
-  idempotent quarantine/derivative byte-retention cleanup beyond 24-hour pending-intent expiration
 ```
 
 ### 10. Page Studio, Notes, Approval, And Versioning
@@ -806,7 +806,7 @@ POST /projects/:projectId/pages/:basePageVersionId/edits
 
 Visual outline, legal movement, registry variant, structured complete-props, controlled section replacement, stale-version, rendered-preview, and AI copy-revision controls are implemented. Replacement targets are filtered through the pure domain decision; target/variant/props are staged locally and only an explicit confirmation posts the command. The server derives type, schema version, and legal zone while preserving the section id, order, and page slot. AI copy is a separate durable suggestion workflow pinned to one version and section; the model may revise only registry-marked copy props, never creates a version, and reaches persistence only when the operator explicitly applies the reviewed structured props through `update_section_props`.
 
-ADR 0020 owns the media direction. PageJson stores placement-specific opaque asset references, never raw URLs or object keys. Private uploads pass deterministic worker validation/normalization before selection. All three MVP slices are implemented: one project-scoped manifest resolver feeds signed sandboxed preview delivery and self-contained deploy artifacts with identical immutable asset paths and bytes; `ImageText` provides the first registry-owned placement; the Page Studio asset control stages upload/select/alt/focal-point changes; and only explicit confirmation creates N+1. PageJson references are renderer selection truth, and every version transaction maintains an exact relational projection that approval, release planning, preflight, preview, and deploy re-check fail closed.
+ADR 0020 owns the media direction. PageJson stores placement-specific opaque asset references, never raw URLs or object keys. Private uploads pass deterministic worker validation/normalization before selection. All three MVP slices are implemented: one project-scoped manifest resolver feeds signed sandboxed preview delivery and self-contained deploy artifacts with identical immutable asset paths and bytes; `ImageText` provides the first registry-owned placement; the Page Studio asset control stages upload/select/alt/focal-point changes; and only explicit confirmation creates N+1. PageJson references are renderer selection truth, and every version transaction maintains an exact relational projection that approval, release planning, preflight, preview, and deploy re-check fail closed. The retention follow-up now removes successful quarantine sources and failed unreferenced object prefixes through a bounded worker claim while retaining ready/archived derivatives and every durable asset row.
 
 Unresolved predecessor approval blockers remain attached to their source versions. The review UI reads a bounded lineage chain and shows those blockers as historical context without copying rows or turning old concerns into a chain-wide durable gate. Only blockers on the concrete version being approved are authoritative.
 

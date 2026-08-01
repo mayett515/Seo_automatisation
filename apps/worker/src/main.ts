@@ -3,6 +3,7 @@ import { parseAppEnv } from "@localseo/config";
 import { Queue, Worker } from "bullmq";
 import {
   closeWorkerResources,
+  cleanMediaStorage,
   handleJob,
   reconcileDeployments,
   reconcileRollbacks,
@@ -47,10 +48,18 @@ const lifecycleReconcileInterval = setInterval(() => {
   }
 
   isReconcilingLifecycle = true;
-  void Promise.all([reconcileDeployments(), reconcileRollbacks(), recoverStaleWork(recoveryQueues)])
-    .then(([, , recovery]) => {
+  void Promise.all([
+    reconcileDeployments(),
+    reconcileRollbacks(),
+    recoverStaleWork(recoveryQueues),
+    cleanMediaStorage()
+  ])
+    .then(([, , recovery, cleanup]) => {
       if (recovery.checked > 0 || recovery.expiredMediaUploads > 0 || recovery.errors > 0) {
         console.log("Bounded work recovery scan completed", recovery);
+      }
+      if (cleanup.checked > 0 || cleanup.exhausted > 0 || cleanup.errors > 0) {
+        console.log("Bounded media storage cleanup scan completed", cleanup);
       }
     })
     .catch((error) => {

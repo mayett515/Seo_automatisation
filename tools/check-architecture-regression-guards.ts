@@ -1584,6 +1584,90 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/adapters/src/index.ts",
+  "export interface MediaAssetCleanupStoragePort",
+  "media-storage-cleanup",
+  "Physical cleanup must use its own bounded private-storage capability instead of widening JSON storage"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.ts",
+  "storageCleanupAttemptCount: sql<number>",
+  "media-storage-cleanup",
+  "Cleanup must durably claim a bounded attempt before private-storage mutation"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.ts",
+  "noPageVersionReferences()",
+  "media-storage-cleanup",
+  "Failed media cleanup must retain bytes while relational page-version evidence references the asset"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.ts",
+  'if (claim.scope === "failed_asset_objects")',
+  "media-storage-cleanup",
+  "Ready and archived cleanup must not select immutable derivative prefixes"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.ts",
+  "claim.sourceStorageKey !== expectedSourceKey",
+  "media-storage-cleanup",
+  "Cleanup must reject persisted source keys outside the server-derived quarantine boundary"
+);
+
+requireIncludes(
+  "packages/db/migrations/0036_media_storage_cleanup.sql",
+  "media_assets_storage_cleanup_evidence_check",
+  "media-storage-cleanup",
+  "Postgres must constrain durable cleanup completion and failure evidence"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.integration.ts",
+  "deletes a ready asset quarantine source while retaining immutable derivatives",
+  "media-storage-cleanup",
+  "Integration coverage must prove source cleanup cannot remove ready derivatives"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.integration.ts",
+  "does not clean a failed asset while page-version retention evidence references it",
+  "media-storage-cleanup",
+  "Integration coverage must prove relational reference evidence blocks failed-object cleanup"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.integration.ts",
+  "allows only one of two cleanup scanners to own a fresh asset claim",
+  "media-storage-cleanup",
+  "Integration coverage must prove competing cleanup scanners cannot duplicate ownership"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.integration.ts",
+  "terminalizes a stale final cleanup claim without issuing an unbounded delete",
+  "media-storage-cleanup",
+  "Integration coverage must prove a crash after the final claim converges to durable exhaustion"
+);
+
+requireIncludes(
+  "apps/worker/src/media-storage-cleanup.integration.ts",
+  "retries a stale claim idempotently after the quarantine source is already absent",
+  "media-storage-cleanup",
+  "Integration coverage must prove a crash after object deletion converges through idempotent retry"
+);
+
+requireNotIncludes(
+  "docs/architecture/agent-first-mvp-roadmap.md",
+  "idempotent quarantine/derivative byte-retention cleanup beyond 24-hour pending-intent expiration",
+  "media-storage-cleanup",
+  "The roadmap must not describe shipped physical media cleanup as deferred"
+);
+
+requireIncludes(
   "packages/contracts/src/index.ts",
   'z.discriminatedUnion("encoding"',
   "media-renderer-parity",

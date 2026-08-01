@@ -13,6 +13,7 @@ import {
   PlaywrightBrowserRuntimeVerifier,
   type CrawlerPort,
   type AiReasoningPort,
+  type MediaAssetCleanupStoragePort,
   type MediaAssetStoragePort,
   S3ObjectStorageAdapter,
   type ObjectStoragePort,
@@ -99,6 +100,11 @@ import {
   type WorkRecoveryQueues,
   type WorkRecoveryScanResult
 } from "./work-recovery.js";
+import {
+  emptyMediaStorageCleanupResult,
+  scanMediaStorageCleanup,
+  type MediaStorageCleanupResult
+} from "./media-storage-cleanup.js";
 
 const env = parseAppEnv(process.env);
 const sharedDbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
@@ -181,6 +187,20 @@ export async function recoverStaleWork(queues: WorkRecoveryQueues): Promise<Work
     staleAfterMs: env.WORK_RECOVERY_STALE_AFTER_MS,
     maxRecoveryCount: env.WORK_RECOVERY_MAX_COUNT,
     batchSize: env.WORK_RECOVERY_BATCH_SIZE
+  });
+}
+
+export async function cleanMediaStorage(): Promise<MediaStorageCleanupResult> {
+  if (!sharedDbHandle) {
+    return emptyMediaStorageCleanupResult();
+  }
+
+  return scanMediaStorageCleanup({
+    db: sharedDbHandle.db,
+    storage: sharedObjectStorage,
+    claimStaleAfterMs: env.MEDIA_CLEANUP_CLAIM_STALE_AFTER_MS,
+    maxAttempts: env.MEDIA_CLEANUP_MAX_ATTEMPTS,
+    batchSize: env.MEDIA_CLEANUP_BATCH_SIZE
   });
 }
 
@@ -311,7 +331,7 @@ function createSiteHostingAdapter(
 
 export function createObjectStorageAdapter(
   input: Pick<AppEnv, "NODE_ENV" | "S3_BUCKET" | "AWS_REGION" | "LOCAL_OBJECT_STORAGE_DIR"> = env
-): ObjectStoragePort & MediaAssetStoragePort {
+): ObjectStoragePort & MediaAssetStoragePort & MediaAssetCleanupStoragePort {
   if (input.NODE_ENV === "production") {
     if (!input.S3_BUCKET) {
       throw new Error("Production worker storage requires S3_BUCKET.");

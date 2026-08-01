@@ -166,6 +166,12 @@ For MVP:
 
 Storage cleanup is a separate deterministic maintenance workflow. It must not infer safety from proposal status alone.
 
+Implementation note, 2026-07-17: the worker host now runs this workflow through a bounded Postgres claim on the owning `media_assets` row. `ready` and `archived` assets become eligible immediately after durable readiness so the periodic scanner removes only their exact server-derived quarantine source within the 24-hour target; normalized derivatives remain immutable and retained. Expired upload intents are eligible after their existing 24-hour transition to `failed`. Other failed assets retain diagnostics for seven days, then cleanup may delete the exact quarantine key plus a bounded listing under that asset's deterministic derivative prefix only when no `page_version_media_assets` row references the asset. Every attempt records count, claim time, completion, and bounded failure evidence. A crash before or after storage deletion is retried through the stale claim, relying on idempotent object deletion. Exhaustion stops automatic attempts visibly instead of looping forever.
+
+The cleanup scanner is not BullMQ transport recovery and creates no delete API. It performs private platform-storage mutation only inside the worker process. It never hard-deletes `media_assets`, never deletes ready/archived derivatives, and never derives retention from proposal status.
+
+Operator response for cleanup exhaustion is deliberately manual in MVP. Query `media_assets` where `storage_cleanup_failure_code = 'storage_cleanup_exhausted'` and `storage_cleanup_completed_at IS NULL`, inspect the bounded failure message and the exact server-derived asset prefix, and resolve storage configuration or unexpected-prefix contents before any manual deletion. Do not reset attempts or delete ready/archived derivatives merely to clear the row; there is no operator cleanup API yet.
+
 ### Page Studio UX
 
 The media control is a project media library, not a URL input. Upload, processing, ready, failed, and archived states are durable server state owned by TanStack Query.
@@ -190,7 +196,7 @@ Implementation proceeded in three slices:
 2. Renderer parity: binary-safe static artifacts, decoded-byte digest/upload parity in the hosting adapter, resolved media manifests, sandbox-preserving signed preview capabilities, authenticated preview document/asset serving, and deploy artifact bytes. Implemented on 2026-07-13.
 3. Page Studio media controls: first `ImageText` registry entry, asset editor control, upload/select/alt/focal-point UX, and N+1 application through the existing command endpoint. PageJson references become renderer selection truth in this slice; every referenced asset must have an exact project-scoped manifest/projection match, and unreferenced projection rows must not create rendered media. Implemented on 2026-07-15.
 
-The backend foundation uses `media-processing` with `jobId = media_assets.id`, a separate `MediaAssetStoragePort`, S3-native and worker-recomputed checksum binding, local API PUT parity, worker-owned Sharp normalization, DB-checked exact variant readiness, append-only ready manifests, DB-protected ready/archived rows, project-scoped library reads/archive, 24-hour abandoned-intent expiration, and bounded artifact-capture recovery. Production composition fails closed without S3. Slice 2 adds the shared project-scoped manifest resolver, binary-safe self-contained release artifacts, decoded-byte Netlify handoff, and the signed document-to-assets preview capability chain while preserving `sandbox=""`. Slice 3 adds strict `ImageText` media props, exact transactional projection maintenance, renderer/reference/manifest equality checks, and explicit Page Studio upload/select/alt/focal-point application. Quarantine/derivative byte deletion remains the separate idempotent cleanup workflow specified under retention.
+The backend foundation uses `media-processing` with `jobId = media_assets.id`, a separate `MediaAssetStoragePort`, S3-native and worker-recomputed checksum binding, local API PUT parity, worker-owned Sharp normalization, DB-checked exact variant readiness, append-only ready manifests, DB-protected ready/archived rows, project-scoped library reads/archive, 24-hour abandoned-intent expiration, and bounded artifact-capture recovery. Production composition fails closed without S3. Slice 2 adds the shared project-scoped manifest resolver, binary-safe self-contained release artifacts, decoded-byte Netlify handoff, and the signed document-to-assets preview capability chain while preserving `sandbox=""`. Slice 3 adds strict `ImageText` media props, exact transactional projection maintenance, renderer/reference/manifest equality checks, and explicit Page Studio upload/select/alt/focal-point application. The retention follow-up adds bounded worker-owned quarantine/failed-derivative cleanup with durable claims, relational-reference protection, idempotent storage deletion, and visible exhaustion evidence.
 
 ## Alternatives Considered
 
@@ -231,6 +237,7 @@ Rejected. Superseded versions remain historical and may still matter for audit o
 - Do not mark an asset ready unless the database proves the exact required variant set exists.
 - Do not let provider adapters render pages or query media product state.
 - Do not hard-delete media referenced by page-version history or rollback evidence.
+- Do not let storage cleanup delete ready/archived derivatives, use arbitrary persisted keys, bypass the page-version reference projection, or retry without a bounded durable claim.
 
 ## Related Files
 

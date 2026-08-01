@@ -20,6 +20,7 @@ export * from "./google-search-console.js";
 export * from "./file-system-object-storage.js";
 export * from "./http-website-crawler.js";
 export * from "./http-release-verification.js";
+export * from "./media-storage-keys.js";
 export * from "./playwright-browser-verification.js";
 export * from "./provider-errors.js";
 export * from "./redis-connection.js";
@@ -404,6 +405,16 @@ export interface MediaAssetStoragePort {
     sha256: string;
     metadata?: Record<string, string>;
   }): Promise<MediaStoredObjectMetadata>;
+  deletePrivateObject(input: { key: string }): Promise<void>;
+}
+
+export type MediaPrivateObjectListing = {
+  keys: string[];
+  truncated: boolean;
+};
+
+export interface MediaAssetCleanupStoragePort {
+  listPrivateObjectKeys(input: { prefix: string; maxKeys: number }): Promise<MediaPrivateObjectListing>;
   deletePrivateObject(input: { key: string }): Promise<void>;
 }
 

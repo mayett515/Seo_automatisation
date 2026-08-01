@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { S3Client } from "@aws-sdk/client-s3";
+import { ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { S3ObjectStorageAdapter } from "./s3-object-storage.js";
 
 void describe("S3 media upload grants", () => {
@@ -57,6 +57,33 @@ void describe("S3 media upload grants", () => {
     );
     assert.ok(policy.conditions.some((condition) => JSON.stringify(condition) === `{"x-amz-meta-sha256":"${sha256}"}`));
 
+    client.destroy();
+  });
+
+  void it("bounds private-prefix listings and reports provider truncation", async () => {
+    const client = new S3Client({ region: "eu-central-1" });
+    const commands: unknown[] = [];
+    client.send = ((command: unknown) => {
+      commands.push(command);
+      return Promise.resolve({
+        Contents: [{ Key: "media/ready/project/asset/a.webp" }, { Key: "media/ready/project/asset/b.webp" }],
+        IsTruncated: false
+      });
+    }) as typeof client.send;
+    const storage = new S3ObjectStorageAdapter({
+      bucket: "private-media-test",
+      region: "eu-central-1",
+      client
+    });
+
+    assert.deepEqual(await storage.listPrivateObjectKeys({ prefix: "media/ready/project/asset/", maxKeys: 1 }), {
+      keys: ["media/ready/project/asset/a.webp"],
+      truncated: true
+    });
+    const [command] = commands;
+    assert.ok(command instanceof ListObjectsV2Command);
+    assert.equal(command.input.Prefix, "media/ready/project/asset/");
+    assert.equal(command.input.MaxKeys, 2);
     client.destroy();
   });
 });

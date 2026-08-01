@@ -85,6 +85,8 @@ The first recovery implementation stays intentionally small:
 
 The project accepts that BullMQ enqueue is not transactional with Postgres. That gap is handled explicitly by durable run rows, enqueue-failure cleanup, and recovery scans.
 
+Private media byte cleanup reuses the bounded-claim discipline but is not a BullMQ recovery lane: the worker host claims cleanup directly on `media_assets`, performs idempotent private-storage deletion, and persists completion or exhaustion evidence on that row. It never enters the generic recovery classifier and never widens provider-mutation replay scope.
+
 The project also accepts that provider mutation recovery is slower and more conservative than read-only recovery. The database may underclaim temporarily, but it must not overclaim product success.
 
 ## Alternatives Considered

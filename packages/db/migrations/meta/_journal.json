@@ -253,6 +253,13 @@
       "when": 1783892227203,
       "tag": "0035_media_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784291363092,
+      "tag": "0036_media_storage_cleanup",
+      "breakpoints": true
     }
   ]
 }

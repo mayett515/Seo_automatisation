@@ -385,7 +385,24 @@ Covered behavior:
 5. Page Proposal output cannot select project media, and section-copy validation resolves existing media without gaining a media-write path.
 6. Chromium proves upload and durable library staging do not edit PageJson; one explicit `ImageText` confirmation submits one complete version command with content/decorative alt and focal-point data.
 
-Physical quarantine/derivative byte-retention cleanup, richer media section families, remote import, stock search, and AI image generation remain deferred.
+### Media Storage Cleanup
+
+Primary executable evidence:
+
+- [media-storage-cleanup.integration.ts](/C:/localseoproject/apps/worker/src/media-storage-cleanup.integration.ts)
+- [media-storage-cleanup.test.ts](/C:/localseoproject/packages/domain/src/media-storage-cleanup.test.ts)
+- [file-system-media-storage.test.ts](/C:/localseoproject/packages/adapters/src/file-system-media-storage.test.ts)
+- [s3-media-storage.test.ts](/C:/localseoproject/packages/adapters/src/s3-media-storage.test.ts)
+
+Covered behavior:
+
+1. Successful ready-asset cleanup deletes only the exact quarantine source and retains immutable derivatives.
+2. Failed unreferenced assets delete the exact quarantine source plus a bounded asset-scoped derivative prefix after the seven-day diagnostic window; expired upload intents are immediately eligible after their existing 24-hour terminal transition.
+3. Any page-version projection reference suppresses failed-object cleanup, independent of proposal status.
+4. Competing scanners share one compare-and-swap claim; stale claims retry idempotently after delete-before-commit crashes, stale final claims terminalize without another delete, and repeated provider failures stop with durable exhaustion evidence.
+5. Filesystem and S3 adapters expose bounded private-prefix listings; filesystem metadata sidecars never appear as product object keys.
+
+Richer media section families, remote import, stock search, and AI image generation remain deferred.
 
 ### Tracking Ingestion
 
