@@ -2,7 +2,7 @@
 description: "Architecture direction for modular monolith, Clean Architecture, Hexagonal ports/adapters, DDD-lite bounded contexts, and system design"
 globs: "src/**/*.{ts,tsx}, apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, **/*architecture*.md, **/*boundary*.md, **/*port*.{ts,tsx}, **/*adapter*.{ts,tsx}, **/*schema*.{ts,tsx}"
 alwaysApply: false
-version: "1.0.1"
+version: "1.0.2"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -31,7 +31,7 @@ You have been routed here because the task touches architecture style, dependenc
 - Apply the Clean Architecture dependency rule: dependencies point inward; core packages do not import frameworks, provider SDKs, queue clients, or UI libraries.
 - Use Hexagonal Architecture for all external systems: site hosting, Search Console, crawler/import, analytics, object storage, AI/Mastra, tracking, sitemap, event publishing, verification, and rollback.
 - Name ports by purpose, not vendor. Vendor names belong in adapter implementations, provider records, and deployment configuration.
-- Use DDD-lite bounded contexts: Lead, Customer, Project, Website, Service, Area, Opportunity, PageProposal, PageVersion, Approval, ReleasePlan, Deployment, GscSync, TrackingEvent, Report.
+- Use DDD-lite bounded contexts: Lead, Customer, Project, Website, Service, Area, Opportunity, PageProposal, PageVersion, MediaAsset, Approval, ReleasePlan, Deployment, GscSync, TrackingEvent, Report.
 - Keep Mastra agents/workflows in reasoning, orchestration, and proposal generation. Deterministic workers perform production mutations.
 - Keep agent constraints outcome-based: allowed tool categories and denied production outcomes must travel with the run, including subagent delegation.
 - Wire concrete adapters in process composition roots, not inside controllers, domain functions, agents, or random worker handlers.
@@ -89,7 +89,8 @@ SearchConsolePort      -> Google Search Console OAuth/API adapter
 CrawlerPort            -> website import/crawl adapter
 AnalyticsPort          -> analytics provider or internal analytics adapter
 ObjectStoragePort      -> S3/object storage adapter
-MediaAssetStoragePort -> S3/filesystem binary media adapter
+MediaAssetStoragePort  -> S3/filesystem binary media adapter
+MediaAssetCleanupStoragePort -> bounded S3/filesystem private-byte cleanup adapter
 AiReasoningPort        -> Mastra workflow/agent adapter
 TrackingPort           -> event ingestion adapter
 EventPublisherPort     -> domain event publisher adapter

@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.15"
+version: "1.1.16"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -18,7 +18,7 @@ anti_regression_mode: "hybrid-boundary"
 # Domain Execution Contract: Architecture Regression Guards
 
 <meta-instruction>
-Use this shard when a task touches a seam previously found by review: persisted JSON contracts, release/deploy/verify truth, provider mutations, durable worker recovery, evidence proof tiers, roadmap implemented/deferred lists, project-scoped media assets, or PageJson/Page Registry source-of-truth work.
+Use this shard when a task touches a seam previously found by review: persisted JSON contracts, release/deploy/verify truth, provider mutations, durable worker recovery, evidence proof tiers, roadmap implemented/deferred lists, project-scoped media assets, PageJson/Page Registry source-of-truth work, or customer-report snapshot/publication/Next Action boundaries.
 </meta-instruction>
 
 ## 1. Guard Categories
@@ -300,6 +300,23 @@ Page Version approval
   Failed or rollback-recommended verification must not mark page versions as released.
   Failed, rolled-back, or cancelled release plans must restore included release_candidate page versions to approved so they can be replanned.
   Release-plan cancellation must require a persisted actor and write an audit row so routine cancellation is distinguishable from provider or verification failure.
+```
+
+</context>
+
+<context>
+```text
+Customer Report publication and Next Action
+  CustomerReport is separate from the lead-facing PotentialReport.
+  Current operational rows own live truth; one canonical immutable snapshot owns the historical customer statement.
+  Normalized claims/evidence/events/actions/artifacts enforce provenance and audit but do not become a second publication authority.
+  Published reads must not rebuild history from mutable ranking, release, verification, rollback, or recovery rows.
+  Report generation, report publication, export, human action consent, and downstream execution use separate statuses and writers.
+  AI receives server-selected claims only and may draft bounded fact-light prose; it cannot select facts, proof tiers, actions, status, or publication.
+  Publication and correction require a current persisted human actor bound to the exact reviewed snapshot digest.
+  Next Actions are closed typed navigation or command offers and must reuse the target workflow's permission, state, approval, and worker boundaries.
+  HTML and PDF are immutable derivatives of the canonical snapshot; AI, rendering, BullMQ, and Mastra never own publication truth.
+  The deterministic fact-only publication path must ship before AI prose, command actions, PDF, RAG, or a generic workflow engine can become prerequisites.
 ```
 
 </context>

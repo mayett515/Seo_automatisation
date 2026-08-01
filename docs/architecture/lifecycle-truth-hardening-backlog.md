@@ -117,16 +117,18 @@ Why: route/auth regressions are runtime-sensitive and should not rely on TypeScr
 
 ## Accepted For Future Hardening
 
-### Release Plan Status Should Eventually Split By Ownership
+### Report Must Not Depend On Coarse Release Plan Status
 
-`releasePlans.status` is currently a coarse projection that covers approval, deploy, health, failure, and rollback concepts. Provider success no longer projects this status to `live`; only post-deploy verification outcomes do. The detail records already preserve the precise truth, but future UI/reporting will be simpler and safer if these responsibilities are separated.
+`releasePlans.status` is currently a coarse projection that covers approval, deploy, health, failure, and rollback concepts. Provider success no longer projects this status to `live`; only post-deploy verification outcomes do. The detail records already preserve the precise truth. ADR 0021 resolves the Report trigger: V1 does not split the stored projection merely for reporting.
 
 Follow-up direction:
 
-- Consider separate approval, deploy, and health/rollback projections when the UI starts depending on lifecycle explanation.
+- The report evidence loader reads approvals, deployments, release verifications/checks, rollback, and recovery detail directly and freezes selected values into report-local evidence.
+- Report contracts and tests must prove customer claims come from those detail rows rather than coarse `releasePlans.status` alone.
+- Split the stored projections when more than one UI/query path needs independently queryable lifecycle ownership, not merely to make one report serializer shorter.
 - Keep one writer per projection: approval API owns approval truth, deploy worker owns provider mutation truth, verifier owns live-health truth, rollback worker owns restore truth.
 
-Why: avoid overloading one column with several meanings and reduce the chance that UI/reporting treats provider success as verified health.
+Why: avoid treating provider transport state as verified customer truth while also avoiding a speculative status migration that duplicates already-authoritative detail records.
 
 ### Release Verification Workerization Should Steal Workflow Semantics, Not A Workflow Runtime
 

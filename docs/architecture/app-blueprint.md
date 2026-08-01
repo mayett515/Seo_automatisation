@@ -18,7 +18,7 @@ Analytics MVP: own anonymous tracking events
 2. Project setup and website import.
 3. AI Opportunity Scout using website, GSC, tracking, SERP, competitor, and field evidence.
 4. Opportunity Explorer with evidence, risk, confidence, and next actions.
-5. Page brief or page proposal from an approved service-location opportunity.
+5. Page brief or page proposal from an operator-selected, non-rejected service-location opportunity with valid evidence.
 6. Component-constrained preview, notes, and approval.
 7. Deployment Agent release plan.
 8. Netlify deploy, sitemap, tracking injector, verification.
@@ -40,7 +40,7 @@ website import / GSC / tracking / SERP / competitor / field evidence
 
 The MVP should make AI-assisted local SEO opportunity discovery visible before automation feels magical. The customer/operator should see nearby places, service-location gaps, competitor observations, evidence tiers, confidence, warnings, and the next controlled action.
 
-Website import and rebuild preview is the evidence-gathering entry point for new projects. It imports the customer's own site, extracts brand/service/area/design facts, creates a noindex preview from controlled components, and feeds the AI Opportunity Scout with route and service-area context.
+Website import is the evidence-gathering entry point for new projects. The implemented baseline imports the customer's own site and extracts route, content, brand, service, and area facts for later workflows. Mapping those facts into a dedicated controlled noindex rebuild preview remains the Website Understanding follow-up; the implemented Page Proposal and Page Studio lane already creates controlled previews from operator-selected opportunity evidence.
 
 Reference: [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md).
 
@@ -70,9 +70,10 @@ Control-panel UI:
   map-frame, timeline, preview-control, and form components.
 
 Customer-page registry:
-  a future schema-first page component registry owns deployable customer-site
-  sections such as Hero, ServiceDescription, ServiceGrid, FAQ, ContactCTA,
-  AreaMap, and Footer.
+  @localseo/page-registry owns deployable customer-site section schemas,
+  editor metadata, validation, SEO fact derivation, and deterministic static
+  rendering. The implemented set includes the Local SEO service-area skeleton
+  plus ImageText; richer grids, maps, galleries, and proof sections remain additive.
 ```
 
 Reference: [Frontend UI And Page Registry Architecture](frontend-ui-and-page-registry.md).
@@ -107,7 +108,8 @@ SearchConsolePort      -> Google Search Console OAuth/API adapter
 CrawlerPort            -> website import/crawl adapter
 AnalyticsPort          -> analytics provider or internal analytics adapter
 ObjectStoragePort      -> S3/object storage adapter
-MediaAssetStoragePort -> S3/filesystem binary media adapter
+MediaAssetStoragePort  -> S3/filesystem binary media adapter
+MediaAssetCleanupStoragePort -> bounded S3/filesystem private-byte cleanup adapter
 AiReasoningPort        -> Mastra workflow/agent adapter
 TrackingPort           -> event ingestion adapter
 EventPublisherPort     -> domain event publisher adapter
@@ -116,14 +118,18 @@ SitemapPort            -> sitemap publication adapter
 RollbackPort           -> rollback prepare/execute adapter
 ```
 
+## Implementation Checkpoint
+
+The MVP control path is implemented through Opportunity Scout, Page Proposal, Page Studio, media-aware preview, approval, release planning, deploy, verification, rollback, safe-work recovery, and bounded physical media cleanup. The next product milestone is customer-safe Report and Next Action. ADR 0021 now fixes the digest-bound snapshot/provenance/publication/action architecture, while runtime reporting still has only schema/task/event vocabulary, a skeletal `reports` table, safety guards, and a frontend placeholder. Implementation starts with contracts, canonicalization, the core aggregate, and a deterministic fact-only publication path.
+
 ## Non-Negotiables
 
-- AI suggests, customer approves, deterministic workers execute.
+- AI suggests, a persisted human actor approves, and deterministic workers execute.
 - Frontend never calls workers directly.
 - Agents never deploy production directly.
 - Agents scout, reason, classify, draft, and explain from evidence; they do not approve, deploy, roll back, or mutate providers.
 - Website import is read-only evidence gathering; rebuild output is a controlled preview, not arbitrary cloning.
-- AI Opportunity Scout output creates briefs, proposals, monitoring, or approval tasks; it does not publish by itself.
+- AI Opportunity Scout output persists evidence-backed opportunities only. Explicit operator actions may monitor/reject them or queue a Page Proposal; Scout output never publishes by itself.
 - Zod owns external input and output contracts.
 - Drizzle owns persistence contracts.
 - Ports are named by purpose; vendor names live in adapters, provider records, and deployment configuration.

@@ -1919,6 +1919,76 @@ requireNotIncludes(
   "The roadmap must not describe shipped Page Studio media controls as deferred"
 );
 
+requireNotIncludes(
+  "README.md",
+  'Page Studio is planned as "WordPress but safer and easier"',
+  "roadmap-current-status",
+  "The root status document must not describe shipped Page Studio as planned"
+);
+
+requireNotIncludes(
+  "README.md",
+  "The next product frontier is the Page Registry/PageJson lane",
+  "roadmap-current-status",
+  "The root status document must not point at the completed Page Registry lane as next"
+);
+
+requireNotIncludes(
+  "docs/architecture/agent-first-mvp-roadmap.md",
+  "Prefer a future `page_section_notes` table",
+  "roadmap-current-status",
+  "The roadmap must not describe the implemented page-section-note store as future"
+);
+
+requireIncludes(
+  "docs/architecture/agent-first-mvp-roadmap.md",
+  "Status: next product milestone; architecture checkpoint accepted by",
+  "roadmap-current-status",
+  "The roadmap must name the accepted Report and Next Action architecture checkpoint explicitly"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0021-digest-bound-customer-report-publication.md",
+  "Status: Accepted",
+  "customer-report-boundary",
+  "The customer-report snapshot/publication/action boundary must remain an accepted ADR"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0021-digest-bound-customer-report-publication.md",
+  "The first vertical proof ends after step 4.",
+  "customer-report-boundary",
+  "The deterministic fact-only publication path must precede optional AI, command actions, and PDF"
+);
+
+requireIncludes(
+  ".ai-project-rules/11-reporting-anti-regression.md",
+  "DO NOT rebuild a published report from current operational rows",
+  "customer-report-boundary",
+  "Published customer-report history must remain snapshot-owned"
+);
+
+requireIncludes(
+  ".ai-project-rules/11-reporting-anti-regression.md",
+  "DO NOT let a report Next Action bypass Page Studio, approval, release, deploy, verification, or rollback gates",
+  "customer-report-boundary",
+  "Report actions must preserve every existing controlled workflow gate"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "The deterministic fact-only publication path must ship before AI prose",
+  "customer-report-boundary",
+  "The architecture rule must keep optional report capabilities off the core publication critical path"
+);
+
+requireNotIncludes(
+  "docs/architecture/app-blueprint.md",
+  "approved service-location opportunity",
+  "opportunity-page-handoff",
+  "Page Proposal handoff must not invent an opportunity-approval state that the product does not persist"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {

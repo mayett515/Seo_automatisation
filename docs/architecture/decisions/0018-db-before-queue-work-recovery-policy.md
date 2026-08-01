@@ -11,7 +11,7 @@ The project uses Postgres durable rows for product truth and BullMQ/Redis for wo
 - a BullMQ job can vanish or exhaust retries while the product row remains `queued` or `running`;
 - a worker can crash after marking product work in progress;
 - provider mutations can leave remote state uncertain;
-- a future Page Proposal worker will add another durable AI workflow on top of the same pattern.
+- Page Proposal, section-copy, media-processing, and release-verification workers add durable workflows on top of the same pattern.
 
 The 2026-07-07 Big Eater recovery research reviewed DB-backed queues, Redis workers, and durable workflow engines. The common useful semantics are leases, visibility-timeout thinking, idempotency keys, dead-letter/manual retry vocabulary, and recovery scans. The research did not justify replacing BullMQ with another runtime.
 

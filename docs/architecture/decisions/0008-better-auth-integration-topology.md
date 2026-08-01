@@ -49,7 +49,7 @@ accounts
 verifications
 ```
 
-Use plural table names to match the rest of the project schema. The future Better Auth config must map model names accordingly instead of expecting default singular table names.
+Use plural table names to match the rest of the project schema. The implemented Better Auth config maps model names accordingly instead of expecting default singular table names.
 
 App-route CSRF is part of the auth topology, not a later afterthought:
 
@@ -106,14 +106,13 @@ Rejected. Fastify owns runtime plumbing. Product authorization needs route metad
 - Do not expose unsafe cookie-authenticated app routes without a CSRF/origin decision in code.
 - Do not let auth route mounting bypass the global production runtime, CORS, cookie, and rate-limit decisions.
 
-## Follow-Up Work
+## Implementation Status
 
-- Add the Better Auth provider/config under the API composition root.
-- Mount `/api/auth/*` through the Fastify adapter with route-appropriate rate limiting.
-- Add `BetterAuthGuard` and request auth typing.
-- Replace scaffold user-header extraction with session-derived user context.
-- Add app-route CSRF protection for unsafe cookie-authenticated methods.
-- Add GSC OAuth session binding, Redis nonce consume, PKCE, safe redirect, and project re-check in the next OAuth slice.
+- The API composition root owns one Better Auth provider/config and maps the plural Drizzle model names.
+- Fastify mounts `/api/auth/*` with the production runtime and route-specific policy.
+- `BetterAuthGuard` supplies session-derived request identity; header identity remains a local-scaffold-only path and is rejected for persisted production access.
+- Unsafe cookie-authenticated application routes use the CSRF/origin guard.
+- GSC OAuth remains a separate project integration with session binding, Redis-backed nonce consumption, PKCE, safe redirects, and project re-checks.
 
 ## Related Sources
 

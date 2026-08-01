@@ -2,14 +2,16 @@
 description: "Anti-regression bans for customer-facing SEO reporting and ranking proof language"
 globs: "**/*report*.{md,json,mmd,ts,tsx,html}, **/*kundenreport*.{md,json,mmd,ts,tsx,html}, **/*ranking*.{md,json,mmd,ts,tsx}, **/*forecast*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/09-reports-seo-game.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/decisions/ADR-005-conservative-forecasting.md"
   - "C:\\gebäudeservicefirma\\Seo\\future-seo-growth-plan\\04-anti-regression.md"
+  - "docs/architecture/decisions/0021-digest-bound-customer-report-publication.md"
 priority_schema: "critical > strong > guideline"
+rule_budget: "guard-exception"
 ---
 
 # Anti-Regression Contract: SEO Reporting
@@ -39,6 +41,10 @@ You have been routed here because the task risks weakening customer-facing SEO p
 - REGRESSION BAN R-004: DO NOT sell Entruempelung as conquered without page-1 proof.
 - REGRESSION BAN R-005: DO NOT mix future opportunity keywords into the same KPI count as proven rankings.
 - REGRESSION BAN R-006: DO NOT guarantee rankings, leads, revenue, or fixed timelines.
+- REGRESSION BAN R-007: DO NOT rebuild a published report from current operational rows; use its immutable canonical snapshot and frozen evidence.
+- REGRESSION BAN R-008: DO NOT let AI select report facts, evidence, proof tiers, actions, targets, statuses, or publication.
+- REGRESSION BAN R-009: DO NOT publish or correct a report without a persisted human actor bound to the exact reviewed snapshot digest.
+- REGRESSION BAN R-010: DO NOT let a report Next Action bypass Page Studio, approval, release, deploy, verification, or rollback gates.
 </absolute-constraints>
 
 ## 3. Anti-Regression Conditional Gates
@@ -67,6 +73,18 @@ THEN separate internal-radar responses from customer-report responses before reu
 
 IF a report payload guard uses banned field names:
 THEN ban specific GSC diagnostic names such as impressions, CTR, and average-position; do not flat-ban generic words such as `position` across all nested customer payloads.
+
+IF a customer-report aggregate is introduced:
+THEN use the ADR 0021 digest-bound snapshot/provenance boundary and keep generation, publication, export, and downstream action conclusions separate.
+
+IF `report_narrative` is enabled:
+THEN keep factual sentences, values, citations, warnings, and action cards deterministic; AI may draft only bounded fact-light prose for server-assigned claims.
+
+IF a customer-facing Next Action is consequential:
+THEN freeze a typed server-owned intent, require an explicit human receipt, and dispatch through the existing target use case with its own permission and expected-state/revision gate.
+
+IF HTML or PDF is delivered for a report:
+THEN treat it as an immutable derivative of the canonical snapshot and do not let rendering add customer facts.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples

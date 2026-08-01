@@ -401,11 +401,11 @@ implemented now
   manual ranking-proof form records query, page URL, observed rank, and notes
   lifecycle PATCH API records monitor/hold/reject decisions with reason/user provenance
   lifecycle buttons in the web UI
+  Page Proposal handoff queues a subject-scoped page_brief_draft run through the durable API boundary
 
 still deferred
   MapLibre/corridor map surface
   agent_run_events streaming timeline
-  PageBrief/Page Studio handoff actions
 ```
 
 Explorer/run UX must also close two API-slice follow-ups:
@@ -582,6 +582,8 @@ F.5 search context tools
 
 ### 8. Page Registry And Preview
 
+Status: implemented MVP baseline, including typed PageJson, registry validation, shared static rendering, signed sandboxed preview delivery, media manifests, and preview/deploy parity.
+
 Implement the minimal customer-site component registry needed by page proposals and Page Studio.
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
@@ -653,7 +655,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, media ingestion/processing, binary renderer/preview/deploy media parity, the first versioned `ImageText` media controls, and bounded physical media cleanup are implemented.
 
-Turn an accepted opportunity into a structured page proposal:
+Turn an operator-selected, non-rejected opportunity with valid evidence into a structured page proposal:
 
 ```text
 opportunity brief
@@ -752,6 +754,8 @@ still deferred
 
 ### 10. Page Studio, Notes, Approval, And Versioning
 
+Status: implemented MVP baseline for append-only command editing, section replacement, bounded AI copy suggestions, project-scoped media placement, version-scoped notes, review, approval, and release handoff.
+
 Page Studio is the "WordPress but easier" surface for subpages and local pages. It is a constrained layout-zone editor, not a freeform builder:
 
 ```text
@@ -812,9 +816,11 @@ Unresolved predecessor approval blockers remain attached to their source version
 
 Notes attach to stable section ids and optional field paths, not visual order. If `component_instances` rows are used for note anchoring, they are regenerated/projection data from `pageJson`.
 
-Default note persistence should avoid projection-row identity. Prefer a future `page_section_notes` table keyed by `pageVersionId`, `sectionId`, and optional `fieldPath`.
+The implemented `page_section_notes` table is keyed by `pageVersionId`, `sectionId`, and optional `fieldPath`; it does not depend on projection-row identity.
 
 ### 11. Release Handoff
+
+Status: implemented MVP baseline from approved page versions through release planning, preflight, deploy approval, workerized deploy, post-deploy verification, lifecycle projection, cancellation, and rollback reconciliation.
 
 Approved page versions enter the release spine that already exists:
 
@@ -830,6 +836,8 @@ approval
 Agents may explain readiness or blockers. Workers own production mutation.
 
 ### 12. Report And Next Action
+
+Status: next product milestone; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Only the skeletal `reports` table, route placeholder, shared queue/task/event vocabulary, ADR 0019 constraint profile, and deterministic customer-report safety guard exist at runtime. There is no report API, report worker, reviewed report artifact, publication flow, or typed Next Action handoff yet.
 
 Reports should explain customer-safe truth and guide the next opportunity.
 
@@ -850,6 +858,47 @@ ranking guarantees
 weak internal radar signals as customer-visible wins
 claims that AI "found proof" without evidence
 ```
+
+ADR 0021 settles the design checkpoint:
+
+```text
+customer report vs. pre-sales PotentialReport ownership
+digest-bound immutable report snapshot and exact evidence references
+deterministic fact eligibility before narrative generation
+report_narrative as draft prose only, never proof or publication authority
+owner/admin human publication of one exact reviewed digest
+monthly de-DE / Europe-Berlin report identity until project settings exist
+one active generation per report issue with PostgreSQL idempotency
+navigation-only Next Actions before consequential typed command offers
+release/verification detail as report truth instead of coarse releasePlans.status
+stored private HTML as the first derivative; PDF remains deferred until required
+```
+
+The first implementation uses a bounded server-built evidence packet and proves the fact-only path before AI is required:
+
+```text
+strict contracts and canonicalization
+-> report issue/run/version/provenance constraints
+-> deterministic fact-only draft
+-> review/request-changes
+-> digest-bound human publication, correction, and source-invalidation alerts
+-> immutable stored HTML
+```
+
+Optional AI headings/transitions, consequential command offers, and PDF follow only after that vertical works. RAG remains deferred until report evidence cannot be loaded and cited directly within the accepted limits.
+
+Preferred modular-monolith placement for the new vertical:
+
+```text
+packages/contracts/src/report.ts       report snapshot, evidence-ref, narrative, and response contracts
+packages/domain/src/report.ts          pure eligibility, claim, lifecycle, and Next Action decisions
+packages/ai/src/report-narrative.ts    bounded task/prompt/QA helpers
+apps/api/src/modules/reports.module.ts authenticated report commands and reads
+apps/worker/src/handlers/report-*.ts deterministic assembly/narrative/render work
+apps/web/src/screens/reports.tsx       report list/detail/review and explicit actions
+```
+
+These files remain re-exported/composed through their existing package and process entrypoints. The split is intended to keep Report ownership out of the already-large Page and Release modules, not to introduce another service.
 
 ### 13. RAG / Knowledge Retrieval
 
@@ -950,7 +999,10 @@ release status projection split before UI/reporting needs it
 
 ```text
 release status split
-  Before lifecycle UI/reporting depends on explaining exact failure/health cause.
+  ADR 0021 defers the split for V1.
+  Reports read deployment, verification, check, rollback, and recovery detail directly
+  and never derive customer claims from coarse status alone.
+  Reconsider only when at least two independent consumers need separate projections.
 
 rollback_operations table
   When multiple attempts/history, operator attempt audit, DB-enforced active-op uniqueness,

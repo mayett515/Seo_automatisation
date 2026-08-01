@@ -491,7 +491,8 @@ PATCH /projects/:projectId/opportunities/:opportunityId/status
   permission: opportunity:decide
   status: new | monitoring | held | rejected
   reason required when status = rejected
-  brief_created is reserved for the future create-brief side-effect slice
+  brief_created is a service-owned projection written only after successful Page Proposal persistence
+  operator PATCH requests cannot set brief_created directly
 ```
 
 This is the first human decision surface. AI classification `rejected` and operator lifecycle `rejected` remain distinct:

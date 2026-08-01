@@ -68,30 +68,34 @@ flowchart TD
 
 The codebase is a modular monolith: one API process, one worker host, and shared typed packages. Boundaries are kept explicit so the system can grow without prematurely splitting into microservices.
 
-| Runtime lane         | Responsibility                                                                            |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| `apps/web`           | Operator/customer workflow UI, TanStack data loading, forms, tables, preview surfaces     |
-| `apps/api`           | HTTP contracts, auth, tenant guards, queue-producing application services                 |
-| `apps/worker`        | BullMQ jobs, retries, provider mutations, reconciliations, evidence-producing workflows   |
-| `packages/contracts` | Shared Zod request, response, job, model-output, and product artifact contracts           |
-| `packages/domain`    | Pure release, rollback, verification, report-safety, and website-import decisions         |
-| `packages/ai`        | Prompt/task builders, deterministic Opportunity Scout QA gates, scoring, redaction policy |
-| `packages/adapters`  | Purpose-named ports and provider adapters for Netlify, GSC, crawler, storage, reasoning   |
-| `packages/db`        | Drizzle schema, migrations, persistence source of truth                                   |
+| Runtime lane             | Responsibility                                                                                |
+| ------------------------ | --------------------------------------------------------------------------------------------- |
+| `apps/web`               | Operator/customer workflow UI, TanStack data loading, forms, tables, and preview surfaces     |
+| `apps/api`               | HTTP contracts, auth, tenant guards, and queue-producing application services                 |
+| `apps/worker`            | BullMQ jobs, retries, provider mutations, reconciliation, recovery, and maintenance workflows |
+| `packages/contracts`     | Shared Zod request, response, job, model-output, and product-artifact contracts               |
+| `packages/domain`        | Pure page-editing, release, rollback, verification, recovery, and retention decisions         |
+| `packages/ai`            | Prompt/task builders, deterministic AI-output QA gates, scoring, and redaction policy         |
+| `packages/adapters`      | Purpose-named ports and provider adapters for hosting, GSC, crawling, storage, and reasoning  |
+| `packages/config`        | Runtime configuration contracts and fail-closed environment parsing                           |
+| `packages/db`            | Drizzle schema, migrations, and persistence source of truth                                   |
+| `packages/page-registry` | Deployable section schemas, editor metadata, PageJson validation, and deterministic rendering |
+| `packages/seo`           | Deterministic SEO checks, release facts, and customer-report safety guards                    |
+| `packages/ui`            | Reusable operator-application UI primitives                                                   |
 
 ## Stack
 
-| Layer            | Stack                                                                                                          |
-| ---------------- | -------------------------------------------------------------------------------------------------------------- |
-| Frontend         | React, TypeScript, TanStack Router, Query, Form, Table, Store, Virtual                                         |
-| API              | NestJS, Fastify, Better Auth, CSRF, project-scoped guards, RBAC                                                |
-| Workers          | BullMQ, Redis, deterministic job handlers, retry/failure evidence                                              |
-| AI lane          | Mastra-ready reasoning boundary, `AiReasoningPort`, OpenCode/model adapter design, structured output contracts |
-| Data             | PostgreSQL, Drizzle schema/migrations, object storage artifact refs                                            |
-| SEO integrations | Google OAuth, Search Console port, tracking ingestion, website import/crawl evidence                           |
-| Deployment       | Netlify adapter, release preflight, post-deploy verification, rollback reconciliation                          |
-| Verification     | HTTP/HTML checks, browser smoke via Playwright, GSC warning checks                                             |
-| Quality          | pnpm workspace, ESLint, Prettier, TypeScript, unit/integration/browser checks, CI                              |
+| Layer            | Stack                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| Frontend         | React, TypeScript, TanStack Router, Query, Form, Table, Store, Virtual                                  |
+| API              | NestJS, Fastify, Better Auth, CSRF, project-scoped guards, RBAC                                         |
+| Workers          | BullMQ, Redis, deterministic job handlers, retry/failure evidence                                       |
+| AI lane          | Mastra-ready `AiReasoningPort`, mock/OpenCode Go adapters, named task policies, structured output gates |
+| Data             | PostgreSQL, Drizzle schema/migrations, object storage artifact refs                                     |
+| SEO integrations | Google OAuth, Search Console port, tracking ingestion, website import/crawl evidence                    |
+| Deployment       | Netlify adapter, release preflight, post-deploy verification, rollback reconciliation                   |
+| Verification     | HTTP/HTML checks, browser smoke via Playwright, GSC warning checks                                      |
+| Quality          | pnpm workspace, ESLint, Prettier, TypeScript, unit/integration/browser checks, CI                       |
 
 ## Current Foundation
 
@@ -187,7 +191,7 @@ Important invariant:
 Opportunities linked to an agent run may exist only when that run is succeeded.
 ```
 
-The planned worker state machine supports retries without creating duplicate opportunities:
+The durable worker state machine supports retries without creating duplicate opportunities:
 
 ```text
 queued  -> running
@@ -232,7 +236,7 @@ Generic /entruempelung/ receives GSC impressions for "entruempelung dachau"
 
 ### Page Studio Direction
 
-Page Studio is planned as "WordPress but safer and easier", not as a free drag-and-drop builder.
+Page Studio implements the "WordPress but safer and easier" direction as a constrained, append-only editor rather than a free drag-and-drop builder.
 
 ```text
 Header        locked top
@@ -252,6 +256,8 @@ Section controls are constrained:
 - approval freezes one concrete version,
 - release handoff uses the existing deploy/verify spine.
 
+The current baseline includes registry-owned prop controls, legal movement and variants, explicit section replacement, bounded AI copy suggestions, project-scoped media placement, version-scoped notes, durable approval, and release handoff. Richer section families and theme controls remain incremental additions to the same command boundary.
+
 ## AI And Worker Roadmap
 
 ```mermaid
@@ -269,17 +275,17 @@ flowchart TD
   K --> L["RAG only when evidence packets become too large or project memory requires retrieval"]
 ```
 
-Near-term coding target:
+Steps 1 through 10 are implemented at MVP-baseline depth. The next product milestone is the customer-safe Report and Next Action vertical:
 
 ```text
-evidence snapshot
--> input_ref artifact
--> agent_runs queued/running
--> AiReasoningPort.runStructured
--> Zod parse
--> deterministic QA/scoring
--> transactional opportunity persistence
--> agent_runs succeeded/failed
+deterministic report evidence snapshot
+-> customer-safe fact eligibility and exact evidence references
+-> deterministic fact-only draft
+-> optional bounded report_narrative headings/transitions
+-> deterministic claim and narrative validation
+-> digest-bound human review/publication and stored HTML
+-> allowlisted navigation Next Actions
+-> consequential typed command offers only after target CAS hardening
 ```
 
 Mastra/RAG posture:
@@ -317,7 +323,11 @@ packages/contracts  -> Zod schemas and shared payload contracts
 packages/domain     -> pure business decisions
 packages/adapters   -> ports and provider adapters
 packages/ai         -> prompt builders, QA gates, deterministic scoring
+packages/config     -> environment contracts and runtime configuration
 packages/db         -> Drizzle schema and migrations
+packages/page-registry -> customer-page schemas, editor metadata, and static rendering
+packages/seo        -> SEO checks, release facts, and report-safety validation
+packages/ui         -> operator-app UI primitives
 apps/api            -> Nest/Fastify controllers and application services
 apps/worker         -> BullMQ handlers and deterministic production effects
 ```
@@ -333,9 +343,11 @@ apps/
 packages/
   adapters/  provider ports and adapters
   ai/        reasoning QA, scoring, prompt/task builders
+  config/    environment contracts and runtime configuration
   contracts/ shared Zod contracts
   db/        Drizzle schema and migrations
   domain/    pure domain decisions
+  page-registry/ customer-page schemas, editor metadata, and static renderer
   seo/       SEO-specific helpers
   ui/        reusable SaaS UI components
 
@@ -420,8 +432,12 @@ The repository has a strong foundation for an AI-assisted Local SEO MVP:
 - project/tenant boundaries,
 - tracking and GSC foundations,
 - website import evidence,
+- Opportunity Scout, Explorer, ranking-proof, SERP, and technical-audit baselines,
+- typed PageJson, deterministic Page Registry rendering, and append-only Page Studio editing,
+- bounded AI page/copy proposal workflows with human-owned application and approval,
+- project-scoped media upload, processing, preview/deploy parity, placement, and physical cleanup,
 - release/deploy/verify/rollback truth hardening,
-- AI reasoning boundary and opportunity contracts,
-- roadmap for Opportunity Scout, Page Studio, and reporting.
+- DB-before-queue recovery for the safe page, media, and verification lanes,
+- AI reasoning boundaries and named task policies.
 
-The Opportunity Scout and Explorer decision loop is live as the first end-to-end product path. The next product frontier is the Page Registry/PageJson lane, after the small seam repairs that keep strict persisted JSON and deploy artifacts aligned before Page Studio work starts.
+The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The next product frontier is customer-safe Report and Next Action. ADR 0021 accepts the digest-bound snapshot, claim-evidence, human publication, permission, and typed-action architecture. Runtime implementation now starts with contracts, canonicalization, the core report aggregate, and a deterministic fact-only review/publication path; the existing `reports` row, route placeholder, and `report_narrative` vocabulary remain scaffolding rather than a shipped workflow.

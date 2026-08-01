@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-The Page Registry and Page Studio lane is the next major product surface after the Opportunity Explorer and evidence lanes. It turns accepted opportunities into structured local SEO pages that can be previewed, commented on, approved, released, deployed, and verified.
+The Page Registry and Page Studio lane follows the Opportunity Explorer and evidence lanes. It turns operator-selected, non-rejected opportunities with valid evidence into structured local SEO pages that can be previewed, commented on, approved, released, deployed, and verified.
 
 The Big Eater page-registry research pass reviewed the current repo docs, existing DB schema, product knowledge packs, and external block/editor systems such as Payload Blocks, Storyblok components, Sanity Portable Text, Gutenberg `block.json`, shadcn registry metadata, Builder.io, Plasmic, Webflow, and Framer.
 
@@ -104,7 +104,7 @@ PageSectionInstance
 
 The AI lane may emit only structured `PageProposalJson`/`PageJson` that validates against contracts and registry rules. It must not emit arbitrary HTML, React, CSS, JavaScript, raw markup, class names, inline styles, or freeform layout instructions as product truth.
 
-The first PageJson contract slice enforces this with a recursive forbidden-key and unsafe-string scan in `packages/contracts`. That scan is an interim belt-and-suspenders guard, not the durable registry boundary. The durable boundary is the next registry slice: each section type gets a schema-owned props allow-list and renderer-owned behavior.
+The PageJson contract enforces this with a recursive forbidden-key and unsafe-string scan in `packages/contracts`. That scan is a belt-and-suspenders guard around the implemented durable registry boundary: each section type has a schema-owned props allow-list and renderer-owned behavior.
 
 Approved page versions are immutable. New AI work creates new proposals or versions. The DB boundary enforces this with `page_versions_prevent_immutable_update`, `page_versions_prevent_immutable_delete`, and an approval-evidence CHECK constraint: once a row is approved, release-candidate, released, or superseded, structural edits to `page_proposal_id`, `version_number`, or `page_json` are rejected, the frozen artifact cannot be deleted, and frozen statuses require `approved_at`.
 
@@ -120,11 +120,11 @@ Release-plan creation is the first consumer of approved page versions. It may cr
 
 Deploy approval and post-deploy verification project the page-version lifecycle. Persisted deploy approval moves included approved page versions to `release_candidate`. A live verification outcome moves the included release items' page versions to `released` and supersedes older released versions of the same page proposal. Failed or rollback-recommended verification does not mark a candidate as released. Failed, rolled-back, or cancelled not-yet-deployed release plans restore included `release_candidate` versions to `approved` so the frozen artifact can be replanned. Cancellation requires a persisted actor and writes an audit row so routine cancellation is distinguishable from provider or verification failure.
 
-Structured `PageProposalJson` should persist as a proposal artifact, not only as `agent_runs.outputJson`. The default direction is a future `page_proposals.proposalJson` JSONB column, with existing flat proposal columns treated as query/projection fields. `agent_runs.outputJson` remains reasoning audit, not the UI's proposal source of truth.
+Structured `PageProposalJson` persists in `page_proposals.proposalJson`, with flat proposal columns treated as query/projection fields. `agent_runs.outputJson` remains reasoning audit, not the UI's proposal source of truth.
 
 `page_versions.pageJson` is a JSONB column whose TypeScript `$type` is only a compile-time hint. Consumers that turn page JSON into release artifacts, previews, deploys, or customer-visible output must parse with `PageJsonSchema` at the boundary.
 
-The current release renderer is a scaffold path. The Page Registry implementation must migrate production rendering so that:
+The implemented release renderer follows this boundary:
 
 ```text
 page-registry static renderer
@@ -173,7 +173,7 @@ This preserves the current controlled-automation architecture:
 - API and workers own persistence and release handoff,
 - Page Studio exposes only legal actions.
 
-It also gives the next implementation slice a concrete target:
+Implementation record:
 
 1. Add PageJson/PageProposalJson contracts. Done in the first Page Registry slice.
 2. Add contracts-owned page version status vocabulary and action-conditional release artifact validation. Done in the first Page Registry slice.
@@ -197,6 +197,7 @@ It also gives the next implementation slice a concrete target:
 19. Decide the media asset boundary before adding controls: project-scoped opaque references, private quarantine upload, deterministic worker normalization, immutable derivatives, reference-protected retention, and preview/deploy manifest parity. Accepted in ADR 0020; the backend ingestion/processing foundation is implemented.
 20. Add binary renderer/preview/deploy parity: explicit UTF-8/base64 static files, a decoded artifact budget, shared project-scoped manifest resolution, signed sandbox-preserving preview document/asset capabilities, and deploy-time verified media-byte embedding before provider handoff. Done in ADR 0020 slice 2.
 21. Add the first registry media placement and Page Studio controls: strict `ImageText` props, exact transactional media projection, ready-only new selection with inherited archived retention, deterministic media rendering, explicit upload/select/alt/focal-point staging, and N+1 persistence through the existing command endpoint. Done in ADR 0020 slice 3.
+22. Add bounded physical media cleanup: worker-owned durable claims remove successful quarantine sources and failed unreferenced object prefixes without deleting ready/archived derivatives or durable asset rows. Done in the ADR 0020 retention follow-up.
 
 The first registry is intentionally small and currently covers the deployable Local SEO service-area skeleton:
 
@@ -210,6 +211,7 @@ FAQ
 ServiceAreaList
 FinalCTA
 Footer
+ImageText
 ```
 
 Richer sections such as problem/solution blocks, service grids, trust reviews, galleries, before-after, maps, nearby places, and references can follow after the source-of-truth path is proven and their source data exists.
