@@ -114,6 +114,29 @@ void describe(
       assert.equal(releasePlan?.deployedAt, null);
     });
 
+    void it("does not let deployment ledger start revive a terminal release plan", async () => {
+      const fixture = await createDeployFixture(db);
+      const repository = createDrizzleDeployRepository(db);
+      const context = await repository.loadContext(fixture.data);
+      assert.ok(context);
+
+      await db.update(releasePlans).set({ status: "failed" }).where(eq(releasePlans.id, fixture.releasePlanId));
+
+      await assert.rejects(
+        () => repository.startDeployment({ data: fixture.data, context, evidence: { source: "integration_test" } }),
+        /Release plan changed before deployment ledger start could be persisted/u
+      );
+
+      const deploymentRows = await db
+        .select()
+        .from(deployments)
+        .where(eq(deployments.releasePlanId, fixture.releasePlanId));
+      assert.equal(deploymentRows.length, 0);
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "failed");
+    });
+
     void it("deploys release-candidate page versions produced by deploy approval", async () => {
       const fixture = await createDeployFixture(db, { pageVersionStatus: "release_candidate" });
       const hosting = new StatefulSiteHosting({
@@ -202,6 +225,30 @@ void describe(
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "live");
       assert.equal(releasePlan?.deployedAt?.toISOString(), originalDeployedAt.toISOString());
+    });
+
+    void it("does not let verified deploy replay revive a rolled-back release plan", async () => {
+      const fixture = await createDeployFixture(db);
+      await db.update(releasePlans).set({ status: "rolled_back" }).where(eq(releasePlans.id, fixture.releasePlanId));
+      await insertDeployment(db, fixture, {
+        providerDeployId: "provider-deploy-1",
+        providerOperationStatus: "recorded",
+        status: "live_healthy",
+        verificationStatus: "live_healthy"
+      });
+
+      const result = await executeDeploy({
+        data: fixture.data,
+        jobId: fixture.deploymentKey,
+        objectStorage: new MemoryObjectStorage(),
+        repository: createDrizzleDeployRepository(db),
+        siteHosting: new StatefulSiteHosting()
+      });
+
+      assert.equal(result.status, "already_deployed");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "rolled_back");
     });
 
     void it("allows deploys without rollback evidence when prior deployments are unsafe rollback sources", async () => {

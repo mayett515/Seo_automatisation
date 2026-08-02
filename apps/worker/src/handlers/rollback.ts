@@ -6,7 +6,12 @@ import {
   type ReleasePlanStatus,
   type RollbackJobData
 } from "@localseo/contracts";
-import { classifyRollbackReconciliation } from "@localseo/domain";
+import {
+  classifyRollbackReconciliation,
+  hasActiveRollbackOperationEvidence,
+  isActiveRollbackOperationStatus,
+  type ActiveRollbackOperationStatus
+} from "@localseo/domain";
 import {
   demoteReleaseCandidatePageVersionsForPlan,
   deployments,
@@ -14,7 +19,7 @@ import {
   releasePlans,
   rollbackPoints
 } from "@localseo/db";
-import { and, eq, inArray, not } from "drizzle-orm";
+import { and, eq, inArray, not, sql } from "drizzle-orm";
 import type { Job } from "bullmq";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
@@ -30,7 +35,7 @@ type RollbackContext = {
 };
 
 type PendingRollbackEvidence = {
-  status: "restore_in_flight" | "rollback_pending";
+  status: ActiveRollbackOperationStatus;
   operationAttemptId: string;
   rollbackPointId: string;
   sourceProviderDeployId: string;
@@ -636,36 +641,79 @@ export function createDrizzleRollbackRepository(db: WorkerDb): RollbackRepositor
         throw new RollbackEvidenceError("Rollback provider evidence changed before rollback intent could be persisted");
       }
 
-      const currentRollbackPointEvidence = recordFromUnknown(input.rollbackPoint.evidenceJson);
-      const [rollbackPoint] = await db
-        .update(rollbackPoints)
-        .set({
-          evidenceJson: {
-            ...currentRollbackPointEvidence,
-            rollbackExecution: {
-              status: "restore_in_flight",
-              operationAttemptId: input.operationAttemptId,
-              rollbackPointId: input.data.rollbackPointId,
-              sourceProviderDeployId,
-              targetProviderDeployId,
-              attemptedAt: attemptedAt.toISOString()
-            }
-          },
-          updatedAt: attemptedAt
-        })
-        .where(
-          and(
-            eq(rollbackPoints.id, input.data.rollbackPointId),
-            eq(rollbackPoints.projectId, input.data.projectId),
-            eq(rollbackPoints.releasePlanId, input.data.releasePlanId),
-            eq(rollbackPoints.providerDeployId, sourceProviderDeployId)
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`
+          SELECT "id"
+          FROM "rollback_points"
+          WHERE "id" = ${input.data.rollbackPointId}
+            AND "project_id" = ${input.data.projectId}
+            AND "release_plan_id" = ${input.data.releasePlanId}
+          FOR UPDATE
+        `);
+        const [currentRollbackPoint] = await tx
+          .select()
+          .from(rollbackPoints)
+          .where(
+            and(
+              eq(rollbackPoints.id, input.data.rollbackPointId),
+              eq(rollbackPoints.projectId, input.data.projectId),
+              eq(rollbackPoints.releasePlanId, input.data.releasePlanId),
+              eq(rollbackPoints.providerDeployId, sourceProviderDeployId)
+            )
           )
-        )
-        .returning({ id: rollbackPoints.id });
+          .limit(1);
 
-      if (!rollbackPoint) {
-        throw new RollbackEvidenceError("Rollback point changed before rollback intent could be persisted");
-      }
+        if (!currentRollbackPoint || hasActiveRollbackOperationEvidence(currentRollbackPoint.evidenceJson)) {
+          throw new RollbackEvidenceError("Rollback point changed before rollback intent could be persisted");
+        }
+
+        const currentRollbackPointEvidence = recordFromUnknown(currentRollbackPoint.evidenceJson);
+        const [rollbackPoint] = await tx
+          .update(rollbackPoints)
+          .set({
+            evidenceJson: {
+              ...currentRollbackPointEvidence,
+              rollbackExecution: {
+                status: "restore_in_flight",
+                operationAttemptId: input.operationAttemptId,
+                rollbackPointId: input.data.rollbackPointId,
+                sourceProviderDeployId,
+                targetProviderDeployId,
+                attemptedAt: attemptedAt.toISOString()
+              }
+            },
+            updatedAt: attemptedAt
+          })
+          .where(
+            and(
+              eq(rollbackPoints.id, input.data.rollbackPointId),
+              eq(rollbackPoints.projectId, input.data.projectId),
+              eq(rollbackPoints.releasePlanId, input.data.releasePlanId),
+              eq(rollbackPoints.providerDeployId, sourceProviderDeployId)
+            )
+          )
+          .returning({ id: rollbackPoints.id });
+
+        if (!rollbackPoint) {
+          throw new RollbackEvidenceError("Rollback point changed before rollback intent could be persisted");
+        }
+
+        const [releasePlan] = await tx
+          .update(releasePlans)
+          .set({ updatedAt: attemptedAt })
+          .where(
+            and(
+              eq(releasePlans.id, input.data.releasePlanId),
+              eq(releasePlans.projectId, input.data.projectId),
+              inArray(releasePlans.status, rollbackPlanReadyStatuses)
+            )
+          )
+          .returning({ id: releasePlans.id });
+
+        if (!releasePlan) {
+          throw new RollbackEvidenceError("Release plan changed before rollback intent could be persisted");
+        }
+      });
     },
 
     async markRollbackSucceeded(input) {
@@ -1015,13 +1063,9 @@ function pendingRollbackEvidenceFromContext(context: RollbackContext): PendingRo
 
 function hasActiveRollbackOperationStatus(context: RollbackContext): boolean {
   return (
-    hasActiveRollbackStatus(recordFromUnknown(recordFromUnknown(context.deployment?.evidenceJson).rollback)) ||
-    hasActiveRollbackStatus(recordFromUnknown(recordFromUnknown(context.rollbackPoint?.evidenceJson).rollbackExecution))
+    hasActiveRollbackOperationEvidence(context.deployment?.evidenceJson) ||
+    hasActiveRollbackOperationEvidence(context.rollbackPoint?.evidenceJson)
   );
-}
-
-function hasActiveRollbackStatus(value: Record<string, unknown>): boolean {
-  return value.status === "restore_in_flight" || value.status === "rollback_pending";
 }
 
 function pendingRollbackEvidenceFromDeployment(value: unknown): PendingRollbackEvidence | undefined {
@@ -1037,7 +1081,7 @@ function pendingRollbackEvidenceFromRollbackPoint(value: unknown): PendingRollba
 function pendingRollbackEvidenceFromRecord(value: Record<string, unknown>): PendingRollbackEvidence | undefined {
   const status = value.status;
 
-  if (status !== "restore_in_flight" && status !== "rollback_pending") {
+  if (!isActiveRollbackOperationStatus(status)) {
     return undefined;
   }
 

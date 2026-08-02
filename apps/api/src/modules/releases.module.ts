@@ -38,7 +38,12 @@ import {
   type ReleaseVerificationQueueResponse,
   type RollbackPoint
 } from "@localseo/contracts";
-import { buildReleaseDeploymentKey, canDeployRelease, decideReleaseReadiness } from "@localseo/domain";
+import {
+  buildReleaseDeploymentKey,
+  canDeployRelease,
+  decideReleaseReadiness,
+  type DeployDecision
+} from "@localseo/domain";
 import { buildReleasePreflightChecks, type ReleasePreflightEvidence } from "@localseo/seo";
 import {
   approvals,
@@ -74,8 +79,22 @@ const unavailableMediaReader: Pick<MediaAssetStoragePort, "readPrivateObject"> =
 };
 
 type Db = DatabaseClient;
+type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
 
-const approvableReleaseStatuses = new Set<ReleasePlan["status"]>(["ready", "ready_with_warnings"]);
+const approvableReleaseStatuses = ["ready", "ready_with_warnings"] as const satisfies ReleasePlan["status"][];
+const approvableReleaseStatusSet = new Set<ReleasePlan["status"]>(approvableReleaseStatuses);
+const preflightableReleasePlanStatuses = [
+  "draft",
+  "ready",
+  "ready_with_warnings",
+  "blocked",
+  "approved_for_deploy"
+] as const satisfies ReleasePlan["status"][];
+const preflightableReleasePlanStatusSet = new Set<ReleasePlan["status"]>(preflightableReleasePlanStatuses);
+const deployStartingReleasePlanStatuses = [
+  "approved_for_deploy",
+  "deploying"
+] as const satisfies ReleasePlan["status"][];
 const cancellableReleasePlanStatuses = [
   "draft",
   "ready",
@@ -272,8 +291,18 @@ export class ReleasesService {
     readiness: string;
     checks: ReleaseCheck[];
   }> {
-    await this.assertReleasePlanForProject(projectId, releasePlanId);
     const db = this.database.db;
+
+    if (db && isPersistedId(releasePlanId)) {
+      const plan = await this.loadReleasePlanForProject(projectId, releasePlanId);
+
+      if (!preflightableReleasePlanStatusSet.has(plan.status)) {
+        throw new BadRequestException("Release plan is not in a preflightable state.");
+      }
+    } else {
+      await this.assertReleasePlanForProject(projectId, releasePlanId);
+    }
+
     const evidence =
       db && isPersistedId(releasePlanId)
         ? await loadPreparedReleasePreflightEvidence(db, this.mediaStorage, projectId, releasePlanId)
@@ -287,16 +316,13 @@ export class ReleasesService {
     const readiness = decideReleaseReadiness(checks);
 
     if (db && isPersistedId(releasePlanId)) {
-      await persistReleaseChecks(db, releasePlanId, checks);
-      await db
-        .update(releasePlans)
-        .set({
-          status: readiness.kind,
-          blockerCount: checks.filter((check) => check.severity === "blocker" && check.result === "failed").length,
-          warningCount: checks.filter((check) => check.severity === "warning" && check.result === "failed").length,
-          updatedAt: new Date()
-        })
-        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+      await persistReleasePreflight(db, {
+        projectId,
+        releasePlanId,
+        checks,
+        readiness: readiness.kind,
+        checkedAt: new Date()
+      });
     }
 
     return {
@@ -322,30 +348,41 @@ export class ReleasesService {
       throw new BadRequestException("Release deploy approval requires an authenticated persisted user id.");
     }
 
-    await this.assertReleasePlanForProject(projectId, releasePlanId);
-    const plan = await this.loadReleasePlanForProject(projectId, releasePlanId);
-
-    if (!approvableReleaseStatuses.has(plan.status)) {
-      throw new BadRequestException("Release plan is not in an approvable state.");
-    }
-
-    const checks = await loadReleaseChecks(db, releasePlanId);
-
-    if (checks.length === 0 || decideReleaseReadiness(checks).kind === "blocked") {
-      throw new BadRequestException("Release preflight must pass before approval.");
-    }
-
     const approvedAt = new Date();
 
     await db.transaction(async (tx) => {
-      await tx
+      const plan = await lockReleasePlan(tx, projectId, releasePlanId);
+
+      if (!approvableReleaseStatusSet.has(plan.status)) {
+        throw new BadRequestException("Release plan is not in an approvable state.");
+      }
+
+      const checks = await loadReleaseChecks(tx, releasePlanId);
+
+      if (checks.length === 0 || decideReleaseReadiness(checks).kind === "blocked") {
+        throw new BadRequestException("Release preflight must pass before approval.");
+      }
+
+      const [approvedPlan] = await tx
         .update(releasePlans)
         .set({
           status: "approved_for_deploy",
           approvedAt,
           updatedAt: approvedAt
         })
-        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+        .where(
+          and(
+            eq(releasePlans.id, releasePlanId),
+            eq(releasePlans.projectId, projectId),
+            inArray(releasePlans.status, approvableReleaseStatuses)
+          )
+        )
+        .returning({ id: releasePlans.id });
+
+      if (!approvedPlan) {
+        throw new BadRequestException("Release plan is not in an approvable state.");
+      }
+
       await tx.insert(approvals).values({
         releasePlanId,
         userId,
@@ -495,13 +532,24 @@ export class ReleasesService {
     });
 
     if (enqueued) {
-      await db
+      const [deployingPlan] = await db
         .update(releasePlans)
         .set({
           status: "deploying",
           updatedAt: new Date()
         })
-        .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)));
+        .where(
+          and(
+            eq(releasePlans.id, releasePlanId),
+            eq(releasePlans.projectId, projectId),
+            inArray(releasePlans.status, deployStartingReleasePlanStatuses)
+          )
+        )
+        .returning({ id: releasePlans.id });
+
+      if (!deployingPlan) {
+        throw new BadRequestException("Release plan changed before deploy could start.");
+      }
     }
 
     return QueueJobSchema.parse({
@@ -941,26 +989,90 @@ async function assertReleasePageMediaAvailable(
   }
 }
 
-async function persistReleaseChecks(db: Db, releasePlanId: string, checks: ReleaseCheck[]): Promise<void> {
+async function persistReleasePreflight(
+  db: Db,
+  input: {
+    projectId: string;
+    releasePlanId: string;
+    checks: ReleaseCheck[];
+    readiness: DeployDecision["kind"];
+    checkedAt: Date;
+  }
+): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.delete(releaseChecks).where(eq(releaseChecks.releasePlanId, releasePlanId));
+    const plan = await lockReleasePlan(tx, input.projectId, input.releasePlanId);
 
-    if (checks.length === 0) {
-      return;
+    if (!preflightableReleasePlanStatusSet.has(plan.status)) {
+      throw new BadRequestException("Release plan is not in a preflightable state.");
     }
 
-    await tx.insert(releaseChecks).values(
-      checks.map((check) => ({
-        releasePlanId,
-        scope: check.scope,
-        checkKey: check.checkKey,
-        severity: check.severity,
-        result: check.result,
-        message: check.message,
-        evidenceJson: check.evidence
-      }))
-    );
+    await tx.delete(releaseChecks).where(eq(releaseChecks.releasePlanId, input.releasePlanId));
+
+    if (input.checks.length > 0) {
+      await tx.insert(releaseChecks).values(
+        input.checks.map((check) => ({
+          releasePlanId: input.releasePlanId,
+          checkKey: check.checkKey,
+          scope: check.scope,
+          severity: check.severity,
+          result: check.result,
+          message: check.message,
+          evidenceJson: check.evidence
+        }))
+      );
+    }
+
+    const [updatedPlan] = await tx
+      .update(releasePlans)
+      .set({
+        status: input.readiness,
+        blockerCount: input.checks.filter((check) => check.severity === "blocker" && check.result === "failed").length,
+        warningCount: input.checks.filter((check) => check.severity === "warning" && check.result === "failed").length,
+        updatedAt: input.checkedAt
+      })
+      .where(
+        and(
+          eq(releasePlans.id, input.releasePlanId),
+          eq(releasePlans.projectId, input.projectId),
+          inArray(releasePlans.status, preflightableReleasePlanStatuses)
+        )
+      )
+      .returning({ id: releasePlans.id });
+
+    if (!updatedPlan) {
+      throw new BadRequestException("Release plan is not in a preflightable state.");
+    }
+
+    if (plan.status === "approved_for_deploy") {
+      await demoteReleaseCandidatePageVersionsForPlan(tx, {
+        projectId: input.projectId,
+        releasePlanId: input.releasePlanId,
+        updatedAt: input.checkedAt
+      });
+    }
   });
+}
+
+async function lockReleasePlan(
+  tx: DatabaseTransaction,
+  projectId: string,
+  releasePlanId: string
+): Promise<typeof releasePlans.$inferSelect> {
+  await tx.execute(
+    sql`SELECT "id" FROM "release_plans" WHERE "id" = ${releasePlanId} AND "project_id" = ${projectId} FOR UPDATE`
+  );
+
+  const [plan] = await tx
+    .select()
+    .from(releasePlans)
+    .where(and(eq(releasePlans.id, releasePlanId), eq(releasePlans.projectId, projectId)))
+    .limit(1);
+
+  if (!plan) {
+    throw new UnauthorizedException("Release plan is not authorized for this project.");
+  }
+
+  return plan;
 }
 
 async function loadReleasePreflightEvidence(
@@ -1243,7 +1355,7 @@ function hasUsableTrackingOrigins(allowedOrigins: string[]): boolean {
   });
 }
 
-async function loadReleaseChecks(db: Db, releasePlanId: string): Promise<ReleaseCheck[]> {
+async function loadReleaseChecks(db: Db | DatabaseTransaction, releasePlanId: string): Promise<ReleaseCheck[]> {
   const rows = await db.select().from(releaseChecks).where(eq(releaseChecks.releasePlanId, releasePlanId));
 
   return rows.map((row) =>

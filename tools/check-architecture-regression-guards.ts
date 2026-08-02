@@ -1361,6 +1361,146 @@ requireIncludes(
 
 requireIncludes(
   "apps/api/src/modules/releases.module.ts",
+  "preflightableReleasePlanStatuses",
+  "release-transition-cas",
+  "Release preflight must use an explicit expected-status set"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "const plan = await lockReleasePlan(tx, projectId, releasePlanId);",
+  "release-transition-cas",
+  "Release deploy approval must lock and re-read the release plan inside its transaction"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "rejects deploy approval when a concurrent terminal transition wins the plan lock",
+  "release-transition-cas",
+  "Release integration must prove a stale approval cannot overwrite a concurrent terminal transition"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "does not let preflight resurrect a terminal release plan",
+  "release-transition-cas",
+  "Release integration must prove preflight cannot revive terminal plan truth"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "does not let deploy enqueue revive a concurrently terminal release plan",
+  "release-transition-cas",
+  "Release integration must prove post-enqueue projection cannot revive terminal plan truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  "inArray(releasePlans.status, deployStartingReleasePlanStatuses)",
+  "release-transition-cas",
+  "Deploy worker ledger start must compare-and-set the release plan lifecycle"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.integration.ts",
+  "does not let deployment ledger start revive a terminal release plan",
+  "release-transition-cas",
+  "Deploy integration must prove stale worker context cannot revive terminal plan truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  "inArray(releasePlans.status, releaseLiveProjectionPlanStatuses)",
+  "release-transition-cas",
+  "Verified deploy replay must compare-and-set live projection against current plan truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.integration.ts",
+  "does not let verified deploy replay revive a rolled-back release plan",
+  "release-transition-cas",
+  "Deploy integration must prove verified replay cannot revive rolled-back plan truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.ts",
+  "verificationProjectableDeploymentStatuses",
+  "release-transition-cas",
+  "Verification projection must compare-and-set deployment lifecycle truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.integration.ts",
+  "does not let late healthy verification overwrite a concurrent rollback",
+  "release-transition-cas",
+  "Verification integration must prove rollback truth wins over a late healthy result"
+);
+
+requireIncludes(
+  "packages/domain/src/index.ts",
+  "activeRollbackOperationStatuses",
+  "release-transition-cas",
+  "ADR 0013 active rollback operation vocabulary must have one pure domain owner"
+);
+
+requireIncludes(
+  "packages/domain/src/index.test.ts",
+  "recognizes the shared active status vocabulary in both persisted evidence shapes",
+  "release-transition-cas",
+  "Domain tests must pin active rollback recognition across both persisted evidence shapes"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.ts",
+  "hasActiveRollbackOperationEvidence(row.evidenceJson)",
+  "release-transition-cas",
+  "Verification projection must reuse the shared active rollback evidence predicate"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.integration.ts",
+  "does not project healthy verification while rollback restore is in flight",
+  "release-transition-cas",
+  "Verification integration must prove active restore ownership blocks lifecycle projection"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.ts",
+  'not(eq(deployments.providerOperationStatus, "manual_reconciliation_required"))',
+  "release-transition-cas",
+  "Manual reconciliation provider truth must suppress release verification lifecycle projection"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.ts",
+  "lifecycleProjection",
+  "release-transition-cas",
+  "Terminal verification audit must record whether lifecycle projection applied or was suppressed"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/release-verification.integration.ts",
+  "does not project healthy verification during manual rollback reconciliation",
+  "release-transition-cas",
+  "Verification integration must prove manual reconciliation cannot be projected live"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/rollback.ts",
+  "Release plan changed before rollback intent could be persisted",
+  "release-transition-cas",
+  "Rollback intent must compare-and-set current plan truth before provider mutation"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/rollback.integration.ts",
+  "does not record rollback intent or call the provider when plan truth changes after context load",
+  "release-transition-cas",
+  "Rollback integration must prove stale plan context loses before provider restore"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
   'status: "release_candidate"',
   "page-version-lifecycle",
   "Release deploy approval must project included approved page versions to release_candidate"

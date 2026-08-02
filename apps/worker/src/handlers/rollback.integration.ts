@@ -557,6 +557,44 @@ void describe(
       assert.equal(hosting.rollbackCalls.length, 0);
     });
 
+    void it("does not record rollback intent or call the provider when plan truth changes after context load", async () => {
+      const fixture = await createRollbackFixture(db);
+      const repository = createDrizzleRollbackRepository(db);
+      const racingRepository = {
+        ...repository,
+        async recordRollbackIntent(input: Parameters<typeof repository.recordRollbackIntent>[0]) {
+          await db
+            .update(releasePlans)
+            .set({ status: "live", updatedAt: new Date() })
+            .where(eq(releasePlans.id, fixture.releasePlanId));
+
+          return repository.recordRollbackIntent(input);
+        }
+      };
+      const hosting = new FakeRollbackHosting({
+        status: "completed",
+        providerDeployId: "previous-provider-deploy"
+      });
+
+      await assert.rejects(
+        executeRollback({
+          data: fixture.data,
+          jobId: rollbackJobId(fixture.data),
+          repository: racingRepository,
+          siteHosting: hosting
+        }),
+        /Release plan changed before rollback intent could be persisted/u
+      );
+
+      assert.equal(hosting.rollbackCalls.length, 0);
+
+      const [rollbackPoint] = await db
+        .select()
+        .from(rollbackPoints)
+        .where(eq(rollbackPoints.id, fixture.rollbackPointId));
+      assert.deepEqual(rollbackPoint?.evidenceJson, { source: "integration_fixture" });
+    });
+
     void it("does not persist rolled_back when the target deployment changed after provider restore", async () => {
       const fixture = await createRollbackFixture(db);
       const repository = createDrizzleRollbackRepository(db);

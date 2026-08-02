@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.19"
+version: "1.1.22"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -293,10 +293,18 @@ Page Version approval
   Release-plan creation may select only approved page versions with approval evidence.
   Release-plan creation must persist actor evidence and must not return success-shaped plans without persistence.
   Release-plan creation must create draft release plans/items only; preflight, deploy approval, deploy, and verification remain separate steps.
+  Release preflight and deploy approval must lock the release plan and re-check an explicit expected-status set before replacing checks, readiness, approval evidence, or page-version lifecycle state.
+  Rerunning preflight after deploy approval must restore included release_candidate versions to approved in the same transaction that invalidates the approval state.
+  Deploy enqueue and worker deployment-ledger start must compare-and-set approved_for_deploy/deploying plan truth; neither may revive a concurrently cancelled or terminal plan.
+  Verified deploy replay may project a plan live only while the plan remains deploying/live; it must not revive failed or rolled-back plan truth.
   Release deploy approval must require a persisted actor and must not fall back to scaffold users.
   Release deploy approval projects included approved page versions to release_candidate.
   Deploy artifact build may use approved or release_candidate page versions only, and must still require approval evidence.
   Live verification projects included page versions to released and supersedes older released versions for the same proposal.
+  Verification projection must compare-and-set deployment truth before plan/page-version truth and must not overwrite rolled-back or otherwise terminal deployment state with a late result.
+  Active restore_in_flight/rollback_pending evidence in either rollback evidence shape owns lifecycle projection through the shared domain predicate; verification may persist detailed audit but must not project deployment, plan, or page-version truth until rollback resolves.
+  manual_reconciliation_required provider-operation truth must suppress verification lifecycle projection, and the terminal verification audit must persist whether projection was applied or the stable reason it was suppressed.
+  Rollback intent must compare-and-set rollback-eligible plan truth in the same transaction as the intent evidence before any provider restore mutation.
   Failed or rollback-recommended verification must not mark page versions as released.
   Failed, rolled-back, or cancelled release plans must restore included release_candidate page versions to approved so they can be replanned.
   Release-plan cancellation must require a persisted actor and write an audit row so routine cancellation is distinguishable from provider or verification failure.

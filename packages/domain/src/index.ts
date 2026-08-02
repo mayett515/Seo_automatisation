@@ -58,6 +58,25 @@ export function decideReleaseVerificationStatus(checks: ReleaseCheck[]): Release
 
 export type RollbackPublishedDeployStatus = "pending" | "deploying" | "ready" | "failed" | "rolled_back" | "unknown";
 
+export const activeRollbackOperationStatuses = ["restore_in_flight", "rollback_pending"] as const;
+
+export type ActiveRollbackOperationStatus = (typeof activeRollbackOperationStatuses)[number];
+
+export function isActiveRollbackOperationStatus(value: unknown): value is ActiveRollbackOperationStatus {
+  return activeRollbackOperationStatuses.some((status) => status === value);
+}
+
+export function hasActiveRollbackOperationEvidence(value: unknown): boolean {
+  const evidence = recordFromUnknown(value);
+  const deploymentRollback = recordFromUnknown(evidence.rollback);
+  const rollbackExecution = recordFromUnknown(evidence.rollbackExecution);
+
+  return (
+    isActiveRollbackOperationStatus(deploymentRollback.status) ||
+    isActiveRollbackOperationStatus(rollbackExecution.status)
+  );
+}
+
 export type RollbackReconciliationDecision =
   | { kind: "completed"; publishedProviderDeployId: string }
   | { kind: "still_pending"; reason: "provider_not_ready" | "published_identity_not_available" }
@@ -90,6 +109,10 @@ export function classifyRollbackReconciliation(input: {
   }
 
   return { kind: "still_pending", reason: "provider_not_ready" };
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 export type LocalRouteStrategy = "local_page" | "subdomain" | "backlog";

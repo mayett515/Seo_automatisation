@@ -28,6 +28,7 @@ import {
   releasePlans,
   releaseVerificationChecks,
   releaseVerifications,
+  rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
 import { eq } from "drizzle-orm";
@@ -86,6 +87,7 @@ void describe(
 
       assert.equal(result.status, "completed");
       assert.equal(result.verificationStatus, "live_healthy");
+      assert.equal(result.lifecycleProjection, "projected");
       assert.deepEqual(verifier.requests[0]?.liveUrls, ["https://customer.example/dachreinigung/"]);
 
       const [verification] = await db
@@ -93,7 +95,11 @@ void describe(
         .from(releaseVerifications)
         .where(eq(releaseVerifications.id, fixture.verificationId));
       assert.equal(verification?.status, "live_healthy");
-      assert.deepEqual(verification?.evidenceJson, { source: "release_verify_worker", checkCount: 2 });
+      assert.deepEqual(verification?.evidenceJson, {
+        source: "release_verify_worker",
+        checkCount: 2,
+        lifecycleProjection: { status: "projected" }
+      });
 
       const checks = await db
         .select()
@@ -232,6 +238,8 @@ void describe(
       });
 
       assert.equal(result.verificationStatus, "execution_failed");
+      assert.equal(result.lifecycleProjection, "not_applicable");
+      assert.equal(result.lifecycleProjectionReason, "verification_status_not_projectable");
 
       const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
       assert.equal(deployment?.status, "provider_succeeded");
@@ -320,6 +328,181 @@ void describe(
 
       const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(releasePlan?.status, "deploying");
+    });
+
+    void it("does not let late healthy verification overwrite a concurrent rollback", async () => {
+      const fixture = await createVerificationFixture(db, { releasePlanStatus: "deploying" });
+      await db
+        .update(pageVersions)
+        .set({ status: "release_candidate" })
+        .where(eq(pageVersions.id, fixture.pageVersionId));
+      const verifier = new FakeVerificationPort();
+      verifier.beforeResolve = async () => {
+        await db.transaction(async (tx) => {
+          await tx
+            .update(deployments)
+            .set({ status: "rolled_back", updatedAt: new Date("2026-06-30T11:59:00.000Z") })
+            .where(eq(deployments.id, fixture.deploymentId));
+          await tx
+            .update(releasePlans)
+            .set({ status: "rolled_back", updatedAt: new Date("2026-06-30T11:59:00.000Z") })
+            .where(eq(releasePlans.id, fixture.releasePlanId));
+          await tx
+            .update(pageVersions)
+            .set({ status: "approved", updatedAt: new Date("2026-06-30T11:59:00.000Z") })
+            .where(eq(pageVersions.id, fixture.pageVersionId));
+        });
+      };
+
+      const result = await executeReleaseVerification({
+        data: fixture.data,
+        db,
+        dependencies: { verification: verifier },
+        isFinalAttempt: true
+      });
+
+      assert.equal(result.status, "completed");
+      assert.equal(result.verificationStatus, "live_healthy");
+      assert.equal(result.lifecycleProjection, "suppressed");
+      assert.equal(result.lifecycleProjectionReason, "deployment_state_changed");
+
+      const [verification] = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.id, fixture.verificationId));
+      assert.equal(verification?.status, "live_healthy");
+      assert.deepEqual(verification?.evidenceJson, {
+        source: "release_verify_worker",
+        checkCount: 2,
+        lifecycleProjection: { status: "suppressed", reason: "deployment_state_changed" }
+      });
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rolled_back");
+      assert.equal(deployment?.verificationStatus, "not_started");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "rolled_back");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "approved");
+    });
+
+    void it("does not project healthy verification while rollback restore is in flight", async () => {
+      const fixture = await createVerificationFixture(db, {
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended"
+      });
+      const [rollbackPoint] = await db
+        .insert(rollbackPoints)
+        .values({
+          projectId: fixture.projectId,
+          releasePlanId: fixture.releasePlanId,
+          deploymentId: fixture.deploymentId,
+          artifactKey: `rollback/${fixture.releasePlanId}/previous-stable.json`,
+          providerDeployId: "previous-provider-deploy"
+        })
+        .returning();
+      assert.ok(rollbackPoint);
+
+      const verifier = new FakeVerificationPort();
+      verifier.beforeResolve = async () => {
+        await db
+          .update(rollbackPoints)
+          .set({
+            evidenceJson: {
+              rollbackExecution: {
+                status: "restore_in_flight",
+                operationAttemptId: "rollback-attempt-1",
+                rollbackPointId: rollbackPoint.id,
+                sourceProviderDeployId: "previous-provider-deploy",
+                targetProviderDeployId: `deploy-${fixture.releasePlanId}`,
+                attemptedAt: "2026-06-30T11:59:00.000Z"
+              }
+            }
+          })
+          .where(eq(rollbackPoints.id, rollbackPoint.id));
+      };
+
+      const result = await executeReleaseVerification({
+        data: fixture.data,
+        db,
+        dependencies: { verification: verifier },
+        isFinalAttempt: true
+      });
+
+      assert.equal(result.status, "completed");
+      assert.equal(result.verificationStatus, "live_healthy");
+      assert.equal(result.lifecycleProjection, "suppressed");
+      assert.equal(result.lifecycleProjectionReason, "active_rollback_execution");
+
+      const [verification] = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.id, fixture.verificationId));
+      assert.equal(verification?.status, "live_healthy");
+      assert.deepEqual(verification?.evidenceJson, {
+        source: "release_verify_worker",
+        checkCount: 2,
+        lifecycleProjection: { status: "suppressed", reason: "active_rollback_execution" }
+      });
+
+      const checks = await db
+        .select()
+        .from(releaseVerificationChecks)
+        .where(eq(releaseVerificationChecks.verificationId, fixture.verificationId));
+      assert.equal(checks.length, 2);
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rollback_recommended");
+      assert.equal(deployment?.verificationStatus, "rollback_recommended");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "failed");
+    });
+
+    void it("does not project healthy verification during manual rollback reconciliation", async () => {
+      const fixture = await createVerificationFixture(db, {
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended"
+      });
+      await db
+        .update(deployments)
+        .set({ providerOperationStatus: "manual_reconciliation_required" })
+        .where(eq(deployments.id, fixture.deploymentId));
+
+      const result = await executeReleaseVerification({
+        data: fixture.data,
+        db,
+        dependencies: { verification: new FakeVerificationPort() },
+        isFinalAttempt: true
+      });
+
+      assert.equal(result.status, "completed");
+      assert.equal(result.verificationStatus, "live_healthy");
+      assert.equal(result.lifecycleProjection, "suppressed");
+      assert.equal(result.lifecycleProjectionReason, "manual_reconciliation_required");
+
+      const [verification] = await db
+        .select()
+        .from(releaseVerifications)
+        .where(eq(releaseVerifications.id, fixture.verificationId));
+      assert.equal(verification?.status, "live_healthy");
+      assert.deepEqual(verification?.evidenceJson, {
+        source: "release_verify_worker",
+        checkCount: 2,
+        lifecycleProjection: { status: "suppressed", reason: "manual_reconciliation_required" }
+      });
+
+      const [deployment] = await db.select().from(deployments).where(eq(deployments.id, fixture.deploymentId));
+      assert.equal(deployment?.status, "rollback_recommended");
+      assert.equal(deployment?.verificationStatus, "rollback_recommended");
+      assert.equal(deployment?.providerOperationStatus, "manual_reconciliation_required");
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "failed");
     });
 
     void it("projects failed blocker checks to rollback_recommended and failed release state", async () => {

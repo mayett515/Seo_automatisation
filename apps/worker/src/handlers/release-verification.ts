@@ -16,7 +16,7 @@ import {
   type ReleaseVerificationJobData,
   type ReleaseVerificationStatus
 } from "@localseo/contracts";
-import { decideReleaseVerificationStatus } from "@localseo/domain";
+import { decideReleaseVerificationStatus, hasActiveRollbackOperationEvidence } from "@localseo/domain";
 import {
   demoteReleaseCandidatePageVersionsForPlan,
   deployments,
@@ -27,14 +27,27 @@ import {
   releasePlanItems,
   releasePlans,
   releaseVerificationChecks,
-  releaseVerifications
+  releaseVerifications,
+  rollbackPoints
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, desc, eq, inArray, isNull, lte, not } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, not, sql } from "drizzle-orm";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 const maxGscInspectionUrlsPerVerification = 10;
 const releaseVerificationWorkerEvidenceSource = "release_verify_worker";
+const verificationProjectableDeploymentStatuses = [
+  "provider_succeeded",
+  "verifying",
+  "live_healthy",
+  "live_with_warnings",
+  "rollback_recommended"
+] as const satisfies DeploymentStatus[];
+const verificationProjectableReleasePlanStatuses = [
+  "deploying",
+  "live",
+  "failed"
+] as const satisfies ReleasePlanStatus[];
 
 type ReleaseVerificationDependencies = {
   verification: VerificationPort;
@@ -44,6 +57,17 @@ type ReleaseVerificationDependencies = {
 
 type ReleaseVerificationRunRow = typeof releaseVerifications.$inferSelect;
 type DeploymentRow = typeof deployments.$inferSelect;
+type ReleaseVerificationLifecycleProjection =
+  | { status: "projected" }
+  | { status: "not_applicable"; reason: "verification_status_not_projectable" }
+  | {
+      status: "suppressed";
+      reason: "active_rollback_execution" | "manual_reconciliation_required" | "deployment_state_changed";
+    };
+type PersistedReleaseVerificationResult = {
+  verification: ReleaseVerification;
+  lifecycleProjection: ReleaseVerificationLifecycleProjection;
+};
 
 export class ReleaseVerificationConfigurationError extends Error {}
 export class ReleaseVerificationEvidenceError extends Error {}
@@ -135,8 +159,12 @@ export async function executeReleaseVerification(input: {
   return {
     status: "completed",
     verificationId: input.data.verificationId,
-    verificationStatus: persisted.verificationStatus,
-    checkCount: persisted.checks.length
+    verificationStatus: persisted.verification.verificationStatus,
+    checkCount: persisted.verification.checks.length,
+    lifecycleProjection: persisted.lifecycleProjection.status,
+    ...(persisted.lifecycleProjection.status === "projected"
+      ? {}
+      : { lifecycleProjectionReason: persisted.lifecycleProjection.reason })
   };
 }
 
@@ -253,13 +281,6 @@ async function loadVerificationRun(
 }
 
 async function loadDeploymentForVerification(db: WorkerDb, data: ReleaseVerificationJobData): Promise<DeploymentRow> {
-  const verificationReadyStatuses = [
-    "provider_succeeded",
-    "verifying",
-    "live_healthy",
-    "live_with_warnings",
-    "rollback_recommended"
-  ] as const satisfies DeploymentStatus[];
   const [deployment] = await db
     .select()
     .from(deployments)
@@ -268,7 +289,7 @@ async function loadDeploymentForVerification(db: WorkerDb, data: ReleaseVerifica
         eq(deployments.id, data.deploymentId),
         eq(deployments.projectId, data.projectId),
         eq(deployments.releasePlanId, data.releasePlanId),
-        inArray(deployments.status, verificationReadyStatuses)
+        inArray(deployments.status, verificationProjectableDeploymentStatuses)
       )
     )
     .limit(1);
@@ -613,7 +634,7 @@ async function persistReleaseVerificationResult(
     evidenceSource?: string;
     recoveryGuard?: { recoveryCount: number; staleBefore: Date };
   } = {}
-): Promise<ReleaseVerification | undefined> {
+): Promise<PersistedReleaseVerificationResult | undefined> {
   if (!verification.deploymentId) {
     throw new ReleaseVerificationEvidenceError("Release verification results require a deployment id.");
   }
@@ -681,27 +702,104 @@ async function persistReleaseVerificationResult(
 
     const nextDeploymentStatus = deploymentStatusFromVerification(verificationStatus);
 
-    await tx
-      .update(deployments)
-      .set({
-        ...(nextDeploymentStatus ? { status: nextDeploymentStatus } : {}),
-        verificationStatus,
-        verifiedAt: checkedAt,
-        updatedAt: new Date()
+    await tx.execute(sql`
+      SELECT "id"
+      FROM "rollback_points"
+      WHERE "project_id" = ${projectId}
+        AND "release_plan_id" = ${verification.releasePlanId}
+      ORDER BY "id"
+      FOR UPDATE
+    `);
+    const rollbackPointRows = await tx
+      .select({ evidenceJson: rollbackPoints.evidenceJson })
+      .from(rollbackPoints)
+      .where(
+        and(eq(rollbackPoints.projectId, projectId), eq(rollbackPoints.releasePlanId, verification.releasePlanId))
+      );
+    const [deploymentProjectionState] = await tx
+      .select({
+        evidenceJson: deployments.evidenceJson,
+        providerOperationStatus: deployments.providerOperationStatus
       })
-      .where(and(eq(deployments.id, deploymentId), eq(deployments.projectId, projectId)));
+      .from(deployments)
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.projectId, projectId)))
+      .limit(1);
+    const activeRollbackExecution =
+      rollbackPointRows.some((row) => hasActiveRollbackOperationEvidence(row.evidenceJson)) ||
+      hasActiveRollbackOperationEvidence(deploymentProjectionState?.evidenceJson);
+
+    const projectedDeployment = activeRollbackExecution
+      ? undefined
+      : (
+          await tx
+            .update(deployments)
+            .set({
+              ...(nextDeploymentStatus ? { status: nextDeploymentStatus } : {}),
+              verificationStatus,
+              verifiedAt: checkedAt,
+              updatedAt: new Date()
+            })
+            .where(
+              and(
+                eq(deployments.id, deploymentId),
+                eq(deployments.projectId, projectId),
+                not(eq(deployments.providerOperationStatus, "manual_reconciliation_required")),
+                inArray(deployments.status, verificationProjectableDeploymentStatuses)
+              )
+            )
+            .returning({ id: deployments.id })
+        )[0];
 
     const nextReleasePlanStatus = releasePlanStatusFromVerification(verificationStatus);
+    let lifecycleProjection: ReleaseVerificationLifecycleProjection;
 
-    if (nextReleasePlanStatus) {
-      await tx
+    if (!nextDeploymentStatus && !nextReleasePlanStatus) {
+      lifecycleProjection = {
+        status: "not_applicable",
+        reason: "verification_status_not_projectable"
+      };
+    } else if (projectedDeployment) {
+      lifecycleProjection = { status: "projected" };
+    } else if (activeRollbackExecution) {
+      lifecycleProjection = { status: "suppressed", reason: "active_rollback_execution" };
+    } else {
+      const [currentDeployment] = await tx
+        .select({ providerOperationStatus: deployments.providerOperationStatus })
+        .from(deployments)
+        .where(and(eq(deployments.id, deploymentId), eq(deployments.projectId, projectId)))
+        .limit(1);
+
+      lifecycleProjection = {
+        status: "suppressed",
+        reason:
+          currentDeployment?.providerOperationStatus === "manual_reconciliation_required"
+            ? "manual_reconciliation_required"
+            : "deployment_state_changed"
+      };
+    }
+
+    if (projectedDeployment && nextReleasePlanStatus) {
+      const [projectedReleasePlan] = await tx
         .update(releasePlans)
         .set({
           status: nextReleasePlanStatus,
           ...(nextReleasePlanStatus === "live" ? { deployedAt: checkedAt } : {}),
           updatedAt: new Date()
         })
-        .where(and(eq(releasePlans.id, verification.releasePlanId), eq(releasePlans.projectId, projectId)));
+        .where(
+          and(
+            eq(releasePlans.id, verification.releasePlanId),
+            eq(releasePlans.projectId, projectId),
+            inArray(releasePlans.status, verificationProjectableReleasePlanStatuses)
+          )
+        )
+        .returning({ id: releasePlans.id });
+
+      if (!projectedReleasePlan) {
+        throw new ReleaseVerificationEvidenceError(
+          "Release plan changed before verification state could be projected."
+        );
+      }
 
       if (nextReleasePlanStatus === "live") {
         const releasedItemRows = await tx
@@ -755,19 +853,40 @@ async function persistReleaseVerificationResult(
       }
     }
 
-    return ReleaseVerificationSchema.parse({
-      releasePlanId: updated.releasePlanId,
-      deploymentId: updated.deploymentId ?? undefined,
-      verificationStatus: updated.status,
-      summary: updated.summary,
-      checkedAt: updated.checkedAt.toISOString(),
-      checks: verification.checks.map((check) =>
-        ReleaseVerificationCheckSchema.parse({
-          ...check,
-          checkedAt: verification.checkedAt
-        })
-      )
-    });
+    const evidenceSource = options.evidenceSource ?? releaseVerificationWorkerEvidenceSource;
+    const [evidenceUpdated] = await tx
+      .update(releaseVerifications)
+      .set({
+        evidenceJson: {
+          source: evidenceSource,
+          checkCount: verification.checks.length,
+          lifecycleProjection
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(releaseVerifications.id, verificationId))
+      .returning({ id: releaseVerifications.id });
+
+    if (!evidenceUpdated) {
+      throw new ReleaseVerificationEvidenceError("Verification projection evidence could not be persisted.");
+    }
+
+    return {
+      verification: ReleaseVerificationSchema.parse({
+        releasePlanId: updated.releasePlanId,
+        deploymentId: updated.deploymentId ?? undefined,
+        verificationStatus: updated.status,
+        summary: updated.summary,
+        checkedAt: updated.checkedAt.toISOString(),
+        checks: verification.checks.map((check) =>
+          ReleaseVerificationCheckSchema.parse({
+            ...check,
+            checkedAt: verification.checkedAt
+          })
+        )
+      }),
+      lifecycleProjection
+    };
   });
 }
 

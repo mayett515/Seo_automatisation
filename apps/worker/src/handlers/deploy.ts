@@ -128,6 +128,11 @@ const rollbackSourceDeploymentStatusValues = [
   "live_healthy",
   "live_with_warnings"
 ] as const satisfies DeploymentStatus[];
+const deployStartingReleasePlanStatuses = [
+  "approved_for_deploy",
+  "deploying"
+] as const satisfies ReleasePlan["status"][];
+const releaseLiveProjectionPlanStatuses = ["deploying", "live"] as const satisfies ReleasePlan["status"][];
 const releaseLiveProjectableDeploymentStatusValues = [
   "live_healthy",
   "live_with_warnings"
@@ -699,15 +704,24 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
         }
 
         if (currentDeployment.status === "deploying" && !requiresManualReconciliation(currentDeployment)) {
-          await tx
+          const [deployingPlan] = await tx
             .update(releasePlans)
             .set({
               status: "deploying",
               updatedAt: new Date()
             })
             .where(
-              and(eq(releasePlans.id, input.data.releasePlanId), eq(releasePlans.projectId, input.data.projectId))
-            );
+              and(
+                eq(releasePlans.id, input.data.releasePlanId),
+                eq(releasePlans.projectId, input.data.projectId),
+                inArray(releasePlans.status, deployStartingReleasePlanStatuses)
+              )
+            )
+            .returning({ id: releasePlans.id });
+
+          if (!deployingPlan) {
+            throw new DeployEvidenceError("Release plan changed before deployment ledger start could be persisted.");
+          }
         }
 
         return currentDeployment;
@@ -1001,7 +1015,14 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
           deployedAt: sql`coalesce(${releasePlans.deployedAt}, now())`,
           updatedAt: new Date()
         })
-        .where(and(eq(releasePlans.id, data.releasePlanId), eq(releasePlans.projectId, data.projectId)));
+        .where(
+          and(
+            eq(releasePlans.id, data.releasePlanId),
+            eq(releasePlans.projectId, data.projectId),
+            inArray(releasePlans.status, releaseLiveProjectionPlanStatuses)
+          )
+        )
+        .returning({ id: releasePlans.id });
     },
 
     async markFailed(data, error) {

@@ -106,7 +106,10 @@ Implemented tests:
 
 1. Deploy approval records persisted actor evidence and moves the release plan to `approved_for_deploy`.
 2. Missing persisted actor evidence is rejected and writes no approval rows.
-3. Rerunning preflight after deploy approval demotes the plan back to the latest readiness state and deploy is rejected until a fresh deploy approval is recorded.
+3. Rerunning preflight after deploy approval demotes the plan and its `release_candidate` page versions back to current readiness/`approved`, and deploy is rejected until a fresh deploy approval is recorded.
+4. A deploy approval blocked behind a concurrent terminal plan transition re-reads the committed status, rejects, and writes no approval evidence.
+5. Preflight rejects terminal plans before replacing checks or preparing rollback evidence, so it cannot resurrect `live`, `failed`, or `rolled_back` truth.
+6. A deploy enqueue that loses a concurrent terminal transition cannot project the plan back to `deploying`; the queued worker remains fail-closed.
 
 ### Release Plan Creation From Approved Page Versions
 
@@ -152,8 +155,14 @@ Implemented worker tests:
 3. Verifier infrastructure errors remain retryable before the final BullMQ attempt.
 4. Final verifier infrastructure failure is persisted as `execution_failed` evidence without marking the deployment or release plan as observed failed health.
 5. Absolute verification target routes are rejected in the worker execution path before the verifier adapter can fetch them.
+6. Healthy verification supersedes older released page versions only after the current deployment/plan projection succeeds.
+7. Completed verification jobs do not rerun provider calls, and a second worker losing the terminal verification update does not overwrite existing checks or lifecycle state.
+8. A healthy verifier result arriving after a concurrent rollback persists its verification audit but cannot overwrite rolled-back deployment, plan, or page-version truth.
+9. Blocker-severity verification projects `rollback_recommended`, a failed coarse plan status, and candidate demotion.
+10. A healthy verifier result arriving while rollback restore evidence is `restore_in_flight` persists an explicit `active_rollback_execution` suppression audit without projecting deployment, plan, or page-version truth.
+11. A healthy verifier result during `manual_reconciliation_required` persists detailed verification/check audit with an explicit suppression reason while leaving deployment and plan truth untouched.
 
-This file contributes 6 release-plan creation tests, 10 rollback-preflight/deploy-approval tests, 7 API release verification queueing tests, 5 worker release verification projection tests, and 5 rollback queueing tests. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
+The focused release API file currently runs 34 cases, the focused verification-worker file runs 12 cases, and the focused deploy-worker file runs 16 cases. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
 
 ### Rollback Queueing
 
@@ -196,12 +205,14 @@ Implemented tests:
 4. `in_flight` without a provider deploy id escalates to manual reconciliation.
 5. Retry/reconcile resumes upload from persisted provider resume evidence without starting another provider deploy.
 6. The pending-deploy reconciler skips manual rows even when they have `providerDeployId`.
-7. `markFailed` cannot overwrite `manual_reconciliation_required`.
-8. Pending provider deploys remain reconcilable instead of being mislabeled failed.
-9. Provider read failures during pending-deploy reconciliation remain reconcilable instead of being mislabeled failed.
-10. Unexpected pending-deploy reconciliation errors are surfaced instead of being silently counted as pending.
+7. Deployment-ledger start rolls back its inserted deployment row when the plan concurrently left `approved_for_deploy`/`deploying`, so worker execution cannot revive terminal plan truth.
+8. Verified deploy replay cannot project a rolled-back release plan back to `live` from a stale successful deployment row.
+9. `markFailed` cannot overwrite `manual_reconciliation_required`.
+10. Pending provider deploys remain reconcilable instead of being mislabeled failed.
+11. Provider read failures during pending-deploy reconciliation remain reconcilable instead of being mislabeled failed.
+12. Unexpected pending-deploy reconciliation errors are surfaced instead of being silently counted as pending.
 
-This file contributes 10 deploy-worker tests to the worker integration command.
+This file contributes 16 deploy-worker tests to the worker integration command.
 
 ### Rollback Worker
 
@@ -222,12 +233,13 @@ Implemented tests:
 9. Retried rollback jobs do not re-post restore after `rollback_pending` was recorded.
 10. Retried rollback jobs do not re-post restore when they see `restore_in_flight` evidence.
 11. A release plan that is no longer rollback-eligible stops before provider restore.
-12. Stale target deployment state after provider restore does not persist `rolled_back`.
-13. A rollback job updates only the pinned target deployment, even when a newer deployment row exists.
-14. `not_configured` rollback results become terminal configuration errors.
-15. Missing rollback-point provider deploy evidence fails before calling the provider.
+12. A release plan that changes after context loading rolls back `restore_in_flight` intent and stops before provider restore.
+13. Stale target deployment state after provider restore does not persist `rolled_back`.
+14. A rollback job updates only the pinned target deployment, even when a newer deployment row exists.
+15. `not_configured` rollback results become terminal configuration errors.
+16. Missing rollback-point provider deploy evidence fails before calling the provider.
 
-This file contributes 15 rollback-worker tests to the worker integration command.
+This file contributes 16 rollback-worker tests to the worker integration command.
 
 ### GSC Sync Worker
 

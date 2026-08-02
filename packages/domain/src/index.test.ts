@@ -8,7 +8,9 @@ import {
   deriveTechnicalAuditFindings,
   deriveWebsiteImportFacts,
   decideReleaseReadiness,
-  decideReleaseVerificationStatus
+  decideReleaseVerificationStatus,
+  hasActiveRollbackOperationEvidence,
+  isActiveRollbackOperationStatus
 } from "./index.js";
 
 void describe("release readiness decisions", () => {
@@ -124,6 +126,17 @@ void describe("classifyRollbackReconciliation", () => {
       }),
       { kind: "manual_required", reason: "published_identity_mismatch" }
     );
+  });
+});
+
+void describe("active rollback operation evidence", () => {
+  void it("recognizes the shared active status vocabulary in both persisted evidence shapes", () => {
+    assert.equal(isActiveRollbackOperationStatus("restore_in_flight"), true);
+    assert.equal(isActiveRollbackOperationStatus("rollback_pending"), true);
+    assert.equal(isActiveRollbackOperationStatus("manual_reconciliation_required"), false);
+    assert.equal(hasActiveRollbackOperationEvidence({ rollbackExecution: { status: "restore_in_flight" } }), true);
+    assert.equal(hasActiveRollbackOperationEvidence({ rollback: { status: "rollback_pending" } }), true);
+    assert.equal(hasActiveRollbackOperationEvidence({ rollbackExecution: { status: "completed" } }), false);
   });
 });
 

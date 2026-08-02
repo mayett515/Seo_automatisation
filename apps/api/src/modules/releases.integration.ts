@@ -20,6 +20,7 @@ import {
   pageVersions,
   projects,
   projectTrackingKeys,
+  releaseChecks,
   releasePlanItems,
   releasePlans,
   releaseVerificationChecks,
@@ -33,11 +34,14 @@ import { QueueProducerService } from "../queue-producer.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ReleasesService } from "./releases.module.js";
 import {
+  createIntegrationDatabaseClient,
   createIntegrationTestDatabase,
   truncateIntegrationTables
 } from "../../../../packages/db/test-support/integration-database.js";
 
 type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDatabase>>;
+type DatabaseHandle = ReturnType<typeof createIntegrationDatabaseClient>;
+type SqlClient = DatabaseHandle["sql"];
 
 type ReleaseFixture = {
   projectId: string;
@@ -762,6 +766,154 @@ void describe(
       assert.notEqual(replanned.releasePlanId, fixture.releasePlanId);
     });
 
+    void it("rejects deploy approval when a concurrent terminal transition wins the plan lock", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      const user = await createTestUser(db, "release-race-approver@example.test");
+
+      assert.equal((await service.preflight(fixture.projectId, fixture.releasePlanId)).readiness, "ready");
+      assert.ok(testDatabaseUrl);
+
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const approvalHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const approvalService = new ReleasesService(
+        new QueueProducerService(testDatabaseService(approvalHandle.db)),
+        testDatabaseService(approvalHandle.db)
+      );
+      let heldTransition: HeldReleasePlanTerminalTransition | undefined;
+      let approvalSettled = false;
+
+      try {
+        heldTransition = await startHeldReleasePlanTerminalTransition(blockerHandle.sql, fixture.releasePlanId);
+        const approvalPid = await backendPid(approvalHandle.sql);
+        const approvalOutcome = approvalService
+          .approveDeploy(fixture.projectId, fixture.releasePlanId, user.id)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            approvalSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: approvalPid,
+          blockingPid: heldTransition.pid,
+          isSettled: () => approvalSettled
+        });
+        heldTransition.commit();
+
+        const outcome = await approvalOutcome;
+        assert.equal(outcome.ok, false);
+        if (outcome.ok) {
+          assert.fail("Deploy approval unexpectedly succeeded after a terminal release transition.");
+        }
+        assert.match(errorMessage(outcome.error), /not in an approvable state/u);
+        await heldTransition.done;
+      } finally {
+        heldTransition?.rollback();
+        await heldTransition?.done.catch(() => undefined);
+        await approvalHandle.close();
+        await blockerHandle.close();
+      }
+
+      const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(plan?.status, "failed");
+
+      const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
+      assert.equal(approvalRows.length, 0);
+    });
+
+    void it("does not let deploy enqueue revive a concurrently terminal release plan", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      const user = await createTestUser(db, "release-race-deployer@example.test");
+
+      assert.equal((await service.preflight(fixture.projectId, fixture.releasePlanId)).readiness, "ready");
+      assert.equal(
+        (await service.approveDeploy(fixture.projectId, fixture.releasePlanId, user.id)).status,
+        "approved_for_deploy"
+      );
+      assert.ok(testDatabaseUrl);
+
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const deployHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const deployQueueService = new QueueProducerService(testDatabaseService(deployHandle.db));
+      const queue = new FakeQueue();
+      setDeployQueue(deployQueueService, queue);
+      const deployService = new ReleasesService(deployQueueService, testDatabaseService(deployHandle.db));
+      let heldTransition: HeldReleasePlanTerminalTransition | undefined;
+      let deploySettled = false;
+
+      try {
+        heldTransition = await startHeldReleasePlanTerminalTransition(blockerHandle.sql, fixture.releasePlanId);
+        const deployPid = await backendPid(deployHandle.sql);
+        const deployOutcome = deployService
+          .deploy(fixture.projectId, fixture.releasePlanId, user.id)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            deploySettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: deployPid,
+          blockingPid: heldTransition.pid,
+          isSettled: () => deploySettled
+        });
+        heldTransition.commit();
+
+        const outcome = await deployOutcome;
+        assert.equal(outcome.ok, false);
+        if (outcome.ok) {
+          assert.fail("Deploy unexpectedly revived a terminal release plan.");
+        }
+        assert.match(errorMessage(outcome.error), /changed before deploy could start/u);
+        await heldTransition.done;
+      } finally {
+        heldTransition?.rollback();
+        await heldTransition?.done.catch(() => undefined);
+        await deployHandle.close();
+        await blockerHandle.close();
+      }
+
+      assert.equal(queue.addCalls.length, 1);
+
+      const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(plan?.status, "failed");
+
+      const deploymentRows = await db
+        .select()
+        .from(deployments)
+        .where(eq(deployments.releasePlanId, fixture.releasePlanId));
+      assert.equal(deploymentRows.length, 0);
+    });
+
+    void it("does not let preflight resurrect a terminal release plan", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      await db.update(releasePlans).set({ status: "live" }).where(eq(releasePlans.id, fixture.releasePlanId));
+
+      await assert.rejects(
+        () => service.preflight(fixture.projectId, fixture.releasePlanId),
+        /Release plan is not in a preflightable state/u
+      );
+
+      const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(plan?.status, "live");
+
+      const checkRows = await db
+        .select()
+        .from(releaseChecks)
+        .where(eq(releaseChecks.releasePlanId, fixture.releasePlanId));
+      assert.equal(checkRows.length, 0);
+
+      const rollbackRows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(eq(rollbackPoints.releasePlanId, fixture.releasePlanId));
+      assert.equal(rollbackRows.length, 0);
+    });
+
     void it("rejects release deploy approval without persisted actor evidence", async () => {
       const fixture = await createPreflightRollbackFixture(db);
       const preflight = await service.preflight(fixture.projectId, fixture.releasePlanId);
@@ -775,6 +927,9 @@ void describe(
 
       const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(plan?.status, "ready");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "approved");
 
       const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
       assert.equal(approvalRows.length, 0);
@@ -796,6 +951,9 @@ void describe(
 
       const [plan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
       assert.equal(plan?.status, "ready");
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "approved");
 
       const approvalRows = await db.select().from(approvals).where(eq(approvals.releasePlanId, fixture.releasePlanId));
       assert.equal(approvalRows.length, 1);
@@ -1269,6 +1427,99 @@ function pageJson(route: string): PageJson {
   };
 }
 
+type HeldReleasePlanTerminalTransition = {
+  pid: number;
+  done: Promise<void>;
+  commit: () => void;
+  rollback: () => void;
+};
+
+async function startHeldReleasePlanTerminalTransition(
+  sql: SqlClient,
+  releasePlanId: string
+): Promise<HeldReleasePlanTerminalTransition> {
+  const transitioned = deferred<{ pid: number }>();
+  const finish = deferred<"commit" | "rollback">();
+  const done = sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`;
+    const pid = await backendPid(tx);
+    await tx`
+      UPDATE "release_plans"
+      SET "status" = 'failed', "updated_at" = NOW()
+      WHERE "id" = ${releasePlanId}
+    `;
+    transitioned.resolve({ pid });
+
+    if ((await finish.promise) === "rollback") {
+      throw new Error("Rollback held release plan transition.");
+    }
+  });
+
+  void done.catch((error: unknown) => {
+    transitioned.reject(error);
+  });
+
+  const { pid } = await transitioned.promise;
+  return {
+    pid,
+    done,
+    commit: () => finish.resolve("commit"),
+    rollback: () => finish.resolve("rollback")
+  };
+}
+
+async function backendPid(sql: SqlClient): Promise<number> {
+  const [row] = await sql<{ pid: number }[]>`SELECT pg_backend_pid()::int AS "pid"`;
+  assert.ok(row);
+  return row.pid;
+}
+
+async function waitForBlockingPid(
+  sql: SqlClient,
+  input: { blockedPid: number; blockingPid: number; isSettled: () => boolean }
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+
+  while (Date.now() < deadline) {
+    if (input.isSettled()) {
+      throw new Error("Release approval settled before the plan lock wait was observed.");
+    }
+
+    const [row] = await sql<{ blocking_pids: number[] }[]>`
+      SELECT pg_blocking_pids(${input.blockedPid}) AS "blocking_pids"
+    `;
+
+    if (row?.blocking_pids.includes(input.blockingPid)) {
+      return;
+    }
+
+    await delay(25);
+  }
+
+  throw new Error(`Timed out waiting for backend ${input.blockedPid} to be blocked by ${input.blockingPid}.`);
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (error: unknown) => void = () => undefined;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function testDatabaseService(db: DatabaseClient): DatabaseService {
   return {
     get db() {
@@ -1283,6 +1534,10 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
 
 function setRollbackQueue(service: QueueProducerService, queue: FakeQueue): void {
   (service as unknown as { queues: { rollback?: unknown } }).queues.rollback = queue;
+}
+
+function setDeployQueue(service: QueueProducerService, queue: FakeQueue): void {
+  (service as unknown as { queues: { deploy?: unknown } }).queues.deploy = queue;
 }
 
 function setReleaseVerificationQueue(service: QueueProducerService, queue: FakeQueue): void {

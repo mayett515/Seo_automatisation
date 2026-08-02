@@ -61,7 +61,7 @@ Do not introduce `restore_accepted` in this slice. A provider `queued` / accepte
 
 ### Status Meanings
 
-`restore_in_flight` means local intent was persisted before the provider restore mutation was attempted, and provider completion is not confirmed. It is a real automation stop marker, not cosmetic evidence.
+`restore_in_flight` means local intent was persisted before the provider restore mutation was attempted, and provider completion is not confirmed. It is a real automation stop marker, not cosmetic evidence. While it or `rollback_pending` is active, late release verification may persist detailed audit but must not project deployment, release-plan, or page-version lifecycle truth.
 
 `rollback_pending` means the provider accepted or returned a pending restore result with enough provider identity evidence to reconcile by reading provider-published state later.
 
@@ -69,13 +69,17 @@ Do not introduce `restore_accepted` in this slice. A provider `queued` / accepte
 
 `provider_failed` means the provider returned an explicit terminal rollback failure result. Network timeouts, HTTP request failures, worker crashes, or unknown provider outcomes are not `provider_failed`; they remain `restore_in_flight` or move to `manual_reconciliation_required` when they cannot be confirmed safely.
 
-`manual_reconciliation_required` means automation stopped because the system cannot prove whether the intended rollback completed safely, the evidence is malformed, the provider-published identity conflicts with the intended rollback target, or guarded local state no longer matches.
+`manual_reconciliation_required` means automation stopped because the system cannot prove whether the intended rollback completed safely, the evidence is malformed, the provider-published identity conflicts with the intended rollback target, or guarded local state no longer matches. While the deployment provider-operation marker carries this state, release verification may persist observation audit but must not project deployment, plan, or page-version lifecycle truth.
 
 `superseded` is future-only and requires first-class operation rows. It is not reachable while rollback operation storage is only the current deployment row plus JSON evidence.
 
 ### Ownership Rules
 
 The rollback worker owns provider restore mutation. The pending rollback reconciler owns read-only observation and guarded terminal writes. The reconciler must not call `rollbackDeploy()`.
+
+The pure domain `activeRollbackOperationStatuses` vocabulary and `hasActiveRollbackOperationEvidence` predicate own recognition of `restore_in_flight`/`rollback_pending` across both persisted JSON shapes. Rollback and verification consumers must reuse that predicate rather than duplicate status literals. `manual_reconciliation_required` remains a separate terminal provider-operation hard stop, not an active status.
+
+Before provider restore, rollback intent and rollback-eligible `releasePlans.status = "failed"` truth are compare-and-set in one transaction. If plan truth changed after context loading, the intent write rolls back and the worker stops before provider mutation.
 
 `restore_in_flight` is owned by job re-entry. On retry, if the rollback point or deployment evidence shows `restore_in_flight` or `rollback_pending`, the worker must not re-post `rollbackDeploy()`. It should read provider-published state through `getPublishedDeploy` and either:
 
@@ -199,6 +203,10 @@ Rejected for this slice. It does not create a distinct decision point from `roll
 
 - Do not write rollback evidence status `pending` or `failed`; use `rollback_pending` and `provider_failed`.
 - Do not call provider restore when current evidence is `restore_in_flight` or `rollback_pending`.
+- Do not let release verification project lifecycle state while rollback evidence is `restore_in_flight` or `rollback_pending`.
+- Do not let release verification project lifecycle state while provider operation truth is `manual_reconciliation_required`.
+- Do not duplicate active rollback status literals outside the shared domain predicate.
+- Do not call provider restore unless rollback intent and current rollback-eligible plan truth were persisted together.
 - Do not leave final-attempt rollback work in `restore_in_flight`.
 - Do not mark restore timeouts, network errors, or worker crashes as `provider_failed`.
 - Do not emit or persist `superseded` until `rollback_operations` exists.
@@ -210,11 +218,13 @@ Rejected for this slice. It does not create a distinct decision point from `roll
 ## Related Files
 
 - `apps/worker/src/handlers/rollback.ts`
+- `apps/worker/src/handlers/release-verification.ts`
 - `apps/worker/src/handlers/deploy.ts`
 - `apps/api/src/modules/releases.module.ts`
 - `packages/adapters/src/index.ts`
 - `packages/adapters/src/netlify-site-hosting.ts`
 - `packages/contracts/src/index.ts`
+- `packages/domain/src/index.ts`
 - `packages/db/src/schema.ts`
 - `docs/architecture/decisions/0009-deploy-provider-reconciliation-and-operation-state.md`
 - `docs/architecture/decisions/0011-rollback-restore-execution-lifecycle.md`
