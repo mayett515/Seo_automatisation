@@ -2082,7 +2082,7 @@ requireNotIncludes(
 
 requireIncludes(
   "docs/architecture/agent-first-mvp-roadmap.md",
-  "Status: implementation started; architecture checkpoint accepted by",
+  "Status: deterministic fact-only generation implemented; architecture checkpoint accepted by",
   "roadmap-current-status",
   "The roadmap must name the accepted Report and Next Action checkpoint without describing implementation as wholly deferred"
 );
@@ -2096,7 +2096,7 @@ requireIncludes(
 
 requireIncludes(
   "docs/architecture/decisions/0021-digest-bound-customer-report-publication.md",
-  "The first vertical proof ends after step 4.",
+  "The first vertical proof ends after the report UI slice.",
   "customer-report-boundary",
   "The deterministic fact-only publication path must precede optional AI, command actions, and PDF"
 );
@@ -2337,6 +2337,174 @@ requireIncludes(
   "keeps canonical identity under generated semantic-array permutations",
   "customer-report-aggregate",
   "Canonical report persistence must be preceded by property-based ordering coverage"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  'schemaVersion: z.literal("customer_report_evidence_packet.v1")',
+  "customer-report-generation",
+  "Fact-only generation must cross one strict bounded server-owned evidence packet"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  '@RequireProjectPermission("report:generate")',
+  "customer-report-generation",
+  "Report generation must remain an authenticated permissioned command"
+);
+
+requireIncludes(
+  "apps/api/src/queue-producer.ts",
+  'report: new Queue("report"',
+  "customer-report-generation",
+  "Report admission must use the registered durable report queue"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  "canonicalizeCustomerReportSourcePayload(payload)",
+  "customer-report-generation",
+  "Every selected report source must remain bound to canonical payload bytes"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  "Customer report evidence changed before draft persistence.",
+  "customer-report-generation",
+  "Generation completion must re-select and compare the evidence packet before persistence"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  ".innerJoin(deployments, eq(rollbackPoints.releasePlanId, deployments.releasePlanId))",
+  "customer-report-generation",
+  "Rollback report evidence must resolve the rolled-back target by release-plan ownership"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  "if (!parsed.success || !rollbackPoint.deploymentId) {\n    return undefined;",
+  "customer-report-generation",
+  "Incomplete rollback execution evidence must not fail the whole monthly report"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  "Action ${action.actionKey} does not target its supporting release evidence.",
+  "customer-report-generation",
+  "Release-review navigation must remain bound to frozen supporting evidence"
+);
+
+requireIncludes(
+  "packages/db/migrations/0039_report-canonical-collation.sql",
+  'ORDER BY "evidence_key" COLLATE "C"',
+  "customer-report-generation",
+  "Database review ordering must match canonical code-unit ordering independently of locale"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  ".orderBy(asc(pageVersions.pageProposalId), desc(pageVersions.versionNumber), asc(pageVersions.id))",
+  "customer-report-generation",
+  "Latest page-version selection must retain valid PostgreSQL DISTINCT ON ordering"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  ".selectDistinctOn([releaseVerifications.deploymentId]",
+  "customer-report-generation",
+  "Only the latest terminal verification per deployment may own report health"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  'not(eq(releaseVerificationChecks.scope, "gsc"))',
+  "customer-report-generation",
+  "GSC-scoped release checks must remain outside customer report warning selection"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  "customerSafeReleaseWarningForCheck(row.checkKey, row.scope)",
+  "customer-report-generation",
+  "Customer report warnings must use the closed server-owned copy catalog"
+);
+
+requireNotIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  "gscSearchAnalyticsRows",
+  "customer-report-generation",
+  "GSC diagnostics must not enter customer-safe report fact selection"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "assertSnapshotMatchesEvidencePacket(run, prepared.snapshot)",
+  "customer-report-generation",
+  "Internal draft completion must remain bound to the persisted deterministic evidence packet"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  "enqueuedByRequest: z.boolean()",
+  "customer-report-generation",
+  "Generation responses must not present pre-existing durable work as a request-local enqueue"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.test.ts",
+  "keeps the maximum selected evidence below the report claim cap",
+  "customer-report-generation",
+  "Evidence selection limits must remain below the claim contract cap"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  "queueName: reportQueueName",
+  "customer-report-generation",
+  "Bounded recovery must re-enqueue report generation on its dedicated queue"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  'index("report_generation_runs_recovery_scan_idx")',
+  "customer-report-generation",
+  "Active report generation must remain discoverable by the bounded recovery scanner"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.integration.ts",
+  "assembles and persists a bounded fact-only report from durable customer-safe sources",
+  "customer-report-generation",
+  "DB coverage must prove deterministic report assembly and persistence without AI"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.integration.ts",
+  "coalesces duplicate worker delivery into one draft and one lifecycle event",
+  "customer-report-generation",
+  "Duplicate report worker delivery must remain idempotent"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "re-enqueues stale fact-only report generation with the same run id",
+  "customer-report-generation",
+  "DB coverage must pin deterministic same-run report recovery"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "fails fact-only report generation after bounded recovery is exhausted",
+  "customer-report-generation",
+  "Report recovery exhaustion must remain visible durable failure"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "fails report product truth when transport completed without terminal persistence",
+  "customer-report-generation",
+  "Completed transport without report product truth must fail visibly"
 );
 
 requireIncludes(

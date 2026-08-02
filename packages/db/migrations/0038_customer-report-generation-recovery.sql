@@ -1,0 +1,4 @@
+ALTER TABLE "report_generation_runs" ADD COLUMN "recovery_count" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "report_generation_runs" ADD COLUMN "last_recovery_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "report_generation_runs_recovery_scan_idx" ON "report_generation_runs" USING btree ("status","updated_at") WHERE "report_generation_runs"."status" in ('queued', 'assembling', 'narrative_running', 'validating');--> statement-breakpoint
+ALTER TABLE "report_generation_runs" ADD CONSTRAINT "report_generation_runs_recovery_count_check" CHECK ("report_generation_runs"."recovery_count" >= 0);

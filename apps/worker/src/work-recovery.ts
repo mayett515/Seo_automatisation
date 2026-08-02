@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   PageProposalJobDataSchema,
+  CustomerReportGenerationJobDataSchema,
   MediaProcessingJobDataSchema,
   ReleaseVerificationJobDataSchema,
   SectionCopySuggestionJobDataSchema,
@@ -12,7 +13,8 @@ import {
   mediaAssets,
   pageSectionCopySuggestions,
   releasePlans,
-  releaseVerifications
+  releaseVerifications,
+  reportGenerationRuns
 } from "@localseo/db";
 import { classifyWorkRecovery, type WorkRecoveryDecision, type WorkRecoveryTransportState } from "@localseo/domain";
 import type { JobsOptions } from "bullmq";
@@ -23,6 +25,7 @@ import { markReleaseVerificationRecoveryFailure } from "./handlers/release-verif
 const pageProposalQueueName = "page-generation";
 const releaseVerificationQueueName = "release-verification";
 const mediaProcessingQueueName = "media-processing";
+const reportQueueName = "report";
 const activeBullMqStates = new Set(["active", "waiting", "waiting-children", "delayed", "prioritized"]);
 const terminalJobRunStatuses = new Set(["completed", "failed", "cancelled", "dry_run"]);
 const activeAgentRunStatuses = ["queued", "running"] as const satisfies readonly AgentRunStatus[];
@@ -42,6 +45,7 @@ export type WorkRecoveryQueues = {
   "page-generation": WorkRecoveryQueue;
   "media-processing": WorkRecoveryQueue;
   "release-verification": WorkRecoveryQueue;
+  report: WorkRecoveryQueue;
 };
 
 export type WorkRecoveryScanResult = {
@@ -95,10 +99,19 @@ type MediaProcessingRecoveryCandidate = {
   recoveryCount: number;
 };
 
+type CustomerReportRecoveryCandidate = {
+  kind: "customer_report";
+  id: string;
+  projectId: string;
+  durableState: "queued" | "running";
+  recoveryCount: number;
+};
+
 type RecoveryCandidate =
   | PageProposalRecoveryCandidate
   | SectionCopySuggestionRecoveryCandidate
   | MediaProcessingRecoveryCandidate
+  | CustomerReportRecoveryCandidate
   | ReleaseVerificationRecoveryCandidate;
 
 type RecoveryJobSpec = {
@@ -127,12 +140,14 @@ export async function scanStaleWork(input: {
     result.errors += 1;
     console.error("Work recovery failed to expire pending media uploads", normalizeErrorMessage(error));
   }
-  const [pageProposalLoad, sectionCopyLoad, mediaProcessingLoad, releaseVerificationLoad] = await Promise.allSettled([
-    loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
-    loadSectionCopySuggestionRecoveryCandidates(input.db, staleBefore, input.batchSize),
-    loadMediaProcessingRecoveryCandidates(input.db, staleBefore, input.batchSize),
-    loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize)
-  ]);
+  const [pageProposalLoad, sectionCopyLoad, mediaProcessingLoad, releaseVerificationLoad, customerReportLoad] =
+    await Promise.allSettled([
+      loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
+      loadSectionCopySuggestionRecoveryCandidates(input.db, staleBefore, input.batchSize),
+      loadMediaProcessingRecoveryCandidates(input.db, staleBefore, input.batchSize),
+      loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize),
+      loadCustomerReportRecoveryCandidates(input.db, staleBefore, input.batchSize)
+    ]);
   const candidates: RecoveryCandidate[] = [];
 
   if (pageProposalLoad.status === "fulfilled") {
@@ -172,6 +187,16 @@ export async function scanStaleWork(input: {
     console.error(
       "Work recovery failed to load media_processing candidates",
       normalizeErrorMessage(mediaProcessingLoad.reason)
+    );
+  }
+
+  if (customerReportLoad.status === "fulfilled") {
+    candidates.push(...customerReportLoad.value);
+  } else {
+    result.errors += 1;
+    console.error(
+      "Work recovery failed to load customer_report candidates",
+      normalizeErrorMessage(customerReportLoad.reason)
     );
   }
 
@@ -553,6 +578,37 @@ async function loadReleaseVerificationRecoveryCandidates(
   );
 }
 
+async function loadCustomerReportRecoveryCandidates(
+  db: WorkerDb,
+  staleBefore: Date,
+  batchSize: number
+): Promise<CustomerReportRecoveryCandidate[]> {
+  const rows = await db
+    .select({
+      id: reportGenerationRuns.id,
+      projectId: reportGenerationRuns.projectId,
+      status: reportGenerationRuns.status,
+      recoveryCount: reportGenerationRuns.recoveryCount
+    })
+    .from(reportGenerationRuns)
+    .where(
+      and(
+        inArray(reportGenerationRuns.status, ["queued", "assembling", "narrative_running", "validating"]),
+        lte(reportGenerationRuns.updatedAt, staleBefore)
+      )
+    )
+    .orderBy(asc(reportGenerationRuns.updatedAt))
+    .limit(batchSize);
+
+  return rows.map((row) => ({
+    kind: "customer_report" as const,
+    id: row.id,
+    projectId: row.projectId,
+    durableState: row.status === "queued" ? ("queued" as const) : ("running" as const),
+    recoveryCount: row.recoveryCount
+  }));
+}
+
 async function claimRecoveryAttempt(
   db: WorkerDb,
   candidate: RecoveryCandidate,
@@ -600,6 +656,24 @@ async function claimRecoveryAttempt(
           )
         )
         .returning({ recoveryCount: mediaAssets.recoveryCount });
+    } else if (candidate.kind === "customer_report") {
+      claimedRows = await tx
+        .update(reportGenerationRuns)
+        .set({
+          recoveryCount: sql<number>`${reportGenerationRuns.recoveryCount} + 1`,
+          lastRecoveryAt: now,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(reportGenerationRuns.id, candidate.id),
+            eq(reportGenerationRuns.projectId, candidate.projectId),
+            inArray(reportGenerationRuns.status, ["queued", "assembling", "narrative_running", "validating"]),
+            eq(reportGenerationRuns.recoveryCount, candidate.recoveryCount),
+            lte(reportGenerationRuns.updatedAt, staleBefore)
+          )
+        )
+        .returning({ recoveryCount: reportGenerationRuns.recoveryCount });
     } else {
       const task = candidate.kind === "page_proposal" ? "page_brief_draft" : "section_text_generation";
       const subjectId = candidate.kind === "page_proposal" ? candidate.opportunityId : candidate.suggestionId;
@@ -701,6 +775,8 @@ async function markCandidateRecoveryFailed(
     );
   } else if (input.candidate.kind === "media_processing") {
     updated = await markMediaProcessingRecoveryFailed(input.db, input.candidate, input.now, input.staleBefore, reason);
+  } else if (input.candidate.kind === "customer_report") {
+    updated = await markCustomerReportRecoveryFailed(input.db, input.candidate, input.now, input.staleBefore, reason);
   } else {
     updated = await markReleaseVerificationRecoveryFailure({
       db: input.db,
@@ -723,6 +799,40 @@ async function markCandidateRecoveryFailed(
   }
 
   return updated;
+}
+
+async function markCustomerReportRecoveryFailed(
+  db: WorkerDb,
+  candidate: CustomerReportRecoveryCandidate,
+  now: Date,
+  staleBefore: Date,
+  reason: string
+): Promise<boolean> {
+  const failureCode =
+    reason === "transport_completed_without_product_truth" ? "work_transport_inconsistent" : "work_recovery_exhausted";
+  const [updated] = await db
+    .update(reportGenerationRuns)
+    .set({
+      status: "failed",
+      failureCode,
+      failureMessage:
+        failureCode === "work_transport_inconsistent"
+          ? "Queue transport completed without terminal customer report truth."
+          : "Customer report generation exhausted bounded recovery.",
+      finishedAt: now,
+      updatedAt: now
+    })
+    .where(
+      and(
+        eq(reportGenerationRuns.id, candidate.id),
+        eq(reportGenerationRuns.projectId, candidate.projectId),
+        inArray(reportGenerationRuns.status, ["queued", "assembling", "narrative_running", "validating"]),
+        eq(reportGenerationRuns.recoveryCount, candidate.recoveryCount),
+        lte(reportGenerationRuns.updatedAt, staleBefore)
+      )
+    )
+    .returning({ id: reportGenerationRuns.id });
+  return Boolean(updated);
 }
 
 async function markMediaProcessingRecoveryFailed(
@@ -981,6 +1091,28 @@ function recoveryJobSpec(candidate: RecoveryCandidate, jobRunId?: string): Recov
         maxAttempts: attempts,
         ...(jobRunId ? { jobRunId } : {}),
         triggeredByUserId: null,
+        triggerSource: "work_recovery"
+      }),
+      options: {
+        attempts,
+        jobId: candidate.id,
+        backoff: { type: "exponential", delay: 5000 }
+      }
+    };
+  }
+
+  if (candidate.kind === "customer_report") {
+    const attempts = 3;
+    return {
+      queueName: reportQueueName,
+      jobName: "customer_report_generation",
+      jobId: candidate.id,
+      jobType: "report",
+      data: CustomerReportGenerationJobDataSchema.parse({
+        projectId: candidate.projectId,
+        runId: candidate.id,
+        maxAttempts: attempts,
+        ...(jobRunId ? { jobRunId } : {}),
         triggerSource: "work_recovery"
       }),
       options: {

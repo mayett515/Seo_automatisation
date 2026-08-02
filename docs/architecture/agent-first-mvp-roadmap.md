@@ -837,7 +837,7 @@ Agents may explain readiness or blockers. Workers own production mutation.
 
 ### 12. Report And Next Action
 
-Status: implementation started; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Slices 0 and 1 now provide dedicated strict report contracts, RFC 8785 canonicalization with property-tested semantic ordering, pure eligibility/lifecycle/action decisions, explicit report permissions, and the durable issue/run/version/provenance aggregate. Postgres serializes generation and review, snapshot admission recomputes digests and verifies project-scoped evidence, and reviewed semantics freeze at the database boundary. There is still no evidence assembler, queue/worker, public report API, reviewed HTML artifact, publication flow, customer UI, or Next Action handoff.
+Status: deterministic fact-only generation implemented; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Slices 0-2 provide strict report contracts, RFC 8785 canonicalization with property-tested semantic ordering, pure eligibility/lifecycle/action decisions, explicit permissions, the durable issue/run/version/provenance aggregate, an authenticated generation command, a bounded server-owned evidence packet, deterministic worker assembly, exact source digests, month-bounded evidence selection, fixed customer-safe warning copy, action quotas, and bounded same-run recovery. Postgres serializes generation and review, generation re-selects evidence before persistence, and reviewed semantics freeze at the database boundary. Reviewed HTML artifacts, publication/correction, customer reads, report UI, and Next Action handoff remain next.
 
 Reports should explain customer-safe truth and guide the next opportunity.
 
@@ -879,10 +879,10 @@ The first implementation uses a bounded server-built evidence packet and proves 
 ```text
 strict contracts and canonicalization (implemented)
 -> report issue/run/version/provenance constraints and review CAS (implemented)
--> deterministic fact-only draft
--> review/request-changes
+-> deterministic fact-only draft and bounded recovery (implemented)
+-> immutable reviewed HTML
 -> digest-bound human publication, correction, and source-invalidation alerts
--> immutable stored HTML
+-> authenticated report UI
 ```
 
 Optional AI headings/transitions, consequential command offers, and PDF follow only after that vertical works. RAG remains deferred until report evidence cannot be loaded and cited directly within the accepted limits.

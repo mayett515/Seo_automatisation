@@ -1,25 +1,46 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   BadRequestException,
+  Body,
   ConflictException,
+  Controller,
+  Get,
+  Inject,
   Injectable,
   Module,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+  UseGuards,
   UnprocessableEntityException
 } from "@nestjs/common";
 import {
+  CreateCustomerReportGenerationRequestSchema,
   CustomerReportClaimSchema,
+  CustomerReportCompletedRollbackEvidenceSchema,
   CustomerReportDecisionNoteSchema,
+  CustomerReportEvidencePacketSchema,
   CustomerReportEvidenceItemSchema,
   CustomerReportIdentitySchema,
   CustomerReportNarrativeModeSchema,
+  CustomerReportGenerationJobDataSchema,
+  CustomerReportGenerationResponseSchema,
+  CustomerReportGenerationRunSchema,
   CustomerReportSnapshotSchema,
   type CustomerReportIdentity,
   type CustomerReportNarrativeMode,
   type CustomerReportSnapshot
 } from "@localseo/contracts";
 import {
+  assembleCustomerReportFactProjection,
+  canonicalizeCustomerReportEvidencePacket,
   canonicalizeCustomerReportFactProjection,
   canonicalizeCustomerReportSnapshot,
+  canonicalizeCustomerReportSourcePayload,
+  customerReportVersions,
+  customerSafeReleaseWarningForCheck,
+  decideCustomerReportGenerationWindow,
   decideCustomerReportSnapshotEligibility,
   decideCustomerReportTransition,
   normalizeCustomerReportFactProjection
@@ -45,14 +66,13 @@ import {
 } from "@localseo/db";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
-
-const reportVersions = {
-  assemblerVersion: "customer_report_assembler.v1",
-  reportSchemaVersion: "customer_report_snapshot.v1",
-  eligibilityPolicyVersion: "customer_report_eligibility.v1",
-  actionSelectionPolicyVersion: "customer_report_actions.v1",
-  customerSafetyPolicyVersion: "customer_report_safety.v1"
-} as const;
+import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
+import { PermissionGuard } from "../auth/permissions/permission.guard.js";
+import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
+import { ProjectAccessGuard } from "../auth/project-access.guard.js";
+import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
+import { QueueProducerService } from "../queue-producer.js";
+import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
 type ReportIssueRow = typeof reportIssues.$inferSelect;
@@ -100,6 +120,7 @@ export class ReportsService {
     requireUuid(input.requestedByUserId, "Report generation requires a persisted user id.");
     requireUuid(input.idempotencyKey, "Report generation idempotency key must be a UUID.");
     const evidenceCutoffAt = parseTimestamp(input.evidenceCutoffAt, "Report evidence cutoff must be an ISO timestamp.");
+    assertCustomerReportGenerationWindow(identity.period, evidenceCutoffAt, new Date());
     const narrativeMode = CustomerReportNarrativeModeSchema.parse(input.narrativeMode ?? "fact_only");
     const db = this.database.requireDb();
     let admission: CustomerReportGenerationAdmission | undefined;
@@ -181,7 +202,7 @@ export class ReportsService {
           baseCandidateRowVersion: baseCandidate?.rowVersion,
           baseCandidateSnapshotSha256: baseCandidate?.snapshotSha256,
           evidenceCutoffAt,
-          ...reportVersions
+          ...customerReportVersions
         })
         .returning();
       if (!created) {
@@ -195,6 +216,52 @@ export class ReportsService {
       throw new Error("Report generation admission produced no result.");
     }
     return admission;
+  }
+
+  async markGenerationEnqueueFailed(projectId: string, runId: string, message: string): Promise<void> {
+    const db = this.database.requireDb();
+    await db
+      .update(reportGenerationRuns)
+      .set({
+        status: "failed",
+        failureCode: "queue_enqueue_failed",
+        failureMessage: message,
+        finishedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(reportGenerationRuns.id, runId),
+          eq(reportGenerationRuns.projectId, projectId),
+          eq(reportGenerationRuns.status, "queued")
+        )
+      );
+  }
+
+  async getGeneration(projectId: string, runId: string) {
+    requireUuid(projectId, "Report project id must be a UUID.");
+    requireUuid(runId, "Report generation run id must be a UUID.");
+    const db = this.database.requireDb();
+    const [run] = await db
+      .select()
+      .from(reportGenerationRuns)
+      .where(and(eq(reportGenerationRuns.projectId, projectId), eq(reportGenerationRuns.id, runId)))
+      .limit(1);
+    if (!run) throw new NotFoundException("Report generation run was not found.");
+    return CustomerReportGenerationRunSchema.parse({
+      reportIssueId: run.reportIssueId,
+      runId: run.id,
+      status: run.status,
+      narrativeMode: run.narrativeMode,
+      evidenceCutoffAt: run.evidenceCutoffAt.toISOString(),
+      evidencePacketSha256: run.evidencePacketSha256 ?? undefined,
+      resultReportId: run.resultReportId ?? undefined,
+      failureCode: run.failureCode ?? undefined,
+      failureMessage: run.failureMessage ?? undefined,
+      createdAt: run.createdAt.toISOString(),
+      startedAt: run.startedAt?.toISOString(),
+      finishedAt: run.finishedAt?.toISOString()
+    });
   }
 
   async persistGeneratedDraft(input: {
@@ -246,6 +313,7 @@ export class ReportsService {
       }
 
       assertSnapshotMatchesRun(prepared.snapshot, issue, run);
+      assertSnapshotMatchesEvidencePacket(run, prepared.snapshot);
       await assertEvidenceSourcesBelongToProject(tx, input.projectId, prepared.snapshot);
 
       const staleReason = await generationStaleReason(tx, issue, run);
@@ -540,7 +608,106 @@ export class ReportsService {
   }
 }
 
-@Module({ providers: [ReportsService], exports: [ReportsService] })
+@Controller("projects/:projectId/reports")
+@UseGuards(BetterAuthGuard, CsrfGuard, ProjectAccessGuard, PermissionGuard)
+@RequireProjectPermission("project:read")
+class ReportsController {
+  constructor(
+    @Inject(ReportsService) private readonly reports: ReportsService,
+    @Inject(QueueProducerService) private readonly queues: QueueProducerService
+  ) {}
+
+  @Post("generations")
+  @RequireProjectPermission("report:generate")
+  async generate(@Param("projectId") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
+    const parsed = CreateCustomerReportGenerationRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException("Report generation requires a valid month, cutoff, and idempotency key.");
+    }
+    const actorUserId = persistedActorUserId(request);
+    if (!actorUserId) throw new BadRequestException("Report generation requires a persisted user id.");
+    assertCustomerReportGenerationWindow(parsed.data.period, new Date(parsed.data.evidenceCutoffAt), new Date());
+
+    if (!this.queues.isQueueConfigured("report")) {
+      if (isUuid(projectId)) {
+        await this.queues.enqueue({
+          queueName: "report",
+          jobName: "customer_report_generation",
+          jobId: randomUUID(),
+          data: { kind: "customer_report_generation_dry_run", period: parsed.data.period },
+          audit: {
+            projectId,
+            type: "report",
+            inputRef: "dry-run",
+            actorType: "user",
+            actorUserId,
+            triggerSource: "user_action"
+          }
+        });
+      }
+      return CustomerReportGenerationResponseSchema.parse({
+        kind: "dry_run",
+        status: "dry_run",
+        enqueuedByRequest: false
+      });
+    }
+
+    const admission = await this.reports.admitGeneration({
+      identity: {
+        projectId,
+        reportKind: "monthly_seo_progress",
+        period: parsed.data.period,
+        locale: "de-DE",
+        timezone: "Europe/Berlin"
+      },
+      requestedByUserId: actorUserId,
+      idempotencyKey: parsed.data.idempotencyKey,
+      evidenceCutoffAt: parsed.data.evidenceCutoffAt,
+      narrativeMode: parsed.data.narrativeMode
+    });
+
+    let enqueuedByRequest = false;
+    if (admission.kind === "created") {
+      try {
+        enqueuedByRequest = await this.queues.enqueue({
+          queueName: "report",
+          jobName: "customer_report_generation",
+          jobId: admission.runId,
+          data: CustomerReportGenerationJobDataSchema.parse({ projectId, runId: admission.runId }),
+          options: { attempts: 3, backoff: { type: "exponential", delay: 5_000 } },
+          audit: {
+            projectId,
+            type: "report",
+            inputRef: admission.runId,
+            actorType: "user",
+            actorUserId,
+            triggerSource: "user_action"
+          }
+        });
+      } catch (error) {
+        await this.reports.markGenerationEnqueueFailed(projectId, admission.runId, normalizeErrorMessage(error));
+        throw error;
+      }
+      if (!enqueuedByRequest) {
+        await this.reports.markGenerationEnqueueFailed(
+          projectId,
+          admission.runId,
+          "Report queue was not configured after generation admission."
+        );
+      }
+    }
+
+    return CustomerReportGenerationResponseSchema.parse({ ...admission, enqueuedByRequest });
+  }
+
+  @Get("generations/:runId")
+  @RequireProjectPermission("report:generate")
+  getGeneration(@Param("projectId") projectId: string, @Param("runId") runId: string) {
+    return this.reports.getGeneration(projectId, runId);
+  }
+}
+
+@Module({ controllers: [ReportsController], providers: [ReportsService], exports: [ReportsService] })
 export class ReportsModule {}
 
 function generationAdmission(
@@ -936,45 +1103,170 @@ async function assertEvidenceSourcesBelongToProject(
   snapshot: CustomerReportSnapshot
 ): Promise<void> {
   const evidence = snapshot.factProjection.evidence;
-  const ids = (kind: (typeof evidence)[number]["sourceKind"]) => [
-    ...new Set(evidence.filter((item) => item.sourceKind === kind).map((item) => item.sourceId))
-  ];
-
-  await assertScopedIds(
-    ids("ranking_proof"),
-    tx
-      .select({ id: rankingProofs.id })
-      .from(rankingProofs)
-      .where(and(eq(rankingProofs.projectId, projectId), inArray(rankingProofs.id, ids("ranking_proof"))))
-  );
-  await assertScopedIds(
-    ids("page_version"),
-    tx
-      .select({ id: pageVersions.id })
-      .from(pageVersions)
-      .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-      .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, ids("page_version"))))
-  );
-  await assertScopedIds(
-    ids("deployment"),
-    tx
-      .select({ id: deployments.id })
-      .from(deployments)
-      .where(and(eq(deployments.projectId, projectId), inArray(deployments.id, ids("deployment"))))
-  );
+  await assertRankingSources(tx, projectId, evidence);
+  await assertPageVersionSources(tx, projectId, evidence);
+  await assertDeploymentSources(tx, projectId, evidence);
   await assertReleaseVerificationSources(tx, projectId, evidence);
   await assertReleaseVerificationCheckSources(tx, projectId, evidence);
   await assertRollbackSources(tx, projectId, evidence);
-  await assertScopedIds(
-    ids("opportunity"),
-    tx
-      .select({ id: opportunities.id })
-      .from(opportunities)
-      .where(and(eq(opportunities.projectId, projectId), inArray(opportunities.id, ids("opportunity"))))
-  );
+  await assertOpportunitySources(tx, projectId, evidence);
+  await assertReleaseActionTargets(tx, projectId, snapshot);
 }
 
 type ReportEvidenceItem = CustomerReportSnapshot["factProjection"]["evidence"][number];
+
+async function assertRankingSources(
+  tx: DatabaseTransaction,
+  projectId: string,
+  evidence: ReportEvidenceItem[]
+): Promise<void> {
+  const items = evidence.filter(
+    (item): item is Extract<ReportEvidenceItem, { sourceKind: "ranking_proof" }> => item.sourceKind === "ranking_proof"
+  );
+  if (items.length === 0) return;
+  const rows = await tx
+    .select()
+    .from(rankingProofs)
+    .where(
+      and(
+        eq(rankingProofs.projectId, projectId),
+        inArray(
+          rankingProofs.id,
+          items.map((item) => item.sourceId)
+        )
+      )
+    );
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  for (const item of items) {
+    const row = rowsById.get(item.sourceId);
+    if (
+      !row ||
+      row.status !== "reviewed" ||
+      row.query !== item.query ||
+      row.pageUrl !== item.pageUrl ||
+      row.rank !== item.rank ||
+      row.searchEngine !== item.searchEngine ||
+      row.device !== item.device ||
+      (row.locale ?? "de-DE") !== item.locale ||
+      row.capturedAt.toISOString() !== item.observedAt
+    ) {
+      throwEvidenceSourceMismatch();
+    }
+    expectSourceDigest(item, {
+      sourceKind: "ranking_proof",
+      id: row.id,
+      projectId: row.projectId,
+      query: row.query,
+      pageUrl: row.pageUrl,
+      rank: row.rank,
+      capturedAt: row.capturedAt.toISOString(),
+      searchEngine: row.searchEngine,
+      device: row.device,
+      locale: row.locale ?? "de-DE",
+      status: row.status
+    });
+  }
+}
+
+async function assertPageVersionSources(
+  tx: DatabaseTransaction,
+  projectId: string,
+  evidence: ReportEvidenceItem[]
+): Promise<void> {
+  const items = evidence.filter(
+    (item): item is Extract<ReportEvidenceItem, { sourceKind: "page_version" }> => item.sourceKind === "page_version"
+  );
+  if (items.length === 0) return;
+  const rows = await tx
+    .select({ version: pageVersions, proposal: pageProposals })
+    .from(pageVersions)
+    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+    .where(
+      and(
+        eq(pageProposals.projectId, projectId),
+        inArray(
+          pageVersions.id,
+          items.map((item) => item.pageVersionId)
+        )
+      )
+    );
+  const rowsById = new Map(rows.map((row) => [row.version.id, row]));
+  for (const item of items) {
+    const row = rowsById.get(item.pageVersionId);
+    if (
+      !row ||
+      !row.version.approvedAt ||
+      row.proposal.route !== item.route ||
+      row.version.versionNumber !== item.versionNumber ||
+      row.version.status !== item.status ||
+      row.version.approvedAt.toISOString() !== item.approvedAt ||
+      row.version.updatedAt.toISOString() !== item.observedAt
+    ) {
+      throwEvidenceSourceMismatch();
+    }
+    expectSourceDigest(item, {
+      sourceKind: "page_version",
+      id: row.version.id,
+      projectId,
+      route: row.proposal.route,
+      versionNumber: row.version.versionNumber,
+      status: row.version.status,
+      approvedAt: row.version.approvedAt.toISOString(),
+      updatedAt: row.version.updatedAt.toISOString()
+    });
+  }
+}
+
+async function assertDeploymentSources(
+  tx: DatabaseTransaction,
+  projectId: string,
+  evidence: ReportEvidenceItem[]
+): Promise<void> {
+  const items = evidence.filter(
+    (item): item is Extract<ReportEvidenceItem, { sourceKind: "deployment" }> => item.sourceKind === "deployment"
+  );
+  if (items.length === 0) return;
+  const rows = await tx
+    .select({ deployment: deployments, releasePlan: releasePlans })
+    .from(deployments)
+    .innerJoin(releasePlans, eq(deployments.releasePlanId, releasePlans.id))
+    .where(
+      and(
+        eq(deployments.projectId, projectId),
+        inArray(
+          deployments.id,
+          items.map((item) => item.deploymentId)
+        )
+      )
+    );
+  const rowsById = new Map(rows.map((row) => [row.deployment.id, row]));
+  for (const item of items) {
+    const row = rowsById.get(item.deploymentId);
+    if (
+      !row ||
+      !row.deployment.providerDeployId ||
+      !row.releasePlan.deployedAt ||
+      row.releasePlan.id !== item.releasePlanId ||
+      row.deployment.provider !== item.provider ||
+      row.deployment.providerDeployId !== item.providerDeployId ||
+      row.deployment.status !== item.status ||
+      row.releasePlan.deployedAt.toISOString() !== item.handedOffAt ||
+      row.releasePlan.deployedAt.toISOString() !== item.observedAt
+    ) {
+      throwEvidenceSourceMismatch();
+    }
+    expectSourceDigest(item, {
+      sourceKind: "deployment",
+      id: row.deployment.id,
+      projectId: row.deployment.projectId,
+      releasePlanId: row.releasePlan.id,
+      provider: row.deployment.provider,
+      providerDeployId: row.deployment.providerDeployId,
+      status: row.deployment.status,
+      handedOffAt: row.releasePlan.deployedAt.toISOString()
+    });
+  }
+}
 
 async function assertReleaseVerificationSources(
   tx: DatabaseTransaction,
@@ -988,7 +1280,7 @@ async function assertReleaseVerificationSources(
   if (items.length === 0) return;
 
   const rows = await tx
-    .select({ id: releaseVerifications.id, deploymentId: releaseVerifications.deploymentId })
+    .select({ verification: releaseVerifications, deployment: deployments })
     .from(releaseVerifications)
     .innerJoin(releasePlans, eq(releaseVerifications.releasePlanId, releasePlans.id))
     .innerJoin(deployments, eq(releaseVerifications.deploymentId, deployments.id))
@@ -1002,11 +1294,28 @@ async function assertReleaseVerificationSources(
         )
       )
     );
-  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  const rowsById = new Map(rows.map((row) => [row.verification.id, row]));
   for (const item of items) {
-    if (rowsById.get(item.verificationId)?.deploymentId !== item.deploymentId) {
+    const row = rowsById.get(item.verificationId);
+    if (
+      !row ||
+      row.verification.deploymentId !== item.deploymentId ||
+      row.verification.releasePlanId !== item.releasePlanId ||
+      row.verification.status !== item.status ||
+      row.verification.checkedAt.toISOString() !== item.checkedAt ||
+      row.verification.checkedAt.toISOString() !== item.observedAt
+    ) {
       throwEvidenceSourceMismatch();
     }
+    expectSourceDigest(item, {
+      sourceKind: "release_verification",
+      id: row.verification.id,
+      projectId: row.deployment.projectId,
+      releasePlanId: row.verification.releasePlanId,
+      deploymentId: row.verification.deploymentId,
+      status: row.verification.status,
+      checkedAt: row.verification.checkedAt.toISOString()
+    });
   }
 }
 
@@ -1022,7 +1331,7 @@ async function assertReleaseVerificationCheckSources(
   if (items.length === 0) return;
 
   const rows = await tx
-    .select({ id: releaseVerificationChecks.id, verificationId: releaseVerificationChecks.verificationId })
+    .select({ check: releaseVerificationChecks, projectId: releasePlans.projectId, releasePlanId: releasePlans.id })
     .from(releaseVerificationChecks)
     .innerJoin(releaseVerifications, eq(releaseVerificationChecks.verificationId, releaseVerifications.id))
     .innerJoin(releasePlans, eq(releaseVerifications.releasePlanId, releasePlans.id))
@@ -1035,12 +1344,87 @@ async function assertReleaseVerificationCheckSources(
         )
       )
     );
-  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  const rowsById = new Map(rows.map((row) => [row.check.id, row]));
   for (const item of items) {
-    if (rowsById.get(item.sourceId)?.verificationId !== item.verificationId) {
+    const row = rowsById.get(item.sourceId);
+    const customerCopy = row ? customerSafeReleaseWarningForCheck(row.check.checkKey, row.check.scope) : undefined;
+    if (
+      !row ||
+      !customerCopy ||
+      row.check.verificationId !== item.verificationId ||
+      row.releasePlanId !== item.releasePlanId ||
+      row.check.checkKey !== item.checkKey ||
+      row.check.severity !== item.severity ||
+      row.check.result !== "failed" ||
+      customerCopy.title !== item.customerLabel ||
+      customerCopy.summary !== item.summary ||
+      row.check.checkedAt.toISOString() !== item.checkedAt ||
+      row.check.checkedAt.toISOString() !== item.observedAt
+    ) {
       throwEvidenceSourceMismatch();
     }
+    expectSourceDigest(item, {
+      sourceKind: "release_verification_check",
+      id: row.check.id,
+      projectId: row.projectId,
+      releasePlanId: row.releasePlanId,
+      verificationId: row.check.verificationId,
+      checkKey: row.check.checkKey,
+      scope: row.check.scope,
+      severity: row.check.severity,
+      result: row.check.result,
+      message: row.check.message,
+      checkedAt: row.check.checkedAt.toISOString()
+    });
   }
+}
+
+function assertSnapshotMatchesEvidencePacket(run: ReportGenerationRunRow, snapshot: CustomerReportSnapshot): void {
+  if (!run.evidencePacketCanonicalText || !run.evidencePacketSha256) {
+    throw new UnprocessableEntityException("Report generation has no server-owned evidence packet.");
+  }
+  let packetInput: unknown;
+  try {
+    packetInput = JSON.parse(run.evidencePacketCanonicalText);
+  } catch {
+    throw new UnprocessableEntityException("Stored report evidence packet is not canonical JSON.");
+  }
+  const packet = CustomerReportEvidencePacketSchema.parse(packetInput);
+  if (
+    canonicalizeCustomerReportEvidencePacket(packet) !== run.evidencePacketCanonicalText ||
+    sha256(run.evidencePacketCanonicalText) !== run.evidencePacketSha256 ||
+    packet.identity.projectId !== snapshot.identity.projectId ||
+    packet.identity.reportKind !== snapshot.identity.reportKind ||
+    packet.identity.period !== snapshot.identity.period ||
+    packet.identity.locale !== snapshot.identity.locale ||
+    packet.identity.timezone !== snapshot.identity.timezone ||
+    packet.evidenceCutoffAt !== snapshot.evidenceCutoffAt ||
+    packet.assembledAt !== snapshot.generatedAt ||
+    canonicalizeCustomerReportFactProjection(assembleCustomerReportFactProjection(packet)) !==
+      canonicalizeCustomerReportFactProjection(snapshot.factProjection)
+  ) {
+    throw new UnprocessableEntityException(
+      "Customer report snapshot does not match its server-owned evidence packet and assembly policy."
+    );
+  }
+}
+
+async function assertReleaseActionTargets(
+  tx: DatabaseTransaction,
+  projectId: string,
+  snapshot: CustomerReportSnapshot
+): Promise<void> {
+  const actions = snapshot.factProjection.nextActions.filter(
+    (action): action is typeof action & { target: { surface: "release_review"; releasePlanId: string } } =>
+      action.target.surface === "release_review"
+  );
+  if (actions.length === 0) return;
+  const planIds = [...new Set(actions.map((action) => action.target.releasePlanId))];
+  const planRows = await tx
+    .select({ id: releasePlans.id })
+    .from(releasePlans)
+    .where(and(eq(releasePlans.projectId, projectId), inArray(releasePlans.id, planIds)));
+  if (planRows.length !== planIds.length) throwEvidenceSourceMismatch();
 }
 
 async function assertRollbackSources(
@@ -1054,9 +1438,9 @@ async function assertRollbackSources(
   if (items.length === 0) return;
 
   const rows = await tx
-    .select({ id: rollbackPoints.id, deploymentId: rollbackPoints.deploymentId })
+    .select({ rollbackPoint: rollbackPoints, deployment: deployments })
     .from(rollbackPoints)
-    .innerJoin(deployments, eq(rollbackPoints.deploymentId, deployments.id))
+    .innerJoin(deployments, eq(rollbackPoints.releasePlanId, deployments.releasePlanId))
     .where(
       and(
         eq(rollbackPoints.projectId, projectId),
@@ -1067,11 +1451,80 @@ async function assertRollbackSources(
         )
       )
     );
-  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  const rowsById = new Map(rows.map((row) => [row.rollbackPoint.id, row]));
   for (const item of items) {
-    if (rowsById.get(item.rollbackPointId)?.deploymentId !== item.deploymentId) {
+    const row = rowsById.get(item.rollbackPointId);
+    const execution = CustomerReportCompletedRollbackEvidenceSchema.safeParse(
+      recordFromUnknown(row?.rollbackPoint.evidenceJson).rollbackExecution
+    );
+    if (
+      !row ||
+      !execution.success ||
+      row.rollbackPoint.releasePlanId !== item.releasePlanId ||
+      row.deployment.id !== item.deploymentId ||
+      row.deployment.status !== "rolled_back" ||
+      execution.data.executedAt !== item.rolledBackAt ||
+      execution.data.executedAt !== item.observedAt
+    ) {
       throwEvidenceSourceMismatch();
     }
+    expectSourceDigest(item, {
+      sourceKind: "rollback",
+      id: row.rollbackPoint.id,
+      projectId: row.rollbackPoint.projectId,
+      releasePlanId: row.rollbackPoint.releasePlanId,
+      deploymentId: row.deployment.id,
+      restoreSourceDeploymentId: row.rollbackPoint.deploymentId,
+      status: execution.data.status,
+      rolledBackAt: execution.data.executedAt,
+      providerDeployId: execution.data.providerDeployId
+    });
+  }
+}
+
+async function assertOpportunitySources(
+  tx: DatabaseTransaction,
+  projectId: string,
+  evidence: ReportEvidenceItem[]
+): Promise<void> {
+  const items = evidence.filter(
+    (item): item is Extract<ReportEvidenceItem, { sourceKind: "opportunity" }> => item.sourceKind === "opportunity"
+  );
+  if (items.length === 0) return;
+  const rows = await tx
+    .select()
+    .from(opportunities)
+    .where(
+      and(
+        eq(opportunities.projectId, projectId),
+        inArray(
+          opportunities.id,
+          items.map((item) => item.opportunityId)
+        )
+      )
+    );
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  for (const item of items) {
+    const row = rowsById.get(item.opportunityId);
+    if (
+      !row ||
+      row.classification !== item.classification ||
+      row.status !== item.status ||
+      row.primaryKeyword !== item.title ||
+      row.updatedAt.toISOString() !== item.observedAt
+    ) {
+      throwEvidenceSourceMismatch();
+    }
+    expectSourceDigest(item, {
+      sourceKind: "opportunity",
+      id: row.id,
+      projectId: row.projectId,
+      classification: row.classification,
+      status: row.status,
+      title: row.primaryKeyword,
+      score: row.score,
+      updatedAt: row.updatedAt.toISOString()
+    });
   }
 }
 
@@ -1081,16 +1534,13 @@ function throwEvidenceSourceMismatch(): never {
   );
 }
 
-async function assertScopedIds(requested: string[], query: PromiseLike<Array<{ id: string }>>): Promise<void> {
-  if (requested.length === 0) {
-    return;
-  }
-  const rows = await query;
-  if (new Set(rows.map((row) => row.id)).size !== requested.length) {
-    throw new UnprocessableEntityException(
-      "Customer report evidence source was missing or belonged to another project."
-    );
-  }
+function expectSourceDigest(item: ReportEvidenceItem, payload: unknown): void {
+  const digest = sha256(canonicalizeCustomerReportSourcePayload(payload));
+  if (item.payloadSha256 !== digest || item.sourceVersion !== digest) throwEvidenceSourceMismatch();
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function evidenceSourceReferences(evidence: CustomerReportSnapshot["factProjection"]["evidence"][number]) {
@@ -1150,7 +1600,7 @@ function parseTimestamp(value: string, message: string): Date {
 }
 
 function requireUuid(value: string, message: string): void {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)) {
+  if (!isUuid(value)) {
     throw new BadRequestException(message);
   }
 }
@@ -1163,4 +1613,26 @@ function requireSha256(value: string, message: string): void {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function persistedActorUserId(request: RequestWithAuth): string | undefined {
+  const userId = request.auth?.user.id;
+  return userId && isUuid(userId) ? userId : undefined;
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function assertCustomerReportGenerationWindow(period: string, evidenceCutoffAt: Date, now: Date): void {
+  const generationWindow = decideCustomerReportGenerationWindow({ period, evidenceCutoffAt, now });
+  if (generationWindow.kind === "deny") {
+    throw new BadRequestException(
+      `Report evidence cutoff is outside the accepted monthly window: ${generationWindow.reason}.`
+    );
+  }
+}
+
+function normalizeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "report_queue_enqueue_failed";
 }

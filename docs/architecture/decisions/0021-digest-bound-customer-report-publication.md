@@ -113,7 +113,9 @@ Fact-only generation may skip `narrative_running`. Export lifecycle is also sepa
 
 ### Claims And Evidence
 
-Server-owned deterministic policy selects claims, evidence, proof tiers, values, warnings, and Next Action descriptors at a fixed cutoff. Every evidentiary claim links to one or more project-scoped frozen evidence items that retain the minimum selected values, source identity/version, observation time, cutoff, proof tier, and payload digest needed to justify the claim.
+Server-owned deterministic policy selects claims, evidence, proof tiers, values, warnings, and Next Action descriptors at a fixed cutoff. Every evidentiary claim links to one or more project-scoped frozen evidence items that retain the minimum selected values, source identity/version, observation time, cutoff, proof tier, and payload digest needed to justify the claim. Release-related evidence also carries the release-plan identity needed to bind any `release_review` navigation target inside the immutable snapshot; publication and rendering never reconstruct that target from mutable deployment rows.
+
+For `monthly_seo_progress`, the period is the completed `Europe/Berlin` calendar month. Generation accepts an evidence cutoff from local month-end through a seven-day grace window and never accepts a future cutoff. Page approvals and provider handoffs must occur inside the local month. Ranking proof is a fresh as-of-cutoff result; future opportunities are current supporting context as of the cutoff. Verification, warning, and rollback evidence may occur from period start through the cutoff so a correction completed during the short generation grace can replace an earlier warning. Mutable lifecycle rows updated after the cutoff are excluded because V1 does not reconstruct historical in-row state.
 
 The initial customer-safe claim catalog is limited to:
 
@@ -126,11 +128,13 @@ The initial customer-safe claim catalog is limited to:
 
 Revenue, ROI, guaranteed outcomes, broad ranking trends without every defined input, GSC impressions, CTR, average position, and weak internal radar signals are excluded.
 
+Only the latest terminal verification per deployment may contribute live-health and warning claims. Customer warnings use a closed server-owned `(checkKey, scope)` catalog and fixed customer-language title/summary text. GSC checks, recovery/execution checks, unknown keys, and raw operator/provider messages remain internal even when their detailed check rows are retained as operational truth.
+
 Report assembly reads detailed approvals, page versions, deployments, release verifications/checks, rollback, and recovery evidence. It does not split `releasePlans.status` for reporting and never translates that coarse status directly into a customer explanation. Reconsider separate stored lifecycle projections only when at least two independent consumers require them.
 
 At publication, the API pre-reads the immutable candidate only to determine a bounded canonical source-lock set. In one short transaction it locks referenced mutable eligibility sources in stable source-kind/id order, then locks and reloads the report issue, report, and staged artifact; rechecks project scope, actor permission, status, row version, digest, source set, source eligibility/freshness, customer safety, and artifact identity; and compare-and-sets publication plus actor evidence. Source invalidation takes an updating lock on the same source row. Invalidation-first blocks publication; publication-first preserves history and creates a durable correction-needed alert.
 
-The report evidence packet and claim counts are bounded before implementation so publication never takes an unbounded lock set.
+The report evidence packet and claim counts are bounded before implementation so publication never takes an unbounded lock set. Slice 2 selects at most 180 evidence items against the 200-claim contract cap. Navigation actions are selected after stable-key ordering with explicit Page Studio, Opportunity, and Release-review quotas, preventing input order or one surface from starving the others.
 
 ### AI Narrative Boundary
 
@@ -202,11 +206,13 @@ Implementation order:
 1. strict contracts, canonicalization tests, pure domain decisions, permissions, and event semantics;
 2. core issue/run/version/provenance schema with constraints and real PostgreSQL race tests;
 3. deterministic fact-only generation from a bounded evidence packet;
-4. review, request-changes, digest-bound publication/correction, source-invalidation alerts, private stored HTML, and published read;
-5. optional bounded AI headings/transitions;
-6. navigation Next Actions, then selected command offers after target CAS hardening;
-7. PDF only when required;
-8. retention, observability, and cost hardening alongside the slices that need them.
+4. authenticated review/request-changes commands plus immutable reviewed HTML artifacts and artifact recovery;
+5. digest-bound publication/correction, source-invalidation alerts, and published reads;
+6. operator/customer report UI over the authenticated report boundaries;
+7. optional bounded AI headings/transitions;
+8. navigation Next Actions, then selected command offers after target CAS hardening;
+9. PDF only when required;
+10. retention, observability, and cost hardening alongside the slices that need them.
 
 Slice 0 is implemented in `packages/contracts/src/report.ts` and `packages/domain/src/report.ts`. The contract owns the strict monthly identity, lifecycle vocabulary, closed claim/evidence catalog, exact claim/evidence/action references, navigation-only descriptors, event semantics, UTC timestamp normalization, and customer-safe payload bounds. The domain owns pure eligibility, lifecycle, ordering, ranking milestone, action-availability, and claim-summary decisions. Explicit API permissions now separate generation, review, publication, correction, and export authority.
 
@@ -218,9 +224,13 @@ Slice 1 implements the aggregate and admission foundation. Migration `0037_custo
 
 `ReportsService` admits generation against the stable issue row, recomputes the canonical fact-projection and full-snapshot SHA-256 digests, composes deterministic eligibility for every claim, verifies durable evidence sources against the report project, and writes canonical snapshot plus normalized provenance in one transaction. A returned draft may be regenerated only when the admitted issue/report version and digest still match. Review and regeneration both lock issue before report, so review-first makes late generation stale while generation-first makes the old review target conflict. Conditional issue/run/report writes verify their affected row, and review notes use the same bounded Unicode/control policy as report text. Property-based canonicalization coverage and real-PostgreSQL race and direct-mutation tests pin these seams.
 
-Slice 1 intentionally exposes no report controller, queue, evidence assembler, publication write, artifact table, customer read, or UI. The migration rejects publication/supersession transitions until the reviewed-artifact and digest-bound human publication slice replaces that gate. Step 3, deterministic fact-only generation from a bounded server-owned evidence packet, remains next.
+Slice 1 intentionally exposes no report controller, queue, evidence assembler, publication write, artifact table, customer read, or UI. The migration rejects publication/supersession transitions until reviewed artifacts and the digest-bound human publication/correction transaction ship.
 
-The first vertical proof ends after step 4. It must work without AI, command actions, PDF, RAG, a workflow engine, or public links.
+Slice 2 implements deterministic fact-only generation. An authenticated `report:generate` endpoint admits one actor-backed run under the stable issue lock and enqueues `jobId = runId` only when the report queue is configured; the unconfigured path records dry-run audit without creating phantom report truth. The report worker selects a bounded server-owned packet from reviewed fresh ranking proofs, immutable approved/released (including historically released then superseded) page versions, detailed deployment/verification/check/rollback rows, and near-term opportunities. GSC diagnostic rows, unknown/internal check messages, and coarse release-plan status never enter customer report claims.
+
+Each selected source receives one canonical customer-safe payload digest; that digest is both `sourceVersion` and `payloadSha256`. The worker persists the canonical packet text and SHA-256 on the generation run, deterministically assembles claims and quota-bounded navigation-only actions, recomputes the canonical fact/snapshot digests, re-selects the packet inside the completion transaction, and writes the draft plus normalized provenance under the Slice 1 issue/run/report CAS. Rollback selection treats `rollback_points.deployment_id` as the restore source and resolves the rolled-back target by the point's release plan; only complete rollback execution envelopes become report evidence, while preflight/in-flight/manual rows are skipped. The retained Slice 1 internal completion harness is also packet-bound and recomputes the deterministic projection, so it cannot accept caller-selected facts. Generation responses report whether the current request enqueued transport work rather than inferring that claim from a pre-existing run's durable status. No reasoning adapter or model policy participates. Migration `0038_customer-report-generation-recovery` adds a bounded `read_analyze` recovery lane that re-enqueues the same run id and terminalizes exhausted or transport-inconsistent runs as visible failed truth. Forward migration `0039_report-canonical-collation` pins review-time logical evidence ordering to `COLLATE "C"`, matching canonical code-unit ordering independently of the database locale. Authenticated review/request-changes and reviewed HTML artifacts remain Slice 3; publication/correction and customer reads remain Slice 4; UI remains Slice 5.
+
+The first vertical proof ends after the report UI slice. It must work without AI, command actions, PDF, RAG, a workflow engine, or public links.
 
 ### Retention And Privacy Defaults
 
@@ -281,6 +291,8 @@ Rejected for V1. Detailed lifecycle rows already own the required truth. A split
 - Do not make AI, PDF, RAG, or a workflow engine prerequisites for the deterministic fact-only publication path.
 - Do not expose superseded actions as executable or silently replace published snapshot/artifact bytes.
 - Do not infer customer delivery/live-health claims from coarse `releasePlans.status` alone.
+- Do not let a client or model submit report facts; the server-owned worker packet must be bounded, canonical, source-digest-bound, and re-selected before draft persistence.
+- Do not leave active report generation dependent on BullMQ retention; bounded recovery must reuse `jobId = runId` and end in visible durable failure when exhausted.
 
 ## Related Files
 

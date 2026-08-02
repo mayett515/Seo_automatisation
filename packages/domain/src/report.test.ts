@@ -5,6 +5,12 @@ import { CustomerReportSnapshotSchema } from "@localseo/contracts";
 import fc from "fast-check";
 import {
   canonicalizeCustomerReportSnapshot,
+  assembleCustomerReportFactProjection,
+  canonicalizeCustomerReportEvidencePacket,
+  customerReportActionQuotas,
+  customerReportPeriodWindow,
+  customerSafeReleaseWarningForCheck,
+  decideCustomerReportGenerationWindow,
   decideCustomerReportActionAvailability,
   decideCustomerReportClaimEligibility,
   decideCustomerReportTransition,
@@ -19,7 +25,7 @@ const opportunityId = "33333333-3333-4333-8333-333333333333";
 const rollbackPointId = "44444444-4444-4444-8444-444444444444";
 const deploymentId = "55555555-5555-4555-8555-555555555555";
 const verificationId = "66666666-6666-4666-8666-666666666666";
-const pageVersionId = "77777777-7777-4777-8777-777777777777";
+const releasePlanId = "77777777-7777-4777-8777-777777777777";
 const digest = "a".repeat(64);
 const cutoff = "2026-08-01T10:00:00.000Z";
 
@@ -90,6 +96,127 @@ void describe("customer report canonicalization", () => {
         }
       ),
       { numRuns: 100 }
+    );
+  });
+});
+
+void describe("customer report fact-only assembly", () => {
+  void it("assembles only evidence-backed claims and typed navigation actions deterministically", () => {
+    const packet = {
+      schemaVersion: "customer_report_evidence_packet.v1" as const,
+      identity: validSnapshot().identity,
+      assembledAt: cutoff,
+      evidenceCutoffAt: cutoff,
+      evidence: [opportunityEvidence(), rankingEvidence()]
+    };
+    const first = assembleCustomerReportFactProjection(packet);
+    const second = assembleCustomerReportFactProjection({ ...packet, evidence: [...packet.evidence].reverse() });
+
+    assert.deepEqual(first, second);
+    assert.deepEqual(
+      first.claims.map((claim) => claim.kind),
+      ["ranking_result", "future_opportunity"]
+    );
+    assert.deepEqual(first.nextActions, [
+      {
+        actionKey: `open-opportunity:${opportunityId}`,
+        kind: "navigation_ref",
+        label: "Chance prüfen",
+        supportingClaimKeys: [`opportunity:${opportunityId}`],
+        target: { surface: "opportunity", opportunityId }
+      }
+    ]);
+    assert.equal(
+      canonicalizeCustomerReportEvidencePacket(packet),
+      canonicalizeCustomerReportEvidencePacket({
+        ...packet,
+        evidence: [...packet.evidence].reverse()
+      })
+    );
+  });
+
+  void it("selects bounded action quotas independently of packet order", () => {
+    const opportunities = Array.from({ length: 20 }, (_, index) => {
+      const id = reportTestUuid(index + 100);
+      return {
+        ...opportunityEvidence(),
+        evidenceKey: `opportunity:${id}`,
+        sourceId: id,
+        opportunityId: id,
+        title: `Opportunity ${index}`,
+        customerLabel: `Opportunity ${index}`
+      };
+    });
+    const pages = Array.from({ length: 20 }, (_, index) => {
+      const id = reportTestUuid(index + 200);
+      return {
+        evidenceKey: `page_version:${id}`,
+        projectId,
+        sourceId: id,
+        sourceVersion: `page-${index}`,
+        observedAt: "2026-07-20T10:00:00.000Z",
+        selectedAtCutoff: cutoff,
+        payloadSha256: digest,
+        customerLabel: `Page ${index}`,
+        sourceKind: "page_version" as const,
+        proofTier: "customer_safe_proof" as const,
+        pageVersionId: id,
+        route: `/page-${index}/`,
+        versionNumber: 1,
+        status: "approved" as const,
+        approvedAt: "2026-07-20T10:00:00.000Z"
+      };
+    });
+    const packet = {
+      schemaVersion: "customer_report_evidence_packet.v1" as const,
+      identity: validSnapshot().identity,
+      assembledAt: cutoff,
+      evidenceCutoffAt: cutoff,
+      evidence: [...opportunities, ...pages]
+    };
+    const first = assembleCustomerReportFactProjection(packet);
+    const second = assembleCustomerReportFactProjection({ ...packet, evidence: [...packet.evidence].reverse() });
+
+    assert.deepEqual(first, second);
+    assert.equal(
+      first.nextActions.filter((action) => action.target.surface === "page_studio_review").length,
+      customerReportActionQuotas.pageStudio
+    );
+    assert.equal(
+      first.nextActions.filter((action) => action.target.surface === "opportunity").length,
+      customerReportActionQuotas.opportunity
+    );
+  });
+
+  void it("uses a closed customer-language warning catalog", () => {
+    assert.deepEqual(customerSafeReleaseWarningForCheck("http_status_check", "domain"), {
+      title: "Eine veröffentlichte Seite war nicht erfolgreich erreichbar.",
+      summary: "Mindestens eine geprüfte Seite lieferte keinen erfolgreichen HTTP-Status."
+    });
+    assert.equal(customerSafeReleaseWarningForCheck("gsc_connection_check", "gsc"), undefined);
+    assert.equal(customerSafeReleaseWarningForCheck("verification_execution_error", "project"), undefined);
+  });
+
+  void it("binds monthly reports to the completed Berlin-local month and grace window", () => {
+    const window = customerReportPeriodWindow("2026-07");
+    assert.equal(window.startsAt.toISOString(), "2026-06-30T22:00:00.000Z");
+    assert.equal(window.endsAt.toISOString(), "2026-07-31T22:00:00.000Z");
+    assert.equal(window.cutoffDeadlineAt.toISOString(), "2026-08-07T22:00:00.000Z");
+    assert.equal(
+      decideCustomerReportGenerationWindow({
+        period: "2026-07",
+        evidenceCutoffAt: cutoff,
+        now: new Date("2026-08-02T10:00:00.000Z")
+      }).kind,
+      "allow"
+    );
+    assert.deepEqual(
+      decideCustomerReportGenerationWindow({
+        period: "2026-07",
+        evidenceCutoffAt: "2026-08-08T10:00:00.000Z",
+        now: new Date("2026-08-09T10:00:00.000Z")
+      }),
+      { kind: "deny", reason: "cutoff_after_grace" }
     );
   });
 });
@@ -199,6 +326,7 @@ void describe("customer-safe report eligibility", () => {
       proofTier: "customer_safe_proof",
       verificationId,
       deploymentId,
+      releasePlanId,
       status: "live_healthy",
       checkedAt: "2026-08-02T10:00:00.000Z"
     };
@@ -249,7 +377,7 @@ void describe("customer-safe report eligibility", () => {
       rollbackPointId,
       deploymentId,
       verificationId,
-      outcome: "correction_verified",
+      outcome: "rolled_back_with_live_verification",
       occurredAt: "2026-07-28T09:00:00.000Z",
       verifiedAt: "2026-07-28T10:00:00.000Z"
     };
@@ -266,6 +394,7 @@ void describe("customer-safe report eligibility", () => {
       proofTier: "customer_safe_proof",
       rollbackPointId,
       deploymentId,
+      releasePlanId,
       status: "rolled_back",
       rolledBackAt: "2026-07-28T09:00:00.000Z"
     };
@@ -282,6 +411,7 @@ void describe("customer-safe report eligibility", () => {
       proofTier: "customer_safe_proof",
       verificationId,
       deploymentId,
+      releasePlanId,
       status: "live_healthy",
       checkedAt: "2026-07-28T10:00:00.000Z"
     };
@@ -405,7 +535,7 @@ function propertySnapshot(): CustomerReportSnapshot {
           kind: "navigation_ref",
           label: "Seite ansehen",
           supportingClaimKeys: ["ranking:roof-cleaning", "opportunity:facade-cleaning"],
-          target: { surface: "page_studio_review", pageVersionId }
+          target: { surface: "opportunity", opportunityId }
         }
       ]
     },
@@ -424,6 +554,10 @@ function propertySnapshot(): CustomerReportSnapshot {
       }
     ]
   });
+}
+
+function reportTestUuid(value: number): string {
+  return `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 }
 
 function rankingClaim(): Extract<CustomerReportClaim, { kind: "ranking_result" }> {

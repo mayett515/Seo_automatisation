@@ -55,6 +55,8 @@ Files:
 - [report.test.ts](/C:/localseoproject/packages/domain/src/report.test.ts)
 - [permission.guard.test.ts](/C:/localseoproject/apps/api/src/auth/permissions/permission.guard.test.ts)
 - [reports.integration.ts](/C:/localseoproject/apps/api/src/modules/reports.integration.ts)
+- [customer-report.integration.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report.integration.ts)
+- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
 
 Implemented unit tests prove:
 
@@ -75,8 +77,11 @@ The DB-backed aggregate suite proves:
 5. Duplicate completion replays the existing report/event instead of duplicating either.
 6. Review racing regeneration completion produces one legal winner: review-first makes the generation stale; generation-first makes the old review target conflict.
 7. Evidence whose durable source belongs to another project is rejected before any report version persists.
+8. A durable evidence source changed after generation prevents review of the stale snapshot.
 
-The six report aggregate cases pass against the documented local PostgreSQL 17 test runtime. The first migration run exposed and fixed a generated composite-FK ordering defect before the successful clean-schema run. GitHub Actions integration remains the merge gate. Publication, correction, artifact, and source-invalidation races remain correctly deferred to the publication slice.
+The worker integration cases prove that all seven allowed evidence kinds become one project-scoped canonical bounded packet, only the latest terminal verification contributes health, internal/GSC/raw check text stays out, production-shaped rollback points resolve the rolled-back plan target while incomplete preflight rows are skipped, rolled-back deployments do not claim provider handoff, duplicate delivery coalesces to one draft/event, and deterministic fact-only claims/actions persist without an AI adapter. The stale-work suite proves same-run re-enqueue plus visible bounded exhaustion and completed-transport inconsistency. Migration `0039_report-canonical-collation` pins the review trigger's evidence/link aggregation to locale-independent code-unit ordering before reviewed artifacts ship.
+
+The report aggregate cases previously passed against the documented local PostgreSQL 17 test runtime. Slice 2's new DB-backed worker, source-drift, and recovery cases require `TEST_DATABASE_URL`; GitHub Actions integration remains the merge gate. Publication, correction, artifact, and source-invalidation races remain correctly deferred to their ordered slices.
 
 ### Release Preflight Rollback Preparation
 
@@ -318,6 +323,8 @@ Implemented tests:
 7. Transport that becomes active after the durable recovery claim coalesces the enqueue and records a cancelled recovery audit.
 8. A failed recovery enqueue leaves the durable workflow active for the next bounded scan and records the failed queue attempt in `job_runs`.
 9. Two concurrent scanners race one stale Page Proposal row, but the recovery-count/stale-time claim permits exactly one enqueue.
+10. A stale fact-only report generation run is claimed once and re-enqueued on the `report` queue with `jobId = runId`.
+11. Exhausted report recovery and completed transport without persisted report truth both terminalize the durable run with stable failure evidence.
 
 The scanner tests use real Postgres migrations and a stateful fake queue. This proves product-row claims and audit transactions without requiring Redis to manufacture the race timing.
 

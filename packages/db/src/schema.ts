@@ -1037,6 +1037,8 @@ export const reportGenerationRuns = pgTable(
     actionSelectionPolicyVersion: text("action_selection_policy_version").notNull(),
     customerSafetyPolicyVersion: text("customer_safety_policy_version").notNull(),
     attemptCount: integer("attempt_count").default(0).notNull(),
+    recoveryCount: integer("recovery_count").default(0).notNull(),
+    lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true }),
     failureCode: text("failure_code"),
     failureMessage: text("failure_message"),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -1050,8 +1052,12 @@ export const reportGenerationRuns = pgTable(
       .on(table.reportIssueId)
       .where(sql`${table.status} in ('queued', 'assembling', 'narrative_running', 'validating')`),
     index("report_generation_runs_issue_created_idx").on(table.reportIssueId, table.createdAt),
+    index("report_generation_runs_recovery_scan_idx")
+      .on(table.status, table.updatedAt)
+      .where(sql`${table.status} in ('queued', 'assembling', 'narrative_running', 'validating')`),
     check("report_generation_runs_base_issue_version_check", sql`${table.baseIssueRowVersion} >= 0`),
     check("report_generation_runs_attempt_count_check", sql`${table.attemptCount} >= 0`),
+    check("report_generation_runs_recovery_count_check", sql`${table.recoveryCount} >= 0`),
     check(
       "report_generation_runs_base_candidate_check",
       sql`(${table.baseCandidateReportId} is null and ${table.baseCandidateRowVersion} is null and ${table.baseCandidateSnapshotSha256} is null) or (${table.baseCandidateReportId} is not null and ${table.baseCandidateRowVersion} is not null and ${table.baseCandidateSnapshotSha256} ~ '^[0-9a-f]{64}$')`

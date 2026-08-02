@@ -131,6 +131,7 @@ export const DeploymentReportEvidenceSchema = EvidenceBaseSchema.extend({
   sourceKind: z.literal("deployment"),
   proofTier: z.literal("customer_safe_proof"),
   deploymentId: ReportUuidSchema,
+  releasePlanId: ReportUuidSchema,
   provider: reportText(80),
   providerDeployId: reportText(200),
   status: z.enum(["provider_succeeded", "verifying", "live_healthy", "live_with_warnings", "rolled_back"]),
@@ -142,6 +143,7 @@ export const ReleaseVerificationReportEvidenceSchema = EvidenceBaseSchema.extend
   proofTier: z.literal("customer_safe_proof"),
   verificationId: ReportUuidSchema,
   deploymentId: ReportUuidSchema,
+  releasePlanId: ReportUuidSchema,
   status: z.enum(["live_healthy", "live_with_warnings"]),
   checkedAt: CustomerReportTimestampSchema
 }).strict();
@@ -150,6 +152,7 @@ export const ReleaseVerificationCheckReportEvidenceSchema = EvidenceBaseSchema.e
   sourceKind: z.literal("release_verification_check"),
   proofTier: z.literal("customer_safe_proof"),
   verificationId: ReportUuidSchema,
+  releasePlanId: ReportUuidSchema,
   checkKey: ReportLogicalKeySchema,
   severity: z.enum(["warning", "blocker"]),
   result: z.literal("failed"),
@@ -162,6 +165,7 @@ export const RollbackReportEvidenceSchema = EvidenceBaseSchema.extend({
   proofTier: z.literal("customer_safe_proof"),
   rollbackPointId: ReportUuidSchema,
   deploymentId: ReportUuidSchema,
+  releasePlanId: ReportUuidSchema,
   status: z.literal("rolled_back"),
   rolledBackAt: CustomerReportTimestampSchema
 }).strict();
@@ -170,7 +174,7 @@ export const OpportunityReportEvidenceSchema = EvidenceBaseSchema.extend({
   sourceKind: z.literal("opportunity"),
   proofTier: z.literal("supporting_context"),
   opportunityId: ReportUuidSchema,
-  classification: z.enum(["near_term_target", "internal_radar"]),
+  classification: z.literal("near_term_target"),
   status: z.enum(["new", "monitoring", "held", "brief_created"]),
   title: reportText(240)
 }).strict();
@@ -246,7 +250,7 @@ export const RollbackCorrectionReportClaimSchema = ClaimBaseSchema.extend({
   rollbackPointId: ReportUuidSchema,
   deploymentId: ReportUuidSchema,
   verificationId: ReportUuidSchema,
-  outcome: z.enum(["rolled_back_with_live_verification", "correction_verified"]),
+  outcome: z.literal("rolled_back_with_live_verification"),
   occurredAt: CustomerReportTimestampSchema,
   verifiedAt: CustomerReportTimestampSchema
 })
@@ -293,11 +297,17 @@ export const CustomerReportNavigationRefSchema = z
   })
   .strict();
 
+export const customerReportContractLimits = {
+  maxClaims: 200,
+  maxEvidence: 400,
+  maxNextActions: 40
+} as const;
+
 export const CustomerReportFactProjectionSchema = z
   .object({
-    claims: z.array(CustomerReportClaimSchema).max(200),
-    evidence: z.array(CustomerReportEvidenceItemSchema).max(400),
-    nextActions: z.array(CustomerReportNavigationRefSchema).max(40)
+    claims: z.array(CustomerReportClaimSchema).max(customerReportContractLimits.maxClaims),
+    evidence: z.array(CustomerReportEvidenceItemSchema).max(customerReportContractLimits.maxEvidence),
+    nextActions: z.array(CustomerReportNavigationRefSchema).max(customerReportContractLimits.maxNextActions)
   })
   .strict()
   .superRefine((projection, context) => {
@@ -321,6 +331,8 @@ export const CustomerReportFactProjectionSchema = z
     );
 
     const referencedEvidenceKeys = new Set(projection.claims.flatMap((claim) => claim.evidenceKeys));
+    const claimsByKey = new Map(projection.claims.map((claim) => [claim.claimKey, claim] as const));
+    const evidenceByKey = new Map(projection.evidence.map((evidence) => [evidence.evidenceKey, evidence] as const));
 
     for (const claim of projection.claims) {
       for (const evidenceKey of claim.evidenceKeys) {
@@ -354,8 +366,192 @@ export const CustomerReportFactProjectionSchema = z
           });
         }
       }
+      const supportingClaims = action.supportingClaimKeys.flatMap((claimKey) => {
+        const claim = claimsByKey.get(claimKey);
+        return claim ? [claim] : [];
+      });
+      if (action.target.surface === "page_studio_review") {
+        const pageVersionId = action.target.pageVersionId;
+        if (
+          !supportingClaims.some((claim) => claim.kind === "page_delivery" && claim.pageVersionId === pageVersionId)
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: `Action ${action.actionKey} does not target its supporting page claim.`,
+            path: ["nextActions"]
+          });
+        }
+      }
+      if (action.target.surface === "opportunity") {
+        const opportunityId = action.target.opportunityId;
+        if (
+          !supportingClaims.some(
+            (claim) => claim.kind === "future_opportunity" && claim.opportunityId === opportunityId
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: `Action ${action.actionKey} does not target its supporting opportunity claim.`,
+            path: ["nextActions"]
+          });
+        }
+      }
+      if (action.target.surface === "release_review") {
+        const releasePlanId = action.target.releasePlanId;
+        const supportingEvidence = supportingClaims.flatMap((claim) =>
+          claim.evidenceKeys.flatMap((evidenceKey) => {
+            const evidence = evidenceByKey.get(evidenceKey);
+            return evidence ? [evidence] : [];
+          })
+        );
+        if (
+          !supportingEvidence.some(
+            (evidence) =>
+              "releasePlanId" in evidence &&
+              typeof evidence.releasePlanId === "string" &&
+              evidence.releasePlanId === releasePlanId
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: `Action ${action.actionKey} does not target its supporting release evidence.`,
+            path: ["nextActions"]
+          });
+        }
+      }
     }
   });
+
+export const CustomerReportEvidencePacketSchema = z
+  .object({
+    schemaVersion: z.literal("customer_report_evidence_packet.v1"),
+    identity: CustomerReportIdentitySchema,
+    assembledAt: CustomerReportTimestampSchema,
+    evidenceCutoffAt: CustomerReportTimestampSchema,
+    evidence: z.array(CustomerReportEvidenceItemSchema).max(customerReportContractLimits.maxEvidence)
+  })
+  .strict()
+  .superRefine((packet, context) => {
+    uniqueSetOrIssue(
+      packet.evidence.map((evidence) => evidence.evidenceKey),
+      "evidence key",
+      ["evidence"],
+      context
+    );
+    for (const evidence of packet.evidence) {
+      if (evidence.projectId !== packet.identity.projectId) {
+        context.addIssue({
+          code: "custom",
+          message: `Evidence ${evidence.evidenceKey} belongs to a different project.`,
+          path: ["evidence"]
+        });
+      }
+      if (evidence.selectedAtCutoff !== packet.evidenceCutoffAt) {
+        context.addIssue({
+          code: "custom",
+          message: `Evidence ${evidence.evidenceKey} was selected at a different cutoff.`,
+          path: ["evidence"]
+        });
+      }
+    }
+
+    if (Date.parse(packet.evidenceCutoffAt) > Date.parse(packet.assembledAt)) {
+      context.addIssue({
+        code: "custom",
+        message: "Report evidence cutoff must not be later than packet assembly.",
+        path: ["evidenceCutoffAt"]
+      });
+    }
+  });
+
+export const CustomerReportCompletedRollbackEvidenceSchema = z
+  .object({
+    status: z.literal("completed"),
+    operationAttemptId: ReportUuidSchema,
+    providerResultStatus: reportText(80),
+    providerDeployId: reportText(200),
+    sourceProviderDeployId: reportText(200),
+    targetProviderDeployId: reportText(200),
+    rolledBackFromProviderDeployId: reportText(200),
+    executedAt: CustomerReportTimestampSchema,
+    restoredProviderDeployId: reportText(200),
+    liveUrl: ReportUrlSchema.nullable(),
+    evidence: z.unknown().nullable()
+  })
+  .passthrough();
+
+export const CreateCustomerReportGenerationRequestSchema = z
+  .object({
+    period: CustomerReportMonthSchema,
+    evidenceCutoffAt: CustomerReportTimestampSchema,
+    idempotencyKey: ReportUuidSchema,
+    narrativeMode: z.literal("fact_only").default("fact_only")
+  })
+  .strict();
+
+export const CustomerReportGenerationJobDataSchema = z
+  .object({
+    projectId: ReportUuidSchema,
+    runId: ReportUuidSchema,
+    maxAttempts: z.number().int().positive().max(20).optional(),
+    jobRunId: ReportUuidSchema.optional(),
+    triggerSource: z.enum(["user_action", "work_recovery"]).optional()
+  })
+  .strict();
+
+export const CustomerReportGenerationResponseSchema = z
+  .object({
+    kind: z.enum(["created", "already_active", "replayed", "dry_run"]),
+    reportIssueId: ReportUuidSchema.optional(),
+    runId: ReportUuidSchema.optional(),
+    status: z.union([CustomerReportGenerationStatusSchema, z.literal("dry_run")]),
+    enqueuedByRequest: z.boolean()
+  })
+  .strict()
+  .superRefine((response, context) => {
+    const hasDurableIdentity = Boolean(response.reportIssueId && response.runId);
+    if (response.kind === "dry_run" && hasDurableIdentity) {
+      context.addIssue({
+        code: "custom",
+        message: "Dry-run report generation must not claim durable report identity.",
+        path: ["kind"]
+      });
+    }
+    if (response.kind !== "dry_run" && !hasDurableIdentity) {
+      context.addIssue({
+        code: "custom",
+        message: "Durable report generation responses require issue and run ids.",
+        path: ["runId"]
+      });
+    }
+    if (
+      (response.kind === "dry_run" && (response.status !== "dry_run" || response.enqueuedByRequest)) ||
+      (response.status === "dry_run" && response.kind !== "dry_run")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Dry-run report generation responses must be explicit and non-enqueued.",
+        path: ["status"]
+      });
+    }
+  });
+
+export const CustomerReportGenerationRunSchema = z
+  .object({
+    reportIssueId: ReportUuidSchema,
+    runId: ReportUuidSchema,
+    status: CustomerReportGenerationStatusSchema,
+    narrativeMode: CustomerReportNarrativeModeSchema,
+    evidenceCutoffAt: CustomerReportTimestampSchema,
+    evidencePacketSha256: CustomerReportSha256Schema.optional(),
+    resultReportId: ReportUuidSchema.optional(),
+    failureCode: reportText(120).optional(),
+    failureMessage: reportText(2_000).optional(),
+    createdAt: CustomerReportTimestampSchema,
+    startedAt: CustomerReportTimestampSchema.optional(),
+    finishedAt: CustomerReportTimestampSchema.optional()
+  })
+  .strict();
 
 export const CustomerReportNarrativeFragmentSchema = z
   .object({
@@ -398,6 +594,14 @@ export const CustomerReportSnapshotSchema = z
         code: "custom",
         message: "Fact-only reports must not contain AI narrative fragments.",
         path: ["narrative"]
+      });
+    }
+
+    if (Date.parse(snapshot.generatedAt) < Date.parse(snapshot.evidenceCutoffAt)) {
+      context.addIssue({
+        code: "custom",
+        message: "Report generation time must not precede its evidence cutoff.",
+        path: ["generatedAt"]
       });
     }
 
@@ -478,6 +682,12 @@ export type CustomerReportEvidenceItem = z.output<typeof CustomerReportEvidenceI
 export type CustomerReportClaim = z.output<typeof CustomerReportClaimSchema>;
 export type CustomerReportNavigationRef = z.output<typeof CustomerReportNavigationRefSchema>;
 export type CustomerReportFactProjection = z.output<typeof CustomerReportFactProjectionSchema>;
+export type CustomerReportEvidencePacket = z.output<typeof CustomerReportEvidencePacketSchema>;
+export type CustomerReportCompletedRollbackEvidence = z.output<typeof CustomerReportCompletedRollbackEvidenceSchema>;
+export type CreateCustomerReportGenerationRequest = z.output<typeof CreateCustomerReportGenerationRequestSchema>;
+export type CustomerReportGenerationJobData = z.output<typeof CustomerReportGenerationJobDataSchema>;
+export type CustomerReportGenerationResponse = z.output<typeof CustomerReportGenerationResponseSchema>;
+export type CustomerReportGenerationRun = z.output<typeof CustomerReportGenerationRunSchema>;
 export type CustomerReportNarrativeFragment = z.output<typeof CustomerReportNarrativeFragmentSchema>;
 export type CustomerReportSnapshot = z.output<typeof CustomerReportSnapshotSchema>;
 export type ReportGeneratedEvent = z.output<typeof ReportGeneratedEventSchema>;

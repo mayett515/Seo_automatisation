@@ -3,6 +3,10 @@ import { describe, it } from "node:test";
 import {
   CustomerApprovedNextActionEventSchema,
   CustomerReportDecisionNoteSchema,
+  CustomerReportEvidencePacketSchema,
+  CustomerReportFactProjectionSchema,
+  CustomerReportGenerationJobDataSchema,
+  CustomerReportGenerationResponseSchema,
   CustomerReportSnapshotSchema,
   PageVersionReportEvidenceSchema,
   ReportGeneratedEventSchema
@@ -16,6 +20,8 @@ const reportIssueId = "55555555-5555-4555-8555-555555555555";
 const generationRunId = "66666666-6666-4666-8666-666666666666";
 const actorUserId = "77777777-7777-4777-8777-777777777777";
 const receiptId = "88888888-8888-4888-8888-888888888888";
+const deploymentId = "99999999-9999-4999-8999-999999999999";
+const releasePlanId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const digest = "a".repeat(64);
 const cutoff = "2026-08-01T10:00:00.000Z";
 
@@ -183,7 +189,7 @@ void describe("CustomerReportSnapshotSchema", () => {
             rollbackPointId: "44444444-4444-4444-8444-444444444444",
             deploymentId: "55555555-5555-4555-8555-555555555555",
             verificationId: "66666666-6666-4666-8666-666666666666",
-            outcome: "correction_verified",
+            outcome: "rolled_back_with_live_verification",
             occurredAt: "2026-07-28T10:00:00.000Z",
             verifiedAt: "2026-07-28T09:00:00.000Z"
           }
@@ -195,6 +201,114 @@ void describe("CustomerReportSnapshotSchema", () => {
 
     assert.equal(result.success, false);
     assert.match(result.error.issues.map((issue) => issue.message).join("\n"), /must occur after the rollback/u);
+  });
+
+  void it("binds release-review navigation to frozen supporting evidence", () => {
+    const evidence = {
+      evidenceKey: `deployment:${deploymentId}`,
+      projectId,
+      sourceId: deploymentId,
+      sourceVersion: digest,
+      observedAt: "2026-07-20T10:00:00.000Z",
+      selectedAtCutoff: cutoff,
+      payloadSha256: digest,
+      customerLabel: "Provider-Uebergabe",
+      sourceKind: "deployment" as const,
+      proofTier: "customer_safe_proof" as const,
+      deploymentId,
+      releasePlanId,
+      provider: "netlify",
+      providerDeployId: "deploy-1",
+      status: "provider_succeeded" as const,
+      handedOffAt: "2026-07-20T10:00:00.000Z"
+    };
+    const claim = {
+      claimKey: `handoff:${deploymentId}`,
+      kind: "provider_handoff" as const,
+      section: "page_delivery" as const,
+      evidenceKeys: [evidence.evidenceKey],
+      deploymentId,
+      provider: "netlify",
+      handedOffAt: "2026-07-20T10:00:00.000Z"
+    };
+    const projection = {
+      claims: [claim],
+      evidence: [evidence],
+      nextActions: [
+        {
+          actionKey: `review-release:${deploymentId}`,
+          kind: "navigation_ref" as const,
+          label: "Release pruefen",
+          supportingClaimKeys: [claim.claimKey],
+          target: { surface: "release_review" as const, releasePlanId }
+        }
+      ]
+    };
+
+    assert.equal(CustomerReportFactProjectionSchema.safeParse(projection).success, true);
+    assert.equal(
+      CustomerReportFactProjectionSchema.safeParse({
+        ...projection,
+        nextActions: [
+          {
+            ...projection.nextActions[0],
+            target: { surface: "release_review", releasePlanId: actorUserId }
+          }
+        ]
+      }).success,
+      false
+    );
+  });
+});
+
+void describe("customer report generation contracts", () => {
+  void it("keeps packet references and queue payloads closed", () => {
+    const snapshot = validSnapshot();
+    const packet = {
+      schemaVersion: "customer_report_evidence_packet.v1",
+      identity: snapshot.identity,
+      assembledAt: cutoff,
+      evidenceCutoffAt: cutoff,
+      evidence: snapshot.factProjection.evidence
+    };
+
+    assert.equal(CustomerReportEvidencePacketSchema.safeParse(packet).success, true);
+    assert.equal(CustomerReportEvidencePacketSchema.safeParse({ ...packet, command: "publish" }).success, false);
+    assert.equal(
+      CustomerReportEvidencePacketSchema.safeParse({
+        ...packet,
+        evidence: [{ ...packet.evidence[0], impressions: 100, ctr: 0.4, averagePosition: 2.1 }]
+      }).success,
+      false
+    );
+    assert.equal(
+      CustomerReportGenerationJobDataSchema.safeParse({ projectId, runId: generationRunId, url: "/reports" }).success,
+      false
+    );
+    assert.equal(
+      CustomerReportGenerationResponseSchema.safeParse({
+        kind: "dry_run",
+        status: "queued",
+        enqueuedByRequest: false
+      }).success,
+      false
+    );
+    assert.equal(
+      CustomerReportGenerationResponseSchema.safeParse({
+        kind: "dry_run",
+        status: "dry_run",
+        enqueuedByRequest: false
+      }).success,
+      true
+    );
+    assert.equal(
+      CustomerReportGenerationResponseSchema.safeParse({
+        kind: "created",
+        status: "queued",
+        enqueuedByRequest: true
+      }).success,
+      false
+    );
   });
 });
 

@@ -22,6 +22,7 @@ export type ApiQueueName = Extract<
   | "deploy"
   | "rollback"
   | "release-verification"
+  | "report"
 >;
 
 type QueueRegistry = Partial<Record<ApiQueueName, Queue>>;
@@ -62,7 +63,8 @@ export class QueueProducerService implements OnModuleDestroy {
           "technical-audit": new Queue("technical-audit", { connection: redisConnection }),
           deploy: new Queue("deploy", { connection: redisConnection }),
           rollback: new Queue("rollback", { connection: redisConnection }),
-          "release-verification": new Queue("release-verification", { connection: redisConnection })
+          "release-verification": new Queue("release-verification", { connection: redisConnection }),
+          report: new Queue("report", { connection: redisConnection })
         }
       : {};
   }

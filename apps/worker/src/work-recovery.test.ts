@@ -48,7 +48,8 @@ void describe("work recovery transport mapping", () => {
         queues: {
           "page-generation": queue,
           "media-processing": queue,
-          "release-verification": queue
+          "release-verification": queue,
+          report: queue
         },
         now: new Date("2026-07-11T10:00:00.000Z"),
         staleAfterMs: 60_000,
@@ -56,7 +57,7 @@ void describe("work recovery transport mapping", () => {
         batchSize: 25
       });
 
-      assert.equal(selectCount, 5);
+      assert.equal(selectCount, 6);
       assert.equal(result.errors, 1);
       assert.equal(result.checked, 0);
       assert.match(errors[0] ?? "", /page_proposal candidates/u);

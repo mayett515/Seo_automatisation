@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.22"
+version: "1.1.25"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -337,6 +337,20 @@ Customer Report publication and Next Action
   Report lifecycle events are append-only exact transition evidence; generation events bind the succeeded run, human review events bind the real from/to status, and publication event vocabulary remains disabled until publication ships.
   Report review and generation completion lock the issue before the candidate so one legal transition wins without mixed snapshot truth.
   Aggregate-foundation code must not expose publication or supersession writes before the reviewed-artifact and human publication transaction ships.
+  Fact-only report generation must accept no client/model facts: an authenticated command admits the run, the worker selects one strict bounded server-owned packet, and every selected source is bound to canonical payload bytes.
+  The report packet must exclude GSC diagnostics and coarse release-plan status, persist its canonical text/digest, and be re-selected before draft persistence.
+  Monthly report generation accepts cutoffs only after the completed Europe/Berlin month and within the seven-day grace window; period event evidence does not become an all-time cumulative delivery list.
+  Report warning claims use only a closed server-owned check catalog and fixed customer-language copy; GSC, recovery, execution, unknown, and raw operator diagnostics stay internal.
+  The latest terminal verification per deployment owns report health and warning selection so superseded checks cannot reappear as current truth.
+  Packet evidence limits must sum below the claim cap, and action selection must be stable-key ordered with explicit per-surface quotas.
+  Release-review action targets must be carried by their supporting frozen evidence, not by a packet-only side channel or later live re-derivation.
+  Rollback report evidence joins the rolled-back target through rollback_points.release_plan_id; rollback_points.deployment_id remains the restore source.
+  Non-completed rollback execution evidence is ineligible report input and must be skipped without failing the monthly generation.
+  Database review projection ordering must use locale-independent C collation wherever it compares logical evidence keys with canonical JSON.
+  Any internal report completion harness must bind the submitted snapshot to the persisted canonical evidence packet and the deterministic assembler output.
+  Report generation responses distinguish enqueue work performed by the current request from the durable status of a pre-existing run.
+  Report generation is a bounded read_analyze recovery lane only; recovery must reuse jobId = runId and terminalize exhaustion or transport inconsistency as durable failed truth.
+  The fact-only report worker must not invoke a reasoning adapter, publish a report, write an HTML artifact, or execute a Next Action.
 ```
 
 </context>

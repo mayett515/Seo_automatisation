@@ -2,7 +2,7 @@
 description: "Anti-regression bans for customer-facing SEO reporting and ranking proof language"
 globs: "**/*report*.{md,json,mmd,ts,tsx,html}, **/*kundenreport*.{md,json,mmd,ts,tsx,html}, **/*ranking*.{md,json,mmd,ts,tsx}, **/*forecast*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
-version: "1.1.0"
+version: "1.1.3"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -76,6 +76,24 @@ THEN ban specific GSC diagnostic names such as impressions, CTR, and average-pos
 
 IF a customer-report aggregate is introduced:
 THEN use the ADR 0021 digest-bound snapshot/provenance boundary and keep generation, publication, export, and downstream action conclusions separate.
+
+IF deterministic report generation selects operational evidence:
+THEN build one bounded server-owned packet, bind each source to canonical payload bytes, exclude GSC diagnostics and coarse release-plan status, and re-select the packet before draft persistence.
+
+IF detailed release-verification checks become customer report warnings:
+THEN admit only server-allowlisted check keys and scopes, render fixed customer-language copy, and exclude GSC, recovery, execution, and raw operator diagnostics.
+
+IF a monthly customer report is generated:
+THEN bind the cutoff to the completed Europe/Berlin calendar month plus the documented seven-day generation grace, select only the latest terminal verification per deployment, and keep event evidence inside the documented period/cutoff window.
+
+IF report claims or navigation actions are selected from a packet:
+THEN keep evidence limits below the claim cap and apply deterministic per-surface action quotas after stable key ordering.
+
+IF a report exposes a release-review navigation action:
+THEN bind its release-plan id to the supporting immutable release evidence inside the snapshot; do not reconstruct the target from mutable operational rows.
+
+IF a report generation transport job disappears:
+THEN recover only the deterministic fact-only lane under the same run id and end bounded exhaustion in visible durable failure.
 
 IF `report_narrative` is enabled:
 THEN keep factual sentences, values, citations, warnings, and action cards deterministic; AI may draft only bounded fact-light prose for server-assigned claims.

@@ -41,6 +41,11 @@ import {
 } from "./handlers/deploy.js";
 import { handleGscSyncJob, isTerminalGscSyncFailure } from "./handlers/gsc-sync.js";
 import {
+  CustomerReportConfigurationError,
+  CustomerReportEvidenceError,
+  handleCustomerReportGenerationJob
+} from "./handlers/customer-report.js";
+import {
   handleOpportunityScoutJob,
   OpportunityScoutConfigurationError,
   OpportunityScoutEvidenceError,
@@ -259,6 +264,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     });
   }
 
+  if (job.queueName === "report" || job.name === "customer_report_generation") {
+    return handleCustomerReportGenerationJob(job, sharedDbHandle);
+  }
+
   throw new Error(`Worker job is not implemented: ${job.queueName}:${job.name}`);
 }
 
@@ -271,6 +280,7 @@ export { parseSerpScoutJobData } from "./handlers/serp-scout.js";
 export { parseTechnicalAuditJobData } from "./handlers/technical-audit.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
 export { parseReleaseVerificationJobData };
+export { parseCustomerReportGenerationJobData } from "./handlers/customer-report.js";
 
 export function isTerminalWorkerError(error: unknown): boolean {
   return (
@@ -301,6 +311,8 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof TechnicalAuditEvidenceError ||
     error instanceof ReleaseVerificationConfigurationError ||
     error instanceof ReleaseVerificationEvidenceError ||
+    error instanceof CustomerReportConfigurationError ||
+    error instanceof CustomerReportEvidenceError ||
     isTerminalGscSyncFailure(error)
   );
 }

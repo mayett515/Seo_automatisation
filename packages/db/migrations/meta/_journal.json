@@ -267,6 +267,20 @@
       "when": 1785678642341,
       "tag": "0037_customer_report_aggregate",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1785706062387,
+      "tag": "0038_customer-report-generation-recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785711093900,
+      "tag": "0039_report-canonical-collation",
+      "breakpoints": true
     }
   ]
 }

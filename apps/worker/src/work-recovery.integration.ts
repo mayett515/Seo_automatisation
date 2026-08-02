@@ -16,6 +16,8 @@ import {
   releasePlans,
   releaseVerificationChecks,
   releaseVerifications,
+  reportGenerationRuns,
+  reportIssues,
   users,
   type DatabaseClient
 } from "@localseo/db";
@@ -83,6 +85,49 @@ void describe(
       assert.equal(audit?.queueName, "page-generation");
       assert.equal(audit?.triggerSource, "work_recovery");
       assert.equal(queues["page-generation"].addCalls[0]?.data.jobRunId, audit?.id);
+    });
+
+    void it("re-enqueues stale fact-only report generation with the same run id", async () => {
+      const fixture = await createCustomerReportRecoveryFixture(db);
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.reEnqueued, 1);
+      assert.equal(queues.report.addCalls.length, 1);
+      assert.equal(queues.report.addCalls[0]?.options.jobId, fixture.runId);
+      assert.equal(queues.report.addCalls[0]?.data.runId, fixture.runId);
+      assert.equal(queues.report.addCalls[0]?.data.triggerSource, "work_recovery");
+      const [run] = await db.select().from(reportGenerationRuns).where(eq(reportGenerationRuns.id, fixture.runId));
+      assert.equal(run?.recoveryCount, 1);
+    });
+
+    void it("fails fact-only report generation after bounded recovery is exhausted", async () => {
+      const fixture = await createCustomerReportRecoveryFixture(db, { recoveryCount: 3 });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues.report.addCalls.length, 0);
+      const [run] = await db.select().from(reportGenerationRuns).where(eq(reportGenerationRuns.id, fixture.runId));
+      assert.equal(run?.status, "failed");
+      assert.equal(run?.failureCode, "work_recovery_exhausted");
+      assert.equal(run?.recoveryCount, 3);
+    });
+
+    void it("fails report product truth when transport completed without terminal persistence", async () => {
+      const fixture = await createCustomerReportRecoveryFixture(db);
+      const queues = fakeQueues();
+      queues.report.jobs.set(fixture.runId, new FakeTransportJob("completed"));
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues.report.addCalls.length, 0);
+      const [run] = await db.select().from(reportGenerationRuns).where(eq(reportGenerationRuns.id, fixture.runId));
+      assert.equal(run?.status, "failed");
+      assert.equal(run?.failureCode, "work_transport_inconsistent");
     });
 
     void it("re-enqueues stale release verification without repeating a provider-mutation lane", async () => {
@@ -355,6 +400,51 @@ async function createProject(db: DatabaseClient): Promise<string> {
   return project.id;
 }
 
+async function createCustomerReportRecoveryFixture(
+  db: DatabaseClient,
+  input: { recoveryCount?: number } = {}
+): Promise<{ projectId: string; runId: string }> {
+  const projectId = await createProject(db);
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${randomUUID()}@example.test`, name: "Report Recovery Operator" })
+    .returning();
+  assert.ok(user);
+  const [issue] = await db
+    .insert(reportIssues)
+    .values({
+      projectId,
+      reportKind: "monthly_seo_progress",
+      period: "2026-06",
+      locale: "de-DE",
+      timezone: "Europe/Berlin",
+      createdByUserId: user.id
+    })
+    .returning();
+  assert.ok(issue);
+  const runId = randomUUID();
+  await db.insert(reportGenerationRuns).values({
+    id: runId,
+    projectId,
+    reportIssueId: issue.id,
+    status: "queued",
+    narrativeMode: "fact_only",
+    idempotencyKey: randomUUID(),
+    queueJobId: runId,
+    requestedByUserId: user.id,
+    baseIssueRowVersion: issue.rowVersion,
+    evidenceCutoffAt: new Date("2026-07-01T00:00:00.000Z"),
+    assemblerVersion: "customer_report_assembler.v1",
+    reportSchemaVersion: "customer_report_snapshot.v1",
+    eligibilityPolicyVersion: "customer_report_eligibility.v1",
+    actionSelectionPolicyVersion: "customer_report_actions.v1",
+    customerSafetyPolicyVersion: "customer_report_safety.v1",
+    recoveryCount: input.recoveryCount ?? 0,
+    updatedAt: staleUpdatedAt
+  });
+  return { projectId, runId };
+}
+
 async function createPageProposalRecoveryFixture(
   db: DatabaseClient,
   input: { recoveryCount?: number } = {}
@@ -552,6 +642,7 @@ type FakeWorkRecoveryQueues = WorkRecoveryQueues & {
   "page-generation": FakeQueue;
   "media-processing": FakeQueue;
   "release-verification": FakeQueue;
+  report: FakeQueue;
 };
 
 function fakeQueues(
@@ -560,7 +651,8 @@ function fakeQueues(
   return {
     "page-generation": input.pageQueue ?? new FakeQueue(),
     "media-processing": new FakeQueue(),
-    "release-verification": input.releaseVerificationQueue ?? new FakeQueue()
+    "release-verification": input.releaseVerificationQueue ?? new FakeQueue(),
+    report: new FakeQueue()
   };
 }
 

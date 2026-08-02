@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { CustomerReportSnapshotSchema, type CustomerReportSnapshot } from "@localseo/contracts";
+import {
+  CustomerReportEvidencePacketSchema,
+  CustomerReportSnapshotSchema,
+  type CustomerReportSnapshot
+} from "@localseo/contracts";
 import {
   customers,
   opportunities,
@@ -16,7 +20,12 @@ import {
   users,
   type DatabaseClient
 } from "@localseo/db";
-import { canonicalizeCustomerReportFactProjection } from "@localseo/domain";
+import {
+  assembleCustomerReportFactProjection,
+  canonicalizeCustomerReportEvidencePacket,
+  canonicalizeCustomerReportFactProjection,
+  canonicalizeCustomerReportSourcePayload
+} from "@localseo/domain";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   createIntegrationTestDatabase,
@@ -107,7 +116,7 @@ void describe(
       const admission = await admit(service, fixture);
       const snapshot = reportSnapshot(fixture, "Local SEO Fortschritt Juli 2026");
 
-      const persisted = await service.persistGeneratedDraft({
+      const persisted = await persistGeneratedDraft(service, db, {
         projectId: fixture.projectId,
         runId: admission.runId,
         snapshot
@@ -231,7 +240,7 @@ void describe(
     void it("returns a reviewed candidate to draft and regenerates it with an expected-version CAS", async () => {
       const fixture = await createReportFixture(db, "Draft regeneration");
       const firstAdmission = await admit(service, fixture);
-      const first = await service.persistGeneratedDraft({
+      const first = await persistGeneratedDraft(service, db, {
         projectId: fixture.projectId,
         runId: firstAdmission.runId,
         snapshot: reportSnapshot(fixture, "Erster Entwurf")
@@ -276,7 +285,7 @@ void describe(
       assert.equal(returned.status, "draft");
 
       const secondAdmission = await admit(service, fixture);
-      const second = await service.persistGeneratedDraft({
+      const second = await persistGeneratedDraft(service, db, {
         projectId: fixture.projectId,
         runId: secondAdmission.runId,
         snapshot: reportSnapshot(fixture, "Ueberarbeiteter Entwurf")
@@ -297,12 +306,12 @@ void describe(
       const admission = await admit(service, fixture);
       const snapshot = reportSnapshot(fixture, "Idempotenter Entwurf");
 
-      const first = await service.persistGeneratedDraft({
+      const first = await persistGeneratedDraft(service, db, {
         projectId: fixture.projectId,
         runId: admission.runId,
         snapshot
       });
-      const second = await service.persistGeneratedDraft({
+      const second = await persistGeneratedDraft(service, db, {
         projectId: fixture.projectId,
         runId: admission.runId,
         snapshot
@@ -317,7 +326,7 @@ void describe(
     void it("allows only one legal winner when review races regeneration completion", async () => {
       const fixture = await createReportFixture(db, "Review regeneration race");
       const firstAdmission = await admit(service, fixture);
-      const first = await service.persistGeneratedDraft({
+      const first = await persistGeneratedDraft(service, db, {
         projectId: fixture.projectId,
         runId: firstAdmission.runId,
         snapshot: reportSnapshot(fixture, "Vor dem Rennen")
@@ -335,7 +344,7 @@ void describe(
           expectedSnapshotSha256: first.snapshotSha256,
           expectedRowVersion: first.reportRowVersion
         }),
-        service.persistGeneratedDraft({
+        persistGeneratedDraft(service, db, {
           projectId: fixture.projectId,
           runId: regeneration.runId,
           snapshot: reportSnapshot(fixture, "Nach dem Rennen")
@@ -383,19 +392,49 @@ void describe(
 
       await assert.rejects(
         () =>
-          service.persistGeneratedDraft({
+          persistGeneratedDraft(service, db, {
             projectId: fixture.projectId,
             runId: admission.runId,
             snapshot
           }),
-        /missing or belonged to another project/u
+        /missing, mismatched, or belonged to another project/u
       );
       assert.equal((await db.select().from(reports)).length, 0);
+    });
+
+    void it("rejects review when a durable evidence source changed after generation", async () => {
+      const fixture = await createReportFixture(db, "Evidence drift");
+      const admission = await admit(service, fixture);
+      const persisted = await persistGeneratedDraft(service, db, {
+        projectId: fixture.projectId,
+        runId: admission.runId,
+        snapshot: reportSnapshot(fixture, "Evidence drift candidate")
+      });
+      assert.notEqual(persisted.kind, "stale");
+      if (persisted.kind === "stale") return;
+
+      await db
+        .update(opportunities)
+        .set({ status: "held", updatedAt: new Date("2026-08-01T09:30:00.000Z") })
+        .where(eq(opportunities.id, fixture.opportunityId));
+
+      await assert.rejects(
+        () =>
+          service.submitForReview({
+            projectId: fixture.projectId,
+            reportId: persisted.reportId,
+            actorUserId: fixture.userId,
+            requestId: randomUUID(),
+            expectedSnapshotSha256: persisted.snapshotSha256,
+            expectedRowVersion: persisted.reportRowVersion
+          }),
+        /missing, mismatched, or belonged to another project/u
+      );
     });
   }
 );
 
-type ReportFixture = { projectId: string; userId: string; opportunityId: string };
+type ReportFixture = { projectId: string; userId: string; opportunityId: string; opportunityObservedAt: string };
 
 async function createReportFixture(db: DatabaseClient, name: string): Promise<ReportFixture> {
   const suffix = randomUUID();
@@ -425,7 +464,12 @@ async function createReportFixture(db: DatabaseClient, name: string): Promise<Re
     })
     .returning();
   assert.ok(opportunity);
-  return { projectId: project.id, userId: user.id, opportunityId: opportunity.id };
+  return {
+    projectId: project.id,
+    userId: user.id,
+    opportunityId: opportunity.id,
+    opportunityObservedAt: opportunity.updatedAt.toISOString()
+  };
 }
 
 async function admit(service: ReportsService, fixture: ReportFixture) {
@@ -448,46 +492,44 @@ function reportIdentity(projectId: string) {
 }
 
 function reportSnapshot(fixture: ReportFixture, title: string): CustomerReportSnapshot {
-  const factProjection = {
-    claims: [
-      {
-        claimKey: "opportunity:facade-cleaning",
-        kind: "future_opportunity" as const,
-        section: "future_opportunities" as const,
-        evidenceKeys: ["opportunity:facade-cleaning"],
-        opportunityId: fixture.opportunityId,
-        title: "Fassadenreinigung Dachau",
-        recommendedAction: "create_page_proposal" as const
-      }
-    ],
-    evidence: [
-      {
-        evidenceKey: "opportunity:facade-cleaning",
-        projectId: fixture.projectId,
-        sourceId: fixture.opportunityId,
-        sourceVersion: "1",
-        observedAt: "2026-07-30T09:00:00.000Z",
-        selectedAtCutoff: cutoff,
-        payloadSha256: "b".repeat(64),
-        customerLabel: "Zukuenftige Chance",
-        sourceKind: "opportunity" as const,
-        proofTier: "supporting_context" as const,
-        opportunityId: fixture.opportunityId,
-        classification: "near_term_target" as const,
-        status: "monitoring" as const,
-        title: "Fassadenreinigung Dachau"
-      }
-    ],
-    nextActions: [
-      {
-        actionKey: "action:review-opportunity",
-        kind: "navigation_ref" as const,
-        label: "Chance ansehen",
-        supportingClaimKeys: ["opportunity:facade-cleaning"],
-        target: { surface: "opportunity" as const, opportunityId: fixture.opportunityId }
-      }
-    ]
+  const opportunityPayload = {
+    sourceKind: "opportunity",
+    id: fixture.opportunityId,
+    projectId: fixture.projectId,
+    classification: "near_term_target",
+    status: "monitoring",
+    title: "fassadenreinigung dachau",
+    score: 70,
+    updatedAt: fixture.opportunityObservedAt
   };
+  const opportunityDigest = createHash("sha256")
+    .update(canonicalizeCustomerReportSourcePayload(opportunityPayload), "utf8")
+    .digest("hex");
+  const evidence = [
+    {
+      evidenceKey: `opportunity:${fixture.opportunityId}`,
+      projectId: fixture.projectId,
+      sourceId: fixture.opportunityId,
+      sourceVersion: opportunityDigest,
+      observedAt: fixture.opportunityObservedAt,
+      selectedAtCutoff: cutoff,
+      payloadSha256: opportunityDigest,
+      customerLabel: "fassadenreinigung dachau",
+      sourceKind: "opportunity" as const,
+      proofTier: "supporting_context" as const,
+      opportunityId: fixture.opportunityId,
+      classification: "near_term_target" as const,
+      status: "monitoring" as const,
+      title: "fassadenreinigung dachau"
+    }
+  ];
+  const factProjection = assembleCustomerReportFactProjection({
+    schemaVersion: "customer_report_evidence_packet.v1",
+    identity: reportIdentity(fixture.projectId),
+    assembledAt: cutoff,
+    evidenceCutoffAt: cutoff,
+    evidence
+  });
   const factProjectionSha256 = createHash("sha256")
     .update(canonicalizeCustomerReportFactProjection(factProjection), "utf8")
     .digest("hex");
@@ -508,6 +550,27 @@ function reportSnapshot(fixture: ReportFixture, title: string): CustomerReportSn
     factProjection,
     narrative: []
   });
+}
+
+async function persistGeneratedDraft(
+  service: ReportsService,
+  db: DatabaseClient,
+  input: { projectId: string; runId: string; snapshot: CustomerReportSnapshot }
+) {
+  const packet = CustomerReportEvidencePacketSchema.parse({
+    schemaVersion: "customer_report_evidence_packet.v1",
+    identity: input.snapshot.identity,
+    assembledAt: input.snapshot.generatedAt,
+    evidenceCutoffAt: input.snapshot.evidenceCutoffAt,
+    evidence: input.snapshot.factProjection.evidence
+  });
+  const canonicalText = canonicalizeCustomerReportEvidencePacket(packet);
+  const packetSha256 = createHash("sha256").update(canonicalText, "utf8").digest("hex");
+  await db
+    .update(reportGenerationRuns)
+    .set({ evidencePacketCanonicalText: canonicalText, evidencePacketSha256: packetSha256 })
+    .where(eq(reportGenerationRuns.id, input.runId));
+  return service.persistGeneratedDraft(input);
 }
 
 function testDatabaseService(db: DatabaseClient): DatabaseService {

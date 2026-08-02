@@ -25,7 +25,8 @@ const connection = createRedisConnection(env.REDIS_URL);
 const recoveryQueues: WorkRecoveryQueues = {
   "page-generation": new Queue("page-generation", { connection }),
   "media-processing": new Queue("media-processing", { connection }),
-  "release-verification": new Queue("release-verification", { connection })
+  "release-verification": new Queue("release-verification", { connection }),
+  report: new Queue("report", { connection })
 };
 
 const workers = queueNames.map(
