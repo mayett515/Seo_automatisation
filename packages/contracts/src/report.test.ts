@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   CustomerApprovedNextActionEventSchema,
+  CustomerReportDecisionNoteSchema,
   CustomerReportSnapshotSchema,
   PageVersionReportEvidenceSchema,
   ReportGeneratedEventSchema
@@ -198,6 +199,10 @@ void describe("CustomerReportSnapshotSchema", () => {
 });
 
 void describe("customer report event semantics", () => {
+  void it("rejects unsupported controls in report review notes", () => {
+    assert.equal(CustomerReportDecisionNoteSchema.safeParse("Bitte pruefen.\u0000").success, false);
+  });
+
   void it("defines ReportGenerated as a durable draft candidate rather than publication", () => {
     const event = ReportGeneratedEventSchema.parse({
       eventName: "ReportGenerated",

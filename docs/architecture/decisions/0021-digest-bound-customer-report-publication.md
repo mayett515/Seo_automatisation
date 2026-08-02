@@ -94,7 +94,7 @@ Consequential Next Action slice
 
 Do not create future tables merely to match the complete research model. Each table lands with the behavior, constraints, and integration tests that make it authoritative.
 
-`reports` are immutable semantic versions within one issue. The report lifecycle is:
+`reports` are versioned candidates within one issue. Snapshot semantics may change only while a row is `draft`, only through a generation run pinned to the expected issue/report row version and digest. Entering `ready_for_review` freezes that semantic version; published and superseded versions are permanently immutable. The report lifecycle is:
 
 ```text
 draft -> ready_for_review -> published -> superseded
@@ -213,6 +213,12 @@ Slice 0 is implemented in `packages/contracts/src/report.ts` and `packages/domai
 Canonical JSON uses the Apache-2.0 `canonicalize@3.0.0` RFC 8785 implementation. Before serialization, claims sort by section order then `claimKey`; evidence sorts by `evidenceKey`; Next Actions sort by `actionKey`; narrative fragments sort by `slotKey`; and nested evidence/supporting-claim keys sort by Unicode code-unit order. Contract parsing rejects unknown fields, unsafe integers, invalid Unicode, unsupported controls, non-HTTP evidence URLs, duplicate logical keys, missing references, and unreferenced evidence. Hash persistence remains part of the aggregate/runtime slice; this foundation produces the exact canonical UTF-8 text that the persistence shell will hash.
 
 No report issue, generation, publication, artifact, or action runtime is implied by slice 0. Those remain ordered work below the contract/domain boundary.
+
+Slice 1 implements the aggregate and admission foundation. Migration `0037_customer_report_aggregate` replaces the empty skeletal `reports` table with the stable issue, generation-run, report-version, normalized claim/evidence/link, and append-only lifecycle-event tables. Partial unique indexes own one active generation and one open candidate per issue; issue/report row versions and database triggers enforce the accepted lock order, draft-only semantic mutation, reviewed freeze, an exact canonical-to-normalized projection match before review, exact lifecycle transition evidence, tenant-coherent generation base/result pointers, bounded proof tiers, and append-only review history.
+
+`ReportsService` admits generation against the stable issue row, recomputes the canonical fact-projection and full-snapshot SHA-256 digests, composes deterministic eligibility for every claim, verifies durable evidence sources against the report project, and writes canonical snapshot plus normalized provenance in one transaction. A returned draft may be regenerated only when the admitted issue/report version and digest still match. Review and regeneration both lock issue before report, so review-first makes late generation stale while generation-first makes the old review target conflict. Conditional issue/run/report writes verify their affected row, and review notes use the same bounded Unicode/control policy as report text. Property-based canonicalization coverage and real-PostgreSQL race and direct-mutation tests pin these seams.
+
+Slice 1 intentionally exposes no report controller, queue, evidence assembler, publication write, artifact table, customer read, or UI. The migration rejects publication/supersession transitions until the reviewed-artifact and digest-bound human publication slice replaces that gate. Step 3, deterministic fact-only generation from a bounded server-owned evidence packet, remains next.
 
 The first vertical proof ends after step 4. It must work without AI, command actions, PDF, RAG, a workflow engine, or public links.
 

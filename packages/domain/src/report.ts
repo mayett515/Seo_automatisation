@@ -40,6 +40,7 @@ export type CustomerReportClaimEligibilityIssue =
   | "cross_project_evidence"
   | "evidence_cutoff_mismatch"
   | "evidence_kind_mismatch"
+  | "evidence_source_identity_mismatch"
   | "evidence_value_mismatch"
   | "proof_tier_too_weak"
   | "stale_ranking_proof"
@@ -49,6 +50,13 @@ export type CustomerReportClaimEligibilityIssue =
 export type CustomerReportClaimEligibilityDecision =
   | { kind: "eligible"; evidence: CustomerReportEvidenceItem[] }
   | { kind: "ineligible"; issues: CustomerReportClaimEligibilityIssue[] };
+
+export type CustomerReportSnapshotEligibilityDecision =
+  | { kind: "eligible" }
+  | {
+      kind: "ineligible";
+      claims: Array<{ claimKey: string; issues: CustomerReportClaimEligibilityIssue[] }>;
+    };
 
 export type CustomerReportActionAvailability =
   | { kind: "available"; action: CustomerReportNavigationRef }
@@ -155,6 +163,10 @@ export function decideCustomerReportClaimEligibility(input: {
       continue;
     }
 
+    if (!evidenceSourceIdentityMatches(evidence)) {
+      issues.add("evidence_source_identity_mismatch");
+    }
+
     if (!evidenceValueMatchesClaim(input.claim, evidence)) {
       issues.add("evidence_value_mismatch");
     }
@@ -187,6 +199,23 @@ export function decideCustomerReportClaimEligibility(input: {
   return issues.size > 0
     ? { kind: "ineligible", issues: [...issues].sort() }
     : { kind: "eligible", evidence: selectedEvidence };
+}
+
+export function decideCustomerReportSnapshotEligibility(
+  snapshot: CustomerReportSnapshot
+): CustomerReportSnapshotEligibilityDecision {
+  const claims = snapshot.factProjection.claims.flatMap((claim) => {
+    const decision = decideCustomerReportClaimEligibility({
+      claim,
+      evidence: snapshot.factProjection.evidence,
+      projectId: snapshot.identity.projectId,
+      evidenceCutoffAt: snapshot.evidenceCutoffAt
+    });
+
+    return decision.kind === "eligible" ? [] : [{ claimKey: claim.claimKey, issues: decision.issues }];
+  });
+
+  return claims.length === 0 ? { kind: "eligible" } : { kind: "ineligible", claims };
 }
 
 export function decideCustomerReportActionAvailability(
@@ -344,5 +373,24 @@ function evidenceEffectiveAt(evidence: CustomerReportEvidenceItem): string {
     case "ranking_proof":
     case "opportunity":
       return evidence.observedAt;
+  }
+}
+
+function evidenceSourceIdentityMatches(evidence: CustomerReportEvidenceItem): boolean {
+  switch (evidence.sourceKind) {
+    case "ranking_proof":
+      return true;
+    case "page_version":
+      return evidence.sourceId === evidence.pageVersionId;
+    case "deployment":
+      return evidence.sourceId === evidence.deploymentId;
+    case "release_verification":
+      return evidence.sourceId === evidence.verificationId;
+    case "release_verification_check":
+      return true;
+    case "rollback":
+      return evidence.sourceId === evidence.rollbackPointId;
+    case "opportunity":
+      return evidence.sourceId === evidence.opportunityId;
   }
 }

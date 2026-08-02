@@ -12,6 +12,14 @@ export const customerReportGenerationStatuses = [
   "cancelled",
   "stale"
 ] as const;
+export const customerReportNarrativeModes = ["fact_only", "bounded_ai"] as const;
+export const customerReportLifecycleEventTypes = [
+  "report_generated",
+  "submitted_for_review",
+  "changes_requested",
+  "published",
+  "superseded"
+] as const;
 export const customerReportClaimKinds = [
   "ranking_result",
   "page_delivery",
@@ -43,12 +51,15 @@ export const customerReportNavigationTargets = ["opportunity", "page_studio_revi
 export const CustomerReportKindSchema = z.enum(customerReportKinds);
 export const CustomerReportStatusSchema = z.enum(customerReportStatuses);
 export const CustomerReportGenerationStatusSchema = z.enum(customerReportGenerationStatuses);
+export const CustomerReportNarrativeModeSchema = z.enum(customerReportNarrativeModes);
+export const CustomerReportLifecycleEventTypeSchema = z.enum(customerReportLifecycleEventTypes);
 export const CustomerReportClaimKindSchema = z.enum(customerReportClaimKinds);
 export const CustomerReportSectionSchema = z.enum(customerReportSections);
 export const CustomerReportEvidenceKindSchema = z.enum(customerReportEvidenceKinds);
 export const CustomerReportNavigationTargetSchema = z.enum(customerReportNavigationTargets);
 
 export const CustomerReportSha256Schema = z.string().regex(/^[0-9a-f]{64}$/u, "Expected a lowercase SHA-256 digest.");
+export const CustomerReportDecisionNoteSchema = reportText(2_000);
 export const CustomerReportMonthSchema = z
   .string()
   .regex(/^\d{4}-(?:0[1-9]|1[0-2])$/u, "Expected a canonical YYYY-MM report period.");
@@ -366,7 +377,7 @@ export const CustomerReportSnapshotSchema = z
     actionSelectionPolicyVersion: ReportVersionTokenSchema,
     narrativePolicyVersion: ReportVersionTokenSchema,
     templateVersion: ReportVersionTokenSchema,
-    narrativeMode: z.enum(["fact_only", "bounded_ai"]),
+    narrativeMode: CustomerReportNarrativeModeSchema,
     title: reportText(240),
     factProjectionSha256: CustomerReportSha256Schema,
     factProjection: CustomerReportFactProjectionSchema,
@@ -457,6 +468,8 @@ export const CustomerReportDomainEventSchema = z.discriminatedUnion("eventName",
 export type CustomerReportKind = z.output<typeof CustomerReportKindSchema>;
 export type CustomerReportStatus = z.output<typeof CustomerReportStatusSchema>;
 export type CustomerReportGenerationStatus = z.output<typeof CustomerReportGenerationStatusSchema>;
+export type CustomerReportNarrativeMode = z.output<typeof CustomerReportNarrativeModeSchema>;
+export type CustomerReportLifecycleEventType = z.output<typeof CustomerReportLifecycleEventTypeSchema>;
 export type CustomerReportClaimKind = z.output<typeof CustomerReportClaimKindSchema>;
 export type CustomerReportSection = z.output<typeof CustomerReportSectionSchema>;
 export type CustomerReportEvidenceKind = z.output<typeof CustomerReportEvidenceKindSchema>;

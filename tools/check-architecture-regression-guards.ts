@@ -2073,6 +2073,146 @@ requireIncludes(
   "Snapshot contracts must close project and cutoff substitution before persistence"
 );
 
+requireIncludes(
+  "packages/db/src/schema.ts",
+  'uniqueIndex("report_generation_runs_active_issue_idx")',
+  "customer-report-aggregate",
+  "Postgres must own one active generation per stable report issue"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  'uniqueIndex("reports_open_candidate_issue_idx")',
+  "customer-report-aggregate",
+  "Postgres must own one open draft or ready candidate per report issue"
+);
+
+requireIncludes(
+  "packages/db/migrations/0037_customer_report_aggregate.sql",
+  "Report issue updates must increment row_version exactly once.",
+  "customer-report-aggregate",
+  "The stable report issue lock must expose an exact optimistic version boundary"
+);
+
+requireIncludes(
+  "packages/db/migrations/0037_customer_report_aggregate.sql",
+  "Reviewed and published report semantics are immutable.",
+  "customer-report-aggregate",
+  "Reviewed report snapshot and provenance truth must remain frozen at the database boundary"
+);
+
+requireIncludes(
+  "packages/db/migrations/0037_customer_report_aggregate.sql",
+  "Report publication and supersession are not enabled by the aggregate foundation migration.",
+  "customer-report-aggregate",
+  "The aggregate foundation must not accidentally expose publication before reviewed artifacts and actor binding"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "canonicalizeCustomerReportFactProjection(snapshot.factProjection)",
+  "customer-report-aggregate",
+  "Snapshot admission must recompute rather than trust the embedded fact-projection digest"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "decideCustomerReportSnapshotEligibility(snapshot)",
+  "customer-report-aggregate",
+  "Every admitted snapshot must compose claim-level deterministic eligibility"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "Report generation idempotency key belongs to another request.",
+  "customer-report-aggregate",
+  "Report generation idempotency must remain bound to the original actor, cutoff, mode, and issue"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "evidenceProjectionReferencesMatch(row, item)",
+  "customer-report-aggregate",
+  "Normalized report evidence references must remain exact projections of canonical evidence"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "Customer report evidence source relationship was missing, mismatched, or belonged to another project.",
+  "customer-report-aggregate",
+  "Nested verification, deployment, and rollback evidence relationships must remain project coherent"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  '"report_evidence_items_proof_tier_check"',
+  "customer-report-aggregate",
+  "Customer report proof tiers must remain bounded at the database boundary"
+);
+
+requireIncludes(
+  "packages/db/migrations/0037_customer_report_aggregate.sql",
+  "Report generation base candidate must belong to the same issue and project.",
+  "customer-report-aggregate",
+  "Generation admission references must remain tenant- and issue-coherent"
+);
+
+requireIncludes(
+  "packages/db/migrations/0037_customer_report_aggregate.sql",
+  "Report normalized provenance must match the exact canonical snapshot before review.",
+  "customer-report-aggregate",
+  "Review promotion must reject count-preserving canonical projection substitution"
+);
+
+requireIncludes(
+  "packages/db/migrations/0037_customer_report_aggregate.sql",
+  "ReportGenerated lifecycle evidence must bind its succeeded generation run.",
+  "customer-report-aggregate",
+  "Report lifecycle evidence must describe the exact durable transition"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  "CustomerReportDecisionNoteSchema = reportText(2_000)",
+  "customer-report-aggregate",
+  "Report review notes must share the bounded Unicode and control policy"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  'SELECT "id" FROM "report_issues"',
+  "customer-report-aggregate",
+  "Generation and review must serialize on the stable report issue row"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "async publish",
+  "customer-report-aggregate",
+  "Report publication must remain absent from the aggregate foundation slice"
+);
+
+requireIncludes(
+  "packages/domain/src/report.test.ts",
+  "keeps canonical identity under generated semantic-array permutations",
+  "customer-report-aggregate",
+  "Canonical report persistence must be preceded by property-based ordering coverage"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.integration.ts",
+  "serializes the first report generation empty-set race on one stable issue",
+  "customer-report-aggregate",
+  "A real-PostgreSQL test must pin first-generation empty-set serialization"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.integration.ts",
+  "allows only one legal winner when review races regeneration completion",
+  "customer-report-aggregate",
+  "A real-PostgreSQL test must pin report review versus regeneration concurrency"
+);
+
 requireNotIncludes(
   "docs/architecture/app-blueprint.md",
   "approved service-location opportunity",

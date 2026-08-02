@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { CustomerReportClaim, CustomerReportEvidenceItem, CustomerReportSnapshot } from "@localseo/contracts";
 import { CustomerReportSnapshotSchema } from "@localseo/contracts";
+import fc from "fast-check";
 import {
   canonicalizeCustomerReportSnapshot,
   decideCustomerReportActionAvailability,
@@ -18,6 +19,7 @@ const opportunityId = "33333333-3333-4333-8333-333333333333";
 const rollbackPointId = "44444444-4444-4444-8444-444444444444";
 const deploymentId = "55555555-5555-4555-8555-555555555555";
 const verificationId = "66666666-6666-4666-8666-666666666666";
+const pageVersionId = "77777777-7777-4777-8777-777777777777";
 const digest = "a".repeat(64);
 const cutoff = "2026-08-01T10:00:00.000Z";
 
@@ -47,6 +49,48 @@ void describe("customer report canonicalization", () => {
 
     assert.match(canonical, /"generatedAt":"2026-08-01T10:00:00.000Z"/u);
     assert.ok(canonical.indexOf('"actionSelectionPolicyVersion"') < canonical.indexOf('"assemblerVersion"'));
+  });
+
+  void it("keeps canonical identity under generated semantic-array permutations", () => {
+    const base = propertySnapshot();
+    const expected = canonicalizeCustomerReportSnapshot(base);
+
+    fc.assert(
+      fc.property(
+        fc.shuffledSubarray([0, 1], { minLength: 2, maxLength: 2 }),
+        fc.shuffledSubarray([0, 1, 2], { minLength: 3, maxLength: 3 }),
+        fc.shuffledSubarray([0, 1], { minLength: 2, maxLength: 2 }),
+        fc.shuffledSubarray([0, 1], { minLength: 2, maxLength: 2 }),
+        fc.boolean(),
+        (claimOrder, evidenceOrder, actionOrder, narrativeOrder, reverseNestedKeys) => {
+          const candidate = CustomerReportSnapshotSchema.parse({
+            ...base,
+            factProjection: {
+              claims: claimOrder.map((index) => {
+                const claim = base.factProjection.claims[index]!;
+                return reverseNestedKeys ? { ...claim, evidenceKeys: [...claim.evidenceKeys].reverse() } : claim;
+              }),
+              evidence: evidenceOrder.map((index) => base.factProjection.evidence[index]!),
+              nextActions: actionOrder.map((index) => {
+                const action = base.factProjection.nextActions[index]!;
+                return reverseNestedKeys
+                  ? { ...action, supportingClaimKeys: [...action.supportingClaimKeys].reverse() }
+                  : action;
+              })
+            },
+            narrative: narrativeOrder.map((index) => {
+              const fragment = base.narrative[index]!;
+              return reverseNestedKeys
+                ? { ...fragment, supportingClaimKeys: [...fragment.supportingClaimKeys].reverse() }
+                : fragment;
+            })
+          });
+
+          assert.equal(canonicalizeCustomerReportSnapshot(candidate), expected);
+        }
+      ),
+      { numRuns: 100 }
+    );
   });
 });
 
@@ -179,6 +223,21 @@ void describe("customer-safe report eligibility", () => {
       provenRankingResultCount: 1,
       futureOpportunityCount: 1
     });
+  });
+
+  void it("rejects typed evidence whose generic source identity disagrees", () => {
+    const claim = futureOpportunityClaim();
+    const decision = decideCustomerReportClaimEligibility({
+      claim,
+      evidence: [{ ...opportunityEvidence(), sourceId: rankingProofId }],
+      projectId,
+      evidenceCutoffAt: cutoff
+    });
+
+    assert.equal(decision.kind, "ineligible");
+    if (decision.kind === "ineligible") {
+      assert.ok(decision.issues.includes("evidence_source_identity_mismatch"));
+    }
   });
 
   void it("requires both rollback and subsequent live verification evidence for correction claims", () => {
@@ -318,6 +377,52 @@ function validSnapshot(): CustomerReportSnapshot {
       ]
     },
     narrative: []
+  });
+}
+
+function propertySnapshot(): CustomerReportSnapshot {
+  const snapshot = validSnapshot();
+  const ranking = snapshot.factProjection.claims[0]!;
+  const rankingProof = snapshot.factProjection.evidence[0]!;
+
+  return CustomerReportSnapshotSchema.parse({
+    ...snapshot,
+    narrativeMode: "bounded_ai",
+    factProjection: {
+      claims: [
+        { ...ranking, evidenceKeys: [ranking.evidenceKeys[0], "proof:roof-cleaning:secondary"] },
+        snapshot.factProjection.claims[1]
+      ],
+      evidence: [
+        rankingProof,
+        { ...rankingProof, evidenceKey: "proof:roof-cleaning:secondary", payloadSha256: "c".repeat(64) },
+        snapshot.factProjection.evidence[1]
+      ],
+      nextActions: [
+        snapshot.factProjection.nextActions[0],
+        {
+          actionKey: "action:review-page",
+          kind: "navigation_ref",
+          label: "Seite ansehen",
+          supportingClaimKeys: ["ranking:roof-cleaning", "opportunity:facade-cleaning"],
+          target: { surface: "page_studio_review", pageVersionId }
+        }
+      ]
+    },
+    narrative: [
+      {
+        slotKey: "summary:heading",
+        kind: "heading",
+        text: "Fortschritt im Ueberblick",
+        supportingClaimKeys: ["ranking:roof-cleaning", "opportunity:facade-cleaning"]
+      },
+      {
+        slotKey: "summary:transition",
+        kind: "transition",
+        text: "Als naechstes folgt die priorisierte Chance.",
+        supportingClaimKeys: ["opportunity:facade-cleaning"]
+      }
+    ]
   });
 }
 

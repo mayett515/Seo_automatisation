@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.17"
+version: "1.1.19"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -322,6 +322,13 @@ Customer Report publication and Next Action
   ReportGenerated means a validated draft exists, not publication; CustomerApprovedNextAction means actor-backed consent exists, not downstream completion.
   V1 report actions are navigation_ref descriptors to allowlisted product surfaces; consequential command_offer actions remain deferred until target CAS hardening.
   Report review transitions require persisted human actors; only owner/admin may publish or correct, while editors may generate, review, and export.
+  A stable report issue row owns first-generation and regeneration serialization; an active-run partial unique index, not BullMQ, owns one active generation per issue.
+  Report snapshot admission must recompute the RFC 8785 fact-projection digest, validate every claim/evidence binding, and verify each durable evidence source plus its typed operational relationships belong to the report project.
+  Draft report semantics may change only through expected issue/report versions and a generation run pinned to the admitted base; ready, published, and superseded semantics are frozen.
+  Canonical snapshot text remains semantic authority while the database review transition requires normalized claim/evidence/link rows to match its exact sets, not only its counts.
+  Report lifecycle events are append-only exact transition evidence; generation events bind the succeeded run, human review events bind the real from/to status, and publication event vocabulary remains disabled until publication ships.
+  Report review and generation completion lock the issue before the candidate so one legal transition wins without mixed snapshot truth.
+  Aggregate-foundation code must not expose publication or supersession writes before the reviewed-artifact and human publication transaction ships.
 ```
 
 </context>

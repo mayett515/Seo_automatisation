@@ -12,6 +12,7 @@ import { ProjectsModule } from "./modules/projects.module.js";
 import { QueueProducerModule } from "./queue-producer.js";
 import { RedisModule } from "./redis/redis.module.js";
 import { ReleasesModule } from "./modules/releases.module.js";
+import { ReportsModule } from "./modules/reports.module.js";
 import { SecurityModule } from "./security/security.module.js";
 import { TrackingModule } from "./modules/tracking.module.js";
 import { MediaStorageModule } from "./media-storage.module.js";
@@ -32,6 +33,7 @@ import { MediaStorageModule } from "./media-storage.module.js";
     PagesModule,
     ProjectsModule,
     ReleasesModule,
+    ReportsModule,
     TrackingModule
   ],
   controllers: [HealthController]
