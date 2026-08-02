@@ -837,7 +837,7 @@ Agents may explain readiness or blockers. Workers own production mutation.
 
 ### 12. Report And Next Action
 
-Status: next product milestone; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Only the skeletal `reports` table, route placeholder, shared queue/task/event vocabulary, ADR 0019 constraint profile, and deterministic customer-report safety guard exist at runtime. There is no report API, report worker, reviewed report artifact, publication flow, or typed Next Action handoff yet.
+Status: implementation started; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Slice 0 now provides dedicated strict report contracts, RFC 8785 canonicalization with stable semantic ordering, pure eligibility/lifecycle/action decisions, explicit report permissions, and precise event semantics. The existing `reports` table and route remain scaffolding: there is still no report aggregate migration, API, worker, reviewed artifact, publication flow, or customer-facing Next Action handoff.
 
 Reports should explain customer-safe truth and guide the next opportunity.
 
@@ -877,8 +877,8 @@ stored private HTML as the first derivative; PDF remains deferred until required
 The first implementation uses a bounded server-built evidence packet and proves the fact-only path before AI is required:
 
 ```text
-strict contracts and canonicalization
--> report issue/run/version/provenance constraints
+strict contracts and canonicalization (implemented)
+-> report issue/run/version/provenance constraints (next)
 -> deterministic fact-only draft
 -> review/request-changes
 -> digest-bound human publication, correction, and source-invalidation alerts

@@ -208,6 +208,12 @@ Implementation order:
 7. PDF only when required;
 8. retention, observability, and cost hardening alongside the slices that need them.
 
+Slice 0 is implemented in `packages/contracts/src/report.ts` and `packages/domain/src/report.ts`. The contract owns the strict monthly identity, lifecycle vocabulary, closed claim/evidence catalog, exact claim/evidence/action references, navigation-only descriptors, event semantics, UTC timestamp normalization, and customer-safe payload bounds. The domain owns pure eligibility, lifecycle, ordering, ranking milestone, action-availability, and claim-summary decisions. Explicit API permissions now separate generation, review, publication, correction, and export authority.
+
+Canonical JSON uses the Apache-2.0 `canonicalize@3.0.0` RFC 8785 implementation. Before serialization, claims sort by section order then `claimKey`; evidence sorts by `evidenceKey`; Next Actions sort by `actionKey`; narrative fragments sort by `slotKey`; and nested evidence/supporting-claim keys sort by Unicode code-unit order. Contract parsing rejects unknown fields, unsafe integers, invalid Unicode, unsupported controls, non-HTTP evidence URLs, duplicate logical keys, missing references, and unreferenced evidence. Hash persistence remains part of the aggregate/runtime slice; this foundation produces the exact canonical UTF-8 text that the persistence shell will hash.
+
+No report issue, generation, publication, artifact, or action runtime is implied by slice 0. Those remain ordered work below the contract/domain boundary.
+
 The first vertical proof ends after step 4. It must work without AI, command actions, PDF, RAG, a workflow engine, or public links.
 
 ### Retention And Privacy Defaults

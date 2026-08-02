@@ -10,6 +10,7 @@ import type {
 export * from "./page-studio.js";
 export * from "./work-recovery.js";
 export * from "./media-storage-cleanup.js";
+export * from "./report.js";
 
 export type DeployDecision =
   | { kind: "blocked"; blockerCount: number; warnings: ReleaseCheck[] }

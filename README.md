@@ -275,10 +275,11 @@ flowchart TD
   K --> L["RAG only when evidence packets become too large or project memory requires retrieval"]
 ```
 
-Steps 1 through 10 are implemented at MVP-baseline depth. The next product milestone is the customer-safe Report and Next Action vertical:
+Steps 1 through 10 are implemented at MVP-baseline depth. The customer-safe Report and Next Action milestone has started with its strict contract/domain foundation:
 
 ```text
-deterministic report evidence snapshot
+strict report contracts, canonicalization, eligibility, lifecycle, and permissions (implemented)
+-> deterministic report evidence snapshot
 -> customer-safe fact eligibility and exact evidence references
 -> deterministic fact-only draft
 -> optional bounded report_narrative headings/transitions
@@ -440,4 +441,4 @@ The repository has a strong foundation for an AI-assisted Local SEO MVP:
 - DB-before-queue recovery for the safe page, media, and verification lanes,
 - AI reasoning boundaries and named task policies.
 
-The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The next product frontier is customer-safe Report and Next Action. ADR 0021 accepts the digest-bound snapshot, claim-evidence, human publication, permission, and typed-action architecture. Runtime implementation now starts with contracts, canonicalization, the core report aggregate, and a deterministic fact-only review/publication path; the existing `reports` row, route placeholder, and `report_narrative` vocabulary remain scaffolding rather than a shipped workflow.
+The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The next product frontier is customer-safe Report and Next Action. ADR 0021 accepts the digest-bound snapshot, claim-evidence, human publication, permission, and typed-action architecture. Its strict contracts, canonicalization, pure domain decisions, permissions, and event semantics are implemented; the core report aggregate and deterministic fact-only review/publication path remain next. The existing `reports` row, route placeholder, and `report_narrative` vocabulary are still scaffolding rather than a shipped workflow.

@@ -1942,9 +1942,9 @@ requireNotIncludes(
 
 requireIncludes(
   "docs/architecture/agent-first-mvp-roadmap.md",
-  "Status: next product milestone; architecture checkpoint accepted by",
+  "Status: implementation started; architecture checkpoint accepted by",
   "roadmap-current-status",
-  "The roadmap must name the accepted Report and Next Action architecture checkpoint explicitly"
+  "The roadmap must name the accepted Report and Next Action checkpoint without describing implementation as wholly deferred"
 );
 
 requireIncludes(
@@ -1980,6 +1980,97 @@ requireIncludes(
   "The deterministic fact-only publication path must ship before AI prose",
   "customer-report-boundary",
   "The architecture rule must keep optional report capabilities off the core publication critical path"
+);
+
+requireIncludes(
+  "packages/domain/package.json",
+  '"canonicalize": "3.0.0"',
+  "customer-report-foundation",
+  "Customer-report canonicalization must stay pinned to the reviewed RFC 8785 implementation"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  "CustomerReportSnapshotSchema",
+  "customer-report-foundation",
+  "Customer-report snapshot truth must cross one dedicated strict shared contract"
+);
+
+requireIncludes(
+  "packages/domain/src/report.ts",
+  "canonicalizeCustomerReportSnapshot",
+  "customer-report-foundation",
+  "Customer-report snapshots must use the domain-owned canonical ordering boundary"
+);
+
+requireIncludes(
+  "packages/domain/src/report.ts",
+  "rankingMilestoneForRank",
+  "customer-report-foundation",
+  "Customer-safe ranking milestones must remain deterministic rather than narrative-owned"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  'reportStatus: z.literal("draft")',
+  "customer-report-foundation",
+  "ReportGenerated must continue to mean validated draft truth rather than publication"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  'consentStatus: z.literal("accepted")',
+  "customer-report-foundation",
+  "CustomerApprovedNextAction must remain human-consent truth rather than downstream completion"
+);
+
+requireNotIncludes(
+  "packages/contracts/src/report.ts",
+  "command_offer",
+  "customer-report-foundation",
+  "Consequential report commands must remain deferred until target workflows expose CAS boundaries"
+);
+
+requireIncludes(
+  "apps/api/src/auth/permissions/project-permissions.ts",
+  '"report:correct"',
+  "customer-report-foundation",
+  "Report correction must remain an explicit authority distinct from generic project access"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.test.ts",
+  "rejects banned GSC diagnostics and arbitrary customer-facing fields",
+  "customer-report-foundation",
+  "Contract coverage must pin banned diagnostics out of customer report payloads"
+);
+
+requireIncludes(
+  "packages/domain/src/report.test.ts",
+  "produces identical canonical text for shuffled semantic arrays",
+  "customer-report-foundation",
+  "Canonicalization coverage must pin semantic array ordering"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  "Rollback correction verification must occur after the rollback.",
+  "customer-report-foundation",
+  "Rollback correction claims must require genuinely subsequent verification"
+);
+
+requireIncludes(
+  "packages/domain/src/report.ts",
+  "evidence.deploymentId === claim.deploymentId",
+  "customer-report-foundation",
+  "Rollback correction verification evidence must belong to the rolled-back deployment"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.test.ts",
+  "rejects cross-project and cutoff-mismatched snapshot evidence",
+  "customer-report-foundation",
+  "Snapshot contracts must close project and cutoff substitution before persistence"
 );
 
 requireNotIncludes(

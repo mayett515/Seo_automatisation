@@ -19,7 +19,12 @@ export const projectPermissions = [
   "release:approve",
   "deploy:execute",
   "release:verify",
-  "rollback:execute"
+  "rollback:execute",
+  "report:generate",
+  "report:review",
+  "report:publish",
+  "report:correct",
+  "report:export"
 ] as const;
 
 export type ProjectPermission = (typeof projectPermissions)[number];
@@ -41,7 +46,10 @@ const rolePermissions = {
     "gsc:sync",
     "release:plan",
     "release:preflight",
-    "release:verify"
+    "release:verify",
+    "report:generate",
+    "report:review",
+    "report:export"
   ]),
   viewer: new Set<ProjectPermission>(["project:read"])
 } satisfies Record<CustomerMembershipRole, ReadonlySet<ProjectPermission>>;

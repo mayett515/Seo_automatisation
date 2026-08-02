@@ -47,6 +47,26 @@ Local environment recommendation:
 
 ## Current Coverage
 
+### Customer Report Contract And Domain Foundation
+
+Files:
+
+- [report.test.ts](/C:/localseoproject/packages/contracts/src/report.test.ts)
+- [report.test.ts](/C:/localseoproject/packages/domain/src/report.test.ts)
+- [permission.guard.test.ts](/C:/localseoproject/apps/api/src/auth/permissions/permission.guard.test.ts)
+
+Implemented unit tests prove:
+
+1. Strict report snapshots normalize timestamps to UTC and reject unknown customer-facing GSC diagnostics, invalid Unicode, unsafe integers, non-HTTP evidence URLs, arbitrary navigation targets, duplicate logical keys, missing links, and unreferenced evidence.
+2. `canonicalize@3.0.0` produces identical RFC 8785 text after deterministic semantic-array ordering.
+3. Review/publication lifecycle transitions are closed and digest-bound, supersession is modeled only as correction-successor publication, and superseded actions become view-only.
+4. Fresh reviewed ranking proof maps to the strongest exact milestone; stale, cross-project, value-mismatched, or weak evidence fails closed; rollback/correction claims require rollback plus subsequent live-verification evidence.
+5. Future opportunities remain outside proven ranking-result counts.
+6. `ReportGenerated` is draft truth and `CustomerApprovedNextAction` is actor-backed consent truth, with no publication or downstream-completion fields.
+7. Editors may generate, review, and export; only owners/admins may publish or correct; viewers receive no report mutation permission.
+
+The real-PostgreSQL report aggregate, generation admission, review, publication, correction, and evidence-invalidation race tests belong to ADR 0021 slice 1 and are not claimed by this unit foundation.
+
 ### Release Preflight Rollback Preparation
 
 File:

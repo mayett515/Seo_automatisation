@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.16"
+version: "1.1.17"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -317,6 +317,11 @@ Customer Report publication and Next Action
   Next Actions are closed typed navigation or command offers and must reuse the target workflow's permission, state, approval, and worker boundaries.
   HTML and PDF are immutable derivatives of the canonical snapshot; AI, rendering, BullMQ, and Mastra never own publication truth.
   The deterministic fact-only publication path must ship before AI prose, command actions, PDF, RAG, or a generic workflow engine can become prerequisites.
+  Customer-report schemas are strict, reject unsafe text and unsupported fields, and keep future opportunities separate from proven ranking-result counts.
+  Canonical report JSON uses pinned RFC 8785 serialization after UTC timestamp normalization and stable semantic-array ordering.
+  ReportGenerated means a validated draft exists, not publication; CustomerApprovedNextAction means actor-backed consent exists, not downstream completion.
+  V1 report actions are navigation_ref descriptors to allowlisted product surfaces; consequential command_offer actions remain deferred until target CAS hardening.
+  Report review transitions require persisted human actors; only owner/admin may publish or correct, while editors may generate, review, and export.
 ```
 
 </context>

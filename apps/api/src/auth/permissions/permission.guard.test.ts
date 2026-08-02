@@ -67,6 +67,45 @@ void describe("PermissionGuard", () => {
     assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
   });
 
+  void it("allows editors to generate, review, and export reports", () => {
+    for (const permission of ["report:generate", "report:review", "report:export"] satisfies ProjectPermission[]) {
+      const guard = new PermissionGuard(new TestReflector([permission]));
+      assert.equal(guard.canActivate(contextFor({ role: "editor" })), true);
+    }
+  });
+
+  void it("reserves report publication and correction for owners and admins", () => {
+    for (const permission of ["report:publish", "report:correct"] satisfies ProjectPermission[]) {
+      assert.equal(
+        new PermissionGuard(new TestReflector([permission])).canActivate(contextFor({ role: "owner" })),
+        true
+      );
+      assert.equal(
+        new PermissionGuard(new TestReflector([permission])).canActivate(contextFor({ role: "admin" })),
+        true
+      );
+      assert.throws(
+        () => new PermissionGuard(new TestReflector([permission])).canActivate(contextFor({ role: "editor" })),
+        ForbiddenException
+      );
+    }
+  });
+
+  void it("keeps report mutations unavailable to viewers", () => {
+    for (const permission of [
+      "report:generate",
+      "report:review",
+      "report:publish",
+      "report:correct",
+      "report:export"
+    ] satisfies ProjectPermission[]) {
+      assert.throws(
+        () => new PermissionGuard(new TestReflector([permission])).canActivate(contextFor({ role: "viewer" })),
+        ForbiddenException
+      );
+    }
+  });
+
   void it("rejects viewers on privileged project actions", () => {
     const guard = new PermissionGuard(new TestReflector(["release:approve"]));
 
