@@ -5,6 +5,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  Headers,
   Inject,
   Injectable,
   Module,
@@ -15,6 +16,7 @@ import {
   Req,
   Res,
   ServiceUnavailableException,
+  UnauthorizedException,
   UseGuards,
   UnprocessableEntityException
 } from "@nestjs/common";
@@ -102,6 +104,12 @@ import { RequireProjectPermission } from "../auth/permissions/require-permission
 import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { QueueProducerService } from "../queue-producer.js";
+import {
+  readReportDocumentCapability,
+  serializeReportDocumentCapabilityCookie,
+  signReportDocumentCapability,
+  type ReportDocumentCapabilityClaims
+} from "../report-document-capability.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 import { IMMUTABLE_ARTIFACT_READER } from "../media-storage.module.js";
 import type { FastifyReply } from "fastify";
@@ -642,25 +650,31 @@ export class ReportsService {
     return reportArtifactSummary(artifact);
   }
 
-  async getArtifactDocument(projectId: string, reportId: string, artifactId: string): Promise<Uint8Array> {
-    requireUuid(projectId, "Report project id must be a UUID.");
-    requireUuid(reportId, "Report id must be a UUID.");
-    requireUuid(artifactId, "Report artifact id must be a UUID.");
-    const [artifact] = await this.database
+  async getArtifactDocument(claims: ReportDocumentCapabilityClaims): Promise<Uint8Array> {
+    if (claims.kind !== "candidate") {
+      throw new UnauthorizedException("Candidate report document capability is required.");
+    }
+    const [row] = await this.database
       .requireDb()
-      .select()
+      .select({ artifact: reportArtifacts })
       .from(reportArtifacts)
+      .innerJoin(reports, eq(reportArtifacts.reportId, reports.id))
       .where(
         and(
-          eq(reportArtifacts.id, artifactId),
-          eq(reportArtifacts.reportId, reportId),
-          eq(reportArtifacts.projectId, projectId),
-          eq(reportArtifacts.status, "staged")
+          eq(reportArtifacts.id, claims.artifactId),
+          eq(reportArtifacts.reportId, claims.reportId),
+          eq(reportArtifacts.projectId, claims.projectId),
+          eq(reportArtifacts.status, "staged"),
+          eq(reportArtifacts.snapshotSha256, claims.snapshotSha256),
+          eq(reportArtifacts.artifactSha256, claims.artifactSha256),
+          eq(reports.projectId, claims.projectId),
+          eq(reports.status, "ready_for_review"),
+          eq(reports.snapshotSha256, claims.snapshotSha256)
         )
       )
       .limit(1);
-    if (!artifact) throw new NotFoundException("Staged report artifact was not found for this project.");
-    return verifyImmutableArtifactBytes(this.requireArtifactReader(), artifact);
+    if (!row) throw new NotFoundException("The capability-bound staged report artifact is unavailable.");
+    return verifyImmutableArtifactBytes(this.requireArtifactReader(), row.artifact);
   }
 
   async retryArtifact(input: {
@@ -1023,12 +1037,18 @@ export class ReportsService {
     });
   }
 
-  async getPublishedDocument(projectId: string, reportId: string): Promise<Uint8Array> {
-    const { artifact } = await this.loadPublishedRow(projectId, reportId);
+  async getPublishedDocument(claims: ReportDocumentCapabilityClaims): Promise<Uint8Array> {
+    if (claims.kind !== "published") {
+      throw new UnauthorizedException("Published report document capability is required.");
+    }
+    const { report, artifact } = await this.loadPublishedRow(claims.projectId, claims.reportId, claims.artifactId);
+    if (report.snapshotSha256 !== claims.snapshotSha256 || artifact.artifactSha256 !== claims.artifactSha256) {
+      throw new NotFoundException("The capability-bound published report artifact is unavailable.");
+    }
     return verifyImmutableArtifactBytes(this.requireArtifactReader(), artifact);
   }
 
-  private async loadPublishedRow(projectId: string, reportId: string) {
+  private async loadPublishedRow(projectId: string, reportId: string, artifactId?: string) {
     requireUuid(projectId, "Report project id must be a UUID.");
     requireUuid(reportId, "Report id must be a UUID.");
     const [row] = await this.database
@@ -1041,6 +1061,7 @@ export class ReportsService {
         and(
           eq(reports.id, reportId),
           eq(reports.projectId, projectId),
+          artifactId ? eq(reportArtifacts.id, artifactId) : undefined,
           inArray(reports.status, ["published", "superseded"])
         )
       )
@@ -1305,8 +1326,27 @@ class ReportsController {
 
   @Get("candidates/:reportId")
   @RequireProjectPermission("report:review")
-  getCandidate(@Param("projectId") projectId: string, @Param("reportId") reportId: string) {
-    return this.reports.getCandidate(projectId, reportId);
+  async getCandidate(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Res({ passthrough: true }) reply: FastifyReply
+  ) {
+    const detail = await this.reports.getCandidate(projectId, reportId);
+    const artifact = detail.artifacts.find(
+      (candidate) => candidate.status === "staged" && candidate.artifactSha256 !== undefined
+    );
+    if (artifact?.artifactSha256) {
+      setReportDocumentCapabilityCookie(reply, {
+        kind: "candidate",
+        projectId,
+        reportId,
+        artifactId: artifact.artifactId,
+        snapshotSha256: detail.report.snapshotSha256,
+        artifactSha256: artifact.artifactSha256
+      });
+    }
+    reply.header("cache-control", "private, no-store");
+    return detail;
   }
 
   @Post(":reportId/review")
@@ -1389,18 +1429,6 @@ class ReportsController {
     return this.reports.getArtifact(projectId, reportId, artifactId);
   }
 
-  @Get(":reportId/artifacts/:artifactId/document")
-  @RequireProjectPermission("report:review")
-  async getArtifactDocument(
-    @Param("projectId") projectId: string,
-    @Param("reportId") reportId: string,
-    @Param("artifactId") artifactId: string,
-    @Res() reply: FastifyReply
-  ) {
-    const body = await this.reports.getArtifactDocument(projectId, reportId, artifactId);
-    return sendCustomerReportDocument(reply, body);
-  }
-
   @Post(":reportId/artifacts/retry")
   @RequireProjectPermission("report:review")
   async retryArtifact(
@@ -1458,18 +1486,22 @@ class ReportsController {
   }
 
   @Get("published/:reportId")
-  getPublished(@Param("projectId") projectId: string, @Param("reportId") reportId: string) {
-    return this.reports.getPublished(projectId, reportId);
-  }
-
-  @Get("published/:reportId/document")
-  async getPublishedDocument(
+  async getPublished(
     @Param("projectId") projectId: string,
     @Param("reportId") reportId: string,
-    @Res() reply: FastifyReply
+    @Res({ passthrough: true }) reply: FastifyReply
   ) {
-    const body = await this.reports.getPublishedDocument(projectId, reportId);
-    return sendCustomerReportDocument(reply, body);
+    const detail = await this.reports.getPublished(projectId, reportId);
+    setReportDocumentCapabilityCookie(reply, {
+      kind: "published",
+      projectId,
+      reportId,
+      artifactId: detail.report.artifactId,
+      snapshotSha256: detail.report.snapshotSha256,
+      artifactSha256: detail.report.artifactSha256
+    });
+    reply.header("cache-control", "private, no-store");
+    return detail;
   }
 
   @Post("generations")
@@ -1629,7 +1661,42 @@ class ReportsController {
   }
 }
 
-@Module({ controllers: [ReportsController], providers: [ReportsService], exports: [ReportsService] })
+@Controller("projects/:projectId/reports")
+class ReportDocumentController {
+  constructor(@Inject(ReportsService) private readonly reports: ReportsService) {}
+
+  @Get(":reportId/artifacts/:artifactId/document")
+  async candidateDocument(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Param("artifactId") artifactId: string,
+    @Headers("cookie") cookieHeader: string | undefined,
+    @Res() reply: FastifyReply
+  ) {
+    const claims = requireReportDocumentCapability(cookieHeader, { projectId, reportId, artifactId }, "candidate");
+    const body = await this.reports.getArtifactDocument(claims);
+    return sendCustomerReportDocument(reply, body);
+  }
+
+  @Get("published/:reportId/artifacts/:artifactId/document")
+  async publishedDocument(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Param("artifactId") artifactId: string,
+    @Headers("cookie") cookieHeader: string | undefined,
+    @Res() reply: FastifyReply
+  ) {
+    const claims = requireReportDocumentCapability(cookieHeader, { projectId, reportId, artifactId }, "published");
+    const body = await this.reports.getPublishedDocument(claims);
+    return sendCustomerReportDocument(reply, body);
+  }
+}
+
+@Module({
+  controllers: [ReportsController, ReportDocumentController],
+  providers: [ReportsService],
+  exports: [ReportsService]
+})
 export class ReportsModule {}
 
 function generationAdmission(
@@ -1792,6 +1859,35 @@ function sendCustomerReportDocument(reply: FastifyReply, body: Uint8Array) {
     `default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src 'none'; connect-src 'none'; frame-ancestors ${env.WEB_ORIGIN}; base-uri 'none'; form-action 'none'`
   );
   return reply.send(Buffer.from(body));
+}
+
+function setReportDocumentCapabilityCookie(
+  reply: FastifyReply,
+  claims: Omit<ReportDocumentCapabilityClaims, "version" | "issuedAt" | "expiresAt">
+): void {
+  const token = signReportDocumentCapability(claims, env.PREVIEW_CAPABILITY_SECRET);
+  reply.header("set-cookie", serializeReportDocumentCapabilityCookie(claims.artifactId, token));
+}
+
+function requireReportDocumentCapability(
+  cookieHeader: string | undefined,
+  route: { projectId: string; reportId: string; artifactId: string },
+  kind: ReportDocumentCapabilityClaims["kind"]
+): ReportDocumentCapabilityClaims {
+  requireUuid(route.projectId, "Report project id must be a UUID.");
+  requireUuid(route.reportId, "Report id must be a UUID.");
+  requireUuid(route.artifactId, "Report artifact id must be a UUID.");
+  const claims = readReportDocumentCapability(cookieHeader, route.artifactId, env.PREVIEW_CAPABILITY_SECRET);
+  if (
+    !claims ||
+    claims.kind !== kind ||
+    claims.projectId !== route.projectId ||
+    claims.reportId !== route.reportId ||
+    claims.artifactId !== route.artifactId
+  ) {
+    throw new UnauthorizedException("Report document capability is invalid or expired.");
+  }
+  return claims;
 }
 
 function requiredArtifact(artifact: ReportArtifactRow | undefined): ReportArtifactRow {

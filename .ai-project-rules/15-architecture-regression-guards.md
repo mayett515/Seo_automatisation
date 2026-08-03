@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.28"
+version: "1.1.29"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -350,6 +350,7 @@ Customer Report publication and Next Action
   Rollback report evidence joins the rolled-back target through rollback_points.release_plan_id; rollback_points.deployment_id remains the restore source.
   Non-completed rollback execution evidence is ineligible report input and must be skipped without failing the monthly generation.
   Database review projection ordering must use locale-independent C collation wherever it compares logical evidence keys with canonical JSON.
+  The latest migration that replaces enforce_report_write must retain that collation pin; historical migration text is not sufficient evidence.
   Any internal report completion harness must bind the submitted snapshot to the persisted canonical evidence packet and the deterministic assembler output.
   Submit-for-review must insert one pending HTML artifact bound to the exact snapshot and render-manifest digests in the same issue -> report -> artifact transaction that freezes ready_for_review truth.
   Request-changes must expire pending, running, and staged artifacts before returning reviewed report semantics to draft; a late renderer may leave orphan bytes but must not reattach them.
@@ -365,6 +366,7 @@ Customer Report publication and Next Action
   The fact-only report worker must not invoke a reasoning adapter, publish a report, write an HTML artifact, or execute a Next Action.
   Operator workspace reads require report:review and expose only bounded candidate snapshots, generation status, and artifact summaries; viewer access remains published-only.
   Candidate and published report documents must come from immutable byte-verified artifact routes and remain sandboxed in the UI.
+  Authenticated report detail reads mint exact project/report/artifact/digest-bound document capabilities; sandboxed document routes trust only short-lived HttpOnly Secure SameSite=None Partitioned capability cookies, not application-session delivery from an opaque origin.
   Report UI mutations parse shared digest-bound contracts, and V1 Next Actions navigate only to the allowlisted Opportunity, Page Studio review, and Release review routes.
 ```
 

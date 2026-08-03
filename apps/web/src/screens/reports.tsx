@@ -574,7 +574,14 @@ export function PublishedReportScreen(props: { projectId: string; reportId: stri
         <iframe
           sandbox=""
           src={apiResourceUrl(
-            projectApiPath(props.projectId, "/reports/published/" + encodeURIComponent(props.reportId) + "/document")
+            projectApiPath(
+              props.projectId,
+              "/reports/published/" +
+                encodeURIComponent(props.reportId) +
+                "/artifacts/" +
+                encodeURIComponent(detail.data.report.artifactId) +
+                "/document"
+            )
           )}
           title="Published customer report"
         />

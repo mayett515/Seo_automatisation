@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 type GuardResult = {
   category: string;
@@ -33,6 +33,29 @@ function requireRegex(path: string, pattern: RegExp, category: string, message: 
 function requireNotRegex(path: string, pattern: RegExp, category: string, message: string): void {
   if (pattern.test(read(path))) {
     failures.push({ category, message: `${path}: ${message}` });
+  }
+}
+
+function requireLatestMigrationDefinitionIncludes(
+  functionName: string,
+  text: string,
+  category: string,
+  message: string
+): void {
+  const migrationDirectory = "packages/db/migrations";
+  const definitionMarker = `CREATE OR REPLACE FUNCTION ${functionName}(`;
+  const latestDefinitionPath = readdirSync(migrationDirectory)
+    .filter((fileName) => /^\d+.*\.sql$/u.test(fileName))
+    .sort()
+    .map((fileName) => `${migrationDirectory}/${fileName}`)
+    .filter((path) => read(path).includes(definitionMarker))
+    .at(-1);
+
+  if (!latestDefinitionPath || !read(latestDefinitionPath).includes(text)) {
+    failures.push({
+      category,
+      message: `${latestDefinitionPath ?? migrationDirectory}: ${message}`
+    });
   }
 }
 
@@ -2395,11 +2418,18 @@ requireIncludes(
   "Release-review navigation must remain bound to frozen supporting evidence"
 );
 
-requireIncludes(
-  "packages/db/migrations/0039_report-canonical-collation.sql",
+requireLatestMigrationDefinitionIncludes(
+  "enforce_report_write",
   'ORDER BY "evidence_key" COLLATE "C"',
   "customer-report-generation",
-  "Database review ordering must match canonical code-unit ordering independently of locale"
+  "The latest report trigger definition must keep database review ordering aligned with canonical code-unit ordering"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_report_write",
+  'ORDER BY evidence."evidence_key" COLLATE "C"',
+  "customer-report-generation",
+  "The latest report trigger definition must keep claim-evidence link ordering aligned with canonical code-unit ordering"
 );
 
 requireIncludes(
@@ -2799,6 +2829,41 @@ requireIncludes(
   "reviews and publishes one immutable customer report without mobile overflow",
   "customer-report-ui",
   "Browser coverage must pin explicit review, immutable artifact display, publication, and mobile containment"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "requireReportDocumentCapability(cookieHeader, { projectId, reportId, artifactId }",
+  "customer-report-ui",
+  "Sandboxed report document routes must authorize the exact immutable artifact through a signed capability"
+);
+
+requireIncludes(
+  "apps/api/src/report-document-capability.ts",
+  '"SameSite=None"',
+  "customer-report-ui",
+  "Report document capabilities must survive cross-site opaque-origin iframe navigation"
+);
+
+requireIncludes(
+  "apps/api/src/report-document-capability.ts",
+  '"Partitioned"',
+  "customer-report-ui",
+  "Report document capabilities must remain partitioned to the operator top-level site"
+);
+
+requireIncludes(
+  "apps/web/e2e/report-document-capability.spec.ts",
+  "sandboxed report document sends its partitioned capability on a real cross-site request",
+  "customer-report-ui",
+  "Real-network browser coverage must prove the sandboxed report document receives its capability"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.integration.ts",
+  "keeps the live report review trigger pinned to locale-independent ordering",
+  "customer-report-aggregate",
+  "PostgreSQL coverage must inspect the installed report trigger after all migrations"
 );
 
 requireIncludes(

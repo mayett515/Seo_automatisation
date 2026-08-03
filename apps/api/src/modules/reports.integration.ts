@@ -72,6 +72,20 @@ void describe(
       await handle?.close();
     });
 
+    void it("keeps the live report review trigger pinned to locale-independent ordering", async () => {
+      const [row] = await handle.sql<{ definition: string }[]>`
+        SELECT pg_get_functiondef('enforce_report_write()'::regprocedure) AS "definition"
+      `;
+
+      assert.ok(row);
+      assert.equal(row.definition.match(/COLLATE "C"/gu)?.length, 2);
+      assert.match(row.definition, /jsonb_agg\("evidence_json" ORDER BY "evidence_key" COLLATE "C"\)/u);
+      assert.match(
+        row.definition,
+        /jsonb_agg\(evidence\."evidence_key" ORDER BY evidence\."evidence_key" COLLATE "C"\)/u
+      );
+    });
+
     void it("serializes the first report generation empty-set race on one stable issue", async () => {
       const fixture = await createReportFixture(db, "First generation race");
       const identity = reportIdentity(fixture.projectId);
@@ -559,10 +573,19 @@ void describe(
         reportSnapshot(fixture, "Published July report")
       );
       const body = await stageArtifact(db, artifactReader, candidate.artifact);
-      assert.deepEqual(
-        Buffer.from(await service.getArtifactDocument(fixture.projectId, candidate.reportId, candidate.artifact.id)),
-        body
-      );
+      const artifactSha256 = createHash("sha256").update(body).digest("hex");
+      const candidateCapability = {
+        version: 1,
+        kind: "candidate",
+        projectId: fixture.projectId,
+        reportId: candidate.reportId,
+        artifactId: candidate.artifact.id,
+        snapshotSha256: candidate.snapshotSha256,
+        artifactSha256,
+        issuedAt: 0,
+        expiresAt: 1
+      } as const;
+      assert.deepEqual(Buffer.from(await service.getArtifactDocument(candidateCapability)), body);
       const requestId = randomUUID();
       const published = await service.publish({
         projectId: fixture.projectId,
@@ -594,7 +617,26 @@ void describe(
       assert.equal(issue?.currentPublishedReportId, published.report.id);
       const detail = await service.getPublished(fixture.projectId, published.report.id);
       assert.equal(detail.snapshot.title, "Published July report");
-      assert.deepEqual(Buffer.from(await service.getPublishedDocument(fixture.projectId, published.report.id)), body);
+      assert.deepEqual(
+        Buffer.from(
+          await service.getPublishedDocument({
+            version: 1,
+            kind: "published",
+            projectId: fixture.projectId,
+            reportId: published.report.id,
+            artifactId: candidate.artifact.id,
+            snapshotSha256: candidate.snapshotSha256,
+            artifactSha256,
+            issuedAt: 0,
+            expiresAt: 1
+          })
+        ),
+        body
+      );
+      await assert.rejects(
+        () => service.getArtifactDocument(candidateCapability),
+        /capability-bound staged report artifact is unavailable/u
+      );
       const [event] = await db
         .select()
         .from(reportLifecycleEvents)
