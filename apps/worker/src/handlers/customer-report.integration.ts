@@ -210,7 +210,14 @@ void describe(
       await assert.rejects(
         db
           .update(agentRuns)
-          .set({ outputJson: { schemaVersion: "customer_report_narrative_output.v1", fragments: [] } })
+          .set({
+            outputJson: {
+              schemaVersion: "customer_report_narrative_output.v1",
+              fragments: snapshot.narrative.map((fragment, index) =>
+                index === 0 ? { ...fragment, text: "Andere neutrale Einordnung" } : fragment
+              )
+            }
+          })
           .where(eq(agentRuns.id, fixture.runId)),
         postgresErrorMatches(/Succeeded report narrative agent runs are immutable audit evidence/iu)
       );
