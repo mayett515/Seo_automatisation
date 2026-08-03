@@ -262,7 +262,7 @@ void describe(
               rowVersion: 2
             })
             .where(eq(reports.id, report.id)),
-        postgresErrorMatches(/publication and supersession are not enabled/u)
+        postgresErrorMatches(/publication requires one exact staged immutable artifact/u)
       );
     });
 
