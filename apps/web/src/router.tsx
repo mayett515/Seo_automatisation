@@ -20,6 +20,7 @@ import { PerformanceDashboardScreen } from "./screens/performance-dashboard";
 import { PlaceholderScreen } from "./screens/placeholder-screen";
 import { ProjectDashboardScreen } from "./screens/project-dashboard";
 import { ReleaseDetailScreen } from "./screens/release-detail";
+import { PublishedReportScreen, ReportCandidateScreen, ReportsScreen } from "./screens/reports";
 import { TrackingKeysScreen } from "./screens/tracking-keys";
 
 function RootLayout() {
@@ -96,6 +97,9 @@ function AuthenticatedShell(props: { userEmail: string; onSignOut?: () => Promis
           </Link>
           <Link to="/projects/$projectId/releases" params={{ projectId: "demo-project" }}>
             Releases
+          </Link>
+          <Link to="/projects/$projectId/reports" params={{ projectId: "demo-project" }}>
+            Reports
           </Link>
           <Link to="/projects/$projectId/gsc/connect" params={{ projectId: "demo-project" }}>
             GSC
@@ -188,6 +192,24 @@ const projectReleaseDetailRoute = createRoute({
   component: ReleaseDetailRouteComponent
 });
 
+const projectReportsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/reports",
+  component: ReportsRouteComponent
+});
+
+const projectReportCandidateRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/reports/candidates/$reportId",
+  component: ReportCandidateRouteComponent
+});
+
+const projectPublishedReportRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/reports/published/$reportId",
+  component: PublishedReportRouteComponent
+});
+
 const projectChildRoutes = [
   createRoute({
     getParentRoute: () => rootRoute,
@@ -202,6 +224,9 @@ const projectChildRoutes = [
   projectOpportunitiesRoute,
   projectPagesRoute,
   projectPagePreviewRoute,
+  projectReportsRoute,
+  projectReportCandidateRoute,
+  projectPublishedReportRoute,
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/approvals",
@@ -252,11 +277,6 @@ const projectChildRoutes = [
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/bundles",
     component: () => <PlaceholderScreen title="Bundles" />
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/projects/$projectId/reports",
-    component: () => <PlaceholderScreen title="Google Lagebericht" />
   })
 ];
 
@@ -278,6 +298,21 @@ function PagePreviewRouteComponent() {
 function ReleaseDetailRouteComponent() {
   const params = projectReleaseDetailRoute.useParams();
   return <ReleaseDetailScreen projectId={params.projectId} releasePlanId={params.releasePlanId} />;
+}
+
+function ReportsRouteComponent() {
+  const params = projectReportsRoute.useParams();
+  return <ReportsScreen projectId={params.projectId} />;
+}
+
+function ReportCandidateRouteComponent() {
+  const params = projectReportCandidateRoute.useParams();
+  return <ReportCandidateScreen projectId={params.projectId} reportId={params.reportId} />;
+}
+
+function PublishedReportRouteComponent() {
+  const params = projectPublishedReportRoute.useParams();
+  return <PublishedReportScreen projectId={params.projectId} reportId={params.reportId} />;
 }
 
 const routeTree = rootRoute.addChildren([

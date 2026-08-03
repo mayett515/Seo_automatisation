@@ -21,6 +21,8 @@ import {
 import {
   CreateCustomerReportGenerationRequestSchema,
   CustomerReportClaimSchema,
+  CustomerReportCandidateDetailSchema,
+  CustomerReportCandidateSummarySchema,
   CustomerReportCompletedRollbackEvidenceSchema,
   CustomerReportDecisionNoteSchema,
   CustomerReportArtifactSummarySchema,
@@ -41,13 +43,18 @@ import {
   CustomerReportReviewCommandSchema,
   CustomerReportReviewResponseSchema,
   CustomerReportSnapshotSchema,
+  CustomerReportWorkspaceResponseSchema,
   customerReportHtmlMaxBytes,
   type CustomerReportIdentity,
   type CustomerReportArtifactSummary,
+  type CustomerReportCandidateDetail,
+  type CustomerReportCandidateSummary,
+  type CustomerReportGenerationRun,
   type CustomerReportNarrativeMode,
   type CustomerReportPublishedDetail,
   type CustomerReportPublishedSummary,
-  type CustomerReportSnapshot
+  type CustomerReportSnapshot,
+  type CustomerReportWorkspaceResponse
 } from "@localseo/contracts";
 import type { ImmutableArtifactReaderPort } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
@@ -333,6 +340,91 @@ export class ReportsService {
     });
   }
 
+  async listWorkspace(projectId: string): Promise<CustomerReportWorkspaceResponse> {
+    requireUuid(projectId, "Report project id must be a UUID.");
+    const db = this.database.requireDb();
+    const issues = await db
+      .select()
+      .from(reportIssues)
+      .where(eq(reportIssues.projectId, projectId))
+      .orderBy(desc(reportIssues.period), desc(reportIssues.createdAt))
+      .limit(36);
+    if (issues.length === 0) {
+      return CustomerReportWorkspaceResponseSchema.parse({ issues: [] });
+    }
+
+    const issueIds = issues.map((issue) => issue.id);
+    const candidateIds = issues.flatMap((issue) =>
+      issue.currentCandidateReportId ? [issue.currentCandidateReportId] : []
+    );
+    const candidateRows =
+      candidateIds.length === 0
+        ? []
+        : await db
+            .select()
+            .from(reports)
+            .where(
+              and(
+                eq(reports.projectId, projectId),
+                inArray(reports.id, candidateIds),
+                inArray(reports.status, ["draft", "ready_for_review"])
+              )
+            );
+    const latestRuns = await db
+      .selectDistinctOn([reportGenerationRuns.reportIssueId])
+      .from(reportGenerationRuns)
+      .where(and(eq(reportGenerationRuns.projectId, projectId), inArray(reportGenerationRuns.reportIssueId, issueIds)))
+      .orderBy(asc(reportGenerationRuns.reportIssueId), desc(reportGenerationRuns.createdAt));
+    const candidateById = new Map(candidateRows.map((row) => [row.id, row]));
+    const latestRunByIssueId = new Map(latestRuns.map((run) => [run.reportIssueId, run]));
+
+    return CustomerReportWorkspaceResponseSchema.parse({
+      issues: issues.map((issue) => {
+        const candidate = issue.currentCandidateReportId
+          ? candidateById.get(issue.currentCandidateReportId)
+          : undefined;
+        const latestRun = latestRunByIssueId.get(issue.id);
+        return {
+          reportIssueId: issue.id,
+          period: issue.period,
+          currentPublishedReportId: issue.currentPublishedReportId ?? undefined,
+          candidate: candidate ? reportCandidateSummary(candidate, issue) : undefined,
+          latestGeneration: latestRun ? reportGenerationRunSummary(latestRun) : undefined
+        };
+      })
+    });
+  }
+
+  async getCandidate(projectId: string, reportId: string): Promise<CustomerReportCandidateDetail> {
+    requireUuid(projectId, "Report project id must be a UUID.");
+    requireUuid(reportId, "Report id must be a UUID.");
+    const db = this.database.requireDb();
+    const [row] = await db
+      .select({ report: reports, issue: reportIssues })
+      .from(reports)
+      .innerJoin(reportIssues, eq(reports.reportIssueId, reportIssues.id))
+      .where(
+        and(
+          eq(reports.id, reportId),
+          eq(reports.projectId, projectId),
+          inArray(reports.status, ["draft", "ready_for_review"])
+        )
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("Report candidate was not found for this project.");
+    const artifacts = await db
+      .select()
+      .from(reportArtifacts)
+      .where(and(eq(reportArtifacts.projectId, projectId), eq(reportArtifacts.reportId, reportId)))
+      .orderBy(desc(reportArtifacts.createdAt))
+      .limit(20);
+    return CustomerReportCandidateDetailSchema.parse({
+      report: reportCandidateSummary(row.report, row.issue),
+      snapshot: parseStoredReportSnapshot(row.report),
+      artifacts: artifacts.map(reportArtifactSummary)
+    });
+  }
+
   async persistGeneratedDraft(input: {
     projectId: string;
     runId: string;
@@ -548,6 +640,27 @@ export class ReportsService {
       .limit(1);
     if (!artifact) throw new NotFoundException("Report artifact was not found for this project.");
     return reportArtifactSummary(artifact);
+  }
+
+  async getArtifactDocument(projectId: string, reportId: string, artifactId: string): Promise<Uint8Array> {
+    requireUuid(projectId, "Report project id must be a UUID.");
+    requireUuid(reportId, "Report id must be a UUID.");
+    requireUuid(artifactId, "Report artifact id must be a UUID.");
+    const [artifact] = await this.database
+      .requireDb()
+      .select()
+      .from(reportArtifacts)
+      .where(
+        and(
+          eq(reportArtifacts.id, artifactId),
+          eq(reportArtifacts.reportId, reportId),
+          eq(reportArtifacts.projectId, projectId),
+          eq(reportArtifacts.status, "staged")
+        )
+      )
+      .limit(1);
+    if (!artifact) throw new NotFoundException("Staged report artifact was not found for this project.");
+    return verifyImmutableArtifactBytes(this.requireArtifactReader(), artifact);
   }
 
   async retryArtifact(input: {
@@ -897,7 +1010,8 @@ export class ReportsService {
       .innerJoin(reportIssues, eq(reports.reportIssueId, reportIssues.id))
       .innerJoin(reportArtifacts, eq(reports.publishedArtifactId, reportArtifacts.id))
       .where(and(eq(reports.projectId, projectId), inArray(reports.status, ["published", "superseded"])))
-      .orderBy(desc(reports.publishedAt), desc(reports.versionNumber));
+      .orderBy(desc(reports.publishedAt), desc(reports.versionNumber))
+      .limit(100);
     return Promise.all(rows.map((row) => this.publishedSummary(row.report, row.issue, row.artifact)));
   }
 
@@ -1183,6 +1297,18 @@ class ReportsController {
     @Inject(QueueProducerService) private readonly queues: QueueProducerService
   ) {}
 
+  @Get("workspace")
+  @RequireProjectPermission("report:review")
+  listWorkspace(@Param("projectId") projectId: string) {
+    return this.reports.listWorkspace(projectId);
+  }
+
+  @Get("candidates/:reportId")
+  @RequireProjectPermission("report:review")
+  getCandidate(@Param("projectId") projectId: string, @Param("reportId") reportId: string) {
+    return this.reports.getCandidate(projectId, reportId);
+  }
+
   @Post(":reportId/review")
   @RequireProjectPermission("report:review")
   async review(
@@ -1263,6 +1389,18 @@ class ReportsController {
     return this.reports.getArtifact(projectId, reportId, artifactId);
   }
 
+  @Get(":reportId/artifacts/:artifactId/document")
+  @RequireProjectPermission("report:review")
+  async getArtifactDocument(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Param("artifactId") artifactId: string,
+    @Res() reply: FastifyReply
+  ) {
+    const body = await this.reports.getArtifactDocument(projectId, reportId, artifactId);
+    return sendCustomerReportDocument(reply, body);
+  }
+
   @Post(":reportId/artifacts/retry")
   @RequireProjectPermission("report:review")
   async retryArtifact(
@@ -1331,17 +1469,7 @@ class ReportsController {
     @Res() reply: FastifyReply
   ) {
     const body = await this.reports.getPublishedDocument(projectId, reportId);
-    reply.header("content-type", "text/html; charset=utf-8");
-    reply.header("content-length", body.byteLength);
-    reply.header("cache-control", "private, no-store");
-    reply.header("x-content-type-options", "nosniff");
-    reply.header("referrer-policy", "no-referrer");
-    reply.removeHeader("x-frame-options");
-    reply.header(
-      "content-security-policy",
-      `default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src 'none'; connect-src 'none'; frame-ancestors ${env.WEB_ORIGIN}; base-uri 'none'; form-action 'none'`
-    );
-    return reply.send(Buffer.from(body));
+    return sendCustomerReportDocument(reply, body);
   }
 
   @Post("generations")
@@ -1612,6 +1740,58 @@ function reportArtifactSummary(artifact: ReportArtifactRow): CustomerReportArtif
     createdAt: artifact.createdAt.toISOString(),
     stagedAt: artifact.stagedAt?.toISOString()
   });
+}
+
+function reportCandidateSummary(report: ReportRow, issue: ReportIssueRow): CustomerReportCandidateSummary {
+  const snapshot = parseStoredReportSnapshot(report);
+  return CustomerReportCandidateSummarySchema.parse({
+    reportId: report.id,
+    reportIssueId: report.reportIssueId,
+    versionNumber: report.versionNumber,
+    status: report.status,
+    period: issue.period,
+    title: snapshot.title,
+    snapshotSha256: report.snapshotSha256,
+    rowVersion: report.rowVersion,
+    narrativeMode: report.narrativeMode,
+    generatedAt: snapshot.generatedAt,
+    evidenceCutoffAt: snapshot.evidenceCutoffAt,
+    supersedesReportId: report.supersedesReportId ?? undefined,
+    correctionReason: report.correctionReason ?? undefined,
+    readyAt: report.readyAt?.toISOString(),
+    createdAt: report.createdAt.toISOString()
+  });
+}
+
+function reportGenerationRunSummary(run: ReportGenerationRunRow): CustomerReportGenerationRun {
+  return CustomerReportGenerationRunSchema.parse({
+    reportIssueId: run.reportIssueId,
+    runId: run.id,
+    status: run.status,
+    narrativeMode: run.narrativeMode,
+    evidenceCutoffAt: run.evidenceCutoffAt.toISOString(),
+    evidencePacketSha256: run.evidencePacketSha256 ?? undefined,
+    resultReportId: run.resultReportId ?? undefined,
+    failureCode: run.failureCode ?? undefined,
+    failureMessage: run.failureMessage ?? undefined,
+    createdAt: run.createdAt.toISOString(),
+    startedAt: run.startedAt?.toISOString(),
+    finishedAt: run.finishedAt?.toISOString()
+  });
+}
+
+function sendCustomerReportDocument(reply: FastifyReply, body: Uint8Array) {
+  reply.header("content-type", "text/html; charset=utf-8");
+  reply.header("content-length", body.byteLength);
+  reply.header("cache-control", "private, no-store");
+  reply.header("x-content-type-options", "nosniff");
+  reply.header("referrer-policy", "no-referrer");
+  reply.removeHeader("x-frame-options");
+  reply.header(
+    "content-security-policy",
+    `default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src 'none'; connect-src 'none'; frame-ancestors ${env.WEB_ORIGIN}; base-uri 'none'; form-action 'none'`
+  );
+  return reply.send(Buffer.from(body));
 }
 
 function requiredArtifact(artifact: ReportArtifactRow | undefined): ReportArtifactRow {
@@ -2552,16 +2732,18 @@ async function verifyImmutableArtifactBytes(
     artifact.byteSize === null ||
     artifact.byteSize > customerReportHtmlMaxBytes
   ) {
-    throw new ConflictException("Report publication requires a bounded staged artifact with immutable byte evidence.");
+    throw new ConflictException(
+      "Report document access requires a bounded staged artifact with immutable byte evidence."
+    );
   }
   let body: Uint8Array;
   try {
     body = await reader.readImmutableArtifact({ key: artifact.storageKey, maxBytes: artifact.byteSize + 1 });
   } catch (error) {
-    throw new ServiceUnavailableException("Published report artifact bytes are unavailable.", { cause: error });
+    throw new ServiceUnavailableException("Report artifact bytes are unavailable.", { cause: error });
   }
   if (body.byteLength !== artifact.byteSize || sha256Bytes(body) !== artifact.artifactSha256) {
-    throw new ServiceUnavailableException("Published report artifact bytes failed immutable digest verification.");
+    throw new ServiceUnavailableException("Report artifact bytes failed immutable digest verification.");
   }
   return body;
 }

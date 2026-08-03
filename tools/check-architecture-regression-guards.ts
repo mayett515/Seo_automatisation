@@ -2082,9 +2082,9 @@ requireNotIncludes(
 
 requireIncludes(
   "docs/architecture/agent-first-mvp-roadmap.md",
-  "Status: publication backend implemented; architecture checkpoint accepted by",
+  "Status: first fact-only vertical implemented; architecture checkpoint accepted by",
   "roadmap-current-status",
-  "The roadmap must name the accepted Report and Next Action checkpoint without describing implementation as wholly deferred"
+  "The roadmap must name the implemented first Report and Next Action vertical"
 );
 
 requireIncludes(
@@ -2729,6 +2729,76 @@ requireIncludes(
   "terminalizes a generation admitted before publication and then admits the required correction",
   "customer-report-publication",
   "Publication must not prevent an older active generation from terminalizing as stale"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  "CustomerReportWorkspaceResponseSchema",
+  "customer-report-ui",
+  "The operator report workspace must cross one strict bounded shared contract"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  '@Get("workspace")\n  @RequireProjectPermission("report:review")',
+  "customer-report-ui",
+  "Draft report workspace reads must remain separate from viewer-readable publication history"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "return verifyImmutableArtifactBytes(this.requireArtifactReader(), artifact);",
+  "customer-report-ui",
+  "Reviewed candidate documents must re-verify immutable artifact bytes"
+);
+
+requireIncludes(
+  "apps/web/src/screens/reports.tsx",
+  "CustomerReportReviewResponseSchema",
+  "customer-report-ui",
+  "Report review mutations must parse the shared digest-bound response"
+);
+
+requireIncludes(
+  "apps/web/src/screens/reports.tsx",
+  "CustomerReportPublicationResponseSchema",
+  "customer-report-ui",
+  "Report publication mutations must parse the shared digest-bound response"
+);
+
+requireIncludes(
+  "apps/web/src/screens/reports.tsx",
+  'sandbox=""',
+  "customer-report-ui",
+  "Reviewed and published report artifacts must remain sandboxed in the operator UI"
+);
+
+requireIncludes(
+  "apps/web/src/screens/reports.tsx",
+  'to="/projects/$projectId/opportunities"',
+  "customer-report-ui",
+  "Opportunity report actions must remain navigation into the existing workflow"
+);
+
+requireIncludes(
+  "apps/web/src/screens/reports.tsx",
+  'to="/projects/$projectId/pages/$pageId/preview"',
+  "customer-report-ui",
+  "Page report actions must remain navigation into Page Studio review"
+);
+
+requireIncludes(
+  "apps/web/src/screens/reports.tsx",
+  'to="/projects/$projectId/releases/$releasePlanId"',
+  "customer-report-ui",
+  "Release report actions must remain navigation into release review"
+);
+
+requireIncludes(
+  "apps/web/e2e/customer-report.spec.ts",
+  "reviews and publishes one immutable customer report without mobile overflow",
+  "customer-report-ui",
+  "Browser coverage must pin explicit review, immutable artifact display, publication, and mobile containment"
 );
 
 requireIncludes(

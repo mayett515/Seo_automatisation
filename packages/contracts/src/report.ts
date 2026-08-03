@@ -604,6 +604,42 @@ export const CustomerReportArtifactSummarySchema = z
   })
   .strict();
 
+export const CustomerReportCandidateSummarySchema = z
+  .object({
+    reportId: ReportUuidSchema,
+    reportIssueId: ReportUuidSchema,
+    versionNumber: ReportPositiveIntegerSchema,
+    status: z.enum(["draft", "ready_for_review"]),
+    period: CustomerReportMonthSchema,
+    title: reportText(240),
+    snapshotSha256: CustomerReportSha256Schema,
+    rowVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    narrativeMode: CustomerReportNarrativeModeSchema,
+    generatedAt: CustomerReportTimestampSchema,
+    evidenceCutoffAt: CustomerReportTimestampSchema,
+    supersedesReportId: ReportUuidSchema.optional(),
+    correctionReason: CustomerReportDecisionNoteSchema.optional(),
+    readyAt: CustomerReportTimestampSchema.optional(),
+    createdAt: CustomerReportTimestampSchema
+  })
+  .strict();
+
+export const CustomerReportWorkspaceIssueSchema = z
+  .object({
+    reportIssueId: ReportUuidSchema,
+    period: CustomerReportMonthSchema,
+    currentPublishedReportId: ReportUuidSchema.optional(),
+    candidate: CustomerReportCandidateSummarySchema.optional(),
+    latestGeneration: CustomerReportGenerationRunSchema.optional()
+  })
+  .strict();
+
+export const CustomerReportWorkspaceResponseSchema = z
+  .object({
+    issues: z.array(CustomerReportWorkspaceIssueSchema).max(36)
+  })
+  .strict();
+
 const CustomerReportReviewTargetSchema = z
   .object({
     requestId: ReportUuidSchema,
@@ -784,6 +820,14 @@ export const CustomerReportSnapshotSchema = z
     }
   });
 
+export const CustomerReportCandidateDetailSchema = z
+  .object({
+    report: CustomerReportCandidateSummarySchema,
+    snapshot: CustomerReportSnapshotSchema,
+    artifacts: z.array(CustomerReportArtifactSummarySchema).max(20)
+  })
+  .strict();
+
 export const CustomerReportPublishedDetailSchema = z
   .object({
     report: CustomerReportPublishedSummarySchema,
@@ -849,6 +893,10 @@ export type CustomerReportEvidenceAlertStatus = z.output<typeof CustomerReportEv
 export type CustomerReportHtmlRenderManifest = z.output<typeof CustomerReportHtmlRenderManifestSchema>;
 export type CustomerReportHtmlRenderJobData = z.output<typeof CustomerReportHtmlRenderJobDataSchema>;
 export type CustomerReportArtifactSummary = z.output<typeof CustomerReportArtifactSummarySchema>;
+export type CustomerReportCandidateSummary = z.output<typeof CustomerReportCandidateSummarySchema>;
+export type CustomerReportWorkspaceIssue = z.output<typeof CustomerReportWorkspaceIssueSchema>;
+export type CustomerReportWorkspaceResponse = z.output<typeof CustomerReportWorkspaceResponseSchema>;
+export type CustomerReportCandidateDetail = z.output<typeof CustomerReportCandidateDetailSchema>;
 export type CustomerReportReviewCommand = z.output<typeof CustomerReportReviewCommandSchema>;
 export type CustomerReportReviewResponse = z.output<typeof CustomerReportReviewResponseSchema>;
 export type CustomerReportArtifactRetryCommand = z.output<typeof CustomerReportArtifactRetryCommandSchema>;

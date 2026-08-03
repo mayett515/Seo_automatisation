@@ -242,6 +242,13 @@ void describe(
       assert.equal(reviewed.artifact.reportId, report.id);
       assert.equal(reviewed.artifact.snapshotSha256, report.snapshotSha256);
       assert.equal((await db.select().from(reportArtifacts)).length, 1);
+      const workspace = await service.listWorkspace(fixture.projectId);
+      assert.equal(workspace.issues[0]?.candidate?.reportId, report.id);
+      assert.equal(workspace.issues[0]?.latestGeneration?.resultReportId, report.id);
+      const detail = await service.getCandidate(fixture.projectId, report.id);
+      assert.equal(detail.snapshot.title, snapshot.title);
+      assert.equal(detail.artifacts[0]?.artifactId, reviewed.artifact.id);
+      assert.equal("storageKey" in (detail.artifacts[0] ?? {}), false);
 
       await assert.rejects(
         () => db.update(reports).set({ snapshotCanonicalText: "{}", rowVersion: 2 }).where(eq(reports.id, report.id)),
@@ -552,6 +559,10 @@ void describe(
         reportSnapshot(fixture, "Published July report")
       );
       const body = await stageArtifact(db, artifactReader, candidate.artifact);
+      assert.deepEqual(
+        Buffer.from(await service.getArtifactDocument(fixture.projectId, candidate.reportId, candidate.artifact.id)),
+        body
+      );
       const requestId = randomUUID();
       const published = await service.publish({
         projectId: fixture.projectId,

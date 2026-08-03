@@ -59,6 +59,8 @@ Files:
 - [customer-report-html.test.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report-html.test.ts)
 - [customer-report-html.integration.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report-html.integration.ts)
 - [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
+- [reports-state.test.ts](/C:/localseoproject/apps/web/src/screens/reports-state.test.ts)
+- [customer-report.spec.ts](/C:/localseoproject/apps/web/e2e/customer-report.spec.ts)
 
 Implemented unit tests prove:
 
@@ -86,6 +88,8 @@ The worker integration cases prove that all seven allowed evidence kinds become 
 Slice 3 adds five DB-backed artifact cases. They prove that submit-for-review creates one pending artifact for the exact snapshot and manifest digests; deterministic rendering stages immutable private bytes and replays the same byte identity; request-changes racing a completed storage write expires the artifact and prevents late attachment; mismatched storage evidence fails visibly; missing transport re-enqueues the same artifact id; and bounded recovery exhaustion becomes durable failed artifact truth. Unit coverage proves deterministic script-free rendering, manifest-timezone date display, and a renderer-owned escaping path for snapshot text. Direct database tests also reject review without an exact artifact and confirm request-changes expires a staged derivative before draft semantics reopen while retaining its immutable byte evidence.
 
 Slice 4 adds DB-backed cases for actor-backed failed-artifact retry, exact staged-byte publication and replay, immutable snapshot/document reads, invalidated-ranking publication rejection, durable correction-required alerts, and atomic correction supersession/alert resolution. These cases require `TEST_DATABASE_URL`; GitHub Actions integration remains the migration and race gate when local PostgreSQL is unavailable.
+
+Slice 5 adds strict bounded workspace/candidate response coverage, project-scoped candidate and artifact reads without storage locations, and pure UI-state tests for generation windows, active-run polling, and typed navigation targets. Chromium at 390px proves the explicit draft -> review -> staged immutable document -> publication -> published document flow, asserts the two digest-bound commands, and rejects horizontal viewport overflow. Published history remains readable when the operator workspace permission is unavailable.
 
 ### Release Preflight Rollback Preparation
 

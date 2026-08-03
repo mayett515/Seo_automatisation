@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   CustomerApprovedNextActionEventSchema,
   CreateCustomerReportGenerationRequestSchema,
+  CustomerReportCandidateDetailSchema,
   CustomerReportDecisionNoteSchema,
   CustomerReportArtifactRetryCommandSchema,
   CustomerReportEvidencePacketSchema,
@@ -16,6 +17,7 @@ import {
   CustomerReportReviewCommandSchema,
   CustomerReportReviewResponseSchema,
   CustomerReportSnapshotSchema,
+  CustomerReportWorkspaceResponseSchema,
   PageVersionReportEvidenceSchema,
   ReportGeneratedEventSchema
 } from "./index.js";
@@ -403,6 +405,57 @@ void describe("customer report review and render contracts", () => {
       CustomerReportPublishedDetailSchema.safeParse({
         ...detail,
         report: { ...detail.report, storageKey: "reports/private.html", url: "/arbitrary" }
+      }).success,
+      false
+    );
+  });
+
+  void it("keeps operator workspace candidates bounded and free of storage locations", () => {
+    const snapshot = CustomerReportSnapshotSchema.parse(validSnapshot());
+    const candidate = {
+      reportId,
+      reportIssueId,
+      versionNumber: 1,
+      status: "ready_for_review" as const,
+      period: "2026-07",
+      title: snapshot.title,
+      snapshotSha256: digest,
+      rowVersion: 1,
+      narrativeMode: "fact_only" as const,
+      generatedAt: cutoff,
+      evidenceCutoffAt: cutoff,
+      readyAt: cutoff,
+      createdAt: cutoff
+    };
+    const artifact = {
+      artifactId,
+      reportId,
+      format: "html" as const,
+      status: "staged" as const,
+      snapshotSha256: digest,
+      manifestSha256: "b".repeat(64),
+      artifactSha256: "c".repeat(64),
+      byteSize: 1_024,
+      createdAt: cutoff,
+      stagedAt: cutoff
+    };
+
+    assert.equal(
+      CustomerReportWorkspaceResponseSchema.parse({
+        issues: [{ reportIssueId, period: "2026-07", candidate }]
+      }).issues[0]?.candidate?.reportId,
+      reportId
+    );
+    assert.equal(
+      CustomerReportCandidateDetailSchema.parse({ report: candidate, snapshot, artifacts: [artifact] }).artifacts
+        .length,
+      1
+    );
+    assert.equal(
+      CustomerReportCandidateDetailSchema.safeParse({
+        report: candidate,
+        snapshot,
+        artifacts: [{ ...artifact, storageKey: "reports/private.html" }]
       }).success,
       false
     );

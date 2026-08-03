@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.27"
+version: "1.1.28"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -363,6 +363,9 @@ Customer Report publication and Next Action
   Report generation responses distinguish enqueue work performed by the current request from the durable status of a pre-existing run.
   Report generation is a bounded read_analyze recovery lane only; recovery must reuse jobId = runId and terminalize exhaustion or transport inconsistency as durable failed truth.
   The fact-only report worker must not invoke a reasoning adapter, publish a report, write an HTML artifact, or execute a Next Action.
+  Operator workspace reads require report:review and expose only bounded candidate snapshots, generation status, and artifact summaries; viewer access remains published-only.
+  Candidate and published report documents must come from immutable byte-verified artifact routes and remain sandboxed in the UI.
+  Report UI mutations parse shared digest-bound contracts, and V1 Next Actions navigate only to the allowlisted Opportunity, Page Studio review, and Release review routes.
 ```
 
 </context>

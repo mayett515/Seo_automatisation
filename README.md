@@ -275,7 +275,7 @@ flowchart TD
   K --> L["RAG only when evidence packets become too large or project memory requires retrieval"]
 ```
 
-Steps 1 through 10 are implemented at MVP-baseline depth. The customer-safe Report and Next Action milestone now has its backend publication path:
+Steps 1 through 11 are implemented at MVP-baseline depth. The customer-safe Report and Next Action milestone now has its first useful fact-only vertical:
 
 ```text
 strict report contracts, canonicalization, eligibility, lifecycle, and permissions (implemented)
@@ -287,8 +287,8 @@ strict report contracts, canonicalization, eligibility, lifecycle, and permissio
 -> deterministic claim and narrative validation
 -> digest-bound human review and stored private HTML (implemented)
 -> digest-bound human publication and correction (implemented)
--> authenticated report list/review/publication/history UI (next)
--> allowlisted navigation Next Actions (snapshot descriptors implemented; UI handoff next)
+-> authenticated report list/review/publication/history UI (implemented)
+-> allowlisted navigation Next Actions (snapshot descriptors and UI handoff implemented)
 -> consequential typed command offers only after target CAS hardening
 ```
 
@@ -444,4 +444,4 @@ The repository has a strong foundation for an AI-assisted Local SEO MVP:
 - DB-before-queue recovery for the safe page, media, and verification lanes,
 - AI reasoning boundaries and named task policies.
 
-The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The customer-safe Report and Next Action milestone now includes ADR 0021 Slices 0-4: strict snapshot/provenance contracts, deterministic fact-only assembly, digest-bound review, immutable reviewed HTML, actor-backed render retry, source-serialized publication/correction, correction alerts, and authenticated snapshot-owned published reads. The report UI is the remaining first-vertical slice; `report_narrative`, command actions, PDF, and RAG remain optional later work, and no AI is required for useful reports.
+The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The customer-safe Report and Next Action milestone now includes ADR 0021 Slices 0-5: strict snapshot/provenance contracts, deterministic fact-only assembly, digest-bound review, immutable reviewed HTML, actor-backed render retry, source-serialized publication/correction, correction alerts, authenticated snapshot-owned reads, and the report list/detail/review/publication/history workspace. The first useful report vertical is complete without AI; `report_narrative`, command offers, PDF, RAG, public links, and direct prose editing remain optional later work.
