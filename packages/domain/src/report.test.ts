@@ -5,13 +5,16 @@ import { CustomerReportSnapshotSchema } from "@localseo/contracts";
 import fc from "fast-check";
 import {
   canonicalizeCustomerReportSnapshot,
+  canonicalizeCustomerReportHtmlRenderManifest,
   assembleCustomerReportFactProjection,
+  buildCustomerReportHtmlRenderManifest,
   canonicalizeCustomerReportEvidencePacket,
   customerReportActionQuotas,
   customerReportPeriodWindow,
   customerSafeReleaseWarningForCheck,
   decideCustomerReportGenerationWindow,
   decideCustomerReportActionAvailability,
+  decideCustomerReportArtifactTransition,
   decideCustomerReportClaimEligibility,
   decideCustomerReportTransition,
   rankingMilestoneForRank,
@@ -26,6 +29,7 @@ const rollbackPointId = "44444444-4444-4444-8444-444444444444";
 const deploymentId = "55555555-5555-4555-8555-555555555555";
 const verificationId = "66666666-6666-4666-8666-666666666666";
 const releasePlanId = "77777777-7777-4777-8777-777777777777";
+const reportId = "88888888-8888-4888-8888-888888888888";
 const digest = "a".repeat(64);
 const cutoff = "2026-08-01T10:00:00.000Z";
 
@@ -97,6 +101,46 @@ void describe("customer report canonicalization", () => {
       ),
       { numRuns: 100 }
     );
+  });
+});
+
+void describe("customer report reviewed HTML artifacts", () => {
+  void it("builds and canonicalizes a version-pinned render manifest", () => {
+    const manifest = buildCustomerReportHtmlRenderManifest({
+      projectId,
+      reportId,
+      snapshotSha256: digest,
+      reportSchemaVersion: "customer_report_snapshot.v1",
+      templateVersion: "customer-report-html.v1",
+      locale: "de-DE",
+      timezone: "Europe/Berlin"
+    });
+
+    assert.equal(manifest.rendererVersion, "customer_report_html_renderer.v1");
+    assert.equal(manifest.stylesheetVersion, "customer_report_stylesheet.v1");
+    assert.equal(
+      canonicalizeCustomerReportHtmlRenderManifest(manifest),
+      canonicalizeCustomerReportHtmlRenderManifest({ ...manifest })
+    );
+  });
+
+  void it("allows only the bounded artifact lifecycle", () => {
+    assert.deepEqual(decideCustomerReportArtifactTransition("pending", "claim_render"), {
+      kind: "allow",
+      to: "running"
+    });
+    assert.deepEqual(decideCustomerReportArtifactTransition("running", "stage"), {
+      kind: "allow",
+      to: "staged"
+    });
+    assert.deepEqual(decideCustomerReportArtifactTransition("staged", "expire"), {
+      kind: "allow",
+      to: "expired"
+    });
+    assert.deepEqual(decideCustomerReportArtifactTransition("failed", "claim_render"), {
+      kind: "deny",
+      reason: "illegal_artifact_transition"
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -89,5 +90,54 @@ void describe("filesystem media storage", () => {
       keys: ["media/ready/project/asset/v1/a.webp"],
       truncated: true
     });
+  });
+
+  void it("writes immutable artifacts once and accepts only byte-identical replays", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "localseo-artifact-"));
+    roots.push(root);
+    const storage = new FileSystemObjectStorageAdapter(root);
+    const body = Buffer.from("<html>stable</html>", "utf8");
+    const sha256 = createHash("sha256").update(body).digest("hex");
+    const key = `reports/project/report/html/artifact/${sha256}.html`;
+
+    const first = await storage.putImmutableArtifact({
+      key,
+      body,
+      contentType: "text/html; charset=utf-8",
+      sha256,
+      metadata: { projectId: "project" }
+    });
+    const replay = await storage.putImmutableArtifact({
+      key,
+      body,
+      contentType: "text/html; charset=utf-8",
+      sha256,
+      metadata: { projectId: "project" }
+    });
+
+    assert.deepEqual(replay, first);
+    assert.deepEqual(Buffer.from(await storage.readImmutableArtifact({ key, maxBytes: body.byteLength })), body);
+    assert.deepEqual(await storage.headImmutableArtifact({ key }), first);
+    await assert.rejects(
+      () =>
+        storage.putImmutableArtifact({
+          key,
+          body: Buffer.from("<html>changed</html>", "utf8"),
+          contentType: "text/html; charset=utf-8",
+          sha256: createHash("sha256").update("<html>changed</html>", "utf8").digest("hex")
+        }),
+      /different bytes/u
+    );
+    await assert.rejects(
+      () =>
+        storage.putImmutableArtifact({
+          key,
+          body,
+          contentType: "text/html; charset=utf-8",
+          sha256,
+          metadata: { projectId: "another-project" }
+        }),
+      /different metadata/u
+    );
   });
 });

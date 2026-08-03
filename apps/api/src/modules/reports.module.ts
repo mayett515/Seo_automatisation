@@ -12,6 +12,7 @@ import {
   Param,
   Post,
   Req,
+  ServiceUnavailableException,
   UseGuards,
   UnprocessableEntityException
 } from "@nestjs/common";
@@ -20,6 +21,7 @@ import {
   CustomerReportClaimSchema,
   CustomerReportCompletedRollbackEvidenceSchema,
   CustomerReportDecisionNoteSchema,
+  CustomerReportArtifactSummarySchema,
   CustomerReportEvidencePacketSchema,
   CustomerReportEvidenceItemSchema,
   CustomerReportIdentitySchema,
@@ -27,8 +29,12 @@ import {
   CustomerReportGenerationJobDataSchema,
   CustomerReportGenerationResponseSchema,
   CustomerReportGenerationRunSchema,
+  CustomerReportHtmlRenderJobDataSchema,
+  CustomerReportReviewCommandSchema,
+  CustomerReportReviewResponseSchema,
   CustomerReportSnapshotSchema,
   type CustomerReportIdentity,
+  type CustomerReportArtifactSummary,
   type CustomerReportNarrativeMode,
   type CustomerReportSnapshot
 } from "@localseo/contracts";
@@ -38,6 +44,8 @@ import {
   canonicalizeCustomerReportFactProjection,
   canonicalizeCustomerReportSnapshot,
   canonicalizeCustomerReportSourcePayload,
+  canonicalizeCustomerReportHtmlRenderManifest,
+  buildCustomerReportHtmlRenderManifest,
   customerReportVersions,
   customerSafeReleaseWarningForCheck,
   decideCustomerReportGenerationWindow,
@@ -55,6 +63,7 @@ import {
   releaseVerificationChecks,
   releaseVerifications,
   reportClaimEvidence,
+  reportArtifacts,
   reportClaims,
   reportEvidenceItems,
   reportGenerationRuns,
@@ -64,7 +73,7 @@ import {
   rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -78,6 +87,7 @@ type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[
 type ReportIssueRow = typeof reportIssues.$inferSelect;
 type ReportGenerationRunRow = typeof reportGenerationRuns.$inferSelect;
 type ReportRow = typeof reports.$inferSelect;
+type ReportArtifactRow = typeof reportArtifacts.$inferSelect;
 
 export type CustomerReportGenerationAdmission = {
   kind: "created" | "already_active" | "replayed";
@@ -97,13 +107,25 @@ export type CustomerReportDraftPersistence =
     }
   | { kind: "stale"; reportIssueId: string; runId: string; reason: string };
 
-export type CustomerReportReviewTransition = {
-  kind: "applied" | "replayed";
-  reportId: string;
-  status: ReportRow["status"];
-  rowVersion: number;
-  snapshotSha256: string;
-};
+export type CustomerReportReviewTransition =
+  | {
+      command: "submit_for_review";
+      kind: "applied" | "replayed";
+      reportId: string;
+      status: "ready_for_review";
+      rowVersion: number;
+      snapshotSha256: string;
+      artifact: ReportArtifactRow;
+    }
+  | {
+      command: "request_changes";
+      kind: "applied" | "replayed";
+      reportId: string;
+      status: "draft";
+      rowVersion: number;
+      snapshotSha256: string;
+      renderArtifacts: "expired";
+    };
 
 @Injectable()
 export class ReportsService {
@@ -461,6 +483,26 @@ export class ReportsService {
     return this.reviewTransition({ ...input, decisionNote: decisionNote.data, command: "request_changes" });
   }
 
+  async getArtifact(projectId: string, reportId: string, artifactId: string): Promise<CustomerReportArtifactSummary> {
+    requireUuid(projectId, "Report project id must be a UUID.");
+    requireUuid(reportId, "Report id must be a UUID.");
+    requireUuid(artifactId, "Report artifact id must be a UUID.");
+    const [artifact] = await this.database
+      .requireDb()
+      .select()
+      .from(reportArtifacts)
+      .where(
+        and(
+          eq(reportArtifacts.id, artifactId),
+          eq(reportArtifacts.reportId, reportId),
+          eq(reportArtifacts.projectId, projectId)
+        )
+      )
+      .limit(1);
+    if (!artifact) throw new NotFoundException("Report artifact was not found for this project.");
+    return reportArtifactSummary(artifact);
+  }
+
   private async reviewTransition(input: {
     projectId: string;
     reportId: string;
@@ -503,6 +545,7 @@ export class ReportsService {
       if (!report || !issue || issue.currentCandidateReportId !== report.id) {
         throw new ConflictException("Only the current report candidate can be reviewed.");
       }
+      await lockReportArtifacts(tx, input.projectId, report.id);
 
       const eventType = input.command === "submit_for_review" ? "submitted_for_review" : "changes_requested";
       const [priorEvent] = await tx
@@ -527,7 +570,16 @@ export class ReportsService {
         if (report.snapshotSha256 !== priorEvent.snapshotSha256 || report.status !== priorEvent.toStatus) {
           throw new ConflictException("Report advanced after the prior review decision; reload current truth.");
         }
-        result = reviewResult("replayed", report);
+        if (input.command === "submit_for_review") {
+          const definition = reportArtifactDefinition(report, issue);
+          const artifact = await loadLatestMatchingArtifact(tx, report, definition.manifestSha256);
+          if (!artifact) {
+            throw new Error("Submitted report review is missing its durable HTML artifact.");
+          }
+          result = submitReviewResult("replayed", report, artifact);
+        } else {
+          result = requestChangesResult("replayed", report);
+        }
         return;
       }
 
@@ -545,6 +597,41 @@ export class ReportsService {
       }
 
       const now = new Date();
+      let artifact: ReportArtifactRow | undefined;
+      if (input.command === "submit_for_review") {
+        const artifactId = randomUUID();
+        const definition = reportArtifactDefinition(report, issue);
+        [artifact] = await tx
+          .insert(reportArtifacts)
+          .values({
+            id: artifactId,
+            projectId: input.projectId,
+            reportId: report.id,
+            format: "html",
+            status: "pending",
+            snapshotSha256: report.snapshotSha256,
+            renderManifestJson: definition.manifest,
+            renderManifestCanonicalText: definition.manifestCanonicalText,
+            renderManifestSha256: definition.manifestSha256,
+            queueJobId: artifactId
+          })
+          .returning();
+        if (!artifact) {
+          throw new Error("Report review did not create its durable HTML artifact.");
+        }
+      }
+      if (input.command === "request_changes") {
+        await tx
+          .update(reportArtifacts)
+          .set({ status: "expired", expiredAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(reportArtifacts.projectId, input.projectId),
+              eq(reportArtifacts.reportId, report.id),
+              inArray(reportArtifacts.status, ["pending", "running", "staged"])
+            )
+          );
+      }
       const [updated] = await tx
         .update(reports)
         .set(
@@ -598,7 +685,10 @@ export class ReportsService {
         snapshotSha256: report.snapshotSha256,
         decisionNote: input.decisionNote
       });
-      result = reviewResult("applied", updated);
+      result =
+        input.command === "submit_for_review"
+          ? submitReviewResult("applied", updated, requiredArtifact(artifact))
+          : requestChangesResult("applied", updated);
     });
 
     if (!result) {
@@ -616,6 +706,86 @@ class ReportsController {
     @Inject(ReportsService) private readonly reports: ReportsService,
     @Inject(QueueProducerService) private readonly queues: QueueProducerService
   ) {}
+
+  @Post(":reportId/review")
+  @RequireProjectPermission("report:review")
+  async review(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    const parsed = CustomerReportReviewCommandSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException("Report review requires a valid digest-bound command.");
+    const actorUserId = persistedActorUserId(request);
+    if (!actorUserId) throw new BadRequestException("Report review requires a persisted user id.");
+    if (parsed.data.command === "submit_for_review" && !this.queues.isQueueConfigured("report")) {
+      throw new ServiceUnavailableException("Report review requires configured report rendering transport.");
+    }
+
+    const transition =
+      parsed.data.command === "submit_for_review"
+        ? await this.reports.submitForReview({ projectId, reportId, actorUserId, ...parsed.data })
+        : await this.reports.requestChanges({ projectId, reportId, actorUserId, ...parsed.data });
+
+    if (transition.command === "request_changes") {
+      return CustomerReportReviewResponseSchema.parse(transition);
+    }
+
+    let renderDispatch: "accepted" | "not_required" = "not_required";
+    if (transition.artifact.status === "pending" || transition.artifact.status === "running") {
+      let accepted: boolean;
+      try {
+        accepted = await this.queues.enqueue({
+          queueName: "report",
+          jobName: "customer_report_html_render",
+          jobId: transition.artifact.id,
+          data: CustomerReportHtmlRenderJobDataSchema.parse({
+            projectId,
+            reportId,
+            artifactId: transition.artifact.id,
+            triggerSource: "user_action"
+          }),
+          options: { attempts: 3, backoff: { type: "exponential", delay: 5_000 } },
+          audit: {
+            projectId,
+            type: "report_artifact",
+            inputRef: transition.artifact.id,
+            actorType: "user",
+            actorUserId,
+            triggerSource: "user_action"
+          }
+        });
+      } catch (error) {
+        throw new ServiceUnavailableException("Report rendering transport failed after review.", { cause: error });
+      }
+      if (!accepted) {
+        throw new ServiceUnavailableException("Report rendering transport became unavailable after review.");
+      }
+      renderDispatch = "accepted";
+    }
+
+    return CustomerReportReviewResponseSchema.parse({
+      command: transition.command,
+      kind: transition.kind,
+      reportId: transition.reportId,
+      status: transition.status,
+      rowVersion: transition.rowVersion,
+      snapshotSha256: transition.snapshotSha256,
+      artifact: reportArtifactSummary(transition.artifact),
+      renderDispatch
+    });
+  }
+
+  @Get(":reportId/artifacts/:artifactId")
+  @RequireProjectPermission("report:review")
+  getArtifact(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Param("artifactId") artifactId: string
+  ) {
+    return this.reports.getArtifact(projectId, reportId, artifactId);
+  }
 
   @Post("generations")
   @RequireProjectPermission("report:generate")
@@ -728,14 +898,101 @@ function persistedDraft(kind: "persisted" | "replayed", report: ReportRow): Cust
   };
 }
 
-function reviewResult(kind: "applied" | "replayed", report: ReportRow): CustomerReportReviewTransition {
+function submitReviewResult(
+  kind: "applied" | "replayed",
+  report: ReportRow,
+  artifact: ReportArtifactRow
+): Extract<CustomerReportReviewTransition, { command: "submit_for_review" }> {
+  if (report.status !== "ready_for_review") throw new Error("Submitted report review is not frozen for review.");
   return {
+    command: "submit_for_review",
     kind,
     reportId: report.id,
     status: report.status,
     rowVersion: report.rowVersion,
-    snapshotSha256: report.snapshotSha256
+    snapshotSha256: report.snapshotSha256,
+    artifact
   };
+}
+
+function requestChangesResult(
+  kind: "applied" | "replayed",
+  report: ReportRow
+): Extract<CustomerReportReviewTransition, { command: "request_changes" }> {
+  if (report.status !== "draft") throw new Error("Requested report changes did not restore draft truth.");
+  return {
+    command: "request_changes",
+    kind,
+    reportId: report.id,
+    status: report.status,
+    rowVersion: report.rowVersion,
+    snapshotSha256: report.snapshotSha256,
+    renderArtifacts: "expired"
+  };
+}
+
+function reportArtifactDefinition(report: ReportRow, issue: ReportIssueRow) {
+  const identity = CustomerReportIdentitySchema.parse({
+    projectId: issue.projectId,
+    reportKind: issue.reportKind,
+    period: issue.period,
+    locale: issue.locale,
+    timezone: issue.timezone
+  });
+  const manifest = buildCustomerReportHtmlRenderManifest({
+    projectId: report.projectId,
+    reportId: report.id,
+    snapshotSha256: report.snapshotSha256,
+    reportSchemaVersion: report.schemaVersion,
+    templateVersion: report.templateVersion,
+    locale: identity.locale,
+    timezone: identity.timezone
+  });
+  const manifestCanonicalText = canonicalizeCustomerReportHtmlRenderManifest(manifest);
+  return { manifest, manifestCanonicalText, manifestSha256: sha256(manifestCanonicalText) };
+}
+
+async function loadLatestMatchingArtifact(
+  tx: DatabaseTransaction,
+  report: ReportRow,
+  manifestSha256: string
+): Promise<ReportArtifactRow | undefined> {
+  const [artifact] = await tx
+    .select()
+    .from(reportArtifacts)
+    .where(
+      and(
+        eq(reportArtifacts.reportId, report.id),
+        eq(reportArtifacts.projectId, report.projectId),
+        eq(reportArtifacts.snapshotSha256, report.snapshotSha256),
+        eq(reportArtifacts.renderManifestSha256, manifestSha256)
+      )
+    )
+    .orderBy(desc(reportArtifacts.createdAt), desc(reportArtifacts.id))
+    .limit(1);
+  return artifact;
+}
+
+function reportArtifactSummary(artifact: ReportArtifactRow): CustomerReportArtifactSummary {
+  return CustomerReportArtifactSummarySchema.parse({
+    artifactId: artifact.id,
+    reportId: artifact.reportId,
+    format: artifact.format,
+    status: artifact.status,
+    snapshotSha256: artifact.snapshotSha256,
+    manifestSha256: artifact.renderManifestSha256,
+    artifactSha256: artifact.artifactSha256 ?? undefined,
+    byteSize: artifact.byteSize ?? undefined,
+    failureCode: artifact.failureCode ?? undefined,
+    failureMessage: artifact.failureMessage ?? undefined,
+    createdAt: artifact.createdAt.toISOString(),
+    stagedAt: artifact.stagedAt?.toISOString()
+  });
+}
+
+function requiredArtifact(artifact: ReportArtifactRow | undefined): ReportArtifactRow {
+  if (!artifact) throw new Error("Report review did not produce a durable HTML artifact.");
+  return artifact;
 }
 
 async function lockAndLoadReportIssueByIdentity(
@@ -780,6 +1037,16 @@ async function lockReportGenerationRun(tx: DatabaseTransaction, projectId: strin
 
 async function lockReport(tx: DatabaseTransaction, projectId: string, reportId: string): Promise<void> {
   await tx.execute(sql`SELECT "id" FROM "reports" WHERE "id" = ${reportId} AND "project_id" = ${projectId} FOR UPDATE`);
+}
+
+async function lockReportArtifacts(tx: DatabaseTransaction, projectId: string, reportId: string): Promise<void> {
+  await tx.execute(sql`
+    SELECT "id"
+    FROM "report_artifacts"
+    WHERE "project_id" = ${projectId} AND "report_id" = ${reportId}
+    ORDER BY "id"
+    FOR UPDATE
+  `);
 }
 
 async function loadCurrentCandidate(tx: DatabaseTransaction, issue: ReportIssueRow): Promise<ReportRow | undefined> {

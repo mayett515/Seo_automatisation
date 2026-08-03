@@ -281,6 +281,13 @@
       "when": 1785711093900,
       "tag": "0039_report-canonical-collation",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1785712680766,
+      "tag": "0040_customer-report-html-artifacts",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,7 @@ import {
   type AiReasoningPort,
   type MediaAssetCleanupStoragePort,
   type MediaAssetStoragePort,
+  type ImmutableArtifactStoragePort,
   S3ObjectStorageAdapter,
   type ObjectStoragePort,
   type SearchConsolePort,
@@ -45,6 +46,12 @@ import {
   CustomerReportEvidenceError,
   handleCustomerReportGenerationJob
 } from "./handlers/customer-report.js";
+import {
+  CustomerReportHtmlConfigurationError,
+  CustomerReportHtmlEvidenceError,
+  handleCustomerReportHtmlRenderJob,
+  parseCustomerReportHtmlRenderJobData
+} from "./handlers/customer-report-html.js";
 import {
   handleOpportunityScoutJob,
   OpportunityScoutConfigurationError,
@@ -264,6 +271,10 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     });
   }
 
+  if (job.name === "customer_report_html_render") {
+    return handleCustomerReportHtmlRenderJob(job, sharedDbHandle, sharedObjectStorage);
+  }
+
   if (job.queueName === "report" || job.name === "customer_report_generation") {
     return handleCustomerReportGenerationJob(job, sharedDbHandle);
   }
@@ -281,6 +292,7 @@ export { parseTechnicalAuditJobData } from "./handlers/technical-audit.js";
 export { parseWebsiteImportJobData } from "./handlers/website-import.js";
 export { parseReleaseVerificationJobData };
 export { parseCustomerReportGenerationJobData } from "./handlers/customer-report.js";
+export { parseCustomerReportHtmlRenderJobData };
 
 export function isTerminalWorkerError(error: unknown): boolean {
   return (
@@ -313,6 +325,8 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof ReleaseVerificationEvidenceError ||
     error instanceof CustomerReportConfigurationError ||
     error instanceof CustomerReportEvidenceError ||
+    error instanceof CustomerReportHtmlConfigurationError ||
+    error instanceof CustomerReportHtmlEvidenceError ||
     isTerminalGscSyncFailure(error)
   );
 }
@@ -343,7 +357,7 @@ function createSiteHostingAdapter(
 
 export function createObjectStorageAdapter(
   input: Pick<AppEnv, "NODE_ENV" | "S3_BUCKET" | "AWS_REGION" | "LOCAL_OBJECT_STORAGE_DIR"> = env
-): ObjectStoragePort & MediaAssetStoragePort & MediaAssetCleanupStoragePort {
+): ObjectStoragePort & MediaAssetStoragePort & MediaAssetCleanupStoragePort & ImmutableArtifactStoragePort {
   if (input.NODE_ENV === "production") {
     if (!input.S3_BUCKET) {
       throw new Error("Production worker storage requires S3_BUCKET.");

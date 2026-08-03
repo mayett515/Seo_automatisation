@@ -3,6 +3,8 @@ import {
   approvalStatuses,
   customerReportClaimKinds,
   customerReportEvidenceKinds,
+  customerReportArtifactFormats,
+  customerReportArtifactStatuses,
   customerReportGenerationStatuses,
   customerReportKinds,
   customerReportLifecycleEventTypes,
@@ -41,6 +43,7 @@ import {
 import type {
   CustomerReportClaim,
   CustomerReportEvidenceItem,
+  CustomerReportHtmlRenderManifest,
   PageJson,
   PageProposalJson,
   PageSectionNoteFieldPath,
@@ -118,6 +121,14 @@ export const customerReportEvidenceKindEnum = pgEnum("customer_report_evidence_k
 export const customerReportLifecycleEventTypeEnum = pgEnum(
   "customer_report_lifecycle_event_type",
   customerReportLifecycleEventTypes
+);
+export const customerReportArtifactStatusEnum = pgEnum(
+  "customer_report_artifact_status",
+  customerReportArtifactStatuses
+);
+export const customerReportArtifactFormatEnum = pgEnum(
+  "customer_report_artifact_format",
+  customerReportArtifactFormats
 );
 
 const timestamps = {
@@ -1140,6 +1151,64 @@ export const reports = pgTable(
     check(
       "reports_correction_identity_check",
       sql`(${table.supersedesReportId} is null and ${table.correctionReason} is null) or (${table.supersedesReportId} is not null and ${table.correctionReason} is not null)`
+    )
+  ]
+);
+
+export const reportArtifacts = pgTable(
+  "report_artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    reportId: uuid("report_id").notNull(),
+    format: customerReportArtifactFormatEnum("format").notNull().default("html"),
+    status: customerReportArtifactStatusEnum("status").notNull().default("pending"),
+    snapshotSha256: text("snapshot_sha256").notNull(),
+    renderManifestJson: jsonb("render_manifest_json").$type<CustomerReportHtmlRenderManifest>().notNull(),
+    renderManifestCanonicalText: text("render_manifest_canonical_text").notNull(),
+    renderManifestSha256: text("render_manifest_sha256").notNull(),
+    queueJobId: text("queue_job_id").notNull(),
+    storageKey: text("storage_key"),
+    artifactSha256: text("artifact_sha256"),
+    byteSize: integer("byte_size"),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    recoveryCount: integer("recovery_count").default(0).notNull(),
+    lastRecoveryAt: timestamp("last_recovery_at", { withTimezone: true }),
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    stagedAt: timestamp("staged_at", { withTimezone: true }),
+    expiredAt: timestamp("expired_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.reportId, table.projectId],
+      foreignColumns: [reports.id, reports.projectId],
+      name: "report_artifacts_report_project_fk"
+    }),
+    uniqueIndex("report_artifacts_identity_idx")
+      .on(table.reportId, table.format, table.snapshotSha256, table.renderManifestSha256)
+      .where(sql`${table.status} in ('pending', 'running', 'staged')`),
+    uniqueIndex("report_artifacts_queue_job_idx").on(table.queueJobId),
+    index("report_artifacts_project_status_created_idx").on(table.projectId, table.status, table.createdAt),
+    index("report_artifacts_recovery_scan_idx")
+      .on(table.status, table.updatedAt)
+      .where(sql`${table.status} in ('pending', 'running')`),
+    check("report_artifacts_snapshot_sha256_check", sql`${table.snapshotSha256} ~ '^[0-9a-f]{64}$'`),
+    check("report_artifacts_manifest_sha256_check", sql`${table.renderManifestSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "report_artifacts_artifact_sha256_check",
+      sql`${table.artifactSha256} is null or ${table.artifactSha256} ~ '^[0-9a-f]{64}$'`
+    ),
+    check("report_artifacts_attempt_count_check", sql`${table.attemptCount} >= 0`),
+    check("report_artifacts_recovery_count_check", sql`${table.recoveryCount} >= 0`),
+    check("report_artifacts_byte_size_check", sql`${table.byteSize} is null or ${table.byteSize} >= 0`),
+    check(
+      "report_artifacts_terminal_evidence_check",
+      sql`(${table.status} in ('pending', 'running') and ${table.storageKey} is null and ${table.artifactSha256} is null and ${table.byteSize} is null and ${table.failureCode} is null and ${table.failureMessage} is null and ${table.stagedAt} is null and ${table.expiredAt} is null) or (${table.status} = 'staged' and ${table.storageKey} is not null and ${table.artifactSha256} is not null and ${table.byteSize} is not null and ${table.failureCode} is null and ${table.failureMessage} is null and ${table.stagedAt} is not null and ${table.expiredAt} is null) or (${table.status} = 'failed' and ${table.storageKey} is null and ${table.artifactSha256} is null and ${table.byteSize} is null and ${table.failureCode} is not null and ${table.failureMessage} is not null and ${table.stagedAt} is null and ${table.expiredAt} is null) or (${table.status} = 'expired' and ${table.expiredAt} is not null)`
     )
   ]
 );

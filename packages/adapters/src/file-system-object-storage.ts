@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -5,11 +6,13 @@ import type {
   MediaAssetStoragePort,
   MediaPrivateObjectListing,
   MediaStoredObjectMetadata,
+  ImmutableArtifactStoragePort,
+  ImmutableArtifactStoredObject,
   ObjectStoragePort
 } from "./index.js";
 
 export class FileSystemObjectStorageAdapter
-  implements ObjectStoragePort, MediaAssetStoragePort, MediaAssetCleanupStoragePort
+  implements ObjectStoragePort, MediaAssetStoragePort, MediaAssetCleanupStoragePort, ImmutableArtifactStoragePort
 {
   constructor(private readonly rootDir: string) {}
 
@@ -23,6 +26,60 @@ export class FileSystemObjectStorageAdapter
   async getJson(input: { key: string }): Promise<unknown> {
     const targetPath = this.pathForKey(input.key);
     return JSON.parse(await readFile(targetPath, "utf8")) as unknown;
+  }
+
+  async putImmutableArtifact(input: {
+    key: string;
+    body: Uint8Array;
+    contentType: string;
+    sha256: string;
+    metadata?: Record<string, string>;
+  }): Promise<ImmutableArtifactStoredObject> {
+    if (sha256Bytes(input.body) !== input.sha256) {
+      throw new Error(`Immutable artifact checksum does not match its bytes: ${input.key}`);
+    }
+    const targetPath = this.pathForKey(input.key);
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    try {
+      await writeFile(targetPath, input.body, { flag: "wx" });
+    } catch (error) {
+      if (!isFileExists(error)) throw error;
+      const existing = await readFile(targetPath);
+      if (sha256Bytes(existing) !== input.sha256 || !Buffer.from(existing).equals(Buffer.from(input.body))) {
+        throw new Error(`Immutable artifact key already contains different bytes: ${input.key}`, { cause: error });
+      }
+    }
+
+    const metadata = { ...input.metadata, contentType: input.contentType, sha256: input.sha256 };
+    try {
+      await writeFile(this.metadataPath(input.key), `${JSON.stringify(metadata, null, 2)}\n`, {
+        encoding: "utf8",
+        flag: "wx"
+      });
+    } catch (error) {
+      if (!isFileExists(error)) throw error;
+      const existing = await this.readMetadata(input.key);
+      if (!sameStringRecord(existing, metadata)) {
+        throw new Error(`Immutable artifact key already contains different metadata: ${input.key}`, { cause: error });
+      }
+    }
+
+    return {
+      key: input.key,
+      contentType: input.contentType,
+      contentLength: input.body.byteLength,
+      sha256: input.sha256
+    };
+  }
+
+  async readImmutableArtifact(input: { key: string; maxBytes: number }): Promise<Uint8Array> {
+    return this.readPrivateObject(input);
+  }
+
+  async headImmutableArtifact(input: { key: string }): Promise<ImmutableArtifactStoredObject | undefined> {
+    const metadata = await this.headPrivateObject(input);
+    if (metadata?.contentLength === undefined || !metadata.sha256) return undefined;
+    return { ...metadata, contentLength: metadata.contentLength, sha256: metadata.sha256 };
   }
 
   createUploadGrant(input: {
@@ -127,12 +184,9 @@ export class FileSystemObjectStorageAdapter
     };
   }
 
-  private async readMetadata(key: string): Promise<{ contentType?: string; sha256?: string } | undefined> {
+  private async readMetadata(key: string): Promise<Record<string, string> | undefined> {
     try {
-      return JSON.parse(await readFile(this.metadataPath(key), "utf8")) as {
-        contentType?: string;
-        sha256?: string;
-      };
+      return JSON.parse(await readFile(this.metadataPath(key), "utf8")) as Record<string, string>;
     } catch (error) {
       if (isFileNotFound(error)) {
         return undefined;
@@ -157,8 +211,26 @@ export class FileSystemObjectStorageAdapter
   }
 }
 
+function sameStringRecord(left: Record<string, string> | undefined, right: Record<string, string>): boolean {
+  if (!left) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key])
+  );
+}
+
 function isFileNotFound(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
+}
+
+function isFileExists(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "EEXIST");
+}
+
+function sha256Bytes(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 async function unlinkIfPresent(targetPath: string): Promise<void> {

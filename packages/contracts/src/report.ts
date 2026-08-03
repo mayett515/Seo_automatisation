@@ -20,6 +20,8 @@ export const customerReportLifecycleEventTypes = [
   "published",
   "superseded"
 ] as const;
+export const customerReportArtifactStatuses = ["pending", "running", "staged", "failed", "expired"] as const;
+export const customerReportArtifactFormats = ["html"] as const;
 export const customerReportClaimKinds = [
   "ranking_result",
   "page_delivery",
@@ -53,6 +55,8 @@ export const CustomerReportStatusSchema = z.enum(customerReportStatuses);
 export const CustomerReportGenerationStatusSchema = z.enum(customerReportGenerationStatuses);
 export const CustomerReportNarrativeModeSchema = z.enum(customerReportNarrativeModes);
 export const CustomerReportLifecycleEventTypeSchema = z.enum(customerReportLifecycleEventTypes);
+export const CustomerReportArtifactStatusSchema = z.enum(customerReportArtifactStatuses);
+export const CustomerReportArtifactFormatSchema = z.enum(customerReportArtifactFormats);
 export const CustomerReportClaimKindSchema = z.enum(customerReportClaimKinds);
 export const CustomerReportSectionSchema = z.enum(customerReportSections);
 export const CustomerReportEvidenceKindSchema = z.enum(customerReportEvidenceKinds);
@@ -553,6 +557,91 @@ export const CustomerReportGenerationRunSchema = z
   })
   .strict();
 
+export const CustomerReportHtmlRenderManifestSchema = z
+  .object({
+    schemaVersion: z.literal("customer_report_html_manifest.v1"),
+    projectId: ReportUuidSchema,
+    reportId: ReportUuidSchema,
+    snapshotSha256: CustomerReportSha256Schema,
+    reportSchemaVersion: ReportVersionTokenSchema,
+    templateVersion: ReportVersionTokenSchema,
+    rendererVersion: z.literal("customer_report_html_renderer.v1"),
+    stylesheetVersion: z.literal("customer_report_stylesheet.v1"),
+    locale: CustomerReportLocaleSchema,
+    timezone: CustomerReportTimezoneSchema
+  })
+  .strict();
+
+export const CustomerReportHtmlRenderJobDataSchema = z
+  .object({
+    projectId: ReportUuidSchema,
+    reportId: ReportUuidSchema,
+    artifactId: ReportUuidSchema,
+    maxAttempts: z.number().int().positive().max(20).optional(),
+    jobRunId: ReportUuidSchema.optional(),
+    triggerSource: z.enum(["user_action", "work_recovery"]).optional()
+  })
+  .strict();
+
+export const CustomerReportArtifactSummarySchema = z
+  .object({
+    artifactId: ReportUuidSchema,
+    reportId: ReportUuidSchema,
+    format: CustomerReportArtifactFormatSchema,
+    status: CustomerReportArtifactStatusSchema,
+    snapshotSha256: CustomerReportSha256Schema,
+    manifestSha256: CustomerReportSha256Schema,
+    artifactSha256: CustomerReportSha256Schema.optional(),
+    byteSize: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    failureCode: reportText(120).optional(),
+    failureMessage: reportText(2_000).optional(),
+    createdAt: CustomerReportTimestampSchema,
+    stagedAt: CustomerReportTimestampSchema.optional()
+  })
+  .strict();
+
+const CustomerReportReviewTargetSchema = z
+  .object({
+    requestId: ReportUuidSchema,
+    expectedSnapshotSha256: CustomerReportSha256Schema,
+    expectedRowVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+  })
+  .strict();
+
+export const CustomerReportReviewCommandSchema = z.discriminatedUnion("command", [
+  CustomerReportReviewTargetSchema.extend({ command: z.literal("submit_for_review") }).strict(),
+  CustomerReportReviewTargetSchema.extend({
+    command: z.literal("request_changes"),
+    decisionNote: CustomerReportDecisionNoteSchema
+  }).strict()
+]);
+
+export const CustomerReportReviewResponseSchema = z.discriminatedUnion("command", [
+  z
+    .object({
+      command: z.literal("submit_for_review"),
+      kind: z.enum(["applied", "replayed"]),
+      reportId: ReportUuidSchema,
+      status: z.literal("ready_for_review"),
+      rowVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      snapshotSha256: CustomerReportSha256Schema,
+      artifact: CustomerReportArtifactSummarySchema,
+      renderDispatch: z.enum(["accepted", "not_required"])
+    })
+    .strict(),
+  z
+    .object({
+      command: z.literal("request_changes"),
+      kind: z.enum(["applied", "replayed"]),
+      reportId: ReportUuidSchema,
+      status: z.literal("draft"),
+      rowVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      snapshotSha256: CustomerReportSha256Schema,
+      renderArtifacts: z.literal("expired")
+    })
+    .strict()
+]);
+
 export const CustomerReportNarrativeFragmentSchema = z
   .object({
     slotKey: ReportLogicalKeySchema,
@@ -688,6 +777,13 @@ export type CreateCustomerReportGenerationRequest = z.output<typeof CreateCustom
 export type CustomerReportGenerationJobData = z.output<typeof CustomerReportGenerationJobDataSchema>;
 export type CustomerReportGenerationResponse = z.output<typeof CustomerReportGenerationResponseSchema>;
 export type CustomerReportGenerationRun = z.output<typeof CustomerReportGenerationRunSchema>;
+export type CustomerReportArtifactStatus = z.output<typeof CustomerReportArtifactStatusSchema>;
+export type CustomerReportArtifactFormat = z.output<typeof CustomerReportArtifactFormatSchema>;
+export type CustomerReportHtmlRenderManifest = z.output<typeof CustomerReportHtmlRenderManifestSchema>;
+export type CustomerReportHtmlRenderJobData = z.output<typeof CustomerReportHtmlRenderJobDataSchema>;
+export type CustomerReportArtifactSummary = z.output<typeof CustomerReportArtifactSummarySchema>;
+export type CustomerReportReviewCommand = z.output<typeof CustomerReportReviewCommandSchema>;
+export type CustomerReportReviewResponse = z.output<typeof CustomerReportReviewResponseSchema>;
 export type CustomerReportNarrativeFragment = z.output<typeof CustomerReportNarrativeFragmentSchema>;
 export type CustomerReportSnapshot = z.output<typeof CustomerReportSnapshotSchema>;
 export type ReportGeneratedEvent = z.output<typeof ReportGeneratedEventSchema>;

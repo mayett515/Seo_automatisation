@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.25"
+version: "1.1.26"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -348,6 +348,15 @@ Customer Report publication and Next Action
   Non-completed rollback execution evidence is ineligible report input and must be skipped without failing the monthly generation.
   Database review projection ordering must use locale-independent C collation wherever it compares logical evidence keys with canonical JSON.
   Any internal report completion harness must bind the submitted snapshot to the persisted canonical evidence packet and the deterministic assembler output.
+  Submit-for-review must insert one pending HTML artifact bound to the exact snapshot and render-manifest digests in the same issue -> report -> artifact transaction that freezes ready_for_review truth.
+  Request-changes must expire pending, running, and staged artifacts before returning reviewed report semantics to draft; a late renderer may leave orphan bytes but must not reattach them.
+  Report artifact status is derivative workflow truth, never report publication truth; staged does not mean published.
+  Customer report HTML rendering may read only the stored canonical snapshot and strict render manifest, and must write through a purpose-named immutable private-artifact port.
+  The renderer must re-parse and re-digest snapshot and manifest, emit bounded script-free HTML, verify immutable storage byte identity, and attach evidence only while the exact reviewed digest still owns the artifact.
+  Customer-facing report dates must use the render manifest's pinned locale/timezone; worker-host timezone must not alter immutable bytes.
+  Failed artifact generation must have an actor-backed re-render path before publication ships and must not require a false request-changes semantic event.
+  Report artifact recovery is a separate artifact_capture lane with deterministic jobId = artifactId; it may re-enqueue or fail artifact truth but must not mutate report semantics or publication.
+  Report review, rendering attachment, request-changes, and artifact recovery lock shared rows in issue -> report -> artifact order.
   Report generation responses distinguish enqueue work performed by the current request from the durable status of a pre-existing run.
   Report generation is a bounded read_analyze recovery lane only; recovery must reuse jobId = runId and terminalize exhaustion or transport inconsistency as durable failed truth.
   The fact-only report worker must not invoke a reasoning adapter, publish a report, write an HTML artifact, or execute a Next Action.

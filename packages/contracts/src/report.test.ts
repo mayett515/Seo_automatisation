@@ -7,6 +7,10 @@ import {
   CustomerReportFactProjectionSchema,
   CustomerReportGenerationJobDataSchema,
   CustomerReportGenerationResponseSchema,
+  CustomerReportHtmlRenderJobDataSchema,
+  CustomerReportHtmlRenderManifestSchema,
+  CustomerReportReviewCommandSchema,
+  CustomerReportReviewResponseSchema,
   CustomerReportSnapshotSchema,
   PageVersionReportEvidenceSchema,
   ReportGeneratedEventSchema
@@ -20,6 +24,7 @@ const reportIssueId = "55555555-5555-4555-8555-555555555555";
 const generationRunId = "66666666-6666-4666-8666-666666666666";
 const actorUserId = "77777777-7777-4777-8777-777777777777";
 const receiptId = "88888888-8888-4888-8888-888888888888";
+const artifactId = "88888888-8888-4888-9888-888888888888";
 const deploymentId = "99999999-9999-4999-8999-999999999999";
 const releasePlanId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const digest = "a".repeat(64);
@@ -255,6 +260,94 @@ void describe("CustomerReportSnapshotSchema", () => {
             target: { surface: "release_review", releasePlanId: actorUserId }
           }
         ]
+      }).success,
+      false
+    );
+  });
+});
+
+void describe("customer report review and render contracts", () => {
+  void it("pins a strict immutable HTML render manifest and job identity", () => {
+    const manifest = CustomerReportHtmlRenderManifestSchema.parse({
+      schemaVersion: "customer_report_html_manifest.v1",
+      projectId,
+      reportId,
+      snapshotSha256: digest,
+      reportSchemaVersion: "customer_report_snapshot.v1",
+      templateVersion: "customer_report_html.v1",
+      rendererVersion: "customer_report_html_renderer.v1",
+      stylesheetVersion: "customer_report_stylesheet.v1",
+      locale: "de-DE",
+      timezone: "Europe/Berlin"
+    });
+    const job = CustomerReportHtmlRenderJobDataSchema.parse({ projectId, reportId, artifactId });
+
+    assert.equal(manifest.snapshotSha256, digest);
+    assert.equal(job.artifactId, artifactId);
+    assert.equal(CustomerReportHtmlRenderManifestSchema.safeParse({ ...manifest, liveData: true }).success, false);
+    assert.equal(CustomerReportHtmlRenderJobDataSchema.safeParse({ ...job, storageKey: "private/key" }).success, false);
+  });
+
+  void it("keeps submit and request-changes review commands closed and explicit", () => {
+    const submit = CustomerReportReviewCommandSchema.parse({
+      command: "submit_for_review",
+      requestId: receiptId,
+      expectedSnapshotSha256: digest,
+      expectedRowVersion: 0
+    });
+    const requestChanges = CustomerReportReviewCommandSchema.parse({
+      command: "request_changes",
+      requestId: receiptId,
+      expectedSnapshotSha256: digest,
+      expectedRowVersion: 1,
+      decisionNote: "Die Rangfolge braucht eine erneute Pruefung."
+    });
+
+    assert.equal(submit.command, "submit_for_review");
+    assert.equal(requestChanges.command, "request_changes");
+    assert.equal(
+      CustomerReportReviewCommandSchema.safeParse({ ...submit, decisionNote: "not allowed" }).success,
+      false
+    );
+    assert.equal(
+      CustomerReportReviewCommandSchema.safeParse({
+        command: "request_changes",
+        requestId: receiptId,
+        expectedSnapshotSha256: digest,
+        expectedRowVersion: 1,
+        decisionNote: "\u0000"
+      }).success,
+      false
+    );
+  });
+
+  void it("returns artifact identity without exposing private storage keys", () => {
+    const response = CustomerReportReviewResponseSchema.parse({
+      command: "submit_for_review",
+      kind: "applied",
+      reportId,
+      status: "ready_for_review",
+      rowVersion: 1,
+      snapshotSha256: digest,
+      artifact: {
+        artifactId,
+        reportId,
+        format: "html",
+        status: "pending",
+        snapshotSha256: digest,
+        manifestSha256: "b".repeat(64),
+        createdAt: cutoff
+      },
+      renderDispatch: "accepted"
+    });
+
+    assert.equal(response.command, "submit_for_review");
+    if (response.command !== "submit_for_review") throw new Error("Expected submit-for-review response.");
+    assert.equal(response.artifact.artifactId, artifactId);
+    assert.equal(
+      CustomerReportReviewResponseSchema.safeParse({
+        ...response,
+        artifact: { ...response.artifact, storageKey: "reports/private.html" }
       }).success,
       false
     );

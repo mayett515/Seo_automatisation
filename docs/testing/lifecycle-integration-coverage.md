@@ -56,6 +56,8 @@ Files:
 - [permission.guard.test.ts](/C:/localseoproject/apps/api/src/auth/permissions/permission.guard.test.ts)
 - [reports.integration.ts](/C:/localseoproject/apps/api/src/modules/reports.integration.ts)
 - [customer-report.integration.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report.integration.ts)
+- [customer-report-html.test.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report-html.test.ts)
+- [customer-report-html.integration.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report-html.integration.ts)
 - [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
 
 Implemented unit tests prove:
@@ -79,9 +81,11 @@ The DB-backed aggregate suite proves:
 7. Evidence whose durable source belongs to another project is rejected before any report version persists.
 8. A durable evidence source changed after generation prevents review of the stale snapshot.
 
-The worker integration cases prove that all seven allowed evidence kinds become one project-scoped canonical bounded packet, only the latest terminal verification contributes health, internal/GSC/raw check text stays out, production-shaped rollback points resolve the rolled-back plan target while incomplete preflight rows are skipped, rolled-back deployments do not claim provider handoff, duplicate delivery coalesces to one draft/event, and deterministic fact-only claims/actions persist without an AI adapter. The stale-work suite proves same-run re-enqueue plus visible bounded exhaustion and completed-transport inconsistency. Migration `0039_report-canonical-collation` pins the review trigger's evidence/link aggregation to locale-independent code-unit ordering before reviewed artifacts ship.
+The worker integration cases prove that all seven allowed evidence kinds become one project-scoped canonical bounded packet, only the latest terminal verification contributes health, internal/GSC/raw check text stays out, production-shaped rollback points resolve the rolled-back plan target while incomplete preflight rows are skipped, rolled-back deployments do not claim provider handoff, duplicate delivery coalesces to one draft/event, and deterministic fact-only claims/actions persist without an AI adapter. The stale-work suite proves same-run re-enqueue plus visible bounded exhaustion and completed-transport inconsistency. Migration `0039_report-canonical-collation` pins the review trigger's evidence/link aggregation to locale-independent code-unit ordering.
 
-The report aggregate cases previously passed against the documented local PostgreSQL 17 test runtime. Slice 2's new DB-backed worker, source-drift, and recovery cases require `TEST_DATABASE_URL`; GitHub Actions integration remains the merge gate. Publication, correction, artifact, and source-invalidation races remain correctly deferred to their ordered slices.
+Slice 3 adds five DB-backed artifact cases. They prove that submit-for-review creates one pending artifact for the exact snapshot and manifest digests; deterministic rendering stages immutable private bytes and replays the same byte identity; request-changes racing a completed storage write expires the artifact and prevents late attachment; mismatched storage evidence fails visibly; missing transport re-enqueues the same artifact id; and bounded recovery exhaustion becomes durable failed artifact truth. Unit coverage proves deterministic script-free rendering, manifest-timezone date display, and a renderer-owned escaping path for snapshot text. Direct database tests also reject review without an exact artifact and confirm request-changes expires a staged derivative before draft semantics reopen while retaining its immutable byte evidence.
+
+The report aggregate cases previously passed against the documented local PostgreSQL 17 test runtime. Slice 2 and Slice 3 DB-backed worker, source-drift, artifact-race, and recovery cases require `TEST_DATABASE_URL`; GitHub Actions integration remains the merge gate. Publication, correction, and source-invalidation races remain correctly deferred to Slice 4.
 
 ### Release Preflight Rollback Preparation
 

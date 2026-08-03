@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   PageProposalJobDataSchema,
   CustomerReportGenerationJobDataSchema,
+  CustomerReportHtmlRenderJobDataSchema,
   MediaProcessingJobDataSchema,
   ReleaseVerificationJobDataSchema,
   SectionCopySuggestionJobDataSchema,
@@ -14,6 +15,8 @@ import {
   pageSectionCopySuggestions,
   releasePlans,
   releaseVerifications,
+  reportArtifacts,
+  reports,
   reportGenerationRuns
 } from "@localseo/db";
 import { classifyWorkRecovery, type WorkRecoveryDecision, type WorkRecoveryTransportState } from "@localseo/domain";
@@ -107,11 +110,22 @@ type CustomerReportRecoveryCandidate = {
   recoveryCount: number;
 };
 
+type CustomerReportArtifactRecoveryCandidate = {
+  kind: "customer_report_artifact";
+  id: string;
+  projectId: string;
+  reportId: string;
+  reportIssueId: string;
+  durableState: "queued" | "running";
+  recoveryCount: number;
+};
+
 type RecoveryCandidate =
   | PageProposalRecoveryCandidate
   | SectionCopySuggestionRecoveryCandidate
   | MediaProcessingRecoveryCandidate
   | CustomerReportRecoveryCandidate
+  | CustomerReportArtifactRecoveryCandidate
   | ReleaseVerificationRecoveryCandidate;
 
 type RecoveryJobSpec = {
@@ -140,14 +154,21 @@ export async function scanStaleWork(input: {
     result.errors += 1;
     console.error("Work recovery failed to expire pending media uploads", normalizeErrorMessage(error));
   }
-  const [pageProposalLoad, sectionCopyLoad, mediaProcessingLoad, releaseVerificationLoad, customerReportLoad] =
-    await Promise.allSettled([
-      loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
-      loadSectionCopySuggestionRecoveryCandidates(input.db, staleBefore, input.batchSize),
-      loadMediaProcessingRecoveryCandidates(input.db, staleBefore, input.batchSize),
-      loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize),
-      loadCustomerReportRecoveryCandidates(input.db, staleBefore, input.batchSize)
-    ]);
+  const [
+    pageProposalLoad,
+    sectionCopyLoad,
+    mediaProcessingLoad,
+    releaseVerificationLoad,
+    customerReportLoad,
+    customerReportArtifactLoad
+  ] = await Promise.allSettled([
+    loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadSectionCopySuggestionRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadMediaProcessingRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadCustomerReportRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadCustomerReportArtifactRecoveryCandidates(input.db, staleBefore, input.batchSize)
+  ]);
   const candidates: RecoveryCandidate[] = [];
 
   if (pageProposalLoad.status === "fulfilled") {
@@ -197,6 +218,16 @@ export async function scanStaleWork(input: {
     console.error(
       "Work recovery failed to load customer_report candidates",
       normalizeErrorMessage(customerReportLoad.reason)
+    );
+  }
+
+  if (customerReportArtifactLoad.status === "fulfilled") {
+    candidates.push(...customerReportArtifactLoad.value);
+  } else {
+    result.errors += 1;
+    console.error(
+      "Work recovery failed to load customer_report_artifact candidates",
+      normalizeErrorMessage(customerReportArtifactLoad.reason)
     );
   }
 
@@ -301,7 +332,7 @@ async function recoverCandidate(input: {
     workflowCategory:
       input.candidate.kind === "release_verification"
         ? "provider_handoff_warning"
-        : input.candidate.kind === "media_processing"
+        : input.candidate.kind === "media_processing" || input.candidate.kind === "customer_report_artifact"
           ? "artifact_capture"
           : "read_analyze",
     durableState: input.candidate.durableState,
@@ -609,6 +640,37 @@ async function loadCustomerReportRecoveryCandidates(
   }));
 }
 
+async function loadCustomerReportArtifactRecoveryCandidates(
+  db: WorkerDb,
+  staleBefore: Date,
+  batchSize: number
+): Promise<CustomerReportArtifactRecoveryCandidate[]> {
+  const rows = await db
+    .select({
+      id: reportArtifacts.id,
+      projectId: reportArtifacts.projectId,
+      reportId: reportArtifacts.reportId,
+      reportIssueId: reports.reportIssueId,
+      status: reportArtifacts.status,
+      recoveryCount: reportArtifacts.recoveryCount
+    })
+    .from(reportArtifacts)
+    .innerJoin(reports, and(eq(reports.id, reportArtifacts.reportId), eq(reports.projectId, reportArtifacts.projectId)))
+    .where(and(inArray(reportArtifacts.status, ["pending", "running"]), lte(reportArtifacts.updatedAt, staleBefore)))
+    .orderBy(asc(reportArtifacts.updatedAt))
+    .limit(batchSize);
+
+  return rows.map((row) => ({
+    kind: "customer_report_artifact" as const,
+    id: row.id,
+    projectId: row.projectId,
+    reportId: row.reportId,
+    reportIssueId: row.reportIssueId,
+    durableState: row.status === "pending" ? ("queued" as const) : ("running" as const),
+    recoveryCount: row.recoveryCount
+  }));
+}
+
 async function claimRecoveryAttempt(
   db: WorkerDb,
   candidate: RecoveryCandidate,
@@ -656,6 +718,32 @@ async function claimRecoveryAttempt(
           )
         )
         .returning({ recoveryCount: mediaAssets.recoveryCount });
+    } else if (candidate.kind === "customer_report_artifact") {
+      await tx.execute(sql`SELECT "id" FROM "report_issues" WHERE "id" = ${candidate.reportIssueId} FOR UPDATE`);
+      await tx.execute(
+        sql`SELECT "id" FROM "reports" WHERE "id" = ${candidate.reportId} AND "project_id" = ${candidate.projectId} FOR UPDATE`
+      );
+      await tx.execute(
+        sql`SELECT "id" FROM "report_artifacts" WHERE "id" = ${candidate.id} AND "report_id" = ${candidate.reportId} AND "project_id" = ${candidate.projectId} FOR UPDATE`
+      );
+      claimedRows = await tx
+        .update(reportArtifacts)
+        .set({
+          recoveryCount: sql<number>`${reportArtifacts.recoveryCount} + 1`,
+          lastRecoveryAt: now,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(reportArtifacts.id, candidate.id),
+            eq(reportArtifacts.reportId, candidate.reportId),
+            eq(reportArtifacts.projectId, candidate.projectId),
+            inArray(reportArtifacts.status, ["pending", "running"]),
+            eq(reportArtifacts.recoveryCount, candidate.recoveryCount),
+            lte(reportArtifacts.updatedAt, staleBefore)
+          )
+        )
+        .returning({ recoveryCount: reportArtifacts.recoveryCount });
     } else if (candidate.kind === "customer_report") {
       claimedRows = await tx
         .update(reportGenerationRuns)
@@ -777,6 +865,14 @@ async function markCandidateRecoveryFailed(
     updated = await markMediaProcessingRecoveryFailed(input.db, input.candidate, input.now, input.staleBefore, reason);
   } else if (input.candidate.kind === "customer_report") {
     updated = await markCustomerReportRecoveryFailed(input.db, input.candidate, input.now, input.staleBefore, reason);
+  } else if (input.candidate.kind === "customer_report_artifact") {
+    updated = await markCustomerReportArtifactRecoveryFailed(
+      input.db,
+      input.candidate,
+      input.now,
+      input.staleBefore,
+      reason
+    );
   } else {
     updated = await markReleaseVerificationRecoveryFailure({
       db: input.db,
@@ -799,6 +895,49 @@ async function markCandidateRecoveryFailed(
   }
 
   return updated;
+}
+
+async function markCustomerReportArtifactRecoveryFailed(
+  db: WorkerDb,
+  candidate: CustomerReportArtifactRecoveryCandidate,
+  now: Date,
+  staleBefore: Date,
+  reason: string
+): Promise<boolean> {
+  const failureCode =
+    reason === "transport_completed_without_product_truth" ? "work_transport_inconsistent" : "work_recovery_exhausted";
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT "id" FROM "report_issues" WHERE "id" = ${candidate.reportIssueId} FOR UPDATE`);
+    await tx.execute(
+      sql`SELECT "id" FROM "reports" WHERE "id" = ${candidate.reportId} AND "project_id" = ${candidate.projectId} FOR UPDATE`
+    );
+    await tx.execute(
+      sql`SELECT "id" FROM "report_artifacts" WHERE "id" = ${candidate.id} AND "report_id" = ${candidate.reportId} AND "project_id" = ${candidate.projectId} FOR UPDATE`
+    );
+    const [updated] = await tx
+      .update(reportArtifacts)
+      .set({
+        status: "failed",
+        failureCode,
+        failureMessage:
+          failureCode === "work_transport_inconsistent"
+            ? "Queue transport completed without staged customer report HTML truth."
+            : "Customer report HTML rendering exhausted bounded recovery.",
+        updatedAt: now
+      })
+      .where(
+        and(
+          eq(reportArtifacts.id, candidate.id),
+          eq(reportArtifacts.reportId, candidate.reportId),
+          eq(reportArtifacts.projectId, candidate.projectId),
+          inArray(reportArtifacts.status, ["pending", "running"]),
+          eq(reportArtifacts.recoveryCount, candidate.recoveryCount),
+          lte(reportArtifacts.updatedAt, staleBefore)
+        )
+      )
+      .returning({ id: reportArtifacts.id });
+    return Boolean(updated);
+  });
 }
 
 async function markCustomerReportRecoveryFailed(
@@ -1111,6 +1250,29 @@ function recoveryJobSpec(candidate: RecoveryCandidate, jobRunId?: string): Recov
       data: CustomerReportGenerationJobDataSchema.parse({
         projectId: candidate.projectId,
         runId: candidate.id,
+        maxAttempts: attempts,
+        ...(jobRunId ? { jobRunId } : {}),
+        triggerSource: "work_recovery"
+      }),
+      options: {
+        attempts,
+        jobId: candidate.id,
+        backoff: { type: "exponential", delay: 5000 }
+      }
+    };
+  }
+
+  if (candidate.kind === "customer_report_artifact") {
+    const attempts = 3;
+    return {
+      queueName: reportQueueName,
+      jobName: "customer_report_html_render",
+      jobId: candidate.id,
+      jobType: "report_artifact",
+      data: CustomerReportHtmlRenderJobDataSchema.parse({
+        projectId: candidate.projectId,
+        reportId: candidate.reportId,
+        artifactId: candidate.id,
         maxAttempts: attempts,
         ...(jobRunId ? { jobRunId } : {}),
         triggerSource: "work_recovery"

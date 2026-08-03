@@ -364,6 +364,25 @@ export interface ObjectStoragePort {
   getJson(input: { key: string }): Promise<unknown>;
 }
 
+export type ImmutableArtifactStoredObject = {
+  key: string;
+  contentType?: string;
+  contentLength: number;
+  sha256: string;
+};
+
+export interface ImmutableArtifactStoragePort {
+  putImmutableArtifact(input: {
+    key: string;
+    body: Uint8Array;
+    contentType: string;
+    sha256: string;
+    metadata?: Record<string, string>;
+  }): Promise<ImmutableArtifactStoredObject>;
+  readImmutableArtifact(input: { key: string; maxBytes: number }): Promise<Uint8Array>;
+  headImmutableArtifact(input: { key: string }): Promise<ImmutableArtifactStoredObject | undefined>;
+}
+
 export type MediaUploadGrant =
   | {
       kind: "presigned_post";

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -12,6 +13,8 @@ import type {
   MediaAssetStoragePort,
   MediaPrivateObjectListing,
   MediaStoredObjectMetadata,
+  ImmutableArtifactStoragePort,
+  ImmutableArtifactStoredObject,
   ObjectStoragePort
 } from "./index.js";
 
@@ -21,7 +24,9 @@ export type S3ObjectStorageAdapterOptions = {
   client?: S3Client;
 };
 
-export class S3ObjectStorageAdapter implements ObjectStoragePort, MediaAssetStoragePort, MediaAssetCleanupStoragePort {
+export class S3ObjectStorageAdapter
+  implements ObjectStoragePort, MediaAssetStoragePort, MediaAssetCleanupStoragePort, ImmutableArtifactStoragePort
+{
   private readonly client: S3Client;
 
   constructor(private readonly options: S3ObjectStorageAdapterOptions) {
@@ -56,6 +61,54 @@ export class S3ObjectStorageAdapter implements ObjectStoragePort, MediaAssetStor
     }
 
     return JSON.parse(body) as unknown;
+  }
+
+  async putImmutableArtifact(input: {
+    key: string;
+    body: Uint8Array;
+    contentType: string;
+    sha256: string;
+    metadata?: Record<string, string>;
+  }): Promise<ImmutableArtifactStoredObject> {
+    if (sha256Bytes(input.body) !== input.sha256) {
+      throw new Error(`Immutable artifact checksum does not match its bytes: ${input.key}`);
+    }
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.options.bucket,
+          Key: input.key,
+          Body: input.body,
+          ContentType: input.contentType,
+          ChecksumSHA256: sha256HexToBase64(input.sha256),
+          IfNoneMatch: "*",
+          Metadata: { ...input.metadata, sha256: input.sha256 }
+        })
+      );
+    } catch (error) {
+      if (!isS3PreconditionFailed(error)) throw error;
+      const existing = await this.readImmutableArtifact({ key: input.key, maxBytes: input.body.byteLength + 1 });
+      if (existing.byteLength !== input.body.byteLength || sha256Bytes(existing) !== input.sha256) {
+        throw new Error(`Immutable artifact key already contains different bytes: ${input.key}`, { cause: error });
+      }
+    }
+
+    return {
+      key: input.key,
+      contentType: input.contentType,
+      contentLength: input.body.byteLength,
+      sha256: input.sha256
+    };
+  }
+
+  async readImmutableArtifact(input: { key: string; maxBytes: number }): Promise<Uint8Array> {
+    return this.readPrivateObject(input);
+  }
+
+  async headImmutableArtifact(input: { key: string }): Promise<ImmutableArtifactStoredObject | undefined> {
+    const metadata = await this.headPrivateObject(input);
+    if (metadata?.contentLength === undefined || !metadata.sha256) return undefined;
+    return { ...metadata, contentLength: metadata.contentLength, sha256: metadata.sha256 };
   }
 
   async createUploadGrant(input: {
@@ -208,6 +261,16 @@ function isS3NotFound(error: unknown): boolean {
 
   const candidate = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } };
   return candidate.name === "NotFound" || candidate.$metadata?.httpStatusCode === 404;
+}
+
+function isS3PreconditionFailed(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } };
+  return candidate.name === "PreconditionFailed" || candidate.$metadata?.httpStatusCode === 412;
+}
+
+function sha256Bytes(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 async function readS3BodyBounded(body: unknown, key: string, maxBytes: number): Promise<Uint8Array> {

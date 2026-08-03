@@ -11,6 +11,7 @@ import {
   opportunities,
   projects,
   reportClaimEvidence,
+  reportArtifacts,
   reportClaims,
   reportEvidenceItems,
   reportGenerationRuns,
@@ -173,6 +174,20 @@ void describe(
 
       await assert.rejects(
         () =>
+          db
+            .update(reports)
+            .set({
+              status: "ready_for_review",
+              reviewedSnapshotSha256: report.snapshotSha256,
+              readyAt: new Date(),
+              rowVersion: report.rowVersion + 1
+            })
+            .where(eq(reports.id, report.id)),
+        postgresErrorMatches(/requires an exact pending or staged HTML artifact/u)
+      );
+
+      await assert.rejects(
+        () =>
           db.insert(reportLifecycleEvents).values({
             projectId: fixture.projectId,
             reportIssueId: report.reportIssueId,
@@ -213,6 +228,12 @@ void describe(
       });
       assert.equal(reviewed.status, "ready_for_review");
       assert.equal(reviewed.rowVersion, 1);
+      assert.equal(reviewed.command, "submit_for_review");
+      if (reviewed.command !== "submit_for_review") return;
+      assert.equal(reviewed.artifact.status, "pending");
+      assert.equal(reviewed.artifact.reportId, report.id);
+      assert.equal(reviewed.artifact.snapshotSha256, report.snapshotSha256);
+      assert.equal((await db.select().from(reportArtifacts)).length, 1);
 
       await assert.rejects(
         () => db.update(reports).set({ snapshotCanonicalText: "{}", rowVersion: 2 }).where(eq(reports.id, report.id)),
@@ -256,6 +277,24 @@ void describe(
         expectedSnapshotSha256: first.snapshotSha256,
         expectedRowVersion: first.reportRowVersion
       });
+      assert.equal(reviewed.command, "submit_for_review");
+      if (reviewed.command !== "submit_for_review") return;
+      const artifactSha256 = "b".repeat(64);
+      const storageKey = `reports/${fixture.projectId}/${first.reportId}/html/${reviewed.artifact.id}/${artifactSha256}.html`;
+      await db
+        .update(reportArtifacts)
+        .set({ status: "running", startedAt: new Date("2026-08-01T12:00:00.000Z") })
+        .where(eq(reportArtifacts.id, reviewed.artifact.id));
+      await db
+        .update(reportArtifacts)
+        .set({
+          status: "staged",
+          storageKey,
+          artifactSha256,
+          byteSize: 128,
+          stagedAt: new Date("2026-08-01T12:01:00.000Z")
+        })
+        .where(eq(reportArtifacts.id, reviewed.artifact.id));
       await assert.rejects(
         () => admit(service, fixture),
         /Return the reviewed report candidate to draft before regenerating it/u
@@ -283,6 +322,14 @@ void describe(
         decisionNote: "Bitte den Ausblick klarer formulieren."
       });
       assert.equal(returned.status, "draft");
+      const [expiredArtifact] = await db
+        .select()
+        .from(reportArtifacts)
+        .where(eq(reportArtifacts.reportId, first.reportId));
+      assert.equal(expiredArtifact?.status, "expired");
+      assert.ok(expiredArtifact?.expiredAt);
+      assert.equal(expiredArtifact?.storageKey, storageKey);
+      assert.equal(expiredArtifact?.artifactSha256, artifactSha256);
 
       const secondAdmission = await admit(service, fixture);
       const second = await persistGeneratedDraft(service, db, {

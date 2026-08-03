@@ -837,7 +837,7 @@ Agents may explain readiness or blockers. Workers own production mutation.
 
 ### 12. Report And Next Action
 
-Status: deterministic fact-only generation implemented; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Slices 0-2 provide strict report contracts, RFC 8785 canonicalization with property-tested semantic ordering, pure eligibility/lifecycle/action decisions, explicit permissions, the durable issue/run/version/provenance aggregate, an authenticated generation command, a bounded server-owned evidence packet, deterministic worker assembly, exact source digests, month-bounded evidence selection, fixed customer-safe warning copy, action quotas, and bounded same-run recovery. Postgres serializes generation and review, generation re-selects evidence before persistence, and reviewed semantics freeze at the database boundary. Reviewed HTML artifacts, publication/correction, customer reads, report UI, and Next Action handoff remain next.
+Status: reviewed HTML staging implemented; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Slices 0-3 provide strict report contracts, RFC 8785 canonicalization with property-tested semantic ordering, pure eligibility/lifecycle/action decisions, explicit permissions, the durable issue/run/version/provenance aggregate, authenticated generation and review commands, a bounded server-owned evidence packet, deterministic worker assembly, exact source digests, month-bounded evidence selection, fixed customer-safe warning copy, action quotas, bounded same-run recovery, digest-bound review, immutable private HTML staging, and bounded same-artifact recovery. Postgres serializes generation, review, rendering attachment, and request-changes so reopened drafts cannot retain an active reviewed artifact. Publication/correction, customer reads, report UI, and Next Action handoff remain next.
 
 Reports should explain customer-safe truth and guide the next opportunity.
 
@@ -880,7 +880,7 @@ The first implementation uses a bounded server-built evidence packet and proves 
 strict contracts and canonicalization (implemented)
 -> report issue/run/version/provenance constraints and review CAS (implemented)
 -> deterministic fact-only draft and bounded recovery (implemented)
--> immutable reviewed HTML
+-> immutable reviewed HTML (implemented)
 -> digest-bound human publication, correction, and source-invalidation alerts
 -> authenticated report UI
 ```

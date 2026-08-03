@@ -2082,7 +2082,7 @@ requireNotIncludes(
 
 requireIncludes(
   "docs/architecture/agent-first-mvp-roadmap.md",
-  "Status: deterministic fact-only generation implemented; architecture checkpoint accepted by",
+  "Status: reviewed HTML staging implemented; architecture checkpoint accepted by",
   "roadmap-current-status",
   "The roadmap must name the accepted Report and Next Action checkpoint without describing implementation as wholly deferred"
 );
@@ -2505,6 +2505,132 @@ requireIncludes(
   "fails report product truth when transport completed without terminal persistence",
   "customer-report-generation",
   "Completed transport without report product truth must fail visibly"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
+  'schemaVersion: z.literal("customer_report_html_manifest.v1")',
+  "customer-report-html-artifact",
+  "Reviewed HTML must cross one strict digest-bound render manifest"
+);
+
+requireIncludes(
+  "packages/db/migrations/0040_customer-report-html-artifacts.sql",
+  'CREATE CONSTRAINT TRIGGER "report_artifacts_review_binding_guard"',
+  "customer-report-html-artifact",
+  "Active report artifacts must be committed with exact reviewed report truth"
+);
+
+requireIncludes(
+  "packages/db/migrations/0040_customer-report-html-artifacts.sql",
+  "customer_report_html_renderer.v1",
+  "customer-report-html-artifact",
+  "The database must pin the reviewed renderer version that owns immutable bytes"
+);
+
+requireIncludes(
+  "packages/db/migrations/0040_customer-report-html-artifacts.sql",
+  "customer_report_stylesheet.v1",
+  "customer-report-html-artifact",
+  "The database must pin the reviewed stylesheet version that owns immutable bytes"
+);
+
+requireIncludes(
+  "packages/db/migrations/0040_customer-report-html-artifacts.sql",
+  "Reviewed report artifacts must be expired before requesting changes",
+  "customer-report-html-artifact",
+  "Request-changes must expire active and staged derivatives before reopening semantics"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  ".insert(reportArtifacts)",
+  "customer-report-html-artifact",
+  "Submit-for-review must create durable artifact truth before queue transport"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  'jobName: "customer_report_html_render"',
+  "customer-report-html-artifact",
+  "Reviewed HTML must use its dedicated deterministic report job"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  '"report_artifact",',
+  "customer-report-html-artifact",
+  "Report artifact audit rows must use the declared shared job-type vocabulary"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.ts",
+  "canonicalizeCustomerReportSnapshot(snapshot)",
+  "customer-report-html-artifact",
+  "The renderer must recompute the canonical reviewed snapshot digest"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.ts",
+  "putImmutableArtifact",
+  "customer-report-html-artifact",
+  "Reviewed HTML bytes must use the purpose-named immutable storage boundary"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.ts",
+  "formatReportDate(claim.handedOffAt, manifest)",
+  "customer-report-html-artifact",
+  "Customer-facing proof dates must use the pinned render-manifest timezone"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.ts",
+  "renderInline(content.body)",
+  "customer-report-html-artifact",
+  "Claim bodies must cross the renderer-owned escaping boundary"
+);
+
+requireIncludes(
+  "packages/adapters/src/file-system-object-storage.ts",
+  'flag: "wx"',
+  "customer-report-html-artifact",
+  "Filesystem artifact writes must remain create-if-absent"
+);
+
+requireIncludes(
+  "packages/adapters/src/s3-object-storage.ts",
+  'IfNoneMatch: "*"',
+  "customer-report-html-artifact",
+  "S3 artifact writes must remain create-if-absent"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  'jobName: "customer_report_html_render"',
+  "customer-report-html-artifact",
+  "Bounded artifact recovery must reuse the deterministic render job"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.integration.ts",
+  "lets request-changes expire the artifact while rendering and prevents late attachment",
+  "customer-report-html-artifact",
+  "DB coverage must pin request-changes ownership over late rendering"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.integration.ts",
+  "re-enqueues stale HTML rendering with the same artifact id",
+  "customer-report-html-artifact",
+  "Artifact recovery must retain one durable artifact identity"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.integration.ts",
+  "fails visible HTML artifact truth after bounded recovery exhaustion",
+  "customer-report-html-artifact",
+  "Artifact recovery exhaustion must remain visible product truth"
 );
 
 requireIncludes(

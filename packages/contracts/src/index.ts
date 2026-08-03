@@ -30,6 +30,7 @@ export const jobTypes = [
   "gsc_sync",
   "analytics",
   "report",
+  "report_artifact",
   "notification",
   "rollback"
 ] as const;

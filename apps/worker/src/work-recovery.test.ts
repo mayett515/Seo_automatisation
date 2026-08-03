@@ -57,7 +57,7 @@ void describe("work recovery transport mapping", () => {
         batchSize: 25
       });
 
-      assert.equal(selectCount, 6);
+      assert.equal(selectCount, 7);
       assert.equal(result.errors, 1);
       assert.equal(result.checked, 0);
       assert.match(errors[0] ?? "", /page_proposal candidates/u);

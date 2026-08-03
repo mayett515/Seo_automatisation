@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
-import { ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import { ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { S3ObjectStorageAdapter } from "./s3-object-storage.js";
 
 void describe("S3 media upload grants", () => {
@@ -84,6 +85,36 @@ void describe("S3 media upload grants", () => {
     assert.ok(command instanceof ListObjectsV2Command);
     assert.equal(command.input.Prefix, "media/ready/project/asset/");
     assert.equal(command.input.MaxKeys, 2);
+    client.destroy();
+  });
+
+  void it("uses a conditional checksum-bound write for immutable artifacts", async () => {
+    const client = new S3Client({ region: "eu-central-1" });
+    const commands: unknown[] = [];
+    client.send = ((command: unknown) => {
+      commands.push(command);
+      return Promise.resolve({});
+    }) as typeof client.send;
+    const storage = new S3ObjectStorageAdapter({
+      bucket: "private-report-test",
+      region: "eu-central-1",
+      client
+    });
+    const body = Buffer.from("<html>stable</html>", "utf8");
+    const sha256 = createHash("sha256").update(body).digest("hex");
+
+    await storage.putImmutableArtifact({
+      key: `reports/project/report/html/artifact/${sha256}.html`,
+      body,
+      contentType: "text/html; charset=utf-8",
+      sha256
+    });
+
+    const [command] = commands;
+    assert.ok(command instanceof PutObjectCommand);
+    assert.equal(command.input.IfNoneMatch, "*");
+    assert.equal(command.input.ChecksumSHA256, Buffer.from(sha256, "hex").toString("base64"));
+    assert.deepEqual(command.input.Body, body);
     client.destroy();
   });
 });

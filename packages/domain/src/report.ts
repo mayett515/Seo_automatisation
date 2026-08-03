@@ -5,9 +5,12 @@ import type {
   CustomerReportFactProjection,
   CustomerReportNavigationRef,
   CustomerReportSnapshot,
-  CustomerReportStatus
+  CustomerReportStatus,
+  CustomerReportArtifactStatus,
+  CustomerReportHtmlRenderManifest
 } from "@localseo/contracts";
 import {
+  CustomerReportHtmlRenderManifestSchema,
   CustomerReportEvidencePacketSchema,
   CustomerReportFactProjectionSchema,
   CustomerReportSha256Schema,
@@ -31,6 +34,12 @@ export const customerReportVersions = {
   eligibilityPolicyVersion: "customer_report_eligibility.v1",
   actionSelectionPolicyVersion: "customer_report_actions.v1",
   customerSafetyPolicyVersion: "customer_report_safety.v1"
+} as const;
+
+export const customerReportHtmlVersions = {
+  manifestSchemaVersion: "customer_report_html_manifest.v1",
+  rendererVersion: "customer_report_html_renderer.v1",
+  stylesheetVersion: "customer_report_stylesheet.v1"
 } as const;
 
 export const customerReportEvidenceCutoffGraceDays = 7;
@@ -188,6 +197,11 @@ export type CustomerReportActionAvailability =
   | { kind: "view_only"; reason: "superseded_report" }
   | { kind: "unavailable"; reason: "report_not_published" };
 
+export type CustomerReportArtifactTransitionEvent = "claim_render" | "stage" | "fail" | "expire";
+export type CustomerReportArtifactTransitionDecision =
+  | { kind: "allow"; to: CustomerReportArtifactStatus }
+  | { kind: "deny"; reason: "illegal_artifact_transition" };
+
 export function canonicalizeCustomerReportFactProjection(input: unknown): string {
   const projection = CustomerReportFactProjectionSchema.parse(input);
   return serializeCanonicalJson(normalizeCustomerReportFactProjection(projection));
@@ -208,6 +222,46 @@ export function canonicalizeCustomerReportEvidencePacket(input: unknown): string
 
 export function canonicalizeCustomerReportSourcePayload(input: unknown): string {
   return serializeCanonicalJson(input);
+}
+
+export function buildCustomerReportHtmlRenderManifest(input: {
+  projectId: string;
+  reportId: string;
+  snapshotSha256: string;
+  reportSchemaVersion: string;
+  templateVersion: string;
+  locale: "de-DE";
+  timezone: "Europe/Berlin";
+}): CustomerReportHtmlRenderManifest {
+  return CustomerReportHtmlRenderManifestSchema.parse({
+    schemaVersion: customerReportHtmlVersions.manifestSchemaVersion,
+    ...input,
+    rendererVersion: customerReportHtmlVersions.rendererVersion,
+    stylesheetVersion: customerReportHtmlVersions.stylesheetVersion
+  });
+}
+
+export function canonicalizeCustomerReportHtmlRenderManifest(input: unknown): string {
+  return serializeCanonicalJson(CustomerReportHtmlRenderManifestSchema.parse(input));
+}
+
+export function decideCustomerReportArtifactTransition(
+  status: CustomerReportArtifactStatus,
+  event: CustomerReportArtifactTransitionEvent
+): CustomerReportArtifactTransitionDecision {
+  if (event === "claim_render" && (status === "pending" || status === "running")) {
+    return { kind: "allow", to: "running" };
+  }
+  if (event === "stage" && status === "running") {
+    return { kind: "allow", to: "staged" };
+  }
+  if (event === "fail" && (status === "pending" || status === "running")) {
+    return { kind: "allow", to: "failed" };
+  }
+  if (event === "expire" && (status === "pending" || status === "running" || status === "staged")) {
+    return { kind: "allow", to: "expired" };
+  }
+  return { kind: "deny", reason: "illegal_artifact_transition" };
 }
 
 export function assembleCustomerReportFactProjection(input: unknown): CustomerReportFactProjection {
