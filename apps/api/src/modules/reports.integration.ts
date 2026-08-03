@@ -797,7 +797,8 @@ async function createReportFixture(db: DatabaseClient, name: string): Promise<Re
       primaryKeyword: "fassadenreinigung dachau",
       classification: "near_term_target",
       status: "monitoring",
-      score: 70
+      score: 70,
+      updatedAt: new Date("2026-07-25T10:00:00.000Z")
     })
     .returning();
   assert.ok(opportunity);
