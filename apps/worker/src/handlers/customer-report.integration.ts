@@ -202,14 +202,14 @@ void describe(
 
       await assert.rejects(
         db.update(reports).set({ sourceAgentRunId: null }).where(eq(reports.id, report.id)),
-        /reports_narrative_provenance_shape_check|Bounded-AI reports require agent provenance/iu
+        postgresErrorMatches(/reports_narrative_provenance_shape_check|Bounded-AI reports require agent provenance/iu)
       );
       await assert.rejects(
         db
           .update(agentRuns)
           .set({ outputJson: { schemaVersion: "customer_report_narrative_output.v1", fragments: [] } })
           .where(eq(agentRuns.id, fixture.runId)),
-        /Succeeded report narrative agent runs are immutable audit evidence/iu
+        postgresErrorMatches(/Succeeded report narrative agent runs are immutable audit evidence/iu)
       );
     });
 
@@ -618,4 +618,18 @@ async function createFixture(
 
 function alphabeticSuffix(index: number): string {
   return `${String.fromCharCode(65 + Math.floor(index / 26))}${String.fromCharCode(65 + (index % 26))}`;
+}
+
+function postgresErrorMatches(pattern: RegExp): (error: unknown) => boolean {
+  return (error) => {
+    const messages: string[] = [];
+    let current: unknown = error;
+    while (current && typeof current === "object") {
+      const record = current as { message?: unknown; cause?: unknown };
+      if (typeof record.message === "string") messages.push(record.message);
+      current = record.cause;
+    }
+    assert.match(messages.join("\n"), pattern);
+    return true;
+  };
 }
