@@ -201,7 +201,10 @@ void describe(
       assert.deepEqual((agentRun?.outputJson as { fragments?: unknown })?.fragments, snapshot.narrative);
 
       await assert.rejects(
-        db.update(reports).set({ sourceAgentRunId: null }).where(eq(reports.id, report.id)),
+        db
+          .update(reports)
+          .set({ sourceAgentRunId: null, rowVersion: report.rowVersion + 1 })
+          .where(eq(reports.id, report.id)),
         postgresErrorMatches(/reports_narrative_provenance_shape_check|Bounded-AI reports require agent provenance/iu)
       );
       await assert.rejects(
