@@ -1,8 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { AiReasoningPort, AiReasoningRunResult, ObjectStoragePort } from "@localseo/adapters";
+import { buildCustomerReportNarrativePrompt, evaluateCustomerReportNarrative } from "@localseo/ai";
 import {
   CustomerReportCompletedRollbackEvidenceSchema,
   CustomerReportEvidencePacketSchema,
   CustomerReportGenerationJobDataSchema,
+  CustomerReportNarrativeOutputSchema,
   CustomerReportSnapshotSchema,
   DeploymentReportEvidenceSchema,
   OpportunityReportEvidenceSchema,
@@ -14,9 +17,12 @@ import {
   type CustomerReportEvidenceItem,
   type CustomerReportEvidencePacket,
   type CustomerReportGenerationJobData,
+  type CustomerReportNarrativeOutput,
+  type CustomerReportNarrativePacket,
   type CustomerReportSnapshot
 } from "@localseo/contracts";
 import {
+  agentRuns,
   deployments,
   opportunities,
   pageProposals,
@@ -37,6 +43,8 @@ import {
 } from "@localseo/db";
 import {
   assembleCustomerReportFactProjection,
+  buildBoundedAiCustomerReportSnapshot,
+  buildCustomerReportNarrativePacket,
   buildFactOnlyCustomerReportSnapshot,
   canonicalizeCustomerReportEvidencePacket,
   canonicalizeCustomerReportFactProjection,
@@ -53,6 +61,7 @@ import {
 import type { Job } from "bullmq";
 import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, not, sql } from "drizzle-orm";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
+import { policyForReasoningTask } from "../reasoning-policy.js";
 
 const activeGenerationStatuses = ["queued", "assembling", "narrative_running", "validating"] as const;
 export const reportEvidenceLimits = {
@@ -86,19 +95,33 @@ export function parseCustomerReportGenerationJobData(data: unknown): CustomerRep
 
 export async function handleCustomerReportGenerationJob(
   job: Job,
-  dbHandle: WorkerDbHandle | undefined
+  dbHandle: WorkerDbHandle | undefined,
+  reasoning: AiReasoningPort,
+  objectStorage: ObjectStoragePort,
+  options: { reasoningTimeoutMs?: number } = {}
 ): Promise<Record<string, unknown>> {
   const data = parseCustomerReportGenerationJobData(job.data);
   if (!dbHandle) {
     throw new CustomerReportConfigurationError("DATABASE_URL is required for customer report generation jobs");
   }
-  return executeCustomerReportGeneration({ db: dbHandle.db, data });
+  return executeCustomerReportGeneration({
+    db: dbHandle.db,
+    data,
+    reasoning,
+    objectStorage,
+    reasoningTimeoutMs: options.reasoningTimeoutMs,
+    allowNarrativeReclaim: job.attemptsMade > 0 || data.triggerSource === "work_recovery"
+  });
 }
 
 export async function executeCustomerReportGeneration(input: {
   db: WorkerDb;
   data: CustomerReportGenerationJobData;
   now?: Date;
+  reasoning?: AiReasoningPort;
+  objectStorage?: ObjectStoragePort;
+  reasoningTimeoutMs?: number;
+  allowNarrativeReclaim?: boolean;
 }): Promise<Record<string, unknown>> {
   const now = input.now ?? new Date();
   const run = await claimGenerationRun(input.db, input.data, now);
@@ -117,7 +140,7 @@ export async function executeCustomerReportGeneration(input: {
 
     const factProjection = assembleCustomerReportFactProjection(packet);
     const factProjectionSha256 = sha256(canonicalizeCustomerReportFactProjection(factProjection));
-    const snapshot = buildFactOnlyCustomerReportSnapshot({
+    const factOnlySnapshot = buildFactOnlyCustomerReportSnapshot({
       packet,
       factProjection,
       factProjectionSha256,
@@ -125,7 +148,50 @@ export async function executeCustomerReportGeneration(input: {
       eligibilityPolicyVersion: run.eligibilityPolicyVersion,
       actionSelectionPolicyVersion: run.actionSelectionPolicyVersion
     });
-    const persisted = await persistGeneratedDraft(input.db, run, snapshot, now);
+    const targetReportId = run.baseCandidateReportId ?? run.id;
+    let snapshot = factOnlySnapshot;
+    let sourceAgentRunId: string | undefined;
+    if (run.narrativeMode === "bounded_ai") {
+      const narrativePacket = buildCustomerReportNarrativePacket({
+        identity: packet.identity,
+        reportId: targetReportId,
+        generationRunId: run.id,
+        factProjection,
+        factProjectionSha256
+      });
+      if (narrativePacket) {
+        const narrative = await generateBoundedCustomerReportNarrative({
+          db: input.db,
+          data: input.data,
+          run,
+          packet: narrativePacket,
+          reasoning: input.reasoning,
+          objectStorage: input.objectStorage,
+          reasoningTimeoutMs: input.reasoningTimeoutMs,
+          allowNarrativeReclaim: input.allowNarrativeReclaim,
+          now
+        });
+        if (narrative.kind === "in_progress") {
+          return { status: "narrative_in_progress", runId: run.id, reportId: targetReportId };
+        }
+        if (narrative.kind === "succeeded") {
+          snapshot = buildBoundedAiCustomerReportSnapshot({
+            packet,
+            factProjection,
+            factProjectionSha256,
+            assemblerVersion: run.assemblerVersion,
+            eligibilityPolicyVersion: run.eligibilityPolicyVersion,
+            actionSelectionPolicyVersion: run.actionSelectionPolicyVersion,
+            narrative: narrative.output.fragments
+          });
+          sourceAgentRunId = narrative.agentRunId;
+        }
+      }
+    }
+    const persisted = await persistGeneratedDraft(input.db, run, snapshot, now, {
+      sourceAgentRunId,
+      targetReportId
+    });
     if (persisted.kind === "stale") {
       return {
         status: "stale",
@@ -682,6 +748,270 @@ function opportunityEvidence(
   });
 }
 
+type CustomerReportNarrativeGenerationResult =
+  | { kind: "succeeded"; agentRunId: string; output: CustomerReportNarrativeOutput }
+  | { kind: "fallback" }
+  | { kind: "in_progress" };
+
+async function generateBoundedCustomerReportNarrative(input: {
+  db: WorkerDb;
+  data: CustomerReportGenerationJobData;
+  run: ReportGenerationRunRow;
+  packet: CustomerReportNarrativePacket;
+  reasoning?: AiReasoningPort;
+  objectStorage?: ObjectStoragePort;
+  reasoningTimeoutMs?: number;
+  allowNarrativeReclaim?: boolean;
+  now: Date;
+}): Promise<CustomerReportNarrativeGenerationResult> {
+  const claim = await claimNarrativeAgentRun(input);
+  if (claim.kind !== "claimed") return claim;
+
+  if (!input.reasoning || !input.objectStorage) {
+    await markNarrativeAgentFailed(input.db, input.run.id, "provider_not_configured", {
+      gateId: "configuration",
+      message: "AI reasoning or object storage is not configured."
+    });
+    return { kind: "fallback" };
+  }
+
+  let inputRef: string;
+  try {
+    const stored = await input.objectStorage.putJson({
+      key: `agent-runs/${input.run.projectId}/${input.run.id}/report-narrative-input.json`,
+      value: input.packet
+    });
+    inputRef = stored.key;
+    await input.db
+      .update(agentRuns)
+      .set({ inputRef, updatedAt: new Date() })
+      .where(and(eq(agentRuns.id, input.run.id), eq(agentRuns.status, "running")));
+  } catch (error) {
+    await markNarrativeAgentFailed(input.db, input.run.id, "input_storage_error", {
+      gateId: "input_storage",
+      message: normalizeFailureMessage(error, "Narrative input could not be stored.")
+    });
+    return { kind: "fallback" };
+  }
+
+  let reasoningResult: AiReasoningRunResult;
+  try {
+    reasoningResult = await input.reasoning.runStructured({
+      task: "report_narrative",
+      projectId: input.run.projectId,
+      runId: input.run.id,
+      prompt: buildCustomerReportNarrativePrompt(),
+      inputJson: input.packet,
+      outputSchemaName: "CustomerReportNarrativeDraftOutput",
+      timeoutMs: input.reasoningTimeoutMs ?? 120_000,
+      policy: policyForReasoningTask("report_narrative")
+    });
+  } catch (error) {
+    await markNarrativeAgentFailed(input.db, input.run.id, "provider_error", {
+      gateId: "provider_call",
+      message: normalizeFailureMessage(error, "Narrative provider call failed.")
+    });
+    return { kind: "fallback" };
+  }
+
+  if (!reasoningResult.ok) {
+    await markNarrativeAgentFailed(
+      input.db,
+      input.run.id,
+      reasoningResult.failureCode,
+      compactDiagnostics(reasoningResult.diagnostics),
+      {
+        provider: reasoningResult.provider,
+        model: reasoningResult.model,
+        latencyMs: reasoningResult.diagnostics.latencyMs
+      }
+    );
+    return { kind: "fallback" };
+  }
+
+  const qa = evaluateCustomerReportNarrative({ packet: input.packet, output: reasoningResult.outputJson });
+  if (!qa.ok) {
+    await markNarrativeAgentFailed(input.db, input.run.id, "qa_rejected", qa.failure, {
+      provider: reasoningResult.provider,
+      model: reasoningResult.model,
+      latencyMs: reasoningResult.diagnostics.latencyMs,
+      outputJson: compactOutputJson(reasoningResult.outputJson),
+      usage: reasoningResult.usage
+    });
+    return { kind: "fallback" };
+  }
+
+  const [succeeded] = await input.db
+    .update(agentRuns)
+    .set({
+      status: "succeeded",
+      failureCode: null,
+      provider: reasoningResult.provider,
+      model: reasoningResult.model,
+      inputRef,
+      outputJson: qa.output,
+      usageJson: reasoningResult.usage ? { ...reasoningResult.usage } : null,
+      diagnosticsJson: compactDiagnostics(reasoningResult.diagnostics),
+      latencyMs: reasoningResult.diagnostics.latencyMs,
+      completedAt: new Date(),
+      updatedAt: new Date()
+    })
+    .where(
+      and(
+        eq(agentRuns.id, input.run.id),
+        eq(agentRuns.projectId, input.run.projectId),
+        eq(agentRuns.subjectId, input.packet.reportId),
+        eq(agentRuns.task, "report_narrative"),
+        eq(agentRuns.status, "running")
+      )
+    )
+    .returning({ id: agentRuns.id });
+  if (succeeded) return { kind: "succeeded", agentRunId: succeeded.id, output: qa.output };
+
+  const [latest] = await input.db.select().from(agentRuns).where(eq(agentRuns.id, input.run.id)).limit(1);
+  if (latest?.status === "succeeded") {
+    return { kind: "succeeded", agentRunId: latest.id, output: parseNarrativeAgentOutput(latest.outputJson) };
+  }
+  return { kind: "fallback" };
+}
+
+async function claimNarrativeAgentRun(input: {
+  db: WorkerDb;
+  data: CustomerReportGenerationJobData;
+  run: ReportGenerationRunRow;
+  packet: CustomerReportNarrativePacket;
+  allowNarrativeReclaim?: boolean;
+  now: Date;
+}): Promise<CustomerReportNarrativeGenerationResult | { kind: "claimed" }> {
+  return input.db.transaction(async (tx) => {
+    await lockReportGenerationRun(tx, input.run.projectId, input.run.id);
+    const [generation] = await tx
+      .select()
+      .from(reportGenerationRuns)
+      .where(and(eq(reportGenerationRuns.id, input.run.id), eq(reportGenerationRuns.projectId, input.run.projectId)))
+      .limit(1);
+    if (
+      !generation ||
+      !activeGenerationStatuses.includes(generation.status as (typeof activeGenerationStatuses)[number])
+    ) {
+      throw new CustomerReportEvidenceError(
+        "Report generation changed before narrative claim.",
+        "narrative_generation_changed"
+      );
+    }
+    if (generation.status !== "narrative_running") {
+      const [updated] = await tx
+        .update(reportGenerationRuns)
+        .set({ status: "narrative_running", updatedAt: input.now })
+        .where(and(eq(reportGenerationRuns.id, generation.id), eq(reportGenerationRuns.status, "assembling")))
+        .returning({ id: reportGenerationRuns.id });
+      if (!updated) {
+        throw new CustomerReportEvidenceError(
+          "Report generation could not enter narrative work.",
+          "narrative_cas_lost"
+        );
+      }
+    }
+
+    await tx
+      .insert(agentRuns)
+      .values({
+        id: input.run.id,
+        projectId: input.run.projectId,
+        subjectId: input.packet.reportId,
+        task: "report_narrative",
+        status: "queued"
+      })
+      .onConflictDoNothing();
+    const [agentRun] = await tx.select().from(agentRuns).where(eq(agentRuns.id, input.run.id)).limit(1);
+    if (
+      !agentRun ||
+      agentRun.projectId !== input.run.projectId ||
+      agentRun.subjectId !== input.packet.reportId ||
+      agentRun.task !== "report_narrative"
+    ) {
+      throw new CustomerReportEvidenceError(
+        "Narrative agent run identity does not match its report generation.",
+        "narrative_agent_identity_mismatch"
+      );
+    }
+    if (agentRun.status === "succeeded") {
+      return { kind: "succeeded", agentRunId: agentRun.id, output: parseNarrativeAgentOutput(agentRun.outputJson) };
+    }
+    if (agentRun.status === "failed") return { kind: "fallback" };
+    if (agentRun.status === "running" && !input.allowNarrativeReclaim) {
+      return { kind: "in_progress" };
+    }
+
+    const [claimed] = await tx
+      .update(agentRuns)
+      .set({
+        status: "running",
+        failureCode: null,
+        provider: null,
+        model: null,
+        outputJson: null,
+        usageJson: null,
+        diagnosticsJson: null,
+        latencyMs: null,
+        startedAt: input.now,
+        completedAt: null,
+        updatedAt: input.now
+      })
+      .where(
+        and(
+          eq(agentRuns.id, agentRun.id),
+          eq(agentRuns.status, agentRun.status),
+          eq(agentRuns.subjectId, input.packet.reportId)
+        )
+      )
+      .returning({ id: agentRuns.id });
+    if (!claimed) return { kind: "in_progress" };
+    return { kind: "claimed" };
+  });
+}
+
+async function markNarrativeAgentFailed(
+  db: WorkerDb,
+  runId: string,
+  failureCode: string,
+  diagnostics: Record<string, unknown>,
+  detail: {
+    provider?: string;
+    model?: string;
+    latencyMs?: number;
+    outputJson?: Record<string, unknown>;
+    usage?: Record<string, unknown>;
+  } = {}
+): Promise<void> {
+  await db
+    .update(agentRuns)
+    .set({
+      status: "failed",
+      failureCode,
+      provider: detail.provider,
+      model: detail.model,
+      outputJson: detail.outputJson,
+      usageJson: detail.usage,
+      diagnosticsJson: diagnostics,
+      latencyMs: detail.latencyMs,
+      completedAt: new Date(),
+      updatedAt: new Date()
+    })
+    .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, "running")));
+}
+
+function parseNarrativeAgentOutput(value: unknown): CustomerReportNarrativeOutput {
+  const parsed = CustomerReportNarrativeOutputSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new CustomerReportEvidenceError(
+      "Succeeded narrative agent output failed its durable contract.",
+      "narrative_output_corrupt"
+    );
+  }
+  return parsed.data;
+}
+
 async function persistEvidencePacket(
   db: WorkerDb,
   run: ReportGenerationRunRow,
@@ -713,7 +1043,8 @@ async function persistGeneratedDraft(
   db: WorkerDb,
   initialRun: ReportGenerationRunRow,
   snapshotInput: unknown,
-  now: Date
+  now: Date,
+  provenance: { sourceAgentRunId?: string; targetReportId: string }
 ): Promise<
   | {
       kind: "persisted" | "replayed";
@@ -728,6 +1059,15 @@ async function persistGeneratedDraft(
     }
 > {
   const prepared = prepareSnapshot(snapshotInput);
+  if (
+    (prepared.snapshot.narrativeMode === "fact_only" && provenance.sourceAgentRunId) ||
+    (prepared.snapshot.narrativeMode === "bounded_ai" && !provenance.sourceAgentRunId)
+  ) {
+    throw new CustomerReportEvidenceError(
+      "Report narrative mode does not match its agent provenance.",
+      "narrative_provenance_mismatch"
+    );
+  }
   return db.transaction(async (tx) => {
     await lockReportIssue(tx, initialRun.reportIssueId);
     await lockReportGenerationRun(tx, initialRun.projectId, initialRun.id);
@@ -813,7 +1153,17 @@ async function persistGeneratedDraft(
         .limit(1);
       const [created] = await tx
         .insert(reports)
-        .values(reportValues(prepared.snapshot, prepared, run, issue, (latest?.versionNumber ?? 0) + 1))
+        .values(
+          reportValues(
+            prepared.snapshot,
+            prepared,
+            run,
+            issue,
+            (latest?.versionNumber ?? 0) + 1,
+            provenance.targetReportId,
+            provenance.sourceAgentRunId
+          )
+        )
         .returning();
       if (!created) throw new Error("Failed to create the report draft.");
       persisted = created;
@@ -823,6 +1173,7 @@ async function persistGeneratedDraft(
         .update(reports)
         .set({
           ...reportSnapshotValues(prepared.snapshot, prepared, run),
+          sourceAgentRunId: provenance.sourceAgentRunId ?? null,
           rowVersion: currentCandidate.rowVersion + 1,
           updatedAt: now
         })
@@ -928,7 +1279,7 @@ function assertSnapshotMatchesRun(
     snapshot.assemblerVersion !== run.assemblerVersion ||
     snapshot.eligibilityPolicyVersion !== run.eligibilityPolicyVersion ||
     snapshot.actionSelectionPolicyVersion !== run.actionSelectionPolicyVersion ||
-    snapshot.narrativeMode !== run.narrativeMode
+    (run.narrativeMode === "fact_only" && snapshot.narrativeMode !== "fact_only")
   ) {
     throw new CustomerReportEvidenceError(
       "Customer report snapshot does not match its issue or generation policy.",
@@ -983,14 +1334,18 @@ function reportValues(
   prepared: ReturnType<typeof prepareSnapshot>,
   run: ReportGenerationRunRow,
   issue: ReportIssueRow,
-  versionNumber: number
+  versionNumber: number,
+  reportId: string,
+  sourceAgentRunId?: string
 ): typeof reports.$inferInsert {
   return {
+    id: reportId,
     projectId: issue.projectId,
     reportIssueId: issue.id,
     versionNumber,
     status: "draft",
     ...reportSnapshotValues(snapshot, prepared, run),
+    sourceAgentRunId: sourceAgentRunId ?? null,
     supersedesReportId: run.correctionPredecessorReportId,
     correctionReason: run.correctionReason,
     createdByActorType: "system",
@@ -1015,7 +1370,6 @@ function reportSnapshotValues(
     templateVersion: snapshot.templateVersion,
     narrativeMode: snapshot.narrativeMode,
     sourceGenerationRunId: run.id,
-    sourceAgentRunId: null,
     reviewedSnapshotSha256: null,
     readyAt: null
   } as const;
@@ -1160,4 +1514,26 @@ function sha256(value: string): string {
 
 function isZodLikeError(error: unknown): boolean {
   return error instanceof Error && error.name === "ZodError";
+}
+
+function compactDiagnostics(value: unknown): Record<string, unknown> {
+  const record = recordFromUnknown(value);
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([key]) => ["latencyMs", "finishReason", "detail", "gateId", "message", "slotKey"].includes(key))
+      .slice(0, 10)
+      .map(([key, item]) => [key, typeof item === "string" ? item.slice(0, 500) : item])
+  );
+}
+
+function compactOutputJson(value: unknown): Record<string, unknown> | undefined {
+  const record = recordFromUnknown(value);
+  if (Object.keys(record).length === 0) return undefined;
+  const serialized = JSON.stringify(record);
+  if (serialized.length <= 4_000) return record;
+  return { truncated: true, preview: serialized.slice(0, 4_000) };
+}
+
+function normalizeFailureMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message.slice(0, 500) : fallback;
 }

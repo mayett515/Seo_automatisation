@@ -168,20 +168,32 @@ export function renderCustomerReportHtml(snapshotInput: unknown, manifestInput: 
     ["rollback_corrections", "Korrekturen"],
     ["future_opportunities", "Naechste Chancen"]
   ] as const;
+  const consumedNarrativeSlots = new Set<string>();
   const renderedSections = sections
     .map(([section, heading]) => {
       const claims = snapshot.factProjection.claims.filter((claim) => claim.section === section);
       if (claims.length === 0) return "";
-      return `<section aria-labelledby="${section}"><h2 id="${section}">${heading}</h2><div class="claims">${claims
+      const narrativeHeading = snapshot.narrative.find(
+        (fragment) => fragment.kind === "heading" && fragment.slotKey === `heading:${section}`
+      );
+      if (narrativeHeading) consumedNarrativeSlots.add(narrativeHeading.slotKey);
+      const transitions = snapshot.narrative.filter(
+        (fragment) => fragment.kind === "transition" && fragment.slotKey.startsWith(`transition:${section}:`)
+      );
+      for (const transition of transitions) consumedNarrativeSlots.add(transition.slotKey);
+      return `<section aria-labelledby="${section}"><h2 id="${section}">${escapeHtml(narrativeHeading?.text ?? heading)}</h2>${transitions
+        .map((fragment) => `<p class="narrative-transition">${escapeHtml(fragment.text)}</p>`)
+        .join("")}<div class="claims">${claims
         .map((claim) => renderClaim(claim, evidenceByKey, manifest))
         .join("")}</div></section>`;
     })
     .join("");
-  const narrative = snapshot.narrative.length
-    ? `<section aria-labelledby="einordnung"><h2 id="einordnung">Einordnung</h2>${snapshot.narrative
-        .map((fragment) => `<p>${escapeHtml(fragment.text)}</p>`)
-        .join("")}</section>`
-    : "";
+  if (consumedNarrativeSlots.size !== snapshot.narrative.length) {
+    throw new CustomerReportHtmlEvidenceError(
+      "Customer report narrative contains a slot outside the deterministic section layout.",
+      "narrative_slot_mismatch"
+    );
+  }
   const actions = snapshot.factProjection.nextActions.length
     ? `<section aria-labelledby="actions"><h2 id="actions">Naechste Schritte</h2><ul class="actions">${snapshot.factProjection.nextActions
         .map(
@@ -191,7 +203,7 @@ export function renderCustomerReportHtml(snapshotInput: unknown, manifestInput: 
         .join("")}</ul></section>`
     : "";
 
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHtml(snapshot.title)}</title><style>${reportStyles}</style></head><body><main><header><p class="eyebrow">Local SEO Monatsbericht</p><h1>${escapeHtml(snapshot.title)}</h1><p class="period">Zeitraum ${escapeHtml(reportPeriodLabel(snapshot.identity.period))} | Datenstand ${escapeHtml(formatReportDate(snapshot.evidenceCutoffAt, manifest))}</p></header>${renderedSections}${narrative}${actions}<footer>Dieser Bericht basiert auf dem geprueften Datenstand des angegebenen Zeitraums.</footer></main></body></html>`;
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHtml(snapshot.title)}</title><style>${reportStyles}</style></head><body><main><header><p class="eyebrow">Local SEO Monatsbericht</p><h1>${escapeHtml(snapshot.title)}</h1><p class="period">Zeitraum ${escapeHtml(reportPeriodLabel(snapshot.identity.period))} | Datenstand ${escapeHtml(formatReportDate(snapshot.evidenceCutoffAt, manifest))}</p></header>${renderedSections}${actions}<footer>Dieser Bericht basiert auf dem geprueften Datenstand des angegebenen Zeitraums.</footer></main></body></html>`;
 }
 
 async function claimReportArtifact(
@@ -679,4 +691,4 @@ function isZodLikeError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "issues" in error && Array.isArray(error.issues));
 }
 
-const reportStyles = `:root{color-scheme:light;font-family:Inter,Arial,sans-serif;color:#18211d;background:#f3f5f2}*{box-sizing:border-box}body{margin:0}main{max-width:960px;margin:0 auto;padding:48px 28px 72px}header{border-bottom:3px solid #1f6b4f;padding-bottom:24px;margin-bottom:32px}.eyebrow{font-size:13px;font-weight:700;text-transform:uppercase;color:#1f6b4f}.period{color:#53615a}h1{font-size:38px;line-height:1.15;margin:8px 0 12px}h2{font-size:23px;margin:38px 0 14px}h3{font-size:17px;margin:0 0 8px}.claims{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.claim{background:#fff;border:1px solid #d8ded9;border-radius:6px;padding:18px}.claim p{line-height:1.55}.evidence{font-size:12px;color:#65716b}.actions{padding:0;list-style:none;display:grid;gap:10px}.actions li{display:flex;justify-content:space-between;gap:20px;background:#fff;border-left:4px solid #1f6b4f;padding:14px 16px}.actions span{color:#53615a;text-align:right}a{color:#155f46;overflow-wrap:anywhere}footer{margin-top:48px;padding-top:20px;border-top:1px solid #d8ded9;color:#65716b;font-size:12px}@media(max-width:640px){main{padding:28px 16px 48px}h1{font-size:30px}.claims{grid-template-columns:1fr}.actions li{display:block}.actions span{display:block;text-align:left;margin-top:6px}}`;
+const reportStyles = `:root{color-scheme:light;font-family:Inter,Arial,sans-serif;color:#18211d;background:#f3f5f2}*{box-sizing:border-box}body{margin:0}main{max-width:960px;margin:0 auto;padding:48px 28px 72px}header{border-bottom:3px solid #1f6b4f;padding-bottom:24px;margin-bottom:32px}.eyebrow{font-size:13px;font-weight:700;text-transform:uppercase;color:#1f6b4f}.period{color:#53615a}h1{font-size:38px;line-height:1.15;margin:8px 0 12px}h2{font-size:23px;margin:38px 0 14px}h3{font-size:17px;margin:0 0 8px}.narrative-transition{max-width:72ch;color:#53615a;line-height:1.55;margin:0 0 16px}.claims{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.claim{background:#fff;border:1px solid #d8ded9;border-radius:6px;padding:18px}.claim p{line-height:1.55}.evidence{font-size:12px;color:#65716b}.actions{padding:0;list-style:none;display:grid;gap:10px}.actions li{display:flex;justify-content:space-between;gap:20px;background:#fff;border-left:4px solid #1f6b4f;padding:14px 16px}.actions span{color:#53615a;text-align:right}a{color:#155f46;overflow-wrap:anywhere}footer{margin-top:48px;padding-top:20px;border-top:1px solid #d8ded9;color:#65716b;font-size:12px}@media(max-width:640px){main{padding:28px 16px 48px}h1{font-size:30px}.claims{grid-template-columns:1fr}.actions li{display:block}.actions span{display:block;text-align:left;margin-top:6px}}`;

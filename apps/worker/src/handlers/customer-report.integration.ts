@@ -2,8 +2,16 @@ import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { buildCanonicalPageProposalOutputExample } from "@localseo/ai";
-import { CustomerReportEvidencePacketSchema, type CustomerReportClaim } from "@localseo/contracts";
+import { MockReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
 import {
+  CustomerReportEvidencePacketSchema,
+  CustomerReportNarrativePacketSchema,
+  CustomerReportSnapshotSchema,
+  type CustomerReportClaim,
+  type CustomerReportNarrativeMode
+} from "@localseo/contracts";
+import {
+  agentRuns,
   customers,
   deployments,
   opportunities,
@@ -135,6 +143,156 @@ void describe(
       assert.equal(handoffClaims[0]?.deploymentId, fixture.liveDeploymentId);
     });
 
+    void it("persists only attributed bounded narrative from a report-scoped agent run", async () => {
+      const fixture = await createFixture(db, { narrativeMode: "bounded_ai" });
+      const storedInputs: unknown[] = [];
+      const reasoning = new MockReasoningAdapter((input) => {
+        const packet = CustomerReportNarrativePacketSchema.parse(input.inputJson);
+        return {
+          ok: true,
+          provider: "mock",
+          model: "bounded-report",
+          outputJson: {
+            schemaVersion: "customer_report_narrative_draft.v1",
+            fragments: packet.slots.map((slot, index) => ({
+              slotKey: slot.slotKey,
+              text:
+                slot.kind === "heading"
+                  ? `Gepruefte Entwicklungen ${alphabeticSuffix(index)}`
+                  : `Die geprueften Themen werden gemeinsam eingeordnet ${alphabeticSuffix(index)}`
+            }))
+          },
+          diagnostics: { latencyMs: 12, finishReason: "stop" }
+        };
+      });
+      const objectStorage: ObjectStoragePort = {
+        putJson(input) {
+          storedInputs.push(input.value);
+          return Promise.resolve({ key: input.key });
+        },
+        getJson() {
+          return Promise.reject(new Error("not used"));
+        }
+      };
+
+      const result = await executeCustomerReportGeneration({
+        db,
+        data: { projectId: fixture.projectId, runId: fixture.runId },
+        reasoning,
+        objectStorage,
+        now: new Date("2026-08-01T10:05:00.000Z")
+      });
+
+      assert.equal(result.status, "persisted");
+      const [report] = await db.select().from(reports).where(eq(reports.sourceGenerationRunId, fixture.runId));
+      const [agentRun] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.ok(report);
+      assert.equal(report.id, fixture.runId);
+      assert.equal(report.narrativeMode, "bounded_ai");
+      assert.equal(report.sourceAgentRunId, fixture.runId);
+      assert.equal(agentRun?.status, "succeeded");
+      assert.equal(agentRun?.task, "report_narrative");
+      assert.equal(agentRun?.subjectId, report.id);
+      assert.equal(reasoning.calls[0]?.policy.canMutateProduction, false);
+      assert.deepEqual(reasoning.calls[0]?.policy.allowedToolCategories, ["read_evidence", "analyze", "draft_content"]);
+      assert.equal(storedInputs.length, 1);
+      const snapshot = CustomerReportSnapshotSchema.parse(JSON.parse(report.snapshotCanonicalText));
+      assert.ok(snapshot.narrative.length > 0);
+      assert.deepEqual((agentRun?.outputJson as { fragments?: unknown })?.fragments, snapshot.narrative);
+
+      await assert.rejects(
+        db.update(reports).set({ sourceAgentRunId: null }).where(eq(reports.id, report.id)),
+        /reports_narrative_provenance_shape_check|Bounded-AI reports require agent provenance/iu
+      );
+      await assert.rejects(
+        db
+          .update(agentRuns)
+          .set({ outputJson: { schemaVersion: "customer_report_narrative_output.v1", fragments: [] } })
+          .where(eq(agentRuns.id, fixture.runId)),
+        /Succeeded report narrative agent runs are immutable audit evidence/iu
+      );
+    });
+
+    void it("degrades bounded narrative failure to an honest fact-only report", async () => {
+      const fixture = await createFixture(db, { narrativeMode: "bounded_ai" });
+      const reasoning = new MockReasoningAdapter({
+        ok: false,
+        failureCode: "provider_error",
+        provider: "mock",
+        model: "unavailable",
+        diagnostics: { latencyMs: 7, detail: "provider unavailable" }
+      });
+      const objectStorage: ObjectStoragePort = {
+        putJson(input) {
+          return Promise.resolve({ key: input.key });
+        },
+        getJson() {
+          return Promise.reject(new Error("not used"));
+        }
+      };
+
+      const result = await executeCustomerReportGeneration({
+        db,
+        data: { projectId: fixture.projectId, runId: fixture.runId },
+        reasoning,
+        objectStorage,
+        now: new Date("2026-08-01T10:05:00.000Z")
+      });
+
+      assert.equal(result.status, "persisted");
+      const [report] = await db.select().from(reports).where(eq(reports.sourceGenerationRunId, fixture.runId));
+      const [agentRun] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(report?.narrativeMode, "fact_only");
+      assert.equal(report?.sourceAgentRunId, null);
+      assert.equal(agentRun?.status, "failed");
+      assert.equal(agentRun?.failureCode, "provider_error");
+      const [generation] = await db
+        .select()
+        .from(reportGenerationRuns)
+        .where(eq(reportGenerationRuns.id, fixture.runId));
+      assert.equal(generation?.status, "succeeded");
+    });
+
+    void it("keeps QA-rejected narrative out of report truth", async () => {
+      const fixture = await createFixture(db, { narrativeMode: "bounded_ai" });
+      const reasoning = new MockReasoningAdapter((input) => {
+        const packet = CustomerReportNarrativePacketSchema.parse(input.inputJson);
+        return {
+          ok: true,
+          provider: "mock",
+          model: "unsafe-report",
+          outputJson: {
+            schemaVersion: "customer_report_narrative_draft.v1",
+            fragments: packet.slots.map((slot) => ({ slotKey: slot.slotKey, text: "Garantiert Platz 1" }))
+          },
+          diagnostics: { latencyMs: 9 }
+        };
+      });
+      const objectStorage: ObjectStoragePort = {
+        putJson(input) {
+          return Promise.resolve({ key: input.key });
+        },
+        getJson() {
+          return Promise.reject(new Error("not used"));
+        }
+      };
+
+      await executeCustomerReportGeneration({
+        db,
+        data: { projectId: fixture.projectId, runId: fixture.runId },
+        reasoning,
+        objectStorage,
+        now: new Date("2026-08-01T10:05:00.000Z")
+      });
+
+      const [report] = await db.select().from(reports).where(eq(reports.sourceGenerationRunId, fixture.runId));
+      const [agentRun] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(report?.narrativeMode, "fact_only");
+      assert.equal(agentRun?.status, "failed");
+      assert.equal(agentRun?.failureCode, "qa_rejected");
+      assert.equal((agentRun?.diagnosticsJson as { gateId?: string })?.gateId, "fact_token");
+    });
+
     void it("coalesces duplicate worker delivery into one draft and one lifecycle event", async () => {
       const fixture = await createFixture(db);
 
@@ -158,7 +316,10 @@ void describe(
   }
 );
 
-async function createFixture(db: DatabaseClient): Promise<{
+async function createFixture(
+  db: DatabaseClient,
+  input: { narrativeMode?: CustomerReportNarrativeMode } = {}
+): Promise<{
   projectId: string;
   runId: string;
   liveDeploymentId: string;
@@ -433,7 +594,7 @@ async function createFixture(db: DatabaseClient): Promise<{
     projectId: project.id,
     reportIssueId: issue.id,
     status: "queued",
-    narrativeMode: "fact_only",
+    narrativeMode: input.narrativeMode ?? "fact_only",
     idempotencyKey: randomUUID(),
     queueJobId: runId,
     requestedByUserId: user.id,
@@ -453,4 +614,8 @@ async function createFixture(db: DatabaseClient): Promise<{
     rolledBackDeploymentId: rolledBackDeployment.id,
     rollbackPointId: rollbackPoint.id
   };
+}
+
+function alphabeticSuffix(index: number): string {
+  return `${String.fromCharCode(65 + Math.floor(index / 26))}${String.fromCharCode(65 + (index % 26))}`;
 }

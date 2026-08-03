@@ -105,12 +105,17 @@ export function ReportsScreen(props: { projectId: string }) {
 function ReportGenerationPanel(props: { projectId: string; onCreated: () => Promise<void> }) {
   const defaults = useMemo(() => defaultCustomerReportGeneration(new Date()), []);
   const mutation = useMutation({
-    mutationFn: (value: { period: string; evidenceCutoffAt: string; correctionReason: string }) => {
+    mutationFn: (value: {
+      period: string;
+      evidenceCutoffAt: string;
+      narrativeMode: "fact_only" | "bounded_ai";
+      correctionReason: string;
+    }) => {
       const request = CreateCustomerReportGenerationRequestSchema.parse({
         period: value.period,
         evidenceCutoffAt: new Date(value.evidenceCutoffAt).toISOString(),
         idempotencyKey: crypto.randomUUID(),
-        narrativeMode: "fact_only",
+        narrativeMode: value.narrativeMode,
         correctionReason: value.correctionReason.trim() || undefined
       });
       return postJson(
@@ -125,6 +130,7 @@ function ReportGenerationPanel(props: { projectId: string; onCreated: () => Prom
     defaultValues: {
       period: defaults.period,
       evidenceCutoffAt: toDateTimeLocal(defaults.evidenceCutoffAt),
+      narrativeMode: "fact_only" as "fact_only" | "bounded_ai",
       correctionReason: ""
     },
     onSubmit: ({ value }) => mutation.mutateAsync(value)
@@ -135,9 +141,9 @@ function ReportGenerationPanel(props: { projectId: string; onCreated: () => Prom
       <div className="panel-heading">
         <div>
           <h2>Generate monthly report</h2>
-          <p>Deterministic fact assembly only. Existing published months require a correction reason.</p>
+          <p>Deterministic facts with optional bounded headings and transitions.</p>
         </div>
-        <StatusPill tone="neutral">fact only</StatusPill>
+        <StatusPill tone="neutral">human review</StatusPill>
       </div>
       <form
         className="report-generation-form"
@@ -167,6 +173,20 @@ function ReportGenerationPanel(props: { projectId: string; onCreated: () => Prom
                 value={field.state.value}
                 onChange={(event) => field.handleChange(event.currentTarget.value)}
               />
+            </label>
+          )}
+        </form.Field>
+        <form.Field name="narrativeMode">
+          {(field) => (
+            <label className="form-field">
+              <span>Narrative</span>
+              <select
+                value={field.state.value}
+                onChange={(event) => field.handleChange(event.currentTarget.value as "fact_only" | "bounded_ai")}
+              >
+                <option value="fact_only">Fact only</option>
+                <option value="bounded_ai">Bounded AI</option>
+              </select>
             </label>
           )}
         </form.Field>

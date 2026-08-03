@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.29"
+version: "1.1.31"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -358,12 +358,19 @@ Customer Report publication and Next Action
   Customer report HTML rendering may read only the stored canonical snapshot and strict render manifest, and must write through a purpose-named immutable private-artifact port.
   The renderer must re-parse and re-digest snapshot and manifest, emit bounded script-free HTML, verify immutable storage byte identity, and attach evidence only while the exact reviewed digest still owns the artifact.
   Customer-facing report dates must use the render manifest's pinned locale/timezone; worker-host timezone must not alter immutable bytes.
+  Any report HTML or stylesheet byte change must advance its manifest identity through a forward migration; the latest artifact trigger may retain historical transitions but must require current versions for new artifacts.
   Failed artifact generation has an actor-backed re-render command that creates a new artifact identity and never revives failed evidence or manufactures a request-changes semantic event.
   Report artifact recovery is a separate artifact_capture lane with deterministic jobId = artifactId; it may re-enqueue or fail artifact truth but must not mutate report semantics or publication.
   Report review, rendering attachment, request-changes, and artifact recovery lock shared rows in issue -> report -> artifact order.
   Report generation responses distinguish enqueue work performed by the current request from the durable status of a pre-existing run.
   Report generation is a bounded read_analyze recovery lane only; recovery must reuse jobId = runId and terminalize exhaustion or transport inconsistency as durable failed truth.
   The fact-only report worker must not invoke a reasoning adapter, publish a report, write an HTML artifact, or execute a Next Action.
+  Bounded report narrative uses the existing report-generation run and queue; it must not add a second report writer or transport lane.
+  The server owns narrative slot identity, section, supporting claim keys, facts, warnings, and actions; model output owns only text for the exact assigned slots.
+  Bounded narrative output must pass strict contract and deterministic QA gates for exact slots, markup, URLs, factual tokens, guarantees, causal claims, and duplicate text.
+  A bounded-AI report must bind its exact attributed fragments to one succeeded report_narrative agent run scoped by subjectId = reportId; fact-only reports must carry neither fragments nor agent provenance.
+  Provider, storage, or narrative-QA failure degrades the same generation to an honest fact-only report; it must not fail deterministic report truth or claim bounded-AI provenance.
+  Report-generation recovery owns the active narrative child and terminalizes both together on exhaustion or completed-transport inconsistency.
   Operator workspace reads require report:review and expose only bounded candidate snapshots, generation status, and artifact summaries; viewer access remains published-only.
   Candidate and published report documents must come from immutable byte-verified artifact routes and remain sandboxed in the UI.
   Authenticated report detail reads mint exact project/report/artifact/digest-bound document capabilities; sandboxed document routes trust only short-lived HttpOnly Secure SameSite=None Partitioned capability cookies, not application-session delivery from an opaque origin.

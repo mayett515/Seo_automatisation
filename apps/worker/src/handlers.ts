@@ -276,7 +276,9 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
   }
 
   if (job.queueName === "report" || job.name === "customer_report_generation") {
-    return handleCustomerReportGenerationJob(job, sharedDbHandle);
+    return handleCustomerReportGenerationJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
+      reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
+    });
   }
 
   throw new Error(`Worker job is not implemented: ${job.queueName}:${job.name}`);

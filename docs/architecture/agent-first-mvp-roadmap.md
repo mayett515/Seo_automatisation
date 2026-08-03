@@ -837,7 +837,7 @@ Agents may explain readiness or blockers. Workers own production mutation.
 
 ### 12. Report And Next Action
 
-Status: first fact-only vertical implemented; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Slices 0-5 provide strict report contracts, RFC 8785 canonicalization, the durable issue/run/version/provenance aggregate, deterministic fact-only assembly, digest-bound review, immutable private HTML staging, actor-backed failed-render retry, source-serialized publication/correction, correction-required alerts, authenticated snapshot-owned reads, exact capability-authorized sandboxed document delivery, and the report list/detail/review/publication/history workspace. PostgreSQL owns one published head, correction lineage, exact selected artifact evidence, and append-only actor events. Next Action command handoff, AI narrative, PDF, RAG, public links, and direct prose editing remain later optional work.
+Status: first report vertical plus optional bounded narrative implemented; architecture checkpoint accepted by [ADR 0021](decisions/0021-digest-bound-customer-report-publication.md). Slices 0-6 provide strict report contracts, RFC 8785 canonicalization, the durable issue/run/version/provenance aggregate, deterministic fact-only assembly, bounded report-scoped AI headings/transitions with fact-only fallback, digest-bound review, immutable private HTML staging, actor-backed failed-render retry, source-serialized publication/correction, correction-required alerts, authenticated snapshot-owned reads, exact capability-authorized sandboxed document delivery, and the report list/detail/review/publication/history workspace. PostgreSQL owns one published head, correction lineage, exact selected artifact evidence, narrative provenance, and append-only actor events. Next Action command handoff, PDF, RAG, public links, and direct prose editing remain later optional work.
 
 Reports should explain customer-safe truth and guide the next opportunity.
 
@@ -883,9 +883,10 @@ strict contracts and canonicalization (implemented)
 -> immutable reviewed HTML (implemented)
 -> digest-bound human publication, correction, and source-invalidation alerts (implemented)
 -> authenticated report UI (implemented)
+-> optional bounded AI headings/transitions with deterministic QA and fact-only fallback (implemented)
 ```
 
-Optional AI headings/transitions, consequential command offers, and PDF follow only after that vertical works. RAG remains deferred until report evidence cannot be loaded and cited directly within the accepted limits.
+Consequential command offers and PDF follow only after that vertical works. RAG remains deferred until report evidence cannot be loaded directly within the accepted limits.
 
 Preferred modular-monolith placement for the new vertical:
 

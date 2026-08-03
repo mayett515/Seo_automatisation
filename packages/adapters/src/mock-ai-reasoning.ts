@@ -16,6 +16,27 @@ export class MockReasoningAdapter implements AiReasoningPort {
 }
 
 function defaultMockReasoningResult(input: AiReasoningRunInput): AiReasoningRunResult {
+  if (input.task === "report_narrative") {
+    const packet = asRecord(input.inputJson);
+    const slots = Array.isArray(packet?.slots) ? packet.slots.map(asRecord).filter(Boolean) : [];
+    return successfulMockResult("mock-report-narrative", {
+      schemaVersion: "customer_report_narrative_draft.v1",
+      fragments: slots.flatMap((slot, index) =>
+        typeof slot?.slotKey === "string"
+          ? [
+              {
+                slotKey: slot.slotKey,
+                text:
+                  slot.kind === "heading"
+                    ? `Gepruefte Entwicklungen ${alphabeticSuffix(index)}`
+                    : `Die geprueften Themen werden gemeinsam eingeordnet ${alphabeticSuffix(index)}`
+              }
+            ]
+          : []
+      )
+    });
+  }
+
   if (input.task === "section_text_generation") {
     const packet = asRecord(input.inputJson);
     const currentSection = asRecord(packet?.currentSection);
@@ -45,6 +66,12 @@ function defaultMockReasoningResult(input: AiReasoningRunInput): AiReasoningRunR
     briefs: [],
     groups: []
   });
+}
+
+function alphabeticSuffix(index: number): string {
+  const first = String.fromCharCode(65 + Math.floor(index / 26));
+  const second = String.fromCharCode(65 + (index % 26));
+  return `${first}${second}`;
 }
 
 function successfulMockResult(model: string, outputJson: unknown): AiReasoningRunResult {

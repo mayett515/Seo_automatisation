@@ -24,6 +24,8 @@ import {
   type SectionCopyRevisionOutput
 } from "@localseo/contracts";
 
+export * from "./report-narrative.js";
+
 export const mastraAgents = [
   "ResearchAgent",
   "SeoStrategyAgent",

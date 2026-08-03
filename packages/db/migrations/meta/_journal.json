@@ -302,6 +302,20 @@
       "when": 1785768372024,
       "tag": "0042_report-canonical-collation-restored",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1785774120000,
+      "tag": "0043_customer-report-narrative-provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1785775000000,
+      "tag": "0044_customer-report-renderer-v2",
+      "breakpoints": true
     }
   ]
 }

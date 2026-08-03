@@ -171,9 +171,13 @@ Report Narrative:
 
 ```text
 Allowed: read_evidence, analyze, draft_content
-Output: ReportDraftJson
-QA: every customer-facing claim maps to reviewed proof, verified release evidence, or approved product state
-Forbidden: GSC as customer success proof, ranking guarantees, invented source rows, weak internal radar as a win
+Input: CustomerReportNarrativePacket with one report id, fact-projection digest, and exact server-assigned heading/transition slots
+Provider output: CustomerReportNarrativeDraftOutput containing only slotKey + text
+Attributed output: CustomerReportNarrativeOutput after the server restores slot kind and supporting claim keys
+QA: exact slot set, strict one-line bounds, no markup/URLs/numbers/ranks/dates/citations, no guarantees/causal or economic claims, no duplicate text
+Persistence: one report-scoped agent_runs audit; only exact succeeded attributed output may appear in a bounded-AI draft
+Fallback: provider, storage, or QA failure completes the same report generation as fact_only
+Forbidden: choosing facts/evidence/proof tiers/warnings/actions/status/HTML, GSC as customer success proof, retrieval, publication, approval, provider mutation
 ```
 
 Website Understanding / Import:

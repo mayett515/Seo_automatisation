@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { policyForReasoningTask, ReasoningPolicyConfigurationError } from "./reasoning-policy.js";
+import type { ReasoningTask } from "@localseo/contracts";
+import { policyForReasoningTask } from "./reasoning-policy.js";
 
 void describe("policyForReasoningTask", () => {
   void it("keeps Opportunity Scout read/analyze only", () => {
@@ -31,7 +32,17 @@ void describe("policyForReasoningTask", () => {
     });
   });
 
+  void it("keeps report narrative bounded to evidence analysis and draft content", () => {
+    assert.deepEqual(policyForReasoningTask("report_narrative"), {
+      canMutateProduction: false,
+      allowedToolCategories: ["read_evidence", "analyze", "draft_content"]
+    });
+  });
+
   void it("fails closed for reasoning tasks without a named policy profile", () => {
-    assert.throws(() => policyForReasoningTask("report_narrative"), ReasoningPolicyConfigurationError);
+    assert.throws(
+      () => policyForReasoningTask("unprofiled_task" as ReasoningTask),
+      /No AI reasoning policy is configured/u
+    );
   });
 });

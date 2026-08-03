@@ -64,6 +64,18 @@ void describe(
       await handle?.close();
     });
 
+    void it("installs the current renderer identity without stranding historical artifact transitions", async () => {
+      const [row] = await handle.sql<{ definition: string }[]>`
+        SELECT pg_get_functiondef('enforce_report_artifact_write()'::regprocedure) AS "definition"
+      `;
+
+      assert.ok(row);
+      assert.match(row.definition, /customer_report_html_renderer\.v2/u);
+      assert.match(row.definition, /customer_report_stylesheet\.v2/u);
+      assert.match(row.definition, /customer_report_html_renderer\.v1/u);
+      assert.match(row.definition, /New report artifacts require the current renderer and stylesheet versions/u);
+    });
+
     void it("stages one immutable artifact and replays the exact bytes", async () => {
       const fixture = await createReviewedReportArtifact(db, "HTML staging");
       const storage = new MemoryImmutableArtifactStorage();

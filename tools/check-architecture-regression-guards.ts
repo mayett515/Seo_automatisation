@@ -2105,7 +2105,7 @@ requireNotIncludes(
 
 requireIncludes(
   "docs/architecture/agent-first-mvp-roadmap.md",
-  "Status: first fact-only vertical implemented; architecture checkpoint accepted by",
+  "Status: first report vertical plus optional bounded narrative implemented; architecture checkpoint accepted by",
   "roadmap-current-status",
   "The roadmap must name the implemented first Report and Next Action vertical"
 );
@@ -2539,6 +2539,97 @@ requireIncludes(
 
 requireIncludes(
   "packages/contracts/src/report.ts",
+  'schemaVersion: z.literal("customer_report_narrative_draft.v1")',
+  "customer-report-narrative",
+  "Model-owned report narrative output must remain a narrow slot-key and text contract"
+);
+
+requireIncludes(
+  "packages/ai/src/report-narrative.ts",
+  "evaluateCustomerReportNarrative",
+  "customer-report-narrative",
+  "Bounded report narrative must cross deterministic QA before attribution"
+);
+
+requireIncludes(
+  "packages/ai/src/report-narrative.ts",
+  "factTokenPattern",
+  "customer-report-narrative",
+  "AI narrative must not carry customer-facing factual tokens"
+);
+
+requireIncludes(
+  "apps/worker/src/reasoning-policy.ts",
+  'allowedToolCategories: ["read_evidence", "analyze", "draft_content"]',
+  "customer-report-narrative",
+  "Report narrative must retain its named non-mutating ADR 0019 policy"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  "let snapshot = factOnlySnapshot",
+  "customer-report-narrative",
+  "Deterministic fact truth must remain the default outcome before optional narrative"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  'policyForReasoningTask("report_narrative")',
+  "customer-report-narrative",
+  "The report narrative provider call must consume the named task policy"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "Internal report draft persistence accepts fact-only snapshots only.",
+  "customer-report-narrative",
+  "The internal API harness must not become a second bounded-narrative persistence path"
+);
+
+requireIncludes(
+  "packages/db/migrations/0043_customer-report-narrative-provenance.sql",
+  "Bounded-AI report narrative must match its succeeded report-scoped agent run.",
+  "customer-report-narrative",
+  "Postgres must bind bounded narrative to exact succeeded attributed agent output"
+);
+
+requireIncludes(
+  "packages/db/migrations/0043_customer-report-narrative-provenance.sql",
+  "Succeeded report narrative agent runs are immutable audit evidence.",
+  "customer-report-narrative",
+  "Succeeded report narrative output must remain immutable audit evidence"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.integration.ts",
+  "persists only attributed bounded narrative from a report-scoped agent run",
+  "customer-report-narrative",
+  "DB coverage must prove exact report-scoped narrative provenance"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.integration.ts",
+  "keeps QA-rejected narrative out of report truth",
+  "customer-report-narrative",
+  "DB coverage must prove unsafe provider prose degrades to fact-only truth"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "terminalizes report narrative audit when parent recovery is exhausted",
+  "customer-report-narrative",
+  "Report recovery must terminalize active narrative audit with its parent"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report-html.ts",
+  "Customer report narrative contains a slot outside the deterministic section layout.",
+  "customer-report-narrative",
+  "The renderer must fail closed on narrative outside server-owned layout slots"
+);
+
+requireIncludes(
+  "packages/contracts/src/report.ts",
   'schemaVersion: z.literal("customer_report_html_manifest.v1")',
   "customer-report-html-artifact",
   "Reviewed HTML must cross one strict digest-bound render manifest"
@@ -2551,18 +2642,32 @@ requireIncludes(
   "Active report artifacts must be committed with exact reviewed report truth"
 );
 
-requireIncludes(
-  "packages/db/migrations/0040_customer-report-html-artifacts.sql",
-  "customer_report_html_renderer.v1",
+requireLatestMigrationDefinitionIncludes(
+  "enforce_report_artifact_write",
+  "customer_report_html_renderer.v2",
   "customer-report-html-artifact",
-  "The database must pin the reviewed renderer version that owns immutable bytes"
+  "The latest artifact trigger must pin the current renderer version that owns new immutable bytes"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_report_artifact_write",
+  "customer_report_stylesheet.v2",
+  "customer-report-html-artifact",
+  "The latest artifact trigger must pin the current stylesheet version that owns new immutable bytes"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_report_artifact_write",
+  "New report artifacts require the current renderer and stylesheet versions",
+  "customer-report-html-artifact",
+  "Historical renderer identities may transition, but new artifacts must use the current byte identity"
 );
 
 requireIncludes(
-  "packages/db/migrations/0040_customer-report-html-artifacts.sql",
-  "customer_report_stylesheet.v1",
+  "apps/worker/src/handlers/customer-report-html.integration.ts",
+  "installs the current renderer identity without stranding historical artifact transitions",
   "customer-report-html-artifact",
-  "The database must pin the reviewed stylesheet version that owns immutable bytes"
+  "PostgreSQL coverage must inspect the installed renderer-version transition boundary"
 );
 
 requireIncludes(

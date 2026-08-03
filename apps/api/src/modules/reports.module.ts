@@ -441,6 +441,9 @@ export class ReportsService {
     requireUuid(input.projectId, "Report project id must be a UUID.");
     requireUuid(input.runId, "Report generation run id must be a UUID.");
     const prepared = prepareSnapshot(input.snapshot);
+    if (prepared.snapshot.narrativeMode === "bounded_ai") {
+      throw new UnprocessableEntityException("Internal report draft persistence accepts fact-only snapshots only.");
+    }
     const db = this.database.requireDb();
     const [initialRun] = await db
       .select()
@@ -2026,7 +2029,7 @@ function assertSnapshotMatchesRun(
     snapshot.assemblerVersion !== run.assemblerVersion ||
     snapshot.eligibilityPolicyVersion !== run.eligibilityPolicyVersion ||
     snapshot.actionSelectionPolicyVersion !== run.actionSelectionPolicyVersion ||
-    snapshot.narrativeMode !== run.narrativeMode
+    (run.narrativeMode === "fact_only" && snapshot.narrativeMode !== "fact_only")
   ) {
     throw new UnprocessableEntityException("Customer report snapshot policy versions do not match its generation run.");
   }

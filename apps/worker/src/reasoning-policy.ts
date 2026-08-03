@@ -22,8 +22,12 @@ const reasoningTaskPolicies: Partial<Record<ReasoningTask, AiReasoningRunPolicy>
   section_text_generation: {
     canMutateProduction: false,
     allowedToolCategories: ["read_evidence", "draft_content"]
+  },
+  report_narrative: {
+    canMutateProduction: false,
+    allowedToolCategories: ["read_evidence", "analyze", "draft_content"]
   }
-} satisfies Partial<Record<ReasoningTask, AiReasoningRunPolicy>>;
+} satisfies Record<ReasoningTask, AiReasoningRunPolicy>;
 
 export function policyForReasoningTask(task: ReasoningTask): AiReasoningRunPolicy {
   const policy = reasoningTaskPolicies[task];

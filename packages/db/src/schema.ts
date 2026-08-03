@@ -1152,6 +1152,10 @@ export const reports = pgTable(
     check("reports_snapshot_sha256_check", sql`${table.snapshotSha256} ~ '^[0-9a-f]{64}$'`),
     check("reports_fact_projection_sha256_check", sql`${table.factProjectionSha256} ~ '^[0-9a-f]{64}$'`),
     check(
+      "reports_narrative_provenance_shape_check",
+      sql`(${table.narrativeMode} = 'fact_only' and ${table.sourceAgentRunId} is null) or (${table.narrativeMode} = 'bounded_ai' and ${table.sourceAgentRunId} is not null)`
+    ),
+    check(
       "reports_reviewed_snapshot_sha256_check",
       sql`${table.reviewedSnapshotSha256} is null or ${table.reviewedSnapshotSha256} ~ '^[0-9a-f]{64}$'`
     ),

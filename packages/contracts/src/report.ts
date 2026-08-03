@@ -24,6 +24,12 @@ export const customerReportArtifactStatuses = ["pending", "running", "staged", "
 export const customerReportArtifactFormats = ["html"] as const;
 export const customerReportEvidenceAlertStatuses = ["open", "resolved"] as const;
 export const customerReportHtmlMaxBytes = 2 * 1024 * 1024;
+export const customerReportNarrativeLimits = {
+  maxSlots: 40,
+  maxSupportingClaimsPerSlot: 20,
+  maxHeadingLength: 120,
+  maxTransitionLength: 320
+} as const;
 export const customerReportClaimKinds = [
   "ranking_result",
   "page_delivery",
@@ -492,7 +498,7 @@ export const CreateCustomerReportGenerationRequestSchema = z
     period: CustomerReportMonthSchema,
     evidenceCutoffAt: CustomerReportTimestampSchema,
     idempotencyKey: ReportUuidSchema,
-    narrativeMode: z.literal("fact_only").default("fact_only"),
+    narrativeMode: CustomerReportNarrativeModeSchema.default("fact_only"),
     correctionReason: CustomerReportDecisionNoteSchema.optional()
   })
   .strict();
@@ -569,8 +575,8 @@ export const CustomerReportHtmlRenderManifestSchema = z
     snapshotSha256: CustomerReportSha256Schema,
     reportSchemaVersion: ReportVersionTokenSchema,
     templateVersion: ReportVersionTokenSchema,
-    rendererVersion: z.literal("customer_report_html_renderer.v1"),
-    stylesheetVersion: z.literal("customer_report_stylesheet.v1"),
+    rendererVersion: z.literal("customer_report_html_renderer.v2"),
+    stylesheetVersion: z.literal("customer_report_stylesheet.v2"),
     locale: CustomerReportLocaleSchema,
     timezone: CustomerReportTimezoneSchema
   })
@@ -746,6 +752,106 @@ export const CustomerReportNarrativeFragmentSchema = z
   })
   .strict();
 
+export const CustomerReportNarrativeSupportingClaimSchema = z
+  .object({
+    claimKey: ReportLogicalKeySchema,
+    kind: CustomerReportClaimKindSchema,
+    summary: reportText(320)
+  })
+  .strict();
+
+export const CustomerReportNarrativeSlotSchema = z
+  .object({
+    slotKey: ReportLogicalKeySchema,
+    kind: z.enum(["heading", "transition"]),
+    section: CustomerReportSectionSchema,
+    sectionLabel: reportText(120),
+    supportingClaims: z
+      .array(CustomerReportNarrativeSupportingClaimSchema)
+      .max(customerReportNarrativeLimits.maxSupportingClaimsPerSlot)
+  })
+  .strict()
+  .superRefine((slot, context) => {
+    uniqueSetOrIssue(
+      slot.supportingClaims.map((claim) => claim.claimKey),
+      "narrative supporting claim key",
+      ["supportingClaims"],
+      context
+    );
+    if (slot.kind === "heading" && slot.supportingClaims.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Narrative headings must remain fact-free.",
+        path: ["supportingClaims"]
+      });
+    }
+    if (slot.kind === "transition" && slot.supportingClaims.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Narrative transitions require server-selected supporting claims.",
+        path: ["supportingClaims"]
+      });
+    }
+  });
+
+export const CustomerReportNarrativePacketSchema = z
+  .object({
+    schemaVersion: z.literal("customer_report_narrative_packet.v1"),
+    projectId: ReportUuidSchema,
+    reportId: ReportUuidSchema,
+    generationRunId: ReportUuidSchema,
+    locale: CustomerReportLocaleSchema,
+    period: CustomerReportMonthSchema,
+    factProjectionSha256: CustomerReportSha256Schema,
+    slots: z.array(CustomerReportNarrativeSlotSchema).min(1).max(customerReportNarrativeLimits.maxSlots)
+  })
+  .strict()
+  .superRefine((packet, context) => {
+    uniqueSetOrIssue(
+      packet.slots.map((slot) => slot.slotKey),
+      "narrative slot key",
+      ["slots"],
+      context
+    );
+  });
+
+export const CustomerReportNarrativeDraftFragmentSchema = z
+  .object({
+    slotKey: ReportLogicalKeySchema,
+    text: reportText(customerReportNarrativeLimits.maxTransitionLength)
+  })
+  .strict();
+
+export const CustomerReportNarrativeDraftOutputSchema = z
+  .object({
+    schemaVersion: z.literal("customer_report_narrative_draft.v1"),
+    fragments: z.array(CustomerReportNarrativeDraftFragmentSchema).min(1).max(customerReportNarrativeLimits.maxSlots)
+  })
+  .strict()
+  .superRefine((output, context) => {
+    uniqueSetOrIssue(
+      output.fragments.map((fragment) => fragment.slotKey),
+      "narrative slot key",
+      ["fragments"],
+      context
+    );
+  });
+
+export const CustomerReportNarrativeOutputSchema = z
+  .object({
+    schemaVersion: z.literal("customer_report_narrative_output.v1"),
+    fragments: z.array(CustomerReportNarrativeFragmentSchema).min(1).max(customerReportNarrativeLimits.maxSlots)
+  })
+  .strict()
+  .superRefine((output, context) => {
+    uniqueSetOrIssue(
+      output.fragments.map((fragment) => fragment.slotKey),
+      "narrative slot key",
+      ["fragments"],
+      context
+    );
+  });
+
 export const CustomerReportSnapshotSchema = z
   .object({
     schemaVersion: z.literal("customer_report_snapshot.v1"),
@@ -777,6 +883,13 @@ export const CustomerReportSnapshotSchema = z
       context.addIssue({
         code: "custom",
         message: "Fact-only reports must not contain AI narrative fragments.",
+        path: ["narrative"]
+      });
+    }
+    if (snapshot.narrativeMode === "bounded_ai" && snapshot.narrative.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Bounded-AI reports require attributed narrative fragments.",
         path: ["narrative"]
       });
     }
@@ -906,6 +1019,11 @@ export type CustomerReportPublicationResponse = z.output<typeof CustomerReportPu
 export type CustomerReportPublishedSummary = z.output<typeof CustomerReportPublishedSummarySchema>;
 export type CustomerReportPublishedDetail = z.output<typeof CustomerReportPublishedDetailSchema>;
 export type CustomerReportNarrativeFragment = z.output<typeof CustomerReportNarrativeFragmentSchema>;
+export type CustomerReportNarrativeSupportingClaim = z.output<typeof CustomerReportNarrativeSupportingClaimSchema>;
+export type CustomerReportNarrativeSlot = z.output<typeof CustomerReportNarrativeSlotSchema>;
+export type CustomerReportNarrativePacket = z.output<typeof CustomerReportNarrativePacketSchema>;
+export type CustomerReportNarrativeDraftOutput = z.output<typeof CustomerReportNarrativeDraftOutputSchema>;
+export type CustomerReportNarrativeOutput = z.output<typeof CustomerReportNarrativeOutputSchema>;
 export type CustomerReportSnapshot = z.output<typeof CustomerReportSnapshotSchema>;
 export type ReportGeneratedEvent = z.output<typeof ReportGeneratedEventSchema>;
 export type CustomerApprovedNextActionEvent = z.output<typeof CustomerApprovedNextActionEventSchema>;

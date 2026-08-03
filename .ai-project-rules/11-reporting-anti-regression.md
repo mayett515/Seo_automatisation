@@ -93,10 +93,10 @@ IF a report exposes a release-review navigation action:
 THEN bind its release-plan id to the supporting immutable release evidence inside the snapshot; do not reconstruct the target from mutable operational rows.
 
 IF a report generation transport job disappears:
-THEN recover only the deterministic fact-only lane under the same run id and end bounded exhaustion in visible durable failure.
+THEN recover the deterministic report-generation run under the same run id, end bounded exhaustion in visible durable failure, and terminalize any active report-scoped narrative audit with its parent.
 
 IF `report_narrative` is enabled:
-THEN keep factual sentences, values, citations, warnings, and action cards deterministic; AI may draft only bounded fact-light prose for server-assigned claims.
+THEN keep factual sentences, values, citations, warnings, and action cards deterministic; AI may fill only exact server-assigned heading/transition slots, and provider or QA failure must degrade to fact-only truth.
 
 IF a customer-facing Next Action is consequential:
 THEN freeze a typed server-owned intent, require an explicit human receipt, and dispatch through the existing target use case with its own permission and expected-state/revision gate.

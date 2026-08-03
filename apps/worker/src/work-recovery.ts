@@ -949,29 +949,52 @@ async function markCustomerReportRecoveryFailed(
 ): Promise<boolean> {
   const failureCode =
     reason === "transport_completed_without_product_truth" ? "work_transport_inconsistent" : "work_recovery_exhausted";
-  const [updated] = await db
-    .update(reportGenerationRuns)
-    .set({
-      status: "failed",
-      failureCode,
-      failureMessage:
-        failureCode === "work_transport_inconsistent"
-          ? "Queue transport completed without terminal customer report truth."
-          : "Customer report generation exhausted bounded recovery.",
-      finishedAt: now,
-      updatedAt: now
-    })
-    .where(
-      and(
-        eq(reportGenerationRuns.id, candidate.id),
-        eq(reportGenerationRuns.projectId, candidate.projectId),
-        inArray(reportGenerationRuns.status, ["queued", "assembling", "narrative_running", "validating"]),
-        eq(reportGenerationRuns.recoveryCount, candidate.recoveryCount),
-        lte(reportGenerationRuns.updatedAt, staleBefore)
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(reportGenerationRuns)
+      .set({
+        status: "failed",
+        failureCode,
+        failureMessage:
+          failureCode === "work_transport_inconsistent"
+            ? "Queue transport completed without terminal customer report truth."
+            : "Customer report generation exhausted bounded recovery.",
+        finishedAt: now,
+        updatedAt: now
+      })
+      .where(
+        and(
+          eq(reportGenerationRuns.id, candidate.id),
+          eq(reportGenerationRuns.projectId, candidate.projectId),
+          inArray(reportGenerationRuns.status, ["queued", "assembling", "narrative_running", "validating"]),
+          eq(reportGenerationRuns.recoveryCount, candidate.recoveryCount),
+          lte(reportGenerationRuns.updatedAt, staleBefore)
+        )
       )
-    )
-    .returning({ id: reportGenerationRuns.id });
-  return Boolean(updated);
+      .returning({ id: reportGenerationRuns.id });
+    if (!updated) return false;
+    await tx
+      .update(agentRuns)
+      .set({
+        status: "failed",
+        failureCode,
+        diagnosticsJson: {
+          gateId: "parent_report_recovery",
+          message: "The parent customer report generation terminated during bounded recovery."
+        },
+        completedAt: now,
+        updatedAt: now
+      })
+      .where(
+        and(
+          eq(agentRuns.id, candidate.id),
+          eq(agentRuns.projectId, candidate.projectId),
+          eq(agentRuns.task, "report_narrative"),
+          inArray(agentRuns.status, activeAgentRunStatuses)
+        )
+      );
+    return true;
+  });
 }
 
 async function markMediaProcessingRecoveryFailed(

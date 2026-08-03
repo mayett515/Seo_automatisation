@@ -12,6 +12,8 @@ import {
   CustomerReportGenerationResponseSchema,
   CustomerReportHtmlRenderJobDataSchema,
   CustomerReportHtmlRenderManifestSchema,
+  CustomerReportNarrativeDraftOutputSchema,
+  CustomerReportNarrativePacketSchema,
   CustomerReportPublicationCommandSchema,
   CustomerReportPublishedDetailSchema,
   CustomerReportReviewCommandSchema,
@@ -46,6 +48,66 @@ void describe("CustomerReportSnapshotSchema", () => {
     assert.equal(result.evidenceCutoffAt, cutoff);
     assert.equal(result.narrativeMode, "fact_only");
     assert.deepEqual(result.narrative, []);
+  });
+
+  void it("requires bounded AI snapshots to carry attributed narrative", () => {
+    const snapshot = validSnapshot();
+    assert.equal(
+      CustomerReportSnapshotSchema.safeParse({ ...snapshot, narrativeMode: "bounded_ai", narrative: [] }).success,
+      false
+    );
+    assert.equal(
+      CustomerReportSnapshotSchema.safeParse({
+        ...snapshot,
+        narrativeMode: "bounded_ai",
+        narrative: [
+          {
+            slotKey: "heading:ranking_results",
+            kind: "heading",
+            text: "Gepruefte Sichtbarkeit",
+            supportingClaimKeys: []
+          }
+        ]
+      }).success,
+      true
+    );
+  });
+
+  void it("keeps model-owned narrative output narrower than server-owned slot metadata", () => {
+    const packet = CustomerReportNarrativePacketSchema.parse({
+      schemaVersion: "customer_report_narrative_packet.v1",
+      projectId,
+      reportId,
+      generationRunId,
+      locale: "de-DE",
+      period: "2026-07",
+      factProjectionSha256: digest,
+      slots: [
+        {
+          slotKey: "transition:ranking_results:01",
+          kind: "transition",
+          section: "ranking_results",
+          sectionLabel: "Ranking-Ergebnisse",
+          supportingClaims: [
+            { claimKey: "ranking:roof-cleaning", kind: "ranking_result", summary: "Geprueftes Ergebnis." }
+          ]
+        }
+      ]
+    });
+    assert.equal(packet.slots.length, 1);
+    assert.equal(
+      CustomerReportNarrativeDraftOutputSchema.safeParse({
+        schemaVersion: "customer_report_narrative_draft.v1",
+        fragments: [
+          {
+            slotKey: "transition:ranking_results:01",
+            text: "Die geprueften Themen werden eingeordnet.",
+            supportingClaimKeys: ["ranking:roof-cleaning"]
+          }
+        ]
+      }).success,
+      false
+    );
   });
 
   void it("rejects banned GSC diagnostics and arbitrary customer-facing fields", () => {
@@ -281,8 +343,8 @@ void describe("customer report review and render contracts", () => {
       snapshotSha256: digest,
       reportSchemaVersion: "customer_report_snapshot.v1",
       templateVersion: "customer_report_html.v1",
-      rendererVersion: "customer_report_html_renderer.v1",
-      stylesheetVersion: "customer_report_stylesheet.v1",
+      rendererVersion: "customer_report_html_renderer.v2",
+      stylesheetVersion: "customer_report_stylesheet.v2",
       locale: "de-DE",
       timezone: "Europe/Berlin"
     });
@@ -525,6 +587,10 @@ void describe("customer report generation contracts", () => {
     assert.equal(
       CreateCustomerReportGenerationRequestSchema.safeParse({ ...base, correctionReason: "\u0000" }).success,
       false
+    );
+    assert.equal(
+      CreateCustomerReportGenerationRequestSchema.parse({ ...base, narrativeMode: "bounded_ai" }).narrativeMode,
+      "bounded_ai"
     );
   });
 });

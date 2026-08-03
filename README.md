@@ -283,8 +283,8 @@ strict report contracts, canonicalization, eligibility, lifecycle, and permissio
 -> deterministic report evidence snapshot (implemented)
 -> customer-safe fact eligibility and exact evidence references (implemented)
 -> deterministic fact-only draft (implemented)
--> optional bounded report_narrative headings/transitions
--> deterministic claim and narrative validation
+-> optional bounded report_narrative headings/transitions (implemented)
+-> deterministic claim and narrative validation (implemented)
 -> digest-bound human review and stored private HTML (implemented)
 -> digest-bound human publication and correction (implemented)
 -> authenticated report list/review/publication/history UI (implemented)
@@ -444,4 +444,4 @@ The repository has a strong foundation for an AI-assisted Local SEO MVP:
 - DB-before-queue recovery for the safe page, media, and verification lanes,
 - AI reasoning boundaries and named task policies.
 
-The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The customer-safe Report and Next Action milestone now includes ADR 0021 Slices 0-5: strict snapshot/provenance contracts, deterministic fact-only assembly, digest-bound review, immutable reviewed HTML, actor-backed render retry, source-serialized publication/correction, correction alerts, authenticated snapshot-owned reads, and the report list/detail/review/publication/history workspace. The first useful report vertical is complete without AI; `report_narrative`, command offers, PDF, RAG, public links, and direct prose editing remain optional later work.
+The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The customer-safe Report and Next Action milestone now includes ADR 0021 Slices 0-6: strict snapshot/provenance contracts, deterministic fact-only assembly, optional bounded report-scoped AI headings/transitions with fact-only fallback, digest-bound review, immutable reviewed HTML, actor-backed render retry, source-serialized publication/correction, correction alerts, authenticated snapshot-owned reads, and the report list/detail/review/publication/history workspace. The useful report vertical remains complete without AI; command offers, PDF, RAG, public links, and direct prose editing remain optional later work.

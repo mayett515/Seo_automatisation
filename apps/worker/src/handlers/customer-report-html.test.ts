@@ -108,6 +108,48 @@ void describe("customer report HTML renderer", () => {
       else process.env.TZ = previousTimezone;
     }
   });
+
+  void it("renders attributed narrative only inside its deterministic section slot", () => {
+    const snapshot = reportSnapshot({
+      narrativeMode: "bounded_ai",
+      narrative: [
+        {
+          slotKey: "heading:future_opportunities",
+          kind: "heading",
+          text: "Gepruefte naechste Themen",
+          supportingClaimKeys: []
+        },
+        {
+          slotKey: "transition:future_opportunities:01",
+          kind: "transition",
+          text: "Die geprueften Themen werden gemeinsam eingeordnet.",
+          supportingClaimKeys: [`opportunity:${opportunityId}`]
+        }
+      ]
+    });
+    const html = renderCustomerReportHtml(snapshot, reportManifest());
+    assert.match(html, /<h2 id="future_opportunities">Gepruefte naechste Themen<\/h2>/u);
+    assert.match(html, /class="narrative-transition"/u);
+
+    assert.throws(
+      () =>
+        renderCustomerReportHtml(
+          reportSnapshot({
+            narrativeMode: "bounded_ai",
+            narrative: [
+              {
+                slotKey: "heading:unknown",
+                kind: "heading",
+                text: "Nicht zugeordnet",
+                supportingClaimKeys: []
+              }
+            ]
+          }),
+          reportManifest()
+        ),
+      /outside the deterministic section layout/u
+    );
+  });
 });
 
 function reportSnapshot(overrides: Partial<CustomerReportSnapshot> = {}): CustomerReportSnapshot {
@@ -183,8 +225,8 @@ function reportManifest() {
     snapshotSha256: digest,
     reportSchemaVersion: "customer_report_snapshot.v1",
     templateVersion: "customer_report_html.v1",
-    rendererVersion: "customer_report_html_renderer.v1",
-    stylesheetVersion: "customer_report_stylesheet.v1",
+    rendererVersion: "customer_report_html_renderer.v2",
+    stylesheetVersion: "customer_report_stylesheet.v2",
     locale: "de-DE",
     timezone: "Europe/Berlin"
   });

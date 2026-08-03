@@ -116,6 +116,26 @@ void describe(
       assert.equal(run?.recoveryCount, 3);
     });
 
+    void it("terminalizes report narrative audit when parent recovery is exhausted", async () => {
+      const fixture = await createCustomerReportRecoveryFixture(db, {
+        recoveryCount: 3,
+        narrativeRunning: true
+      });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      const [generation] = await db
+        .select()
+        .from(reportGenerationRuns)
+        .where(eq(reportGenerationRuns.id, fixture.runId));
+      const [agentRun] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(generation?.status, "failed");
+      assert.equal(agentRun?.status, "failed");
+      assert.equal(agentRun?.failureCode, "work_recovery_exhausted");
+    });
+
     void it("fails report product truth when transport completed without terminal persistence", async () => {
       const fixture = await createCustomerReportRecoveryFixture(db);
       const queues = fakeQueues();
@@ -402,7 +422,7 @@ async function createProject(db: DatabaseClient): Promise<string> {
 
 async function createCustomerReportRecoveryFixture(
   db: DatabaseClient,
-  input: { recoveryCount?: number } = {}
+  input: { recoveryCount?: number; narrativeRunning?: boolean } = {}
 ): Promise<{ projectId: string; runId: string }> {
   const projectId = await createProject(db);
   const [user] = await db
@@ -427,8 +447,8 @@ async function createCustomerReportRecoveryFixture(
     id: runId,
     projectId,
     reportIssueId: issue.id,
-    status: "queued",
-    narrativeMode: "fact_only",
+    status: input.narrativeRunning ? "narrative_running" : "queued",
+    narrativeMode: input.narrativeRunning ? "bounded_ai" : "fact_only",
     idempotencyKey: randomUUID(),
     queueJobId: runId,
     requestedByUserId: user.id,
@@ -442,6 +462,16 @@ async function createCustomerReportRecoveryFixture(
     recoveryCount: input.recoveryCount ?? 0,
     updatedAt: staleUpdatedAt
   });
+  if (input.narrativeRunning) {
+    await db.insert(agentRuns).values({
+      id: runId,
+      projectId,
+      subjectId: runId,
+      task: "report_narrative",
+      status: "running",
+      updatedAt: staleUpdatedAt
+    });
+  }
   return { projectId, runId };
 }
 

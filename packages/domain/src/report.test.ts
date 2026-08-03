@@ -7,6 +7,8 @@ import {
   canonicalizeCustomerReportSnapshot,
   canonicalizeCustomerReportHtmlRenderManifest,
   assembleCustomerReportFactProjection,
+  buildBoundedAiCustomerReportSnapshot,
+  buildCustomerReportNarrativePacket,
   buildCustomerReportHtmlRenderManifest,
   canonicalizeCustomerReportEvidencePacket,
   customerReportActionQuotas,
@@ -116,8 +118,8 @@ void describe("customer report reviewed HTML artifacts", () => {
       timezone: "Europe/Berlin"
     });
 
-    assert.equal(manifest.rendererVersion, "customer_report_html_renderer.v1");
-    assert.equal(manifest.stylesheetVersion, "customer_report_stylesheet.v1");
+    assert.equal(manifest.rendererVersion, "customer_report_html_renderer.v2");
+    assert.equal(manifest.stylesheetVersion, "customer_report_stylesheet.v2");
     assert.equal(
       canonicalizeCustomerReportHtmlRenderManifest(manifest),
       canonicalizeCustomerReportHtmlRenderManifest({ ...manifest })
@@ -514,6 +516,59 @@ void describe("customer report navigation actions", () => {
       kind: "unavailable",
       reason: "report_not_published"
     });
+  });
+});
+
+void describe("customer report narrative slots", () => {
+  void it("assigns bounded slots from deterministic claims without exposing fact values", () => {
+    const snapshot = validSnapshot();
+    const packet = buildCustomerReportNarrativePacket({
+      identity: snapshot.identity,
+      reportId,
+      generationRunId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      factProjection: snapshot.factProjection,
+      factProjectionSha256: snapshot.factProjectionSha256
+    });
+    assert.ok(packet);
+    assert.deepEqual(
+      packet.slots.map((slot) => slot.slotKey),
+      [
+        "heading:ranking_results",
+        "transition:ranking_results:01",
+        "heading:future_opportunities",
+        "transition:future_opportunities:01"
+      ]
+    );
+    assert.doesNotMatch(JSON.stringify(packet), /dach|https|"rank":3/iu);
+  });
+
+  void it("builds bounded narrative without changing deterministic facts or actions", () => {
+    const factOnly = validSnapshot();
+    const packet = {
+      schemaVersion: "customer_report_evidence_packet.v1" as const,
+      identity: factOnly.identity,
+      assembledAt: factOnly.generatedAt,
+      evidenceCutoffAt: factOnly.evidenceCutoffAt,
+      evidence: factOnly.factProjection.evidence
+    };
+    const bounded = buildBoundedAiCustomerReportSnapshot({
+      packet,
+      factProjection: factOnly.factProjection,
+      factProjectionSha256: factOnly.factProjectionSha256,
+      assemblerVersion: factOnly.assemblerVersion,
+      eligibilityPolicyVersion: factOnly.eligibilityPolicyVersion,
+      actionSelectionPolicyVersion: factOnly.actionSelectionPolicyVersion,
+      narrative: [
+        {
+          slotKey: "heading:ranking_results",
+          kind: "heading",
+          text: "Gepruefte Sichtbarkeit",
+          supportingClaimKeys: []
+        }
+      ]
+    });
+    assert.equal(bounded.narrativeMode, "bounded_ai");
+    assert.deepEqual(bounded.factProjection, factOnly.factProjection);
   });
 });
 

@@ -3,6 +3,9 @@ import type {
   CustomerReportEvidenceItem,
   CustomerReportEvidencePacket,
   CustomerReportFactProjection,
+  CustomerReportIdentity,
+  CustomerReportNarrativeFragment,
+  CustomerReportNarrativePacket,
   CustomerReportNavigationRef,
   CustomerReportSnapshot,
   CustomerReportStatus,
@@ -10,9 +13,14 @@ import type {
   CustomerReportHtmlRenderManifest
 } from "@localseo/contracts";
 import {
+  customerReportNarrativeLimits,
+  customerReportSections,
   CustomerReportHtmlRenderManifestSchema,
   CustomerReportEvidencePacketSchema,
   CustomerReportFactProjectionSchema,
+  CustomerReportIdentitySchema,
+  CustomerReportNarrativeFragmentSchema,
+  CustomerReportNarrativePacketSchema,
   CustomerReportSha256Schema,
   CustomerReportSnapshotSchema
 } from "@localseo/contracts";
@@ -33,13 +41,23 @@ export const customerReportVersions = {
   reportSchemaVersion: "customer_report_snapshot.v1",
   eligibilityPolicyVersion: "customer_report_eligibility.v1",
   actionSelectionPolicyVersion: "customer_report_actions.v1",
-  customerSafetyPolicyVersion: "customer_report_safety.v1"
+  customerSafetyPolicyVersion: "customer_report_safety.v1",
+  narrativePolicyVersion: "customer_report_narrative.v1"
 } as const;
+
+const reportSectionLabels = {
+  ranking_results: "Ranking-Ergebnisse",
+  page_delivery: "Seiten und Auslieferung",
+  live_health: "Live-Pruefung",
+  warnings: "Technische Hinweise",
+  rollback_corrections: "Korrekturen",
+  future_opportunities: "Naechste Chancen"
+} as const satisfies Record<CustomerReportClaim["section"], string>;
 
 export const customerReportHtmlVersions = {
   manifestSchemaVersion: "customer_report_html_manifest.v1",
-  rendererVersion: "customer_report_html_renderer.v1",
-  stylesheetVersion: "customer_report_stylesheet.v1"
+  rendererVersion: "customer_report_html_renderer.v2",
+  stylesheetVersion: "customer_report_stylesheet.v2"
 } as const;
 
 export const customerReportEvidenceCutoffGraceDays = 7;
@@ -304,22 +322,156 @@ export function buildFactOnlyCustomerReportSnapshot(input: {
   const factProjection = CustomerReportFactProjectionSchema.parse(input.factProjection);
   const factProjectionSha256 = CustomerReportSha256Schema.parse(input.factProjectionSha256);
 
-  return CustomerReportSnapshotSchema.parse({
-    schemaVersion: "customer_report_snapshot.v1",
-    identity: packet.identity,
-    generatedAt: packet.assembledAt,
-    evidenceCutoffAt: packet.evidenceCutoffAt,
+  return buildCustomerReportSnapshot({
+    packet,
+    factProjection,
+    factProjectionSha256,
     assemblerVersion: input.assemblerVersion,
     eligibilityPolicyVersion: input.eligibilityPolicyVersion,
     actionSelectionPolicyVersion: input.actionSelectionPolicyVersion,
-    narrativePolicyVersion: "customer_report_narrative.v1",
-    templateVersion: "customer_report_template.v1",
     narrativeMode: "fact_only",
-    title: `Local SEO Monatsbericht ${packet.identity.period}`,
-    factProjectionSha256,
-    factProjection,
     narrative: []
   });
+}
+
+export function buildBoundedAiCustomerReportSnapshot(input: {
+  packet: CustomerReportEvidencePacket;
+  factProjection: CustomerReportFactProjection;
+  factProjectionSha256: string;
+  assemblerVersion: string;
+  eligibilityPolicyVersion: string;
+  actionSelectionPolicyVersion: string;
+  narrative: CustomerReportNarrativeFragment[];
+}): CustomerReportSnapshot {
+  const packet = CustomerReportEvidencePacketSchema.parse(input.packet);
+  const factProjection = CustomerReportFactProjectionSchema.parse(input.factProjection);
+  const factProjectionSha256 = CustomerReportSha256Schema.parse(input.factProjectionSha256);
+  const narrative = input.narrative.map((fragment) => CustomerReportNarrativeFragmentSchema.parse(fragment));
+
+  return buildCustomerReportSnapshot({
+    packet,
+    factProjection,
+    factProjectionSha256,
+    assemblerVersion: input.assemblerVersion,
+    eligibilityPolicyVersion: input.eligibilityPolicyVersion,
+    actionSelectionPolicyVersion: input.actionSelectionPolicyVersion,
+    narrativeMode: "bounded_ai",
+    narrative
+  });
+}
+
+export function buildCustomerReportNarrativePacket(input: {
+  identity: CustomerReportIdentity;
+  reportId: string;
+  generationRunId: string;
+  factProjection: CustomerReportFactProjection;
+  factProjectionSha256: string;
+}): CustomerReportNarrativePacket | undefined {
+  const identity = CustomerReportIdentitySchema.parse(input.identity);
+  const factProjection = normalizeCustomerReportFactProjection(
+    CustomerReportFactProjectionSchema.parse(input.factProjection)
+  );
+  const claimsBySection = new Map<CustomerReportClaim["section"], CustomerReportClaim[]>();
+  for (const claim of factProjection.claims) {
+    const sectionClaims = claimsBySection.get(claim.section) ?? [];
+    sectionClaims.push(claim);
+    claimsBySection.set(claim.section, sectionClaims);
+  }
+
+  const slots = customerReportSections.flatMap((section) => {
+    const claims = claimsBySection.get(section) ?? [];
+    if (claims.length === 0) return [];
+    const heading = {
+      slotKey: `heading:${section}`,
+      kind: "heading" as const,
+      section,
+      sectionLabel: reportSectionLabels[section],
+      supportingClaims: []
+    };
+    const transitions = chunkClaims(claims, customerReportNarrativeLimits.maxSupportingClaimsPerSlot).map(
+      (claimChunk, index) => ({
+        slotKey: `transition:${section}:${String(index + 1).padStart(2, "0")}`,
+        kind: "transition" as const,
+        section,
+        sectionLabel: reportSectionLabels[section],
+        supportingClaims: claimChunk.map((claim) => ({
+          claimKey: claim.claimKey,
+          kind: claim.kind,
+          summary: narrativeSummaryForClaim(claim)
+        }))
+      })
+    );
+    return [heading, ...transitions];
+  });
+  if (slots.length === 0) return undefined;
+
+  return CustomerReportNarrativePacketSchema.parse({
+    schemaVersion: "customer_report_narrative_packet.v1",
+    projectId: identity.projectId,
+    reportId: input.reportId,
+    generationRunId: input.generationRunId,
+    locale: identity.locale,
+    period: identity.period,
+    factProjectionSha256: input.factProjectionSha256,
+    slots
+  });
+}
+
+function buildCustomerReportSnapshot(input: {
+  packet: CustomerReportEvidencePacket;
+  factProjection: CustomerReportFactProjection;
+  factProjectionSha256: string;
+  assemblerVersion: string;
+  eligibilityPolicyVersion: string;
+  actionSelectionPolicyVersion: string;
+  narrativeMode: "fact_only" | "bounded_ai";
+  narrative: CustomerReportNarrativeFragment[];
+}): CustomerReportSnapshot {
+  return CustomerReportSnapshotSchema.parse({
+    schemaVersion: "customer_report_snapshot.v1",
+    identity: input.packet.identity,
+    generatedAt: input.packet.assembledAt,
+    evidenceCutoffAt: input.packet.evidenceCutoffAt,
+    assemblerVersion: input.assemblerVersion,
+    eligibilityPolicyVersion: input.eligibilityPolicyVersion,
+    actionSelectionPolicyVersion: input.actionSelectionPolicyVersion,
+    narrativePolicyVersion: customerReportVersions.narrativePolicyVersion,
+    templateVersion: "customer_report_template.v1",
+    narrativeMode: input.narrativeMode,
+    title: `Local SEO Monatsbericht ${input.packet.identity.period}`,
+    factProjectionSha256: input.factProjectionSha256,
+    factProjection: input.factProjection,
+    narrative: input.narrative
+  });
+}
+
+function chunkClaims(claims: CustomerReportClaim[], size: number): CustomerReportClaim[][] {
+  const chunks: CustomerReportClaim[][] = [];
+  for (let index = 0; index < claims.length; index += size) chunks.push(claims.slice(index, index + size));
+  return chunks;
+}
+
+function narrativeSummaryForClaim(claim: CustomerReportClaim): string {
+  switch (claim.kind) {
+    case "ranking_result":
+      return "Ein geprueftes Ranking-Ergebnis liegt vor.";
+    case "page_delivery":
+      return claim.deliveryState === "released_content"
+        ? "Eine freigegebene Seite wurde veroeffentlicht."
+        : "Eine Seite wurde fachlich freigegeben.";
+    case "provider_handoff":
+      return "Eine technische Auslieferung an den Hosting-Anbieter ist dokumentiert.";
+    case "live_health":
+      return claim.health === "live_healthy"
+        ? "Eine Live-Pruefung wurde ohne Warnung abgeschlossen."
+        : "Eine Live-Pruefung wurde mit Hinweisen abgeschlossen.";
+    case "release_warning":
+      return "Ein kundenrelevanter technischer Hinweis ist dokumentiert.";
+    case "rollback_correction":
+      return "Eine Korrektur wurde abgeschlossen und anschliessend live geprueft.";
+    case "future_opportunity":
+      return "Eine gepruefte zukuenftige Local-SEO-Chance liegt vor.";
+  }
 }
 
 export function normalizeCustomerReportFactProjection(
