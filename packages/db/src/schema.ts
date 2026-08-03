@@ -5,6 +5,7 @@ import {
   customerReportEvidenceKinds,
   customerReportArtifactFormats,
   customerReportArtifactStatuses,
+  customerReportEvidenceAlertStatuses,
   customerReportGenerationStatuses,
   customerReportKinds,
   customerReportLifecycleEventTypes,
@@ -129,6 +130,10 @@ export const customerReportArtifactStatusEnum = pgEnum(
 export const customerReportArtifactFormatEnum = pgEnum(
   "customer_report_artifact_format",
   customerReportArtifactFormats
+);
+export const customerReportEvidenceAlertStatusEnum = pgEnum(
+  "customer_report_evidence_alert_status",
+  customerReportEvidenceAlertStatuses
 );
 
 const timestamps = {
@@ -1038,6 +1043,8 @@ export const reportGenerationRuns = pgTable(
     baseCandidateReportId: uuid("base_candidate_report_id").references((): AnyPgColumn => reports.id),
     baseCandidateRowVersion: integer("base_candidate_row_version"),
     baseCandidateSnapshotSha256: text("base_candidate_snapshot_sha256"),
+    correctionPredecessorReportId: uuid("correction_predecessor_report_id").references((): AnyPgColumn => reports.id),
+    correctionReason: text("correction_reason"),
     resultReportId: uuid("result_report_id").references((): AnyPgColumn => reports.id),
     evidenceCutoffAt: timestamp("evidence_cutoff_at", { withTimezone: true }).notNull(),
     evidencePacketCanonicalText: text("evidence_packet_canonical_text"),
@@ -1072,6 +1079,10 @@ export const reportGenerationRuns = pgTable(
     check(
       "report_generation_runs_base_candidate_check",
       sql`(${table.baseCandidateReportId} is null and ${table.baseCandidateRowVersion} is null and ${table.baseCandidateSnapshotSha256} is null) or (${table.baseCandidateReportId} is not null and ${table.baseCandidateRowVersion} is not null and ${table.baseCandidateSnapshotSha256} ~ '^[0-9a-f]{64}$')`
+    ),
+    check(
+      "report_generation_runs_correction_check",
+      sql`(${table.correctionPredecessorReportId} is null and ${table.correctionReason} is null) or (${table.correctionPredecessorReportId} is not null and ${table.correctionReason} is not null)`
     ),
     check(
       "report_generation_runs_evidence_packet_check",
@@ -1111,6 +1122,7 @@ export const reports = pgTable(
       .references(() => reportGenerationRuns.id),
     sourceAgentRunId: uuid("source_agent_run_id").references(() => agentRuns.id),
     reviewedSnapshotSha256: text("reviewed_snapshot_sha256"),
+    publishedArtifactId: uuid("published_artifact_id").references((): AnyPgColumn => reportArtifacts.id),
     supersedesReportId: uuid("supersedes_report_id").references((): AnyPgColumn => reports.id),
     correctionReason: text("correction_reason"),
     createdByActorType: text("created_by_actor_type").notNull().default("system"),
@@ -1146,7 +1158,7 @@ export const reports = pgTable(
     check("reports_actor_type_check", sql`${table.createdByActorType} in ('human', 'system')`),
     check(
       "reports_lifecycle_evidence_check",
-      sql`(${table.status} = 'draft' and ${table.reviewedSnapshotSha256} is null and ${table.readyAt} is null and ${table.publishedAt} is null and ${table.supersededAt} is null) or (${table.status} = 'ready_for_review' and ${table.reviewedSnapshotSha256} = ${table.snapshotSha256} and ${table.readyAt} is not null and ${table.publishedAt} is null and ${table.supersededAt} is null) or (${table.status} = 'published' and ${table.reviewedSnapshotSha256} = ${table.snapshotSha256} and ${table.readyAt} is not null and ${table.publishedAt} is not null and ${table.publishedByUserId} is not null and ${table.supersededAt} is null) or (${table.status} = 'superseded' and ${table.reviewedSnapshotSha256} = ${table.snapshotSha256} and ${table.readyAt} is not null and ${table.publishedAt} is not null and ${table.publishedByUserId} is not null and ${table.supersededAt} is not null)`
+      sql`(${table.status} = 'draft' and ${table.reviewedSnapshotSha256} is null and ${table.readyAt} is null and ${table.publishedArtifactId} is null and ${table.publishedAt} is null and ${table.supersededAt} is null) or (${table.status} = 'ready_for_review' and ${table.reviewedSnapshotSha256} = ${table.snapshotSha256} and ${table.readyAt} is not null and ${table.publishedArtifactId} is null and ${table.publishedAt} is null and ${table.supersededAt} is null) or (${table.status} = 'published' and ${table.reviewedSnapshotSha256} = ${table.snapshotSha256} and ${table.readyAt} is not null and ${table.publishedArtifactId} is not null and ${table.publishedAt} is not null and ${table.publishedByUserId} is not null and ${table.supersededAt} is null) or (${table.status} = 'superseded' and ${table.reviewedSnapshotSha256} = ${table.snapshotSha256} and ${table.readyAt} is not null and ${table.publishedArtifactId} is not null and ${table.publishedAt} is not null and ${table.publishedByUserId} is not null and ${table.supersededAt} is not null)`
     ),
     check(
       "reports_correction_identity_check",
@@ -1170,6 +1182,8 @@ export const reportArtifacts = pgTable(
     renderManifestCanonicalText: text("render_manifest_canonical_text").notNull(),
     renderManifestSha256: text("render_manifest_sha256").notNull(),
     queueJobId: text("queue_job_id").notNull(),
+    requestedByUserId: uuid("requested_by_user_id").references(() => users.id),
+    requestId: uuid("request_id"),
     storageKey: text("storage_key"),
     artifactSha256: text("artifact_sha256"),
     byteSize: integer("byte_size"),
@@ -1193,6 +1207,9 @@ export const reportArtifacts = pgTable(
       .on(table.reportId, table.format, table.snapshotSha256, table.renderManifestSha256)
       .where(sql`${table.status} in ('pending', 'running', 'staged')`),
     uniqueIndex("report_artifacts_queue_job_idx").on(table.queueJobId),
+    uniqueIndex("report_artifacts_project_request_idx")
+      .on(table.projectId, table.requestId)
+      .where(sql`${table.requestId} is not null`),
     index("report_artifacts_project_status_created_idx").on(table.projectId, table.status, table.createdAt),
     index("report_artifacts_recovery_scan_idx")
       .on(table.status, table.updatedAt)
@@ -1206,6 +1223,10 @@ export const reportArtifacts = pgTable(
     check("report_artifacts_attempt_count_check", sql`${table.attemptCount} >= 0`),
     check("report_artifacts_recovery_count_check", sql`${table.recoveryCount} >= 0`),
     check("report_artifacts_byte_size_check", sql`${table.byteSize} is null or ${table.byteSize} >= 0`),
+    check(
+      "report_artifacts_request_actor_check",
+      sql`(${table.requestId} is null and ${table.requestedByUserId} is null) or (${table.requestId} is not null and ${table.requestedByUserId} is not null)`
+    ),
     check(
       "report_artifacts_terminal_evidence_check",
       sql`(${table.status} in ('pending', 'running') and ${table.storageKey} is null and ${table.artifactSha256} is null and ${table.byteSize} is null and ${table.failureCode} is null and ${table.failureMessage} is null and ${table.stagedAt} is null and ${table.expiredAt} is null) or (${table.status} = 'staged' and ${table.storageKey} is not null and ${table.artifactSha256} is not null and ${table.byteSize} is not null and ${table.failureCode} is null and ${table.failureMessage} is null and ${table.stagedAt} is not null and ${table.expiredAt} is null) or (${table.status} = 'failed' and ${table.storageKey} is null and ${table.artifactSha256} is null and ${table.byteSize} is null and ${table.failureCode} is not null and ${table.failureMessage} is not null and ${table.stagedAt} is null and ${table.expiredAt} is null) or (${table.status} = 'expired' and ${table.expiredAt} is not null)`
@@ -1284,6 +1305,53 @@ export const reportEvidenceItems = pgTable(
   ]
 );
 
+export const reportEvidenceAlerts = pgTable(
+  "report_evidence_alerts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    reportId: uuid("report_id").notNull(),
+    reportEvidenceItemId: uuid("report_evidence_item_id").notNull(),
+    evidenceKey: text("evidence_key").notNull(),
+    sourceKind: customerReportEvidenceKindEnum("source_kind").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    alertKind: text("alert_kind").notNull().default("source_invalidated"),
+    status: customerReportEvidenceAlertStatusEnum("status").notNull().default("open"),
+    detectedAt: timestamp("detected_at", { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByReportId: uuid("resolved_by_report_id"),
+    ...timestamps
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.reportId, table.projectId],
+      foreignColumns: [reports.id, reports.projectId],
+      name: "report_evidence_alerts_report_project_fk"
+    }),
+    foreignKey({
+      columns: [table.reportEvidenceItemId, table.reportId, table.projectId],
+      foreignColumns: [reportEvidenceItems.id, reportEvidenceItems.reportId, reportEvidenceItems.projectId],
+      name: "report_evidence_alerts_evidence_report_project_fk"
+    }),
+    foreignKey({
+      columns: [table.resolvedByReportId, table.projectId],
+      foreignColumns: [reports.id, reports.projectId],
+      name: "report_evidence_alerts_resolution_report_project_fk"
+    }),
+    uniqueIndex("report_evidence_alerts_open_evidence_idx")
+      .on(table.reportId, table.evidenceKey)
+      .where(sql`${table.status} = 'open'`),
+    index("report_evidence_alerts_project_status_idx").on(table.projectId, table.status, table.detectedAt),
+    check("report_evidence_alerts_kind_check", sql`${table.alertKind} = 'source_invalidated'`),
+    check(
+      "report_evidence_alerts_resolution_check",
+      sql`(${table.status} = 'open' and ${table.resolvedAt} is null and ${table.resolvedByReportId} is null) or (${table.status} = 'resolved' and ${table.resolvedAt} is not null and ${table.resolvedByReportId} is not null)`
+    )
+  ]
+);
+
 export const reportClaimEvidence = pgTable(
   "report_claim_evidence",
   {
@@ -1323,6 +1391,7 @@ export const reportLifecycleEvents = pgTable(
       .notNull()
       .references(() => reports.id),
     generationRunId: uuid("generation_run_id").references(() => reportGenerationRuns.id),
+    artifactId: uuid("artifact_id").references(() => reportArtifacts.id),
     eventType: customerReportLifecycleEventTypeEnum("event_type").notNull(),
     fromStatus: customerReportStatusEnum("from_status"),
     toStatus: customerReportStatusEnum("to_status").notNull(),

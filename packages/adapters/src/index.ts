@@ -371,7 +371,12 @@ export type ImmutableArtifactStoredObject = {
   sha256: string;
 };
 
-export interface ImmutableArtifactStoragePort {
+export interface ImmutableArtifactReaderPort {
+  readImmutableArtifact(input: { key: string; maxBytes: number }): Promise<Uint8Array>;
+  headImmutableArtifact(input: { key: string }): Promise<ImmutableArtifactStoredObject | undefined>;
+}
+
+export interface ImmutableArtifactStoragePort extends ImmutableArtifactReaderPort {
   putImmutableArtifact(input: {
     key: string;
     body: Uint8Array;
@@ -379,8 +384,6 @@ export interface ImmutableArtifactStoragePort {
     sha256: string;
     metadata?: Record<string, string>;
   }): Promise<ImmutableArtifactStoredObject>;
-  readImmutableArtifact(input: { key: string; maxBytes: number }): Promise<Uint8Array>;
-  headImmutableArtifact(input: { key: string }): Promise<ImmutableArtifactStoredObject | undefined>;
 }
 
 export type MediaUploadGrant =

@@ -34,8 +34,15 @@ import {
   type UpdateOpportunityLifecycleRequest,
   type UpdateRankingProofStatusRequest
 } from "@localseo/contracts";
-import { agentRuns, opportunities, rankingProofs } from "@localseo/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import {
+  agentRuns,
+  opportunities,
+  rankingProofs,
+  reportEvidenceAlerts,
+  reportEvidenceItems,
+  reports
+} from "@localseo/db";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
@@ -158,23 +165,73 @@ export class OpportunitiesService {
   ): Promise<RankingProof> {
     const db = this.database.requireDb();
     const invalidating = input.status === "invalidated";
-    const [row] = await db
-      .update(rankingProofs)
-      .set({
-        status: input.status,
-        invalidatedAt: invalidating ? new Date() : null,
-        invalidatedByUserId: invalidating ? (userId ?? null) : null,
-        invalidationReason: invalidating ? input.reason : null,
-        updatedAt: new Date()
-      })
-      .where(and(eq(rankingProofs.id, proofId), eq(rankingProofs.projectId, projectId)))
-      .returning();
+    let result: typeof rankingProofs.$inferSelect | undefined;
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT "id" FROM "ranking_proofs" WHERE "id" = ${proofId} AND "project_id" = ${projectId} FOR UPDATE`
+      );
+      const now = new Date();
+      const [row] = await tx
+        .update(rankingProofs)
+        .set({
+          status: input.status,
+          invalidatedAt: invalidating ? now : null,
+          invalidatedByUserId: invalidating ? (userId ?? null) : null,
+          invalidationReason: invalidating ? input.reason : null,
+          updatedAt: now
+        })
+        .where(and(eq(rankingProofs.id, proofId), eq(rankingProofs.projectId, projectId)))
+        .returning();
+      if (!row) throw new NotFoundException("Ranking proof was not found for this project.");
 
-    if (!row) {
-      throw new NotFoundException("Ranking proof was not found for this project.");
-    }
+      if (invalidating) {
+        await tx.execute(sql`
+          SELECT r."id"
+          FROM "reports" r
+          INNER JOIN "report_evidence_items" rei ON rei."report_id" = r."id"
+          WHERE r."project_id" = ${projectId}
+            AND r."status" = 'published'
+            AND rei."source_kind" = 'ranking_proof'
+            AND rei."source_id" = ${proofId}
+          ORDER BY r."id"
+          FOR UPDATE OF r
+        `);
+        const affected = await tx
+          .select({ report: reports, evidence: reportEvidenceItems })
+          .from(reportEvidenceItems)
+          .innerJoin(reports, eq(reportEvidenceItems.reportId, reports.id))
+          .where(
+            and(
+              eq(reports.projectId, projectId),
+              eq(reports.status, "published"),
+              eq(reportEvidenceItems.sourceKind, "ranking_proof"),
+              eq(reportEvidenceItems.sourceId, proofId)
+            )
+          );
+        if (affected.length > 0) {
+          await tx
+            .insert(reportEvidenceAlerts)
+            .values(
+              affected.map(({ report, evidence }) => ({
+                projectId,
+                reportId: report.id,
+                reportEvidenceItemId: evidence.id,
+                evidenceKey: evidence.evidenceKey,
+                sourceKind: evidence.sourceKind,
+                sourceId: evidence.sourceId,
+                alertKind: "source_invalidated" as const,
+                status: "open" as const,
+                detectedAt: now
+              }))
+            )
+            .onConflictDoNothing();
+        }
+      }
+      result = row;
+    });
 
-    return rankingProofToResponse(row);
+    if (!result) throw new Error("Ranking proof status update produced no result.");
+    return rankingProofToResponse(result);
   }
 
   async updateOpportunityLifecycle(

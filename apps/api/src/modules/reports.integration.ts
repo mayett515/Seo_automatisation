@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
+import { type ImmutableArtifactReaderPort, type ImmutableArtifactStoredObject } from "@localseo/adapters";
 import {
   CustomerReportEvidencePacketSchema,
   CustomerReportSnapshotSchema,
@@ -10,9 +11,11 @@ import {
   customers,
   opportunities,
   projects,
+  rankingProofs,
   reportClaimEvidence,
   reportArtifacts,
   reportClaims,
+  reportEvidenceAlerts,
   reportEvidenceItems,
   reportGenerationRuns,
   reportIssues,
@@ -34,6 +37,7 @@ import {
 } from "../../../../packages/db/test-support/integration-database.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ReportsService } from "./reports.module.js";
+import { OpportunitiesService } from "./opportunities.module.js";
 
 type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDatabase>>;
 
@@ -48,6 +52,8 @@ void describe(
     let handle: IntegrationDatabase;
     let db: DatabaseClient;
     let service: ReportsService;
+    let opportunitiesService: OpportunitiesService;
+    let artifactReader: MemoryArtifactReader;
 
     before(async () => {
       assert.ok(testDatabaseUrl);
@@ -57,7 +63,9 @@ void describe(
 
     beforeEach(async () => {
       await truncateIntegrationTables(handle.sql);
-      service = new ReportsService(testDatabaseService(db));
+      artifactReader = new MemoryArtifactReader();
+      service = new ReportsService(testDatabaseService(db), artifactReader);
+      opportunitiesService = new OpportunitiesService(testDatabaseService(db));
     });
 
     after(async () => {
@@ -478,10 +486,292 @@ void describe(
         /missing, mismatched, or belonged to another project/u
       );
     });
+
+    void it("creates a new actor-backed artifact when reviewed rendering fails", async () => {
+      const fixture = await createReportFixture(db, "Artifact retry");
+      const candidate = await createReviewedCandidate(service, db, fixture, reportSnapshot(fixture, "Retry report"));
+      await db
+        .update(reportArtifacts)
+        .set({ status: "running", startedAt: new Date(), updatedAt: new Date() })
+        .where(eq(reportArtifacts.id, candidate.artifact.id));
+
+      await assert.rejects(
+        () =>
+          service.retryArtifact({
+            projectId: fixture.projectId,
+            reportId: candidate.reportId,
+            actorUserId: fixture.userId,
+            requestId: candidate.reviewRequestId,
+            expectedSnapshotSha256: candidate.snapshotSha256,
+            expectedRowVersion: candidate.rowVersion
+          }),
+        /belongs to the submit-for-review decision/u
+      );
+      await db
+        .update(reportArtifacts)
+        .set({
+          status: "failed",
+          failureCode: "render_failed",
+          failureMessage: "renderer failed",
+          updatedAt: new Date()
+        })
+        .where(eq(reportArtifacts.id, candidate.artifact.id));
+
+      const requestId = randomUUID();
+      const retried = await service.retryArtifact({
+        projectId: fixture.projectId,
+        reportId: candidate.reportId,
+        actorUserId: fixture.userId,
+        requestId,
+        expectedSnapshotSha256: candidate.snapshotSha256,
+        expectedRowVersion: candidate.rowVersion
+      });
+      const replayed = await service.retryArtifact({
+        projectId: fixture.projectId,
+        reportId: candidate.reportId,
+        actorUserId: fixture.userId,
+        requestId,
+        expectedSnapshotSha256: candidate.snapshotSha256,
+        expectedRowVersion: candidate.rowVersion
+      });
+
+      assert.equal(retried.kind, "applied");
+      assert.equal(replayed.kind, "replayed");
+      assert.notEqual(retried.artifact.id, candidate.artifact.id);
+      assert.equal(replayed.artifact.id, retried.artifact.id);
+      assert.equal(retried.artifact.requestedByUserId, fixture.userId);
+      assert.equal((await db.select().from(reportArtifacts)).length, 2);
+    });
+
+    void it("publishes one exact staged artifact and reads only the immutable snapshot", async () => {
+      const fixture = await createReportFixture(db, "Initial publication");
+      const candidate = await createReviewedCandidate(
+        service,
+        db,
+        fixture,
+        reportSnapshot(fixture, "Published July report")
+      );
+      const body = await stageArtifact(db, artifactReader, candidate.artifact);
+      const requestId = randomUUID();
+      const published = await service.publish({
+        projectId: fixture.projectId,
+        reportId: candidate.reportId,
+        actorUserId: fixture.userId,
+        requestId,
+        expectedSnapshotSha256: candidate.snapshotSha256,
+        expectedRowVersion: candidate.rowVersion,
+        artifactId: candidate.artifact.id,
+        command: "publish"
+      });
+      const replayed = await service.publish({
+        projectId: fixture.projectId,
+        reportId: candidate.reportId,
+        actorUserId: fixture.userId,
+        requestId,
+        expectedSnapshotSha256: candidate.snapshotSha256,
+        expectedRowVersion: candidate.rowVersion,
+        artifactId: candidate.artifact.id,
+        command: "publish"
+      });
+
+      assert.equal(published.kind, "applied");
+      assert.equal(replayed.kind, "replayed");
+      assert.equal(published.report.status, "published");
+      assert.equal(published.report.publishedArtifactId, candidate.artifact.id);
+      const [issue] = await db.select().from(reportIssues).where(eq(reportIssues.id, published.report.reportIssueId));
+      assert.equal(issue?.currentCandidateReportId, null);
+      assert.equal(issue?.currentPublishedReportId, published.report.id);
+      const detail = await service.getPublished(fixture.projectId, published.report.id);
+      assert.equal(detail.snapshot.title, "Published July report");
+      assert.deepEqual(Buffer.from(await service.getPublishedDocument(fixture.projectId, published.report.id)), body);
+      const [event] = await db
+        .select()
+        .from(reportLifecycleEvents)
+        .where(eq(reportLifecycleEvents.eventType, "published"));
+      assert.equal(event?.artifactId, candidate.artifact.id);
+      await assert.rejects(
+        () =>
+          db
+            .update(reportArtifacts)
+            .set({ artifactSha256: "f".repeat(64) })
+            .where(eq(reportArtifacts.id, candidate.artifact.id)),
+        postgresErrorMatches(/Terminal report artifact evidence is immutable/u)
+      );
+    });
+
+    void it("terminalizes a generation admitted before publication and then admits the required correction", async () => {
+      const fixture = await createReportFixture(db, "Publication generation staleness");
+      const firstAdmission = await admit(service, fixture);
+      const firstPersisted = await persistGeneratedDraft(service, db, {
+        projectId: fixture.projectId,
+        runId: firstAdmission.runId,
+        snapshot: reportSnapshot(fixture, "Initial candidate")
+      });
+      assert.notEqual(firstPersisted.kind, "stale");
+      if (firstPersisted.kind === "stale") return;
+      const activeRegeneration = await admit(service, fixture);
+      const reviewRequestId = randomUUID();
+      const reviewed = await service.submitForReview({
+        projectId: fixture.projectId,
+        reportId: firstPersisted.reportId,
+        actorUserId: fixture.userId,
+        requestId: reviewRequestId,
+        expectedSnapshotSha256: firstPersisted.snapshotSha256,
+        expectedRowVersion: firstPersisted.reportRowVersion
+      });
+      assert.equal(reviewed.command, "submit_for_review");
+      if (reviewed.command !== "submit_for_review") throw new Error("Expected reviewed report candidate.");
+      await stageArtifact(db, artifactReader, reviewed.artifact);
+      await service.publish({
+        projectId: fixture.projectId,
+        reportId: reviewed.reportId,
+        actorUserId: fixture.userId,
+        requestId: randomUUID(),
+        expectedSnapshotSha256: reviewed.snapshotSha256,
+        expectedRowVersion: reviewed.rowVersion,
+        artifactId: reviewed.artifact.id,
+        command: "publish"
+      });
+
+      const [terminalized] = await db
+        .update(reportGenerationRuns)
+        .set({
+          status: "stale",
+          failureCode: "stale_generation_base",
+          failureMessage: "Publication advanced the report issue.",
+          finishedAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(eq(reportGenerationRuns.id, activeRegeneration.runId))
+        .returning();
+      assert.equal(terminalized?.status, "stale");
+
+      const correction = await service.admitGeneration({
+        identity: reportIdentity(fixture.projectId),
+        requestedByUserId: fixture.userId,
+        idempotencyKey: randomUUID(),
+        evidenceCutoffAt: cutoff,
+        correctionReason: "Publication advanced while the prior regeneration was queued."
+      });
+      assert.equal(correction.kind, "created");
+    });
+
+    void it("blocks invalidated ranking evidence and resolves its alert only through a published correction", async () => {
+      const fixture = await createReportFixture(db, "Evidence correction");
+      const first = await createReviewedCandidate(
+        service,
+        db,
+        fixture,
+        rankingReportSnapshot(fixture, "Ranking report")
+      );
+      await stageArtifact(db, artifactReader, first.artifact);
+      await opportunitiesService.updateRankingProofStatus(
+        fixture.projectId,
+        fixture.rankingProofId,
+        { status: "invalidated", reason: "Source screenshot was incorrect." },
+        fixture.userId
+      );
+      await assert.rejects(
+        () =>
+          service.publish({
+            projectId: fixture.projectId,
+            reportId: first.reportId,
+            actorUserId: fixture.userId,
+            requestId: randomUUID(),
+            expectedSnapshotSha256: first.snapshotSha256,
+            expectedRowVersion: first.rowVersion,
+            artifactId: first.artifact.id,
+            command: "publish"
+          }),
+        /missing, mismatched, or belonged to another project/u
+      );
+
+      await opportunitiesService.updateRankingProofStatus(
+        fixture.projectId,
+        fixture.rankingProofId,
+        { status: "reviewed" },
+        fixture.userId
+      );
+      const firstPublished = await service.publish({
+        projectId: fixture.projectId,
+        reportId: first.reportId,
+        actorUserId: fixture.userId,
+        requestId: randomUUID(),
+        expectedSnapshotSha256: first.snapshotSha256,
+        expectedRowVersion: first.rowVersion,
+        artifactId: first.artifact.id,
+        command: "publish"
+      });
+      await opportunitiesService.updateRankingProofStatus(
+        fixture.projectId,
+        fixture.rankingProofId,
+        { status: "invalidated", reason: "Later audit invalidated the proof." },
+        fixture.userId
+      );
+      const [openAlert] = await db
+        .select()
+        .from(reportEvidenceAlerts)
+        .where(and(eq(reportEvidenceAlerts.reportId, first.reportId), eq(reportEvidenceAlerts.status, "open")));
+      assert.ok(openAlert);
+      assert.equal((await service.getPublished(fixture.projectId, first.reportId)).report.correctionRequired, true);
+
+      const correctionAdmission = await service.admitGeneration({
+        identity: reportIdentity(fixture.projectId),
+        requestedByUserId: fixture.userId,
+        idempotencyKey: randomUUID(),
+        evidenceCutoffAt: cutoff,
+        correctionReason: "Invalidated ranking proof removed from the customer report."
+      });
+      const correctionPersisted = await persistGeneratedDraft(service, db, {
+        projectId: fixture.projectId,
+        runId: correctionAdmission.runId,
+        snapshot: reportSnapshot(fixture, "Corrected July report")
+      });
+      assert.notEqual(correctionPersisted.kind, "stale");
+      if (correctionPersisted.kind === "stale") return;
+      const correction = await service.submitForReview({
+        projectId: fixture.projectId,
+        reportId: correctionPersisted.reportId,
+        actorUserId: fixture.userId,
+        requestId: randomUUID(),
+        expectedSnapshotSha256: correctionPersisted.snapshotSha256,
+        expectedRowVersion: correctionPersisted.reportRowVersion
+      });
+      assert.equal(correction.command, "submit_for_review");
+      if (correction.command !== "submit_for_review") throw new Error("Expected reviewed correction candidate.");
+      await stageArtifact(db, artifactReader, correction.artifact);
+      const corrected = await service.publish({
+        projectId: fixture.projectId,
+        reportId: correction.reportId,
+        actorUserId: fixture.userId,
+        requestId: randomUUID(),
+        expectedSnapshotSha256: correction.snapshotSha256,
+        expectedRowVersion: correction.rowVersion,
+        artifactId: correction.artifact.id,
+        command: "publish_correction"
+      });
+
+      assert.equal(corrected.supersededReportId, firstPublished.report.id);
+      const [oldReport] = await db.select().from(reports).where(eq(reports.id, first.reportId));
+      const [resolvedAlert] = await db
+        .select()
+        .from(reportEvidenceAlerts)
+        .where(eq(reportEvidenceAlerts.id, openAlert.id));
+      assert.equal(oldReport?.status, "superseded");
+      assert.equal(resolvedAlert?.status, "resolved");
+      assert.equal(resolvedAlert?.resolvedByReportId, corrected.report.id);
+    });
   }
 );
 
-type ReportFixture = { projectId: string; userId: string; opportunityId: string; opportunityObservedAt: string };
+type ReportFixture = {
+  projectId: string;
+  userId: string;
+  opportunityId: string;
+  opportunityObservedAt: string;
+  rankingProofId: string;
+  rankingCapturedAt: string;
+};
 
 async function createReportFixture(db: DatabaseClient, name: string): Promise<ReportFixture> {
   const suffix = randomUUID();
@@ -511,11 +801,29 @@ async function createReportFixture(db: DatabaseClient, name: string): Promise<Re
     })
     .returning();
   assert.ok(opportunity);
+  const [rankingProof] = await db
+    .insert(rankingProofs)
+    .values({
+      projectId: project.id,
+      query: "dachreinigung dachau",
+      pageUrl: "https://example.test/dachreinigung-dachau/",
+      rank: 2,
+      capturedAt: new Date("2026-07-25T09:00:00.000Z"),
+      searchEngine: "google",
+      device: "mobile",
+      locale: "de-DE",
+      status: "reviewed",
+      createdByUserId: user.id
+    })
+    .returning();
+  assert.ok(rankingProof);
   return {
     projectId: project.id,
     userId: user.id,
     opportunityId: opportunity.id,
-    opportunityObservedAt: opportunity.updatedAt.toISOString()
+    opportunityObservedAt: opportunity.updatedAt.toISOString(),
+    rankingProofId: rankingProof.id,
+    rankingCapturedAt: rankingProof.capturedAt.toISOString()
   };
 }
 
@@ -599,6 +907,72 @@ function reportSnapshot(fixture: ReportFixture, title: string): CustomerReportSn
   });
 }
 
+function rankingReportSnapshot(fixture: ReportFixture, title: string): CustomerReportSnapshot {
+  const rankingPayload = {
+    sourceKind: "ranking_proof",
+    id: fixture.rankingProofId,
+    projectId: fixture.projectId,
+    query: "dachreinigung dachau",
+    pageUrl: "https://example.test/dachreinigung-dachau/",
+    rank: 2,
+    capturedAt: fixture.rankingCapturedAt,
+    searchEngine: "google",
+    device: "mobile",
+    locale: "de-DE",
+    status: "reviewed"
+  };
+  const digest = createHash("sha256")
+    .update(canonicalizeCustomerReportSourcePayload(rankingPayload), "utf8")
+    .digest("hex");
+  const evidence = [
+    {
+      evidenceKey: `ranking:${fixture.rankingProofId}`,
+      projectId: fixture.projectId,
+      sourceId: fixture.rankingProofId,
+      sourceVersion: digest,
+      observedAt: fixture.rankingCapturedAt,
+      selectedAtCutoff: cutoff,
+      payloadSha256: digest,
+      customerLabel: "Gepruefter Ranking-Nachweis",
+      sourceKind: "ranking_proof" as const,
+      proofTier: "customer_safe_proof" as const,
+      query: "dachreinigung dachau",
+      pageUrl: "https://example.test/dachreinigung-dachau/",
+      rank: 2,
+      searchEngine: "google" as const,
+      device: "mobile" as const,
+      locale: "de-DE" as const,
+      status: "reviewed" as const
+    }
+  ];
+  const factProjection = assembleCustomerReportFactProjection({
+    schemaVersion: "customer_report_evidence_packet.v1",
+    identity: reportIdentity(fixture.projectId),
+    assembledAt: cutoff,
+    evidenceCutoffAt: cutoff,
+    evidence
+  });
+  const factProjectionSha256 = createHash("sha256")
+    .update(canonicalizeCustomerReportFactProjection(factProjection), "utf8")
+    .digest("hex");
+  return CustomerReportSnapshotSchema.parse({
+    schemaVersion: "customer_report_snapshot.v1",
+    identity: reportIdentity(fixture.projectId),
+    generatedAt: cutoff,
+    evidenceCutoffAt: cutoff,
+    assemblerVersion: "customer_report_assembler.v1",
+    eligibilityPolicyVersion: "customer_report_eligibility.v1",
+    actionSelectionPolicyVersion: "customer_report_actions.v1",
+    narrativePolicyVersion: "customer_report_narrative.v1",
+    templateVersion: "customer_report_html.v1",
+    narrativeMode: "fact_only",
+    title,
+    factProjectionSha256,
+    factProjection,
+    narrative: []
+  });
+}
+
 async function persistGeneratedDraft(
   service: ReportsService,
   db: DatabaseClient,
@@ -618,6 +992,92 @@ async function persistGeneratedDraft(
     .set({ evidencePacketCanonicalText: canonicalText, evidencePacketSha256: packetSha256 })
     .where(eq(reportGenerationRuns.id, input.runId));
   return service.persistGeneratedDraft(input);
+}
+
+async function createReviewedCandidate(
+  service: ReportsService,
+  db: DatabaseClient,
+  fixture: ReportFixture,
+  snapshot: CustomerReportSnapshot
+) {
+  const admission = await admit(service, fixture);
+  const persisted = await persistGeneratedDraft(service, db, {
+    projectId: fixture.projectId,
+    runId: admission.runId,
+    snapshot
+  });
+  assert.notEqual(persisted.kind, "stale");
+  if (persisted.kind === "stale") throw new Error("Expected a persisted report candidate.");
+  const reviewRequestId = randomUUID();
+  const reviewed = await service.submitForReview({
+    projectId: fixture.projectId,
+    reportId: persisted.reportId,
+    actorUserId: fixture.userId,
+    requestId: reviewRequestId,
+    expectedSnapshotSha256: persisted.snapshotSha256,
+    expectedRowVersion: persisted.reportRowVersion
+  });
+  assert.equal(reviewed.command, "submit_for_review");
+  if (reviewed.command !== "submit_for_review") throw new Error("Expected submitted report review.");
+  return {
+    reportId: reviewed.reportId,
+    snapshotSha256: reviewed.snapshotSha256,
+    rowVersion: reviewed.rowVersion,
+    artifact: reviewed.artifact,
+    reviewRequestId
+  };
+}
+
+async function stageArtifact(
+  db: DatabaseClient,
+  reader: MemoryArtifactReader,
+  artifact: typeof reportArtifacts.$inferSelect
+): Promise<Buffer> {
+  const body = Buffer.from(`<!doctype html><html><body>${artifact.reportId}:${artifact.id}</body></html>`, "utf8");
+  const artifactSha256 = createHash("sha256").update(body).digest("hex");
+  const storageKey = `reports/${artifact.projectId}/${artifact.reportId}/${artifact.id}/${artifactSha256}.html`;
+  await db
+    .update(reportArtifacts)
+    .set({ status: "running", startedAt: new Date(), updatedAt: new Date() })
+    .where(eq(reportArtifacts.id, artifact.id));
+  await db
+    .update(reportArtifacts)
+    .set({
+      status: "staged",
+      storageKey,
+      artifactSha256,
+      byteSize: body.byteLength,
+      stagedAt: new Date(),
+      updatedAt: new Date()
+    })
+    .where(eq(reportArtifacts.id, artifact.id));
+  reader.objects.set(storageKey, {
+    body,
+    metadata: {
+      key: storageKey,
+      contentType: "text/html; charset=utf-8",
+      contentLength: body.byteLength,
+      sha256: artifactSha256
+    }
+  });
+  return body;
+}
+
+class MemoryArtifactReader implements ImmutableArtifactReaderPort {
+  readonly objects = new Map<string, { body: Uint8Array; metadata: ImmutableArtifactStoredObject }>();
+
+  readImmutableArtifact(input: { key: string; maxBytes: number }): Promise<Uint8Array> {
+    const object = this.objects.get(input.key);
+    if (!object) return Promise.reject(new Error("artifact_not_found"));
+    if (object.body.byteLength > input.maxBytes) {
+      return Promise.reject(new Error("artifact_read_overflow"));
+    }
+    return Promise.resolve(object.body);
+  }
+
+  headImmutableArtifact(input: { key: string }): Promise<ImmutableArtifactStoredObject | undefined> {
+    return Promise.resolve(this.objects.get(input.key)?.metadata);
+  }
 }
 
 function testDatabaseService(db: DatabaseClient): DatabaseService {

@@ -4,6 +4,7 @@ import {
   CustomerReportHtmlRenderJobDataSchema,
   CustomerReportHtmlRenderManifestSchema,
   CustomerReportSnapshotSchema,
+  customerReportHtmlMaxBytes,
   type CustomerReportClaim,
   type CustomerReportHtmlRenderJobData,
   type CustomerReportHtmlRenderManifest,
@@ -19,7 +20,6 @@ import type { Job } from "bullmq";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 
-const customerReportHtmlMaxBytes = 2 * 1024 * 1024;
 const activeArtifactStatuses = ["pending", "running"] as const;
 
 type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];

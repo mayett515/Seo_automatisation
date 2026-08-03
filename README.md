@@ -275,7 +275,7 @@ flowchart TD
   K --> L["RAG only when evidence packets become too large or project memory requires retrieval"]
 ```
 
-Steps 1 through 10 are implemented at MVP-baseline depth. The customer-safe Report and Next Action milestone now has its strict contract/domain and durable aggregate foundations:
+Steps 1 through 10 are implemented at MVP-baseline depth. The customer-safe Report and Next Action milestone now has its backend publication path:
 
 ```text
 strict report contracts, canonicalization, eligibility, lifecycle, and permissions (implemented)
@@ -286,8 +286,9 @@ strict report contracts, canonicalization, eligibility, lifecycle, and permissio
 -> optional bounded report_narrative headings/transitions
 -> deterministic claim and narrative validation
 -> digest-bound human review and stored private HTML (implemented)
--> digest-bound human publication and correction
--> allowlisted navigation Next Actions
+-> digest-bound human publication and correction (implemented)
+-> authenticated report list/review/publication/history UI (next)
+-> allowlisted navigation Next Actions (snapshot descriptors implemented; UI handoff next)
 -> consequential typed command offers only after target CAS hardening
 ```
 
@@ -443,4 +444,4 @@ The repository has a strong foundation for an AI-assisted Local SEO MVP:
 - DB-before-queue recovery for the safe page, media, and verification lanes,
 - AI reasoning boundaries and named task policies.
 
-The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The next product frontier is customer-safe Report and Next Action. ADR 0021 accepts the digest-bound snapshot, claim-evidence, human publication, permission, and typed-action architecture. Strict contracts, canonicalization, pure domain decisions, permissions, the stable issue/run/version/provenance aggregate, deterministic fact-only evidence assembly, authenticated generation and review, exact source digests, month-bounded source selection, closed customer warning copy, bounded same-run recovery, and immutable private reviewed HTML staging with bounded same-artifact recovery are implemented. Publication/correction, customer reads, and report UI remain next; `report_narrative` is still deferred and no AI is required for useful reports.
+The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The customer-safe Report and Next Action milestone now includes ADR 0021 Slices 0-4: strict snapshot/provenance contracts, deterministic fact-only assembly, digest-bound review, immutable reviewed HTML, actor-backed render retry, source-serialized publication/correction, correction alerts, and authenticated snapshot-owned published reads. The report UI is the remaining first-vertical slice; `report_narrative`, command actions, PDF, and RAG remain optional later work, and no AI is required for useful reports.

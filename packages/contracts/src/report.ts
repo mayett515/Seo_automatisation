@@ -22,6 +22,8 @@ export const customerReportLifecycleEventTypes = [
 ] as const;
 export const customerReportArtifactStatuses = ["pending", "running", "staged", "failed", "expired"] as const;
 export const customerReportArtifactFormats = ["html"] as const;
+export const customerReportEvidenceAlertStatuses = ["open", "resolved"] as const;
+export const customerReportHtmlMaxBytes = 2 * 1024 * 1024;
 export const customerReportClaimKinds = [
   "ranking_result",
   "page_delivery",
@@ -57,6 +59,7 @@ export const CustomerReportNarrativeModeSchema = z.enum(customerReportNarrativeM
 export const CustomerReportLifecycleEventTypeSchema = z.enum(customerReportLifecycleEventTypes);
 export const CustomerReportArtifactStatusSchema = z.enum(customerReportArtifactStatuses);
 export const CustomerReportArtifactFormatSchema = z.enum(customerReportArtifactFormats);
+export const CustomerReportEvidenceAlertStatusSchema = z.enum(customerReportEvidenceAlertStatuses);
 export const CustomerReportClaimKindSchema = z.enum(customerReportClaimKinds);
 export const CustomerReportSectionSchema = z.enum(customerReportSections);
 export const CustomerReportEvidenceKindSchema = z.enum(customerReportEvidenceKinds);
@@ -489,7 +492,8 @@ export const CreateCustomerReportGenerationRequestSchema = z
     period: CustomerReportMonthSchema,
     evidenceCutoffAt: CustomerReportTimestampSchema,
     idempotencyKey: ReportUuidSchema,
-    narrativeMode: z.literal("fact_only").default("fact_only")
+    narrativeMode: z.literal("fact_only").default("fact_only"),
+    correctionReason: CustomerReportDecisionNoteSchema.optional()
   })
   .strict();
 
@@ -642,6 +646,61 @@ export const CustomerReportReviewResponseSchema = z.discriminatedUnion("command"
     .strict()
 ]);
 
+export const CustomerReportArtifactRetryCommandSchema = CustomerReportReviewTargetSchema.extend({
+  command: z.literal("retry_render")
+}).strict();
+
+export const CustomerReportArtifactRetryResponseSchema = z
+  .object({
+    command: z.literal("retry_render"),
+    kind: z.enum(["applied", "replayed"]),
+    reportId: ReportUuidSchema,
+    status: z.literal("ready_for_review"),
+    rowVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    snapshotSha256: CustomerReportSha256Schema,
+    artifact: CustomerReportArtifactSummarySchema,
+    renderDispatch: z.enum(["accepted", "not_required"])
+  })
+  .strict();
+
+export const CustomerReportPublicationCommandSchema = CustomerReportReviewTargetSchema.extend({
+  command: z.enum(["publish", "publish_correction"]),
+  artifactId: ReportUuidSchema
+}).strict();
+
+export const CustomerReportPublicationResponseSchema = z
+  .object({
+    command: z.enum(["publish", "publish_correction"]),
+    kind: z.enum(["applied", "replayed"]),
+    reportId: ReportUuidSchema,
+    status: z.literal("published"),
+    rowVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    snapshotSha256: CustomerReportSha256Schema,
+    artifactId: ReportUuidSchema,
+    artifactSha256: CustomerReportSha256Schema,
+    publishedAt: CustomerReportTimestampSchema,
+    supersededReportId: ReportUuidSchema.optional()
+  })
+  .strict();
+
+export const CustomerReportPublishedSummarySchema = z
+  .object({
+    reportId: ReportUuidSchema,
+    reportIssueId: ReportUuidSchema,
+    versionNumber: ReportPositiveIntegerSchema,
+    status: z.enum(["published", "superseded"]),
+    period: CustomerReportMonthSchema,
+    title: reportText(240),
+    snapshotSha256: CustomerReportSha256Schema,
+    artifactId: ReportUuidSchema,
+    artifactSha256: CustomerReportSha256Schema,
+    publishedAt: CustomerReportTimestampSchema,
+    supersededAt: CustomerReportTimestampSchema.optional(),
+    supersededByReportId: ReportUuidSchema.optional(),
+    correctionRequired: z.boolean()
+  })
+  .strict();
+
 export const CustomerReportNarrativeFragmentSchema = z
   .object({
     slotKey: ReportLogicalKeySchema,
@@ -725,6 +784,13 @@ export const CustomerReportSnapshotSchema = z
     }
   });
 
+export const CustomerReportPublishedDetailSchema = z
+  .object({
+    report: CustomerReportPublishedSummarySchema,
+    snapshot: CustomerReportSnapshotSchema
+  })
+  .strict();
+
 export const ReportGeneratedEventSchema = z
   .object({
     eventName: z.literal("ReportGenerated"),
@@ -779,11 +845,18 @@ export type CustomerReportGenerationResponse = z.output<typeof CustomerReportGen
 export type CustomerReportGenerationRun = z.output<typeof CustomerReportGenerationRunSchema>;
 export type CustomerReportArtifactStatus = z.output<typeof CustomerReportArtifactStatusSchema>;
 export type CustomerReportArtifactFormat = z.output<typeof CustomerReportArtifactFormatSchema>;
+export type CustomerReportEvidenceAlertStatus = z.output<typeof CustomerReportEvidenceAlertStatusSchema>;
 export type CustomerReportHtmlRenderManifest = z.output<typeof CustomerReportHtmlRenderManifestSchema>;
 export type CustomerReportHtmlRenderJobData = z.output<typeof CustomerReportHtmlRenderJobDataSchema>;
 export type CustomerReportArtifactSummary = z.output<typeof CustomerReportArtifactSummarySchema>;
 export type CustomerReportReviewCommand = z.output<typeof CustomerReportReviewCommandSchema>;
 export type CustomerReportReviewResponse = z.output<typeof CustomerReportReviewResponseSchema>;
+export type CustomerReportArtifactRetryCommand = z.output<typeof CustomerReportArtifactRetryCommandSchema>;
+export type CustomerReportArtifactRetryResponse = z.output<typeof CustomerReportArtifactRetryResponseSchema>;
+export type CustomerReportPublicationCommand = z.output<typeof CustomerReportPublicationCommandSchema>;
+export type CustomerReportPublicationResponse = z.output<typeof CustomerReportPublicationResponseSchema>;
+export type CustomerReportPublishedSummary = z.output<typeof CustomerReportPublishedSummarySchema>;
+export type CustomerReportPublishedDetail = z.output<typeof CustomerReportPublishedDetailSchema>;
 export type CustomerReportNarrativeFragment = z.output<typeof CustomerReportNarrativeFragmentSchema>;
 export type CustomerReportSnapshot = z.output<typeof CustomerReportSnapshotSchema>;
 export type ReportGeneratedEvent = z.output<typeof ReportGeneratedEventSchema>;

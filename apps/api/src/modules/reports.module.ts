@@ -9,9 +9,11 @@ import {
   Injectable,
   Module,
   NotFoundException,
+  Optional,
   Param,
   Post,
   Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
   UnprocessableEntityException
@@ -22,6 +24,8 @@ import {
   CustomerReportCompletedRollbackEvidenceSchema,
   CustomerReportDecisionNoteSchema,
   CustomerReportArtifactSummarySchema,
+  CustomerReportArtifactRetryCommandSchema,
+  CustomerReportArtifactRetryResponseSchema,
   CustomerReportEvidencePacketSchema,
   CustomerReportEvidenceItemSchema,
   CustomerReportIdentitySchema,
@@ -30,14 +34,23 @@ import {
   CustomerReportGenerationResponseSchema,
   CustomerReportGenerationRunSchema,
   CustomerReportHtmlRenderJobDataSchema,
+  CustomerReportPublicationCommandSchema,
+  CustomerReportPublicationResponseSchema,
+  CustomerReportPublishedDetailSchema,
+  CustomerReportPublishedSummarySchema,
   CustomerReportReviewCommandSchema,
   CustomerReportReviewResponseSchema,
   CustomerReportSnapshotSchema,
+  customerReportHtmlMaxBytes,
   type CustomerReportIdentity,
   type CustomerReportArtifactSummary,
   type CustomerReportNarrativeMode,
+  type CustomerReportPublishedDetail,
+  type CustomerReportPublishedSummary,
   type CustomerReportSnapshot
 } from "@localseo/contracts";
+import type { ImmutableArtifactReaderPort } from "@localseo/adapters";
+import { parseAppEnv } from "@localseo/config";
 import {
   assembleCustomerReportFactProjection,
   canonicalizeCustomerReportEvidencePacket,
@@ -66,6 +79,7 @@ import {
   reportArtifacts,
   reportClaims,
   reportEvidenceItems,
+  reportEvidenceAlerts,
   reportGenerationRuns,
   reportIssues,
   reportLifecycleEvents,
@@ -82,12 +96,29 @@ import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { QueueProducerService } from "../queue-producer.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
+import { IMMUTABLE_ARTIFACT_READER } from "../media-storage.module.js";
+import type { FastifyReply } from "fastify";
 
 type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
 type ReportIssueRow = typeof reportIssues.$inferSelect;
 type ReportGenerationRunRow = typeof reportGenerationRuns.$inferSelect;
 type ReportRow = typeof reports.$inferSelect;
 type ReportArtifactRow = typeof reportArtifacts.$inferSelect;
+
+const env = parseAppEnv(process.env);
+
+type CustomerReportArtifactRetryTransition = {
+  kind: "applied" | "replayed";
+  report: ReportRow;
+  artifact: ReportArtifactRow;
+};
+
+type CustomerReportPublicationTransition = {
+  kind: "applied" | "replayed";
+  report: ReportRow;
+  artifact: ReportArtifactRow;
+  supersededReportId?: string;
+};
 
 export type CustomerReportGenerationAdmission = {
   kind: "created" | "already_active" | "replayed";
@@ -129,7 +160,12 @@ export type CustomerReportReviewTransition =
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    @Optional()
+    @Inject(IMMUTABLE_ARTIFACT_READER)
+    private readonly artifactReader?: ImmutableArtifactReaderPort
+  ) {}
 
   async admitGeneration(input: {
     identity: CustomerReportIdentity;
@@ -137,6 +173,7 @@ export class ReportsService {
     idempotencyKey: string;
     evidenceCutoffAt: string;
     narrativeMode?: CustomerReportNarrativeMode;
+    correctionReason?: string;
   }): Promise<CustomerReportGenerationAdmission> {
     const identity = CustomerReportIdentitySchema.parse(input.identity);
     requireUuid(input.requestedByUserId, "Report generation requires a persisted user id.");
@@ -144,6 +181,7 @@ export class ReportsService {
     const evidenceCutoffAt = parseTimestamp(input.evidenceCutoffAt, "Report evidence cutoff must be an ISO timestamp.");
     assertCustomerReportGenerationWindow(identity.period, evidenceCutoffAt, new Date());
     const narrativeMode = CustomerReportNarrativeModeSchema.parse(input.narrativeMode ?? "fact_only");
+    const correctionReason = parseOptionalDecisionNote(input.correctionReason);
     const db = this.database.requireDb();
     let admission: CustomerReportGenerationAdmission | undefined;
 
@@ -180,7 +218,8 @@ export class ReportsService {
           replayed.reportIssueId !== issue.id ||
           replayed.requestedByUserId !== input.requestedByUserId ||
           replayed.evidenceCutoffAt.getTime() !== evidenceCutoffAt.getTime() ||
-          replayed.narrativeMode !== narrativeMode
+          replayed.narrativeMode !== narrativeMode ||
+          replayed.correctionReason !== correctionReason
         ) {
           throw new ConflictException("Report generation idempotency key belongs to another request.");
         }
@@ -207,6 +246,12 @@ export class ReportsService {
       if (baseCandidate?.status === "ready_for_review") {
         throw new ConflictException("Return the reviewed report candidate to draft before regenerating it.");
       }
+      if (issue.currentPublishedReportId && !correctionReason) {
+        throw new ConflictException("Generating a correction requires a bounded correction reason.");
+      }
+      if (!issue.currentPublishedReportId && correctionReason) {
+        throw new ConflictException("A correction reason requires an existing published report.");
+      }
       const runId = randomUUID();
       const [created] = await tx
         .insert(reportGenerationRuns)
@@ -223,6 +268,8 @@ export class ReportsService {
           baseCandidateReportId: baseCandidate?.id,
           baseCandidateRowVersion: baseCandidate?.rowVersion,
           baseCandidateSnapshotSha256: baseCandidate?.snapshotSha256,
+          correctionPredecessorReportId: issue.currentPublishedReportId,
+          correctionReason,
           evidenceCutoffAt,
           ...customerReportVersions
         })
@@ -503,6 +550,432 @@ export class ReportsService {
     return reportArtifactSummary(artifact);
   }
 
+  async retryArtifact(input: {
+    projectId: string;
+    reportId: string;
+    actorUserId: string;
+    requestId: string;
+    expectedSnapshotSha256: string;
+    expectedRowVersion: number;
+  }): Promise<CustomerReportArtifactRetryTransition> {
+    validateReportCommandTarget(input, "Report artifact retry");
+    const db = this.database.requireDb();
+    const [initial] = await db
+      .select({ reportIssueId: reports.reportIssueId })
+      .from(reports)
+      .where(and(eq(reports.id, input.reportId), eq(reports.projectId, input.projectId)))
+      .limit(1);
+    if (!initial) throw new BadRequestException("Report was not found for this project.");
+
+    let result: CustomerReportArtifactRetryTransition | undefined;
+    await db.transaction(async (tx) => {
+      await lockReportIssue(tx, initial.reportIssueId);
+      await lockReport(tx, input.projectId, input.reportId);
+      await lockReportArtifacts(tx, input.projectId, input.reportId);
+      const [report] = await tx
+        .select()
+        .from(reports)
+        .where(and(eq(reports.id, input.reportId), eq(reports.projectId, input.projectId)))
+        .limit(1);
+      const [issue] = await tx.select().from(reportIssues).where(eq(reportIssues.id, initial.reportIssueId)).limit(1);
+      if (!report || !issue || issue.currentCandidateReportId !== report.id || report.status !== "ready_for_review") {
+        throw new ConflictException("Only the current reviewed report candidate can retry rendering.");
+      }
+
+      const [prior] = await tx
+        .select()
+        .from(reportArtifacts)
+        .where(and(eq(reportArtifacts.projectId, input.projectId), eq(reportArtifacts.requestId, input.requestId)))
+        .limit(1);
+      if (prior) {
+        const [reviewAdmission] = await tx
+          .select({ id: reportLifecycleEvents.id })
+          .from(reportLifecycleEvents)
+          .where(
+            and(
+              eq(reportLifecycleEvents.projectId, input.projectId),
+              eq(reportLifecycleEvents.artifactId, prior.id),
+              eq(reportLifecycleEvents.eventType, "submitted_for_review")
+            )
+          )
+          .limit(1);
+        if (reviewAdmission) {
+          throw new ConflictException("Report artifact request id belongs to the submit-for-review decision.");
+        }
+        if (
+          prior.reportId !== report.id ||
+          prior.requestedByUserId !== input.actorUserId ||
+          prior.snapshotSha256 !== input.expectedSnapshotSha256
+        ) {
+          throw new ConflictException("Report artifact request id belongs to another render decision.");
+        }
+        result = { kind: "replayed", report, artifact: prior };
+        return;
+      }
+
+      assertReportCommandTarget(report, input, "Report artifact retry target changed; reload current truth.");
+      const definition = reportArtifactDefinition(report, issue);
+      const latest = await loadLatestMatchingArtifact(tx, report, definition.manifestSha256);
+      if (!latest || latest.status !== "failed") {
+        throw new ConflictException("Only a failed report artifact can be retried with a new request id.");
+      }
+
+      const artifactId = randomUUID();
+      const [artifact] = await tx
+        .insert(reportArtifacts)
+        .values({
+          id: artifactId,
+          projectId: report.projectId,
+          reportId: report.id,
+          format: "html",
+          status: "pending",
+          snapshotSha256: report.snapshotSha256,
+          renderManifestJson: definition.manifest,
+          renderManifestCanonicalText: definition.manifestCanonicalText,
+          renderManifestSha256: definition.manifestSha256,
+          queueJobId: artifactId,
+          requestedByUserId: input.actorUserId,
+          requestId: input.requestId
+        })
+        .returning();
+      if (!artifact) throw new Error("Report artifact retry did not create durable render work.");
+      result = { kind: "applied", report, artifact };
+    });
+
+    if (!result) throw new Error("Report artifact retry produced no result.");
+    return result;
+  }
+
+  async publish(input: {
+    projectId: string;
+    reportId: string;
+    actorUserId: string;
+    requestId: string;
+    expectedSnapshotSha256: string;
+    expectedRowVersion: number;
+    artifactId: string;
+    command: "publish" | "publish_correction";
+  }): Promise<CustomerReportPublicationTransition> {
+    validateReportCommandTarget(input, "Report publication");
+    requireUuid(input.artifactId, "Report publication requires a persisted artifact id.");
+    const db = this.database.requireDb();
+    const [initialReport] = await db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.id, input.reportId), eq(reports.projectId, input.projectId)))
+      .limit(1);
+    if (!initialReport) throw new BadRequestException("Report was not found for this project.");
+    const [initialArtifact] = await db
+      .select()
+      .from(reportArtifacts)
+      .where(
+        and(
+          eq(reportArtifacts.id, input.artifactId),
+          eq(reportArtifacts.reportId, input.reportId),
+          eq(reportArtifacts.projectId, input.projectId)
+        )
+      )
+      .limit(1);
+    if (!initialArtifact) throw new BadRequestException("Report artifact was not found for this project.");
+    const snapshot = parseStoredReportSnapshot(initialReport);
+    await verifyImmutableArtifactBytes(this.requireArtifactReader(), initialArtifact);
+
+    let result: CustomerReportPublicationTransition | undefined;
+    await db.transaction(async (tx) => {
+      await lockCustomerReportEvidenceSources(tx, snapshot);
+      await lockReportIssue(tx, initialReport.reportIssueId);
+      await lockReports(tx, input.projectId, [input.reportId, initialReport.supersedesReportId].filter(isString));
+      await lockReportArtifacts(tx, input.projectId, input.reportId);
+
+      const [report] = await tx
+        .select()
+        .from(reports)
+        .where(and(eq(reports.id, input.reportId), eq(reports.projectId, input.projectId)))
+        .limit(1);
+      const [issue] = await tx
+        .select()
+        .from(reportIssues)
+        .where(eq(reportIssues.id, initialReport.reportIssueId))
+        .limit(1);
+      const [artifact] = await tx
+        .select()
+        .from(reportArtifacts)
+        .where(
+          and(
+            eq(reportArtifacts.id, input.artifactId),
+            eq(reportArtifacts.reportId, input.reportId),
+            eq(reportArtifacts.projectId, input.projectId)
+          )
+        )
+        .limit(1);
+      if (!report || !issue || !artifact) throw new ConflictException("Report publication target changed.");
+      if (report.snapshotSha256 !== initialReport.snapshotSha256) {
+        throw new ConflictException("Report snapshot changed after the publication source lock set was computed.");
+      }
+
+      const [priorEvent] = await tx
+        .select()
+        .from(reportLifecycleEvents)
+        .where(
+          and(
+            eq(reportLifecycleEvents.projectId, input.projectId),
+            eq(reportLifecycleEvents.reportId, input.reportId),
+            eq(reportLifecycleEvents.requestId, input.requestId),
+            eq(reportLifecycleEvents.eventType, "published")
+          )
+        )
+        .limit(1);
+      const expectedCommand = report.supersedesReportId ? "publish_correction" : "publish";
+      if (input.command !== expectedCommand) {
+        throw new ConflictException("Report publication command does not match its correction lineage.");
+      }
+      if (priorEvent) {
+        if (
+          priorEvent.actorUserId !== input.actorUserId ||
+          priorEvent.snapshotSha256 !== input.expectedSnapshotSha256 ||
+          priorEvent.artifactId !== input.artifactId ||
+          report.status !== "published" ||
+          issue.currentPublishedReportId !== report.id
+        ) {
+          throw new ConflictException("Report publication request advanced or belongs to another decision.");
+        }
+        result = {
+          kind: "replayed",
+          report,
+          artifact,
+          supersededReportId: report.supersedesReportId ?? undefined
+        };
+        return;
+      }
+
+      if (issue.currentCandidateReportId !== report.id || report.status !== "ready_for_review") {
+        throw new ConflictException("Only the current reviewed report candidate can be published.");
+      }
+      assertReportCommandTarget(report, input, "Report publication target changed; reload current truth.");
+      if (
+        artifact.status !== "staged" ||
+        artifact.snapshotSha256 !== report.snapshotSha256 ||
+        artifact.storageKey !== initialArtifact.storageKey ||
+        artifact.artifactSha256 !== initialArtifact.artifactSha256 ||
+        artifact.byteSize !== initialArtifact.byteSize
+      ) {
+        throw new ConflictException("Report publication requires the exact pre-verified staged artifact.");
+      }
+
+      const storedSnapshot = await validateStoredReport(tx, report);
+      await assertEvidenceSourcesBelongToProject(tx, input.projectId, storedSnapshot);
+      const now = new Date();
+      await tx
+        .update(reportArtifacts)
+        .set({ status: "expired", expiredAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(reportArtifacts.projectId, input.projectId),
+            eq(reportArtifacts.reportId, report.id),
+            sql`${reportArtifacts.id} <> ${artifact.id}`,
+            inArray(reportArtifacts.status, ["pending", "running", "staged"])
+          )
+        );
+
+      let predecessor: ReportRow | undefined;
+      if (report.supersedesReportId) {
+        [predecessor] = await tx
+          .select()
+          .from(reports)
+          .where(
+            and(
+              eq(reports.id, report.supersedesReportId),
+              eq(reports.projectId, input.projectId),
+              eq(reports.reportIssueId, report.reportIssueId)
+            )
+          )
+          .limit(1);
+        if (!predecessor || predecessor.status !== "published" || issue.currentPublishedReportId !== predecessor.id) {
+          throw new ConflictException("Report correction predecessor is no longer current published truth.");
+        }
+        const [superseded] = await tx
+          .update(reports)
+          .set({ status: "superseded", supersededAt: now, rowVersion: predecessor.rowVersion + 1, updatedAt: now })
+          .where(
+            and(
+              eq(reports.id, predecessor.id),
+              eq(reports.status, "published"),
+              eq(reports.rowVersion, predecessor.rowVersion)
+            )
+          )
+          .returning();
+        if (!superseded) throw new ConflictException("Published predecessor changed during correction publication.");
+        predecessor = superseded;
+      } else if (issue.currentPublishedReportId) {
+        throw new ConflictException("Initial publication cannot replace existing published truth.");
+      }
+
+      const [published] = await tx
+        .update(reports)
+        .set({
+          status: "published",
+          publishedArtifactId: artifact.id,
+          publishedByUserId: input.actorUserId,
+          publishedAt: now,
+          rowVersion: report.rowVersion + 1,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(reports.id, report.id),
+            eq(reports.status, "ready_for_review"),
+            eq(reports.rowVersion, report.rowVersion),
+            eq(reports.snapshotSha256, report.snapshotSha256)
+          )
+        )
+        .returning();
+      if (!published) throw new ConflictException("Report publication target changed during the decision.");
+
+      const [updatedIssue] = await tx
+        .update(reportIssues)
+        .set({
+          currentCandidateReportId: null,
+          currentPublishedReportId: published.id,
+          rowVersion: issue.rowVersion + 1,
+          updatedAt: now
+        })
+        .where(and(eq(reportIssues.id, issue.id), eq(reportIssues.rowVersion, issue.rowVersion)))
+        .returning({ id: reportIssues.id });
+      if (!updatedIssue) throw new ConflictException("Report issue changed during publication.");
+
+      if (predecessor) {
+        await tx
+          .update(reportEvidenceAlerts)
+          .set({ status: "resolved", resolvedAt: now, resolvedByReportId: published.id, updatedAt: now })
+          .where(and(eq(reportEvidenceAlerts.reportId, predecessor.id), eq(reportEvidenceAlerts.status, "open")));
+        await tx.insert(reportLifecycleEvents).values({
+          projectId: input.projectId,
+          reportIssueId: issue.id,
+          reportId: predecessor.id,
+          artifactId: predecessor.publishedArtifactId,
+          eventType: "superseded",
+          fromStatus: "published",
+          toStatus: "superseded",
+          actorType: "human",
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          snapshotSha256: predecessor.snapshotSha256,
+          decisionNote: report.correctionReason
+        });
+      }
+      await tx.insert(reportLifecycleEvents).values({
+        projectId: input.projectId,
+        reportIssueId: issue.id,
+        reportId: published.id,
+        artifactId: artifact.id,
+        eventType: "published",
+        fromStatus: "ready_for_review",
+        toStatus: "published",
+        actorType: "human",
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        snapshotSha256: published.snapshotSha256
+      });
+      result = {
+        kind: "applied",
+        report: published,
+        artifact,
+        supersededReportId: predecessor?.id
+      };
+    });
+
+    if (!result) throw new Error("Report publication produced no result.");
+    return result;
+  }
+
+  async listPublished(projectId: string): Promise<CustomerReportPublishedSummary[]> {
+    requireUuid(projectId, "Report project id must be a UUID.");
+    const rows = await this.database
+      .requireDb()
+      .select({ report: reports, issue: reportIssues, artifact: reportArtifacts })
+      .from(reports)
+      .innerJoin(reportIssues, eq(reports.reportIssueId, reportIssues.id))
+      .innerJoin(reportArtifacts, eq(reports.publishedArtifactId, reportArtifacts.id))
+      .where(and(eq(reports.projectId, projectId), inArray(reports.status, ["published", "superseded"])))
+      .orderBy(desc(reports.publishedAt), desc(reports.versionNumber));
+    return Promise.all(rows.map((row) => this.publishedSummary(row.report, row.issue, row.artifact)));
+  }
+
+  async getPublished(projectId: string, reportId: string): Promise<CustomerReportPublishedDetail> {
+    const { report, issue, artifact } = await this.loadPublishedRow(projectId, reportId);
+    return CustomerReportPublishedDetailSchema.parse({
+      report: await this.publishedSummary(report, issue, artifact),
+      snapshot: parseStoredReportSnapshot(report)
+    });
+  }
+
+  async getPublishedDocument(projectId: string, reportId: string): Promise<Uint8Array> {
+    const { artifact } = await this.loadPublishedRow(projectId, reportId);
+    return verifyImmutableArtifactBytes(this.requireArtifactReader(), artifact);
+  }
+
+  private async loadPublishedRow(projectId: string, reportId: string) {
+    requireUuid(projectId, "Report project id must be a UUID.");
+    requireUuid(reportId, "Report id must be a UUID.");
+    const [row] = await this.database
+      .requireDb()
+      .select({ report: reports, issue: reportIssues, artifact: reportArtifacts })
+      .from(reports)
+      .innerJoin(reportIssues, eq(reports.reportIssueId, reportIssues.id))
+      .innerJoin(reportArtifacts, eq(reports.publishedArtifactId, reportArtifacts.id))
+      .where(
+        and(
+          eq(reports.id, reportId),
+          eq(reports.projectId, projectId),
+          inArray(reports.status, ["published", "superseded"])
+        )
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("Published report was not found for this project.");
+    return row;
+  }
+
+  private async publishedSummary(
+    report: ReportRow,
+    issue: ReportIssueRow,
+    artifact: ReportArtifactRow
+  ): Promise<CustomerReportPublishedSummary> {
+    const db = this.database.requireDb();
+    const [alert] = await db
+      .select({ id: reportEvidenceAlerts.id })
+      .from(reportEvidenceAlerts)
+      .where(and(eq(reportEvidenceAlerts.reportId, report.id), eq(reportEvidenceAlerts.status, "open")))
+      .limit(1);
+    const [successor] = await db
+      .select({ id: reports.id })
+      .from(reports)
+      .where(eq(reports.supersedesReportId, report.id))
+      .limit(1);
+    const snapshot = parseStoredReportSnapshot(report);
+    return CustomerReportPublishedSummarySchema.parse({
+      reportId: report.id,
+      reportIssueId: report.reportIssueId,
+      versionNumber: report.versionNumber,
+      status: report.status,
+      period: issue.period,
+      title: snapshot.title,
+      snapshotSha256: report.snapshotSha256,
+      artifactId: artifact.id,
+      artifactSha256: artifact.artifactSha256,
+      publishedAt: report.publishedAt?.toISOString(),
+      supersededAt: report.supersededAt?.toISOString(),
+      supersededByReportId: successor?.id,
+      correctionRequired: report.status === "published" && Boolean(alert)
+    });
+  }
+
+  private requireArtifactReader(): ImmutableArtifactReaderPort {
+    if (!this.artifactReader) {
+      throw new ServiceUnavailableException("Immutable report artifact storage is unavailable.");
+    }
+    return this.artifactReader;
+  }
+
   private async reviewTransition(input: {
     projectId: string;
     reportId: string;
@@ -613,7 +1086,9 @@ export class ReportsService {
             renderManifestJson: definition.manifest,
             renderManifestCanonicalText: definition.manifestCanonicalText,
             renderManifestSha256: definition.manifestSha256,
-            queueJobId: artifactId
+            queueJobId: artifactId,
+            requestedByUserId: input.actorUserId,
+            requestId: input.requestId
           })
           .returning();
         if (!artifact) {
@@ -676,6 +1151,7 @@ export class ReportsService {
         projectId: input.projectId,
         reportIssueId: issue.id,
         reportId: report.id,
+        artifactId: input.command === "submit_for_review" ? requiredArtifact(artifact).id : null,
         eventType,
         fromStatus: report.status,
         toStatus: updated.status,
@@ -787,6 +1263,87 @@ class ReportsController {
     return this.reports.getArtifact(projectId, reportId, artifactId);
   }
 
+  @Post(":reportId/artifacts/retry")
+  @RequireProjectPermission("report:review")
+  async retryArtifact(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    const parsed = CustomerReportArtifactRetryCommandSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException("Report artifact retry requires a valid digest-bound command.");
+    const actorUserId = persistedActorUserId(request);
+    if (!actorUserId) throw new BadRequestException("Report artifact retry requires a persisted user id.");
+    if (!this.queues.isQueueConfigured("report")) {
+      throw new ServiceUnavailableException("Report artifact retry requires configured rendering transport.");
+    }
+    const transition = await this.reports.retryArtifact({ projectId, reportId, actorUserId, ...parsed.data });
+    const renderDispatch = await this.enqueueReportArtifact(projectId, reportId, actorUserId, transition.artifact);
+    return CustomerReportArtifactRetryResponseSchema.parse({
+      command: "retry_render",
+      kind: transition.kind,
+      reportId,
+      status: "ready_for_review",
+      rowVersion: transition.report.rowVersion,
+      snapshotSha256: transition.report.snapshotSha256,
+      artifact: reportArtifactSummary(transition.artifact),
+      renderDispatch
+    });
+  }
+
+  @Post(":reportId/publish")
+  @RequireProjectPermission("report:publish")
+  async publish(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.publishCommand(projectId, reportId, body, request, "publish");
+  }
+
+  @Post(":reportId/publish-correction")
+  @RequireProjectPermission("report:correct")
+  async publishCorrection(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithAuth
+  ) {
+    return this.publishCommand(projectId, reportId, body, request, "publish_correction");
+  }
+
+  @Get("published")
+  listPublished(@Param("projectId") projectId: string) {
+    return this.reports.listPublished(projectId);
+  }
+
+  @Get("published/:reportId")
+  getPublished(@Param("projectId") projectId: string, @Param("reportId") reportId: string) {
+    return this.reports.getPublished(projectId, reportId);
+  }
+
+  @Get("published/:reportId/document")
+  async getPublishedDocument(
+    @Param("projectId") projectId: string,
+    @Param("reportId") reportId: string,
+    @Res() reply: FastifyReply
+  ) {
+    const body = await this.reports.getPublishedDocument(projectId, reportId);
+    reply.header("content-type", "text/html; charset=utf-8");
+    reply.header("content-length", body.byteLength);
+    reply.header("cache-control", "private, no-store");
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("referrer-policy", "no-referrer");
+    reply.removeHeader("x-frame-options");
+    reply.header(
+      "content-security-policy",
+      `default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src 'none'; connect-src 'none'; frame-ancestors ${env.WEB_ORIGIN}; base-uri 'none'; form-action 'none'`
+    );
+    return reply.send(Buffer.from(body));
+  }
+
   @Post("generations")
   @RequireProjectPermission("report:generate")
   async generate(@Param("projectId") projectId: string, @Body() body: unknown, @Req() request: RequestWithAuth) {
@@ -833,7 +1390,8 @@ class ReportsController {
       requestedByUserId: actorUserId,
       idempotencyKey: parsed.data.idempotencyKey,
       evidenceCutoffAt: parsed.data.evidenceCutoffAt,
-      narrativeMode: parsed.data.narrativeMode
+      narrativeMode: parsed.data.narrativeMode,
+      correctionReason: parsed.data.correctionReason
     });
 
     let enqueuedByRequest = false;
@@ -874,6 +1432,72 @@ class ReportsController {
   @RequireProjectPermission("report:generate")
   getGeneration(@Param("projectId") projectId: string, @Param("runId") runId: string) {
     return this.reports.getGeneration(projectId, runId);
+  }
+
+  private async enqueueReportArtifact(
+    projectId: string,
+    reportId: string,
+    actorUserId: string,
+    artifact: ReportArtifactRow
+  ): Promise<"accepted" | "not_required"> {
+    if (artifact.status !== "pending" && artifact.status !== "running") return "not_required";
+    let accepted: boolean;
+    try {
+      accepted = await this.queues.enqueue({
+        queueName: "report",
+        jobName: "customer_report_html_render",
+        jobId: artifact.id,
+        data: CustomerReportHtmlRenderJobDataSchema.parse({ projectId, reportId, artifactId: artifact.id }),
+        options: { attempts: 3, backoff: { type: "exponential", delay: 5_000 } },
+        audit: {
+          projectId,
+          type: "report_artifact",
+          inputRef: artifact.id,
+          actorType: "user",
+          actorUserId,
+          triggerSource: "user_action"
+        }
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException("Report rendering transport failed after artifact admission.", {
+        cause: error
+      });
+    }
+    if (!accepted) throw new ServiceUnavailableException("Report rendering transport became unavailable.");
+    return "accepted";
+  }
+
+  private async publishCommand(
+    projectId: string,
+    reportId: string,
+    body: unknown,
+    request: RequestWithAuth,
+    command: "publish" | "publish_correction"
+  ) {
+    const parsed = CustomerReportPublicationCommandSchema.safeParse(body ?? {});
+    if (!parsed.success || parsed.data.command !== command) {
+      throw new BadRequestException("Report publication requires a valid digest-bound command.");
+    }
+    const actorUserId = persistedActorUserId(request);
+    if (!actorUserId) throw new BadRequestException("Report publication requires a persisted user id.");
+    const transition = await this.reports.publish({ projectId, reportId, actorUserId, ...parsed.data });
+    const report = transition.report;
+    const artifact = transition.artifact;
+    if (!report.publishedAt || !artifact.artifactSha256) {
+      throw new Error("Published report is missing immutable publication evidence.");
+    }
+    return CustomerReportPublicationResponseSchema.parse({
+      command,
+      kind: transition.kind,
+      reportId: report.id,
+      status: "published",
+      rowVersion: report.rowVersion,
+      snapshotSha256: report.snapshotSha256,
+      artifactId: artifact.id,
+      artifactSha256: artifact.artifactSha256,
+      publishedAt: report.publishedAt.toISOString(),
+      supersededReportId: transition.supersededReportId
+    });
   }
 }
 
@@ -1143,6 +1767,9 @@ async function generationStaleReason(
   if (issue.currentCandidateReportId !== run.baseCandidateReportId) {
     return "The current report candidate changed after generation admission.";
   }
+  if (issue.currentPublishedReportId !== run.correctionPredecessorReportId) {
+    return "The published report changed after correction generation admission.";
+  }
   if (!run.baseCandidateReportId) {
     return undefined;
   }
@@ -1172,6 +1799,8 @@ function reportValues(
     versionNumber,
     status: "draft",
     ...reportSnapshotValues(snapshot, prepared, run),
+    supersedesReportId: run.correctionPredecessorReportId,
+    correctionReason: run.correctionReason,
     createdByActorType: "system",
     createdByUserId: run.requestedByUserId
   };
@@ -1852,6 +2481,178 @@ function requiredMapValue(map: Map<string, string>, key: string): string {
     throw new Error(`Missing report projection id for ${key}.`);
   }
   return value;
+}
+
+function parseOptionalDecisionNote(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const parsed = CustomerReportDecisionNoteSchema.safeParse(value);
+  if (!parsed.success || parsed.data.trim().length === 0) {
+    throw new BadRequestException("Report correction requires a bounded decision note.");
+  }
+  return parsed.data;
+}
+
+function validateReportCommandTarget(
+  input: {
+    projectId: string;
+    reportId: string;
+    actorUserId: string;
+    requestId: string;
+    expectedSnapshotSha256: string;
+    expectedRowVersion: number;
+  },
+  label: string
+): void {
+  requireUuid(input.projectId, "Report project id must be a UUID.");
+  requireUuid(input.reportId, "Report id must be a UUID.");
+  requireUuid(input.actorUserId, `${label} requires a persisted human actor.`);
+  requireUuid(input.requestId, `${label} request id must be a UUID.`);
+  requireSha256(input.expectedSnapshotSha256, `${label} requires an exact snapshot digest.`);
+  if (!Number.isSafeInteger(input.expectedRowVersion) || input.expectedRowVersion < 0) {
+    throw new BadRequestException(`${label} requires a non-negative expected row version.`);
+  }
+}
+
+function assertReportCommandTarget(
+  report: ReportRow,
+  input: { expectedSnapshotSha256: string; expectedRowVersion: number },
+  message: string
+): void {
+  if (report.snapshotSha256 !== input.expectedSnapshotSha256 || report.rowVersion !== input.expectedRowVersion) {
+    throw new ConflictException(message);
+  }
+}
+
+function parseStoredReportSnapshot(report: ReportRow): CustomerReportSnapshot {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(report.snapshotCanonicalText);
+  } catch {
+    throw new UnprocessableEntityException("Stored customer report snapshot is not valid JSON.");
+  }
+  const prepared = prepareSnapshot(parsed);
+  if (
+    prepared.snapshotCanonicalText !== report.snapshotCanonicalText ||
+    prepared.snapshotSha256 !== report.snapshotSha256 ||
+    prepared.factProjectionSha256 !== report.factProjectionSha256
+  ) {
+    throw new UnprocessableEntityException("Stored customer report snapshot or digest is inconsistent.");
+  }
+  return prepared.snapshot;
+}
+
+async function verifyImmutableArtifactBytes(
+  reader: ImmutableArtifactReaderPort,
+  artifact: ReportArtifactRow
+): Promise<Uint8Array> {
+  if (
+    artifact.status !== "staged" ||
+    !artifact.storageKey ||
+    !artifact.artifactSha256 ||
+    artifact.byteSize === null ||
+    artifact.byteSize > customerReportHtmlMaxBytes
+  ) {
+    throw new ConflictException("Report publication requires a bounded staged artifact with immutable byte evidence.");
+  }
+  let body: Uint8Array;
+  try {
+    body = await reader.readImmutableArtifact({ key: artifact.storageKey, maxBytes: artifact.byteSize + 1 });
+  } catch (error) {
+    throw new ServiceUnavailableException("Published report artifact bytes are unavailable.", { cause: error });
+  }
+  if (body.byteLength !== artifact.byteSize || sha256Bytes(body) !== artifact.artifactSha256) {
+    throw new ServiceUnavailableException("Published report artifact bytes failed immutable digest verification.");
+  }
+  return body;
+}
+
+async function lockReports(tx: DatabaseTransaction, projectId: string, reportIds: string[]): Promise<void> {
+  for (const reportId of [...new Set(reportIds)].sort()) {
+    await lockReport(tx, projectId, reportId);
+  }
+}
+
+async function lockCustomerReportEvidenceSources(
+  tx: DatabaseTransaction,
+  snapshot: CustomerReportSnapshot
+): Promise<void> {
+  const projectId = snapshot.identity.projectId;
+  // Release writers pin rv -> checks -> rollback -> deployment -> page version.
+  const sourceKinds = [
+    "ranking_proof",
+    "release_verification",
+    "release_verification_check",
+    "rollback",
+    "deployment",
+    "page_version",
+    "opportunity"
+  ] as const;
+  for (const sourceKind of sourceKinds) {
+    const sourceIds = [
+      ...new Set(
+        snapshot.factProjection.evidence
+          .filter((evidence) => evidence.sourceKind === sourceKind)
+          .map((evidence) => evidence.sourceId)
+      )
+    ].sort();
+    for (const sourceId of sourceIds) {
+      switch (sourceKind) {
+        case "ranking_proof":
+          await tx.execute(
+            sql`SELECT "id" FROM "ranking_proofs" WHERE "id" = ${sourceId} AND "project_id" = ${projectId} FOR UPDATE`
+          );
+          break;
+        case "page_version":
+          await tx.execute(sql`
+            SELECT pv."id" FROM "page_versions" pv
+            INNER JOIN "page_proposals" pp ON pp."id" = pv."page_proposal_id"
+            WHERE pv."id" = ${sourceId} AND pp."project_id" = ${projectId}
+            FOR UPDATE OF pv
+          `);
+          break;
+        case "deployment":
+          await tx.execute(
+            sql`SELECT "id" FROM "deployments" WHERE "id" = ${sourceId} AND "project_id" = ${projectId} FOR UPDATE`
+          );
+          break;
+        case "release_verification":
+          await tx.execute(sql`
+            SELECT rv."id" FROM "release_verifications" rv
+            INNER JOIN "deployments" d ON d."id" = rv."deployment_id"
+            WHERE rv."id" = ${sourceId} AND d."project_id" = ${projectId}
+            FOR UPDATE OF rv
+          `);
+          break;
+        case "release_verification_check":
+          await tx.execute(sql`
+            SELECT rvc."id" FROM "release_verification_checks" rvc
+            INNER JOIN "release_verifications" rv ON rv."id" = rvc."release_verification_id"
+            INNER JOIN "deployments" d ON d."id" = rv."deployment_id"
+            WHERE rvc."id" = ${sourceId} AND d."project_id" = ${projectId}
+            FOR UPDATE OF rvc
+          `);
+          break;
+        case "rollback":
+          await tx.execute(
+            sql`SELECT "id" FROM "rollback_points" WHERE "id" = ${sourceId} AND "project_id" = ${projectId} FOR UPDATE`
+          );
+          break;
+        case "opportunity":
+          await tx.execute(
+            sql`SELECT "id" FROM "opportunities" WHERE "id" = ${sourceId} AND "project_id" = ${projectId} FOR UPDATE`
+          );
+          break;
+      }
+    }
+  }
+}
+
+function sha256Bytes(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function isString(value: string | null | undefined): value is string {
+  return typeof value === "string";
 }
 
 function isActiveGenerationStatus(status: ReportGenerationRunRow["status"]): boolean {

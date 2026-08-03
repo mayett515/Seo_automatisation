@@ -288,6 +288,13 @@
       "when": 1785712680766,
       "tag": "0040_customer-report-html-artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1785717038049,
+      "tag": "0041_customer-report-publication",
+      "breakpoints": true
     }
   ]
 }

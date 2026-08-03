@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   CustomerApprovedNextActionEventSchema,
+  CreateCustomerReportGenerationRequestSchema,
   CustomerReportDecisionNoteSchema,
+  CustomerReportArtifactRetryCommandSchema,
   CustomerReportEvidencePacketSchema,
   CustomerReportFactProjectionSchema,
   CustomerReportGenerationJobDataSchema,
   CustomerReportGenerationResponseSchema,
   CustomerReportHtmlRenderJobDataSchema,
   CustomerReportHtmlRenderManifestSchema,
+  CustomerReportPublicationCommandSchema,
+  CustomerReportPublishedDetailSchema,
   CustomerReportReviewCommandSchema,
   CustomerReportReviewResponseSchema,
   CustomerReportSnapshotSchema,
@@ -352,6 +356,57 @@ void describe("customer report review and render contracts", () => {
       false
     );
   });
+
+  void it("keeps artifact retry and publication commands digest-bound and closed", () => {
+    const target = {
+      requestId: receiptId,
+      expectedSnapshotSha256: digest,
+      expectedRowVersion: 1
+    };
+    const retry = CustomerReportArtifactRetryCommandSchema.parse({ command: "retry_render", ...target });
+    const publication = CustomerReportPublicationCommandSchema.parse({
+      command: "publish",
+      artifactId,
+      ...target
+    });
+
+    assert.equal(retry.command, "retry_render");
+    assert.equal(publication.artifactId, artifactId);
+    assert.equal(CustomerReportArtifactRetryCommandSchema.safeParse({ ...retry, artifactId }).success, false);
+    assert.equal(
+      CustomerReportPublicationCommandSchema.safeParse({ ...publication, storageKey: "reports/private.html" }).success,
+      false
+    );
+  });
+
+  void it("returns published snapshot truth without private artifact locations", () => {
+    const snapshot = CustomerReportSnapshotSchema.parse(validSnapshot());
+    const detail = CustomerReportPublishedDetailSchema.parse({
+      report: {
+        reportId,
+        reportIssueId,
+        versionNumber: 1,
+        status: "published",
+        period: "2026-07",
+        title: snapshot.title,
+        snapshotSha256: digest,
+        artifactId,
+        artifactSha256: "b".repeat(64),
+        publishedAt: cutoff,
+        correctionRequired: false
+      },
+      snapshot
+    });
+
+    assert.equal(detail.report.status, "published");
+    assert.equal(
+      CustomerReportPublishedDetailSchema.safeParse({
+        ...detail,
+        report: { ...detail.report, storageKey: "reports/private.html", url: "/arbitrary" }
+      }).success,
+      false
+    );
+  });
 });
 
 void describe("customer report generation contracts", () => {
@@ -400,6 +455,22 @@ void describe("customer report generation contracts", () => {
         status: "queued",
         enqueuedByRequest: true
       }).success,
+      false
+    );
+  });
+
+  void it("accepts only bounded correction reasons on generation requests", () => {
+    const base = { period: "2026-07", evidenceCutoffAt: cutoff, idempotencyKey: receiptId };
+
+    assert.equal(
+      CreateCustomerReportGenerationRequestSchema.safeParse({
+        ...base,
+        correctionReason: "Berichtigte Ranking-Evidenz nach Quelleninvalidierung."
+      }).success,
+      true
+    );
+    assert.equal(
+      CreateCustomerReportGenerationRequestSchema.safeParse({ ...base, correctionReason: "\u0000" }).success,
       false
     );
   });

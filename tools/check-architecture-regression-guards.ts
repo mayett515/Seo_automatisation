@@ -2082,7 +2082,7 @@ requireNotIncludes(
 
 requireIncludes(
   "docs/architecture/agent-first-mvp-roadmap.md",
-  "Status: reviewed HTML staging implemented; architecture checkpoint accepted by",
+  "Status: publication backend implemented; architecture checkpoint accepted by",
   "roadmap-current-status",
   "The roadmap must name the accepted Report and Next Action checkpoint without describing implementation as wholly deferred"
 );
@@ -2325,11 +2325,11 @@ requireIncludes(
   "Generation and review must serialize on the stable report issue row"
 );
 
-requireNotIncludes(
+requireIncludes(
   "apps/api/src/modules/reports.module.ts",
   "async publish",
-  "customer-report-aggregate",
-  "Report publication must remain absent from the aggregate foundation slice"
+  "customer-report-publication",
+  "Digest-bound report publication must remain an explicit authenticated service boundary"
 );
 
 requireIncludes(
@@ -2631,6 +2631,104 @@ requireIncludes(
   "fails visible HTML artifact truth after bounded recovery exhaustion",
   "customer-report-html-artifact",
   "Artifact recovery exhaustion must remain visible product truth"
+);
+
+requireIncludes(
+  "packages/db/migrations/0041_customer-report-publication.sql",
+  "Report publication requires one exact staged immutable artifact.",
+  "customer-report-publication",
+  "Postgres must bind publication to one exact staged immutable artifact"
+);
+
+requireIncludes(
+  "packages/db/migrations/0041_customer-report-publication.sql",
+  "Report correction generation must bind the current published report.",
+  "customer-report-publication",
+  "Correction generation must retain its admitted predecessor at the database boundary"
+);
+
+requireIncludes(
+  "packages/db/migrations/0041_customer-report-publication.sql",
+  "Published lifecycle evidence must bind one exact human decision and artifact.",
+  "customer-report-publication",
+  "Publication events must retain exact actor and artifact evidence"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "lockCustomerReportEvidenceSources(tx, snapshot)",
+  "customer-report-publication",
+  "Publication must lock the bounded source set before aggregate rows"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "Release writers pin rv -> checks -> rollback -> deployment -> page version.",
+  "customer-report-publication",
+  "Publication source locking must remain compatible with verification and rollback writers"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  'row.status !== "reviewed"',
+  "customer-report-publication",
+  "Ranking-proof invalidation-first publication blocking depends on current reviewed source truth"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "verifyImmutableArtifactBytes(this.requireArtifactReader(), initialArtifact)",
+  "customer-report-publication",
+  "Publication must verify selected immutable artifact bytes before committing truth"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunities.module.ts",
+  "FOR UPDATE OF r",
+  "customer-report-publication",
+  "Ranking-proof invalidation must serialize with affected published reports"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  '.set({ status: "resolved", resolvedAt: now, resolvedByReportId: published.id, updatedAt: now })',
+  "customer-report-publication",
+  "Correction publication must resolve predecessor source alerts transactionally"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  'throw new ConflictException("Only a failed report artifact can be retried with a new request id.")',
+  "customer-report-publication",
+  "Artifact retry must create new work only after durable failure"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/customer-report.ts",
+  "supersedesReportId: run.correctionPredecessorReportId",
+  "customer-report-publication",
+  "Worker draft persistence must preserve admitted correction lineage"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.integration.ts",
+  "publishes one exact staged artifact and reads only the immutable snapshot",
+  "customer-report-publication",
+  "DB coverage must pin exact artifact publication and snapshot-owned reads"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.integration.ts",
+  "blocks invalidated ranking evidence and resolves its alert only through a published correction",
+  "customer-report-publication",
+  "DB coverage must pin invalidation-first rejection and correction alert resolution"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.integration.ts",
+  "terminalizes a generation admitted before publication and then admits the required correction",
+  "customer-report-publication",
+  "Publication must not prevent an older active generation from terminalizing as stale"
 );
 
 requireIncludes(

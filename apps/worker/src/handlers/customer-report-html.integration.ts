@@ -315,7 +315,9 @@ async function createReviewedReportArtifact(db: DatabaseClient, name: string): P
       renderManifestJson: manifest,
       renderManifestCanonicalText: manifestCanonicalText,
       renderManifestSha256: manifestSha256,
-      queueJobId: artifactId
+      queueJobId: artifactId,
+      requestedByUserId: user.id,
+      requestId: randomUUID()
     });
     await tx
       .update(reports)

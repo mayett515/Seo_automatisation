@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.26"
+version: "1.1.27"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -334,9 +334,12 @@ Customer Report publication and Next Action
   Report snapshot admission must recompute the RFC 8785 fact-projection digest, validate every claim/evidence binding, and verify each durable evidence source plus its typed operational relationships belong to the report project.
   Draft report semantics may change only through expected issue/report versions and a generation run pinned to the admitted base; ready, published, and superseded semantics are frozen.
   Canonical snapshot text remains semantic authority while the database review transition requires normalized claim/evidence/link rows to match its exact sets, not only its counts.
-  Report lifecycle events are append-only exact transition evidence; generation events bind the succeeded run, human review events bind the real from/to status, and publication event vocabulary remains disabled until publication ships.
+  Report lifecycle events are append-only exact transition evidence; generation events bind the succeeded run, review events bind the exact artifact admission, and publication/supersession events bind the selected immutable artifact plus real actor transition.
   Report review and generation completion lock the issue before the candidate so one legal transition wins without mixed snapshot truth.
-  Aggregate-foundation code must not expose publication or supersession writes before the reviewed-artifact and human publication transaction ships.
+  Publication locks bounded source rows in release-writer-compatible order (ranking proof -> verification -> check -> rollback -> deployment -> page version -> opportunity) before issue -> report -> artifact locks, then rechecks current evidence and compare-and-sets one reviewed digest.
+  Source invalidation takes the same source lock before published-report locks; invalidation-first blocks publication, while publication-first creates an open correction-required alert.
+  Initial publication selects one exact staged artifact; correction publication supersedes the prior immutable report, publishes one successor, moves the issue head, resolves prior alerts, and appends both actor events in one transaction.
+  Published and superseded reads parse only stored canonical snapshot truth and the selected immutable artifact; they never rebuild historical claims from current source rows.
   Fact-only report generation must accept no client/model facts: an authenticated command admits the run, the worker selects one strict bounded server-owned packet, and every selected source is bound to canonical payload bytes.
   The report packet must exclude GSC diagnostics and coarse release-plan status, persist its canonical text/digest, and be re-selected before draft persistence.
   Monthly report generation accepts cutoffs only after the completed Europe/Berlin month and within the seven-day grace window; period event evidence does not become an all-time cumulative delivery list.
@@ -354,7 +357,7 @@ Customer Report publication and Next Action
   Customer report HTML rendering may read only the stored canonical snapshot and strict render manifest, and must write through a purpose-named immutable private-artifact port.
   The renderer must re-parse and re-digest snapshot and manifest, emit bounded script-free HTML, verify immutable storage byte identity, and attach evidence only while the exact reviewed digest still owns the artifact.
   Customer-facing report dates must use the render manifest's pinned locale/timezone; worker-host timezone must not alter immutable bytes.
-  Failed artifact generation must have an actor-backed re-render path before publication ships and must not require a false request-changes semantic event.
+  Failed artifact generation has an actor-backed re-render command that creates a new artifact identity and never revives failed evidence or manufactures a request-changes semantic event.
   Report artifact recovery is a separate artifact_capture lane with deterministic jobId = artifactId; it may re-enqueue or fail artifact truth but must not mutate report semantics or publication.
   Report review, rendering attachment, request-changes, and artifact recovery lock shared rows in issue -> report -> artifact order.
   Report generation responses distinguish enqueue work performed by the current request from the durable status of a pre-existing run.

@@ -946,6 +946,9 @@ async function generationStaleReason(
   if (issue.currentCandidateReportId !== run.baseCandidateReportId) {
     return "The current report candidate changed after generation admission.";
   }
+  if (issue.currentPublishedReportId !== run.correctionPredecessorReportId) {
+    return "The published report changed after correction generation admission.";
+  }
   if (!run.baseCandidateReportId) return undefined;
   const [candidate] = await tx.select().from(reports).where(eq(reports.id, run.baseCandidateReportId)).limit(1);
   if (
@@ -988,6 +991,8 @@ function reportValues(
     versionNumber,
     status: "draft",
     ...reportSnapshotValues(snapshot, prepared, run),
+    supersedesReportId: run.correctionPredecessorReportId,
+    correctionReason: run.correctionReason,
     createdByActorType: "system",
     createdByUserId: run.requestedByUserId
   };

@@ -85,7 +85,7 @@ The worker integration cases prove that all seven allowed evidence kinds become 
 
 Slice 3 adds five DB-backed artifact cases. They prove that submit-for-review creates one pending artifact for the exact snapshot and manifest digests; deterministic rendering stages immutable private bytes and replays the same byte identity; request-changes racing a completed storage write expires the artifact and prevents late attachment; mismatched storage evidence fails visibly; missing transport re-enqueues the same artifact id; and bounded recovery exhaustion becomes durable failed artifact truth. Unit coverage proves deterministic script-free rendering, manifest-timezone date display, and a renderer-owned escaping path for snapshot text. Direct database tests also reject review without an exact artifact and confirm request-changes expires a staged derivative before draft semantics reopen while retaining its immutable byte evidence.
 
-The report aggregate cases previously passed against the documented local PostgreSQL 17 test runtime. Slice 2 and Slice 3 DB-backed worker, source-drift, artifact-race, and recovery cases require `TEST_DATABASE_URL`; GitHub Actions integration remains the merge gate. Publication, correction, and source-invalidation races remain correctly deferred to Slice 4.
+Slice 4 adds DB-backed cases for actor-backed failed-artifact retry, exact staged-byte publication and replay, immutable snapshot/document reads, invalidated-ranking publication rejection, durable correction-required alerts, and atomic correction supersession/alert resolution. These cases require `TEST_DATABASE_URL`; GitHub Actions integration remains the migration and race gate when local PostgreSQL is unavailable.
 
 ### Release Preflight Rollback Preparation
 
