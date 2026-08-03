@@ -186,7 +186,9 @@ async function createFixture(db: DatabaseClient): Promise<{
     device: "mobile",
     locale: "de-DE",
     status: "reviewed",
-    createdByUserId: user.id
+    createdByUserId: user.id,
+    createdAt: new Date("2026-07-25T09:00:00.000Z"),
+    updatedAt: new Date("2026-07-25T09:00:00.000Z")
   });
   const [opportunity] = await db
     .insert(opportunities)
