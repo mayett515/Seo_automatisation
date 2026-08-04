@@ -886,7 +886,7 @@ strict contracts and canonicalization (implemented)
 -> optional bounded AI headings/transitions with deterministic QA and fact-only fallback (implemented)
 ```
 
-Consequential command offers and PDF follow only after that vertical works. The `request_page_proposal` target now has the first DB-managed expected-state/revision admission boundary; `prepare_release_plan` target hardening and report offer/receipt/dispatch truth remain next. RAG remains deferred until report evidence cannot be loaded directly within the accepted limits.
+Consequential command offers and PDF follow only after that vertical works. Both first candidate targets now have DB-managed expected-state/revision admission boundaries: `request_page_proposal` locks opportunity truth, and `prepare_release_plan` locks the sorted selected page-version set before draft-plan persistence. Report offer/receipt/dispatch truth remains the next consequential-action slice. RAG remains deferred until report evidence cannot be loaded directly within the accepted limits.
 
 Preferred modular-monolith placement for the new vertical:
 

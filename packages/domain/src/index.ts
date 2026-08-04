@@ -1,5 +1,6 @@
 import type {
   OpportunityTargetRevision,
+  PageVersionTargetRevision,
   ReleaseCheck,
   ReleasePlan,
   ReleaseVerificationStatus,
@@ -34,6 +35,33 @@ export function decidePageProposalTargetAdmission(input: {
 
   if (input.current.status === "brief_created") {
     return { kind: "deny", reason: "proposal_already_created" };
+  }
+
+  return { kind: "allow" };
+}
+
+export type ReleasePlanTargetAdmissionDecision =
+  | { kind: "allow" }
+  | { kind: "stale"; current: PageVersionTargetRevision }
+  | { kind: "deny"; reason: "not_approved" | "approval_evidence_missing" };
+
+export function decideReleasePlanTargetAdmission(input: {
+  expected: PageVersionTargetRevision;
+  current: PageVersionTargetRevision & { hasApprovalEvidence: boolean };
+}): ReleasePlanTargetAdmissionDecision {
+  if (input.current.status !== input.expected.status || input.current.rowVersion !== input.expected.rowVersion) {
+    return {
+      kind: "stale",
+      current: { status: input.current.status, rowVersion: input.current.rowVersion }
+    };
+  }
+
+  if (input.current.status !== "approved") {
+    return { kind: "deny", reason: "not_approved" };
+  }
+
+  if (!input.current.hasApprovalEvidence) {
+    return { kind: "deny", reason: "approval_evidence_missing" };
   }
 
   return { kind: "allow" };

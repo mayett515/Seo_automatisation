@@ -138,6 +138,9 @@ Implemented coverage:
 4. Page versions from another project are rejected.
 5. Absolute page proposal routes are rejected before release items are persisted.
 6. Missing persisted actor evidence is rejected and writes no release plan or items.
+7. Page-version revisions are forced to zero on insert, advance on lifecycle updates, and reject direct revision forgery.
+8. Release-plan requests carry the expected status/revision for each selected page version and stale expectations write no plan or items.
+9. A real PostgreSQL interleaving holds a page-version lifecycle update, proves planning waits on that writer, then confirms the stale loser writes no plan or item.
 
 These tests prove release planning is a durable planning action only: it selects already approved artifacts, writes draft plan/item rows, and does not approve deploy, enqueue deploy, or mutate providers.
 

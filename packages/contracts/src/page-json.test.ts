@@ -390,18 +390,38 @@ void describe("SectionCopyRevisionOutputSchema", () => {
 });
 
 void describe("CreateReleasePlanRequestSchema", () => {
-  void it("requires at least one page version id", () => {
-    const result = CreateReleasePlanRequestSchema.safeParse({ pageVersionIds: [] });
+  void it("requires at least one page-version target", () => {
+    const result = CreateReleasePlanRequestSchema.safeParse({ pageVersions: [] });
 
     assert.equal(result.success, false);
   });
 
-  void it("accepts approved page-version candidates by id", () => {
+  void it("accepts a page-version target pinned to its displayed revision", () => {
     assert.equal(
       CreateReleasePlanRequestSchema.safeParse({
-        pageVersionIds: ["11111111-1111-4111-8111-111111111111"]
+        pageVersions: [
+          {
+            pageVersionId: "11111111-1111-4111-8111-111111111111",
+            expected: { status: "approved", rowVersion: 2 }
+          }
+        ]
       }).success,
       true
+    );
+  });
+
+  void it("rejects duplicate targets and invalid revisions", () => {
+    const target = {
+      pageVersionId: "11111111-1111-4111-8111-111111111111",
+      expected: { status: "approved", rowVersion: 2 }
+    };
+
+    assert.equal(CreateReleasePlanRequestSchema.safeParse({ pageVersions: [target, target] }).success, false);
+    assert.equal(
+      CreateReleasePlanRequestSchema.safeParse({
+        pageVersions: [{ ...target, expected: { ...target.expected, rowVersion: -1 } }]
+      }).success,
+      false
     );
   });
 });

@@ -126,6 +126,7 @@ function version(
     sitemapReady: true,
     versionNumber,
     status: "preview",
+    rowVersion: 0,
     basedOnVersionId,
     createdAt: "2026-07-12T00:00:00.000Z",
     updatedAt: "2026-07-12T00:00:00.000Z"

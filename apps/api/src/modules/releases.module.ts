@@ -3,6 +3,7 @@ import type { MediaAssetStoragePort } from "@localseo/adapters";
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Inject,
@@ -41,6 +42,7 @@ import {
 import {
   buildReleaseDeploymentKey,
   canDeployRelease,
+  decideReleasePlanTargetAdmission,
   decideReleaseReadiness,
   type DeployDecision
 } from "@localseo/domain";
@@ -148,7 +150,13 @@ export class ReleasesService {
 
   async createPlan(projectId: string, body: unknown, createdByUserId?: string): Promise<ReleasePlan> {
     const input = CreateReleasePlanRequestSchema.parse(body ?? {});
-    const requestedPageVersionIds = [...new Set(input.pageVersionIds)];
+    const requestedTargets = [...input.pageVersions].sort((left, right) =>
+      left.pageVersionId < right.pageVersionId ? -1 : left.pageVersionId > right.pageVersionId ? 1 : 0
+    );
+    const requestedPageVersionIds = requestedTargets.map((target) => target.pageVersionId);
+    const expectedTargetByPageVersionId = new Map(
+      requestedTargets.map((target) => [target.pageVersionId, target.expected] as const)
+    );
     const releasePlanId = randomUUID();
     const db = this.database.db;
 
@@ -169,7 +177,7 @@ export class ReleasesService {
     }
 
     const insertedPlan = await db.transaction(async (tx) => {
-      for (const pageVersionId of [...requestedPageVersionIds].sort()) {
+      for (const pageVersionId of requestedPageVersionIds) {
         await tx.execute(sql`
           SELECT pv."id"
           FROM "page_versions" pv
@@ -184,6 +192,7 @@ export class ReleasesService {
         .select({
           pageVersionId: pageVersions.id,
           pageVersionStatus: pageVersions.status,
+          pageVersionRowVersion: pageVersions.rowVersion,
           pageVersionApprovedAt: pageVersions.approvedAt,
           pageJson: pageVersions.pageJson,
           targetUrl: pageProposals.route
@@ -196,11 +205,38 @@ export class ReleasesService {
         throw new BadRequestException("Every release page version must belong to this project.");
       }
 
-      const unapprovedRow = pageVersionRows.find(
-        (row) => row.pageVersionStatus !== "approved" || !row.pageVersionApprovedAt
-      );
-      if (unapprovedRow) {
-        throw new BadRequestException("Release plans can only include approved page versions with approval evidence.");
+      for (const row of pageVersionRows) {
+        const expected = expectedTargetByPageVersionId.get(row.pageVersionId);
+        if (!expected) {
+          throw new Error("Release plan target admission lost its expected revision.");
+        }
+
+        const decision = decideReleasePlanTargetAdmission({
+          expected,
+          current: {
+            status: row.pageVersionStatus,
+            rowVersion: row.pageVersionRowVersion,
+            hasApprovalEvidence: Boolean(row.pageVersionApprovedAt)
+          }
+        });
+
+        if (decision.kind === "stale") {
+          throw new ConflictException("Page version changed after the release plan request was prepared.");
+        }
+
+        if (decision.kind === "deny") {
+          switch (decision.reason) {
+            case "not_approved":
+            case "approval_evidence_missing":
+              throw new BadRequestException(
+                "Release plans can only include approved page versions with approval evidence."
+              );
+            default: {
+              const exhaustiveReason: never = decision.reason;
+              throw new Error(`Unhandled release plan target denial: ${String(exhaustiveReason)}`);
+            }
+          }
+        }
       }
 
       const validatedPageVersionRows = pageVersionRows.map((row) => ({

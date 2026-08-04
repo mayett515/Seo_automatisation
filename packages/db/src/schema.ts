@@ -532,6 +532,7 @@ export const pageVersions = pgTable(
       .references(() => pageProposals.id),
     versionNumber: integer("version_number").notNull(),
     status: pageVersionStatusEnum("status").notNull().default("preview"),
+    rowVersion: integer("row_version").default(0).notNull(),
     pageJson: jsonb("page_json").$type<PageJson>().notNull(),
     basedOnVersionId: uuid("based_on_version_id").references((): AnyPgColumn => pageVersions.id),
     createdByUserId: uuid("created_by_user_id").references(() => users.id),
@@ -540,7 +541,8 @@ export const pageVersions = pgTable(
   },
   (table) => [
     uniqueIndex("page_versions_proposal_version_idx").on(table.pageProposalId, table.versionNumber),
-    index("page_versions_based_on_version_idx").on(table.basedOnVersionId)
+    index("page_versions_based_on_version_idx").on(table.basedOnVersionId),
+    check("page_versions_row_version_check", sql`${table.rowVersion} >= 0`)
   ]
 );
 

@@ -546,6 +546,7 @@ function pageVersion(id: string, versionNumber: number, value: PageJson): PageVe
     sitemapReady: value.seo.sitemapReady,
     versionNumber,
     status: "preview",
+    rowVersion: 0,
     createdAt,
     updatedAt: createdAt,
     pageJson: value

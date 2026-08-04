@@ -1106,6 +1106,7 @@ export const PageVersionSummarySchema = z
     sitemapReady: z.boolean(),
     versionNumber: z.number().int().positive(),
     status: PageVersionStatusSchema,
+    rowVersion: z.number().int().nonnegative().max(2_147_483_647),
     basedOnVersionId: z.string().min(1).optional(),
     createdByUserId: z.string().min(1).optional(),
     approvedAt: z.string().datetime().optional(),
@@ -1851,9 +1852,38 @@ export const CreateTrackingKeyResponseSchema = TrackingKeySummarySchema.extend({
   trackingKey: z.string().min(32)
 });
 
-export const CreateReleasePlanRequestSchema = z.object({
-  pageVersionIds: z.array(z.string().min(1)).min(1).max(50)
-});
+export const PageVersionTargetRevisionSchema = z
+  .object({
+    status: PageVersionStatusSchema,
+    rowVersion: z.number().int().nonnegative().max(2_147_483_647)
+  })
+  .strict();
+
+export const ReleasePlanPageVersionTargetSchema = z
+  .object({
+    pageVersionId: z.string().uuid(),
+    expected: PageVersionTargetRevisionSchema
+  })
+  .strict();
+
+export const CreateReleasePlanRequestSchema = z
+  .object({
+    pageVersions: z.array(ReleasePlanPageVersionTargetSchema).min(1).max(50)
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const seen = new Set<string>();
+    for (const [index, target] of value.pageVersions.entries()) {
+      if (seen.has(target.pageVersionId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["pageVersions", index, "pageVersionId"],
+          message: "Release plan page-version targets must be unique."
+        });
+      }
+      seen.add(target.pageVersionId);
+    }
+  });
 
 export const VerifyReleaseRequestSchema = z.object({
   deploymentId: z.string().min(1).optional()
@@ -2207,6 +2237,8 @@ export type TrackingIngestResult = z.output<typeof TrackingIngestResultSchema>;
 export type CreateTrackingKeyRequest = z.output<typeof CreateTrackingKeyRequestSchema>;
 export type TrackingKeySummary = z.output<typeof TrackingKeySummarySchema>;
 export type CreateTrackingKeyResponse = z.output<typeof CreateTrackingKeyResponseSchema>;
+export type PageVersionTargetRevision = z.output<typeof PageVersionTargetRevisionSchema>;
+export type ReleasePlanPageVersionTarget = z.output<typeof ReleasePlanPageVersionTargetSchema>;
 export type CreateReleasePlanRequest = z.output<typeof CreateReleasePlanRequestSchema>;
 export type VerifyReleaseRequest = z.output<typeof VerifyReleaseRequestSchema>;
 export type ExecuteRollbackRequest = z.output<typeof ExecuteRollbackRequestSchema>;

@@ -261,12 +261,30 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
   });
   const createReleasePlan = useMutation({
     mutationFn: () => {
-      const body = CreateReleasePlanRequestSchema.parse({ pageVersionIds: [pageVersionId] });
+      if (!version.data) {
+        throw new Error("Page version details are required to prepare a release plan.");
+      }
+
+      const body = CreateReleasePlanRequestSchema.parse({
+        pageVersions: [
+          {
+            pageVersionId,
+            expected: { status: version.data.status, rowVersion: version.data.rowVersion }
+          }
+        ]
+      });
 
       return postJson(projectApiPath(projectId, "/releases/plan"), body, ReleasePlanSchema);
     },
     onSuccess: (response) => {
       setLatestReleasePlan(response);
+    },
+    onError: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["page-version-detail", projectId, pageVersionId] }),
+        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] })
+      ]);
     }
   });
 

@@ -243,7 +243,7 @@ void describe(
 
       const result = await service.createPlan(
         fixture.projectId,
-        { pageVersionIds: [fixture.pageVersionId] },
+        createReleasePlanRequest(fixture.pageVersionId),
         fixture.userId
       );
 
@@ -273,6 +273,79 @@ void describe(
         .from(deployments)
         .where(eq(deployments.releasePlanId, result.releasePlanId));
       assert.equal(deploymentRows.length, 0);
+
+      const [target] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(target?.status, "approved");
+      assert.equal(target?.rowVersion, 0);
+    });
+
+    void it("keeps page-version revisions database-managed", async () => {
+      const fixture = await createPageVersionFixture(db, { rowVersion: 9 });
+      const [inserted] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+
+      assert.equal(inserted?.rowVersion, 0);
+
+      await assert.rejects(
+        () => db.update(pageVersions).set({ rowVersion: 9 }).where(eq(pageVersions.id, fixture.pageVersionId)),
+        /Page version row_version is database-managed/u
+      );
+
+      const [unchanged] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(unchanged?.rowVersion, 0);
+    });
+
+    void it("rejects release planning when a concurrent page-version transition wins the target lock", async () => {
+      const fixture = await createPageVersionFixture(db, { projectName: "Release target race" });
+      assert.ok(testDatabaseUrl);
+
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const planningHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const planningService = new ReleasesService(
+        new QueueProducerService(testDatabaseService(planningHandle.db)),
+        testDatabaseService(planningHandle.db)
+      );
+      let heldTransition: HeldPageVersionTransition | undefined;
+      let planningSettled = false;
+
+      try {
+        heldTransition = await startHeldPageVersionTransition(blockerHandle.sql, fixture.pageVersionId);
+        const planningPid = await backendPid(planningHandle.sql);
+        const planningOutcome = planningService
+          .createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId), fixture.userId)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            planningSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: planningPid,
+          blockingPid: heldTransition.pid,
+          isSettled: () => planningSettled
+        });
+        heldTransition.commit();
+
+        const outcome = await planningOutcome;
+        assert.equal(outcome.ok, false);
+        if (outcome.ok) {
+          assert.fail("Release planning unexpectedly accepted a stale page-version target.");
+        }
+        assert.match(errorMessage(outcome.error), /changed after the release plan request was prepared/u);
+        await heldTransition.done;
+      } finally {
+        heldTransition?.rollback();
+        await heldTransition?.done.catch(() => undefined);
+        await planningHandle.close();
+        await blockerHandle.close();
+      }
+
+      const [pageVersion] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
+      assert.equal(pageVersion?.status, "release_candidate");
+      assert.equal(pageVersion?.rowVersion, 1);
+      assert.equal((await db.select().from(releasePlans)).length, 0);
+      assert.equal((await db.select().from(releasePlanItems)).length, 0);
     });
 
     void it("rejects release planning when PageJson and the immutable media projection differ", async () => {
@@ -281,7 +354,7 @@ void describe(
       await db.insert(pageVersionMediaAssets).values({ pageVersionId: fixture.pageVersionId, mediaAssetId: assetId });
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
+        () => service.createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId), fixture.userId),
         /media references are unavailable or do not match/u
       );
 
@@ -293,7 +366,7 @@ void describe(
       const fixture = await createPageVersionFixture(db, { projectName: "Preflight media mismatch" });
       const plan = await service.createPlan(
         fixture.projectId,
-        { pageVersionIds: [fixture.pageVersionId] },
+        createReleasePlanRequest(fixture.pageVersionId),
         fixture.userId
       );
       const assetId = await createReadyMediaAsset(db, fixture);
@@ -310,10 +383,10 @@ void describe(
     void it("rejects release plan creation for page versions already in an active release plan", async () => {
       const fixture = await createPageVersionFixture(db);
 
-      await service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId);
+      await service.createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId), fixture.userId);
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
+        () => service.createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId), fixture.userId),
         /already in an active release plan/u
       );
 
@@ -328,7 +401,12 @@ void describe(
       const fixture = await createPageVersionFixture(db, { status: "preview", approvedAt: null });
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
+        () =>
+          service.createPlan(
+            fixture.projectId,
+            createReleasePlanRequest(fixture.pageVersionId, "preview"),
+            fixture.userId
+          ),
         /only include approved page versions/u
       );
 
@@ -340,7 +418,12 @@ void describe(
       const fixture = await createPageVersionFixture(db, { status: "release_candidate" });
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
+        () =>
+          service.createPlan(
+            fixture.projectId,
+            createReleasePlanRequest(fixture.pageVersionId, "release_candidate"),
+            fixture.userId
+          ),
         /only include approved page versions/u
       );
 
@@ -353,7 +436,7 @@ void describe(
       const projectB = await createPageVersionFixture(db, { projectName: "Project B" });
 
       await assert.rejects(
-        () => service.createPlan(projectA.projectId, { pageVersionIds: [projectB.pageVersionId] }, projectA.userId),
+        () => service.createPlan(projectA.projectId, createReleasePlanRequest(projectB.pageVersionId), projectA.userId),
         /Every release page version must belong to this project/u
       );
 
@@ -365,7 +448,7 @@ void describe(
       const fixture = await createPageVersionFixture(db, { route: "https://attacker.example/dachreinigung/" });
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }, fixture.userId),
+        () => service.createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId), fixture.userId),
         /Release verification target routes must be relative paths/u
       );
 
@@ -377,7 +460,7 @@ void describe(
       const fixture = await createPageVersionFixture(db);
 
       await assert.rejects(
-        () => service.createPlan(fixture.projectId, { pageVersionIds: [fixture.pageVersionId] }),
+        () => service.createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId)),
         /requires an authenticated persisted user id/u
       );
 
@@ -758,7 +841,7 @@ void describe(
 
       const replanned = await service.createPlan(
         fixture.projectId,
-        { pageVersionIds: [fixture.pageVersionId] },
+        await currentReleasePlanRequest(db, fixture.pageVersionId),
         user.id
       );
 
@@ -1046,6 +1129,7 @@ async function createPageVersionFixture(
     approvedAt?: Date | null;
     projectName?: string;
     route?: string;
+    rowVersion?: number;
     status?: PageVersionStatus;
   } = {}
 ): Promise<PageVersionFixture> {
@@ -1082,6 +1166,7 @@ async function createPageVersionFixture(
     .values({
       pageProposalId: proposal.id,
       versionNumber: 1,
+      rowVersion: input.rowVersion,
       status: input.status ?? "approved",
       approvedAt: input.approvedAt === undefined ? new Date("2026-06-30T10:00:00.000Z") : input.approvedAt,
       pageJson: pageJson(route)
@@ -1094,6 +1179,21 @@ async function createPageVersionFixture(
     pageVersionId: pageVersion.id,
     userId: user.id
   };
+}
+
+function createReleasePlanRequest(pageVersionId: string, status: PageVersionStatus = "approved", rowVersion = 0) {
+  return {
+    pageVersions: [{ pageVersionId, expected: { status, rowVersion } }]
+  };
+}
+
+async function currentReleasePlanRequest(db: DatabaseClient, pageVersionId: string) {
+  const [pageVersion] = await db
+    .select({ status: pageVersions.status, rowVersion: pageVersions.rowVersion })
+    .from(pageVersions)
+    .where(eq(pageVersions.id, pageVersionId));
+  assert.ok(pageVersion);
+  return createReleasePlanRequest(pageVersionId, pageVersion.status, pageVersion.rowVersion);
 }
 
 async function createTestUser(db: DatabaseClient, email: string): Promise<typeof users.$inferSelect> {
@@ -1434,6 +1534,47 @@ type HeldReleasePlanTerminalTransition = {
   rollback: () => void;
 };
 
+type HeldPageVersionTransition = {
+  pid: number;
+  done: Promise<void>;
+  commit: () => void;
+  rollback: () => void;
+};
+
+async function startHeldPageVersionTransition(
+  sql: SqlClient,
+  pageVersionId: string
+): Promise<HeldPageVersionTransition> {
+  const transitioned = deferred<{ pid: number }>();
+  const finish = deferred<"commit" | "rollback">();
+  const done = sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`;
+    const pid = await backendPid(tx);
+    await tx`
+      UPDATE "page_versions"
+      SET "status" = 'release_candidate', "updated_at" = NOW()
+      WHERE "id" = ${pageVersionId}
+    `;
+    transitioned.resolve({ pid });
+
+    if ((await finish.promise) === "rollback") {
+      throw new Error("Rollback held page-version transition.");
+    }
+  });
+
+  void done.catch((error: unknown) => {
+    transitioned.reject(error);
+  });
+
+  const { pid } = await transitioned.promise;
+  return {
+    pid,
+    done,
+    commit: () => finish.resolve("commit"),
+    rollback: () => finish.resolve("rollback")
+  };
+}
+
 async function startHeldReleasePlanTerminalTransition(
   sql: SqlClient,
   releasePlanId: string
@@ -1482,7 +1623,7 @@ async function waitForBlockingPid(
 
   while (Date.now() < deadline) {
     if (input.isSettled()) {
-      throw new Error("Release approval settled before the plan lock wait was observed.");
+      throw new Error("Release operation settled before the expected lock wait was observed.");
     }
 
     const [row] = await sql<{ blocking_pids: number[] }[]>`

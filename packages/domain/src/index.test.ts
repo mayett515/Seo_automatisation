@@ -8,6 +8,7 @@ import {
   deriveTechnicalAuditFindings,
   deriveWebsiteImportFacts,
   decidePageProposalTargetAdmission,
+  decideReleasePlanTargetAdmission,
   decideReleaseReadiness,
   decideReleaseVerificationStatus,
   hasActiveRollbackOperationEvidence,
@@ -49,6 +50,45 @@ void describe("page proposal target admission", () => {
         current: { status: "brief_created", rowVersion: 3 }
       }),
       { kind: "deny", reason: "proposal_already_created" }
+    );
+  });
+});
+
+void describe("release plan target admission", () => {
+  void it("allows a request pinned to the current approved page-version revision", () => {
+    assert.deepEqual(
+      decideReleasePlanTargetAdmission({
+        expected: { status: "approved", rowVersion: 4 },
+        current: { status: "approved", rowVersion: 4, hasApprovalEvidence: true }
+      }),
+      { kind: "allow" }
+    );
+  });
+
+  void it("rejects stale target state before evaluating release eligibility", () => {
+    assert.deepEqual(
+      decideReleasePlanTargetAdmission({
+        expected: { status: "approved", rowVersion: 2 },
+        current: { status: "release_candidate", rowVersion: 3, hasApprovalEvidence: true }
+      }),
+      { kind: "stale", current: { status: "release_candidate", rowVersion: 3 } }
+    );
+  });
+
+  void it("denies current targets without approved status and approval evidence", () => {
+    assert.deepEqual(
+      decideReleasePlanTargetAdmission({
+        expected: { status: "preview", rowVersion: 0 },
+        current: { status: "preview", rowVersion: 0, hasApprovalEvidence: false }
+      }),
+      { kind: "deny", reason: "not_approved" }
+    );
+    assert.deepEqual(
+      decideReleasePlanTargetAdmission({
+        expected: { status: "approved", rowVersion: 0 },
+        current: { status: "approved", rowVersion: 0, hasApprovalEvidence: false }
+      }),
+      { kind: "deny", reason: "approval_evidence_missing" }
     );
   });
 });

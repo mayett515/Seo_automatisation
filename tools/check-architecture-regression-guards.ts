@@ -1239,9 +1239,66 @@ requireIncludes(
 
 requireIncludes(
   "packages/contracts/src/index.ts",
-  "pageVersionIds: z.array(z.string().min(1)).min(1)",
-  "page-release-planning",
-  "Release-plan creation requests must include at least one page version id"
+  "pageVersions: z.array(ReleasePlanPageVersionTargetSchema).min(1).max(50)",
+  "release-plan-target-cas",
+  "Release-plan creation requests must carry a bounded set of strict page-version targets"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "expected: PageVersionTargetRevisionSchema",
+  "release-plan-target-cas",
+  "Every release-plan target must carry its displayed page-version revision"
+);
+
+requireIncludes(
+  "packages/db/migrations/0046_page-version-target-revision.sql",
+  'CREATE TRIGGER "page_versions_row_version_guard"',
+  "release-plan-target-cas",
+  "Page-version revisions must remain database-managed"
+);
+
+requireIncludes(
+  "packages/db/migrations/0046_page-version-target-revision.sql",
+  'BEFORE INSERT OR UPDATE ON "page_versions"',
+  "release-plan-target-cas",
+  "Page-version revisions must remain database-owned from initial insertion onward"
+);
+
+requireOrderedIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "FOR UPDATE OF pv",
+  "decideReleasePlanTargetAdmission({",
+  "release-plan-target-cas",
+  "Release-plan creation must lock page-version targets before deciding expected-state admission"
+);
+
+requireIncludes(
+  "apps/web/src/screens/pages.tsx",
+  "rowVersion: version.data.rowVersion",
+  "release-plan-target-cas",
+  "Page preview must submit the displayed durable page-version revision"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "rejects release planning when a concurrent page-version transition wins the target lock",
+  "release-plan-target-cas",
+  "PostgreSQL integration must prove a lifecycle winner makes release planning stale"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "keeps page-version revisions database-managed",
+  "release-plan-target-cas",
+  "PostgreSQL integration must reject page-version revision forgery"
+);
+
+requireIncludes(
+  "packages/domain/src/index.ts",
+  "decideReleasePlanTargetAdmission",
+  "release-plan-target-cas",
+  "Release-plan target admission must remain a pure domain decision"
 );
 
 requireIncludes(
@@ -1344,7 +1401,7 @@ requireIncludes(
 
 requireIncludes(
   "apps/api/src/modules/releases.module.ts",
-  'row.pageVersionStatus !== "approved" || !row.pageVersionApprovedAt',
+  "hasApprovalEvidence: Boolean(row.pageVersionApprovedAt)",
   "page-release-planning",
   "Release-plan creation must require approved page versions with approval evidence"
 );
