@@ -388,6 +388,7 @@ function opportunityToResponse(row: typeof opportunities.$inferSelect) {
     primaryKeyword: row.primaryKeyword,
     score: row.score,
     status: row.status,
+    rowVersion: row.rowVersion,
     statusReason: row.statusReason ?? undefined,
     decidedByUserId: row.decidedByUserId ?? undefined,
     evidenceJson: parsedBrief.success ? parsedBrief.data : null,

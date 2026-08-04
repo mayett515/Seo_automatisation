@@ -150,8 +150,14 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
     }
   });
   const queuePageProposal = useMutation({
-    mutationFn: (opportunityId: string) => {
-      const body = CreatePageProposalRunRequestSchema.parse({ opportunityId });
+    mutationFn: (opportunity: OpportunityExplorerOpportunity) => {
+      const body = CreatePageProposalRunRequestSchema.parse({
+        opportunityId: opportunity.id,
+        expectedOpportunity: {
+          status: opportunity.status,
+          rowVersion: opportunity.rowVersion
+        }
+      });
 
       return postJson(projectApiPath(projectId, "/pages/proposals/runs"), body, PageProposalQueueResponseSchema);
     },
@@ -166,6 +172,9 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
         queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] })
       ]);
+    },
+    onError: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] });
     }
   });
 
@@ -299,13 +308,13 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
         <OpportunityDetail
           decisionPending={updateOpportunityDecision.isPending}
           pageProposalPending={queuePageProposal.isPending}
-          pageProposalPendingOpportunityId={queuePageProposal.variables}
+          pageProposalPendingOpportunityId={queuePageProposal.variables?.id}
           pageProposalRun={selectedPageProposalRun}
           pageProposalRunsPending={pageProposalRuns.isPending}
           projectId={projectId}
           opportunity={selectedOpportunity}
           onDecide={(opportunityId, decision) => updateOpportunityDecision.mutate({ opportunityId, decision })}
-          onQueuePageProposal={(opportunityId) => queuePageProposal.mutate(opportunityId)}
+          onQueuePageProposal={(opportunity) => queuePageProposal.mutate(opportunity)}
         />
       </section>
 
@@ -434,7 +443,7 @@ function OpportunityDetail(props: {
   pageProposalRunsPending: boolean;
   projectId: string;
   onDecide: (opportunityId: string, decision: OpportunityDecisionFormState) => void;
-  onQueuePageProposal: (opportunityId: string) => void;
+  onQueuePageProposal: (opportunity: OpportunityExplorerOpportunity) => void;
 }) {
   const opportunity = props.opportunity;
   const brief = opportunity?.evidenceJson;
@@ -488,7 +497,7 @@ function OpportunityDetail(props: {
         latestRun={props.pageProposalRun}
         opportunity={opportunity}
         projectId={props.projectId}
-        onQueue={() => props.onQueuePageProposal(opportunity.id)}
+        onQueue={() => props.onQueuePageProposal(opportunity)}
       />
 
       <DetailSection title="Evidence stack">

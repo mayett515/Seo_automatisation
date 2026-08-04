@@ -421,23 +421,28 @@ export const agentRuns = pgTable(
   ]
 );
 
-export const opportunities = pgTable("opportunities", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id),
-  agentRunId: uuid("agent_run_id").references(() => agentRuns.id),
-  areaId: uuid("area_id").references(() => areas.id),
-  serviceId: uuid("service_id").references(() => services.id),
-  classification: opportunityClassificationEnum("classification").notNull().default("internal_radar"),
-  primaryKeyword: text("primary_keyword").notNull(),
-  score: integer("score").default(0).notNull(),
-  status: opportunityLifecycleStatusEnum("status").default("new").notNull(),
-  decidedByUserId: uuid("decided_by_user_id").references(() => users.id),
-  statusReason: text("status_reason"),
-  evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
-  ...timestamps
-});
+export const opportunities = pgTable(
+  "opportunities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    agentRunId: uuid("agent_run_id").references(() => agentRuns.id),
+    areaId: uuid("area_id").references(() => areas.id),
+    serviceId: uuid("service_id").references(() => services.id),
+    classification: opportunityClassificationEnum("classification").notNull().default("internal_radar"),
+    primaryKeyword: text("primary_keyword").notNull(),
+    score: integer("score").default(0).notNull(),
+    status: opportunityLifecycleStatusEnum("status").default("new").notNull(),
+    rowVersion: integer("row_version").default(0).notNull(),
+    decidedByUserId: uuid("decided_by_user_id").references(() => users.id),
+    statusReason: text("status_reason"),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>(),
+    ...timestamps
+  },
+  (table) => [check("opportunities_row_version_check", sql`${table.rowVersion} >= 0`)]
+);
 
 export const rankingProofs = pgTable(
   "ranking_proofs",

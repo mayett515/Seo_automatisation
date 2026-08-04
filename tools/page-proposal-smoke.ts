@@ -1,6 +1,8 @@
 import {
   CreatePageProposalRunRequestSchema,
+  OpportunityTargetRevisionSchema,
   PageProposalQueueResponseSchema,
+  type OpportunityTargetRevision,
   type PageProposalQueueResponse
 } from "@localseo/contracts";
 import { createDatabaseClient } from "@localseo/db";
@@ -58,6 +60,8 @@ type ExistingPageProposalRow = {
   proposalId: string;
 };
 
+type OpportunityTargetRow = OpportunityTargetRevision;
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.envFile) {
@@ -77,7 +81,11 @@ async function main(): Promise<void> {
       projectId: args.projectId,
       opportunityId: args.opportunityId
     });
-    const response = await enqueuePageProposal(args);
+    const expectedOpportunity = await loadOpportunityTargetRevision(handle.sql, {
+      projectId: args.projectId,
+      opportunityId: args.opportunityId
+    });
+    const response = await enqueuePageProposal(args, expectedOpportunity);
     console.log(`enqueue.status=${response.status}`);
     console.log(`enqueue.jobId=${response.jobId}`);
 
@@ -130,9 +138,33 @@ async function loadExistingPageProposalIds(
   return new Set(rows.map((row) => row.proposalId));
 }
 
-async function enqueuePageProposal(args: CliArgs): Promise<PageProposalQueueResponse> {
+async function loadOpportunityTargetRevision(
+  sql: ReasoningSmokeSqlClient,
+  input: { projectId: string; opportunityId: string }
+): Promise<OpportunityTargetRow> {
+  const [row] = await sql<OpportunityTargetRow[]>`
+    select status, row_version as "rowVersion"
+    from opportunities
+    where id = ${input.opportunityId}
+      and project_id = ${input.projectId}
+  `;
+
+  if (!row) {
+    throw new Error("The Page Proposal smoke opportunity was not found for the configured project.");
+  }
+
+  return OpportunityTargetRevisionSchema.parse(row);
+}
+
+async function enqueuePageProposal(
+  args: CliArgs,
+  expectedOpportunity: OpportunityTargetRow
+): Promise<PageProposalQueueResponse> {
   const endpoint = `${args.apiUrl.replace(/\/$/u, "")}/projects/${args.projectId}/pages/proposals/runs`;
-  const body = CreatePageProposalRunRequestSchema.parse({ opportunityId: args.opportunityId });
+  const body = CreatePageProposalRunRequestSchema.parse({
+    opportunityId: args.opportunityId,
+    expectedOpportunity
+  });
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {

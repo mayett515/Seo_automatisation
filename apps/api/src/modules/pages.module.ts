@@ -72,6 +72,7 @@ import {
 } from "@localseo/contracts";
 import {
   applyPageStudioEditCommand,
+  decidePageProposalTargetAdmission,
   decidePageStudioPublishReadiness,
   decideSectionCopySuggestionAttribution
 } from "@localseo/domain";
@@ -137,6 +138,7 @@ type PageVersionRow = Awaited<ReturnType<typeof selectPageVersionRows>>[number];
 type PageVersionApprovalRow = typeof approvals.$inferSelect;
 type ApprovalBlockerReader = Pick<DatabaseClient, "select">;
 type PageVersionLockClient = Pick<DatabaseClient, "execute">;
+type TransactionClient = Pick<DatabaseClient, "execute" | "select">;
 
 @Injectable()
 export class PagesService {
@@ -186,7 +188,14 @@ export class PagesService {
       });
     }
 
+    const db = this.database.requireDb();
+
     if (!this.queues.isQueueConfigured("page-generation")) {
+      await db.transaction(async (tx) => {
+        const opportunity = await lockAndLoadPageProposalTarget(tx, projectId, input.opportunityId);
+        assertPageProposalTargetAdmission(input.expectedOpportunity, opportunity);
+      });
+
       const jobId = randomUUID();
       const jobData = PageProposalJobDataSchema.parse({
         projectId,
@@ -225,36 +234,50 @@ export class PagesService {
       });
     }
 
-    const db = this.database.requireDb();
-    await assertOpportunityForPageProposal(db, projectId, input.opportunityId);
-
-    const activeRun = await findActivePageProposalRun(db, projectId, input.opportunityId);
-    if (activeRun) {
-      return activePageProposalResponse(activeRun);
-    }
-
     const runId = randomUUID();
+    let activeRun: typeof agentRuns.$inferSelect | undefined;
 
     try {
-      await db.insert(agentRuns).values({
-        id: runId,
-        projectId,
-        subjectId: input.opportunityId,
-        task: "page_brief_draft",
-        status: "queued",
-        diagnosticsJson: {
-          opportunityId: input.opportunityId
+      activeRun = await db.transaction(async (tx) => {
+        const opportunity = await lockAndLoadPageProposalTarget(tx, projectId, input.opportunityId);
+        assertPageProposalTargetAdmission(input.expectedOpportunity, opportunity);
+
+        const currentActiveRun = await findActivePageProposalRun(tx, projectId, input.opportunityId);
+        if (currentActiveRun) {
+          return currentActiveRun;
         }
+
+        await tx.insert(agentRuns).values({
+          id: runId,
+          projectId,
+          subjectId: input.opportunityId,
+          task: "page_brief_draft",
+          status: "queued",
+          diagnosticsJson: {
+            opportunityId: input.opportunityId,
+            admittedOpportunity: opportunity
+          }
+        });
+
+        return undefined;
       });
     } catch (error) {
       if (isDatabaseUniqueViolation(error)) {
-        const conflictingRun = await findActivePageProposalRun(db, projectId, input.opportunityId);
+        const conflictingRun = await db.transaction(async (tx) => {
+          const opportunity = await lockAndLoadPageProposalTarget(tx, projectId, input.opportunityId);
+          assertPageProposalTargetAdmission(input.expectedOpportunity, opportunity);
+          return findActivePageProposalRun(tx, projectId, input.opportunityId);
+        });
         if (conflictingRun) {
           return activePageProposalResponse(conflictingRun);
         }
       }
 
       throw error;
+    }
+
+    if (activeRun) {
+      return activePageProposalResponse(activeRun);
     }
 
     let enqueued: boolean;
@@ -1186,7 +1209,9 @@ class PagesController {
     const parsed = CreatePageProposalRunRequestSchema.safeParse(body ?? {});
 
     if (!parsed.success) {
-      throw new BadRequestException("Page proposal generation requires a project-owned opportunityId.");
+      throw new BadRequestException(
+        "Page proposal generation requires a project-owned opportunityId and expected opportunity revision."
+      );
     }
 
     return this.pages.queuePageProposal(projectId, parsed.data, persistedActorUserId(request));
@@ -1386,27 +1411,70 @@ function previewDocumentPath(projectId: string, pageVersionId: string): string {
   return `/projects/${encodeURIComponent(projectId)}/pages/${encodeURIComponent(pageVersionId)}/preview/document`;
 }
 
-async function assertOpportunityForPageProposal(db: Db, projectId: string, opportunityId: string): Promise<void> {
+async function lockOpportunityForPageProposal(
+  db: TransactionClient,
+  projectId: string,
+  opportunityId: string
+): Promise<void> {
   if (!isPersistedId(opportunityId)) {
     throw new BadRequestException("Opportunity id must be a UUID.");
   }
 
+  await db.execute(
+    sql`SELECT "id" FROM "opportunities" WHERE "id" = ${opportunityId} AND "project_id" = ${projectId} FOR UPDATE`
+  );
+}
+
+async function loadOpportunityTargetRevision(db: TransactionClient, projectId: string, opportunityId: string) {
   const [opportunity] = await db
-    .select({ id: opportunities.id, status: opportunities.status })
+    .select({ status: opportunities.status, rowVersion: opportunities.rowVersion })
     .from(opportunities)
     .where(and(eq(opportunities.id, opportunityId), eq(opportunities.projectId, projectId)))
     .limit(1);
+
+  return opportunity;
+}
+
+async function lockAndLoadPageProposalTarget(
+  db: TransactionClient,
+  projectId: string,
+  opportunityId: string
+): Promise<NonNullable<Awaited<ReturnType<typeof loadOpportunityTargetRevision>>>> {
+  await lockOpportunityForPageProposal(db, projectId, opportunityId);
+  const opportunity = await loadOpportunityTargetRevision(db, projectId, opportunityId);
 
   if (!opportunity) {
     throw new NotFoundException("Opportunity was not found for this project.");
   }
 
-  if (opportunity.status === "rejected") {
-    throw new BadRequestException("Rejected opportunities cannot create page proposals.");
+  return opportunity;
+}
+
+function assertPageProposalTargetAdmission(
+  expected: CreatePageProposalRunRequest["expectedOpportunity"],
+  current: NonNullable<Awaited<ReturnType<typeof loadOpportunityTargetRevision>>>
+): void {
+  const decision = decidePageProposalTargetAdmission({ expected, current });
+
+  if (decision.kind === "stale") {
+    throw new ConflictException("Opportunity changed after the page proposal request was prepared.");
+  }
+
+  if (decision.kind === "deny") {
+    switch (decision.reason) {
+      case "proposal_already_created":
+        throw new ConflictException("A page proposal has already been created for this opportunity.");
+      case "rejected":
+        throw new BadRequestException("Rejected opportunities cannot create page proposals.");
+      default: {
+        const exhaustiveReason: never = decision.reason;
+        throw new Error(`Unhandled Page Proposal target denial: ${String(exhaustiveReason)}`);
+      }
+    }
   }
 }
 
-async function findActivePageProposalRun(db: Db, projectId: string, opportunityId: string) {
+async function findActivePageProposalRun(db: ApprovalBlockerReader, projectId: string, opportunityId: string) {
   const [run] = await db
     .select()
     .from(agentRuns)

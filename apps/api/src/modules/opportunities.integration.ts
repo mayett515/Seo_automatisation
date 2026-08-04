@@ -250,14 +250,42 @@ void describe(
       );
 
       assert.equal(rejected.status, "rejected");
+      assert.equal(rejected.rowVersion, 1);
       assert.equal(rejected.statusReason, "No service fit for this Ort yet.");
       assert.equal(rejected.decidedByUserId, fixture.userId);
 
       const reopened = await service.updateOpportunityLifecycle(fixture.projectId, row.id, { status: "monitoring" });
 
       assert.equal(reopened.status, "monitoring");
+      assert.equal(reopened.rowVersion, 2);
       assert.equal(reopened.statusReason, undefined);
       assert.equal(reopened.decidedByUserId, undefined);
+    });
+
+    void it("keeps opportunity row versions database-owned on insert and update", async () => {
+      const fixture = await createProjectFixture(db, "Owned Opportunity Revision");
+      const [row] = await db
+        .insert(opportunities)
+        .values({
+          projectId: fixture.projectId,
+          classification: "near_term_target",
+          primaryKeyword: "dachreinigung freising",
+          score: 64,
+          status: "new",
+          rowVersion: 9,
+          evidenceJson: validBrief(fixture.projectId)
+        })
+        .returning();
+      assert.ok(row);
+      assert.equal(row.rowVersion, 0);
+
+      await assert.rejects(
+        () => db.update(opportunities).set({ rowVersion: 9 }).where(eq(opportunities.id, row.id)),
+        postgresErrorMatches(/Opportunity row_version is database-managed/u)
+      );
+
+      const [unchanged] = await db.select().from(opportunities).where(eq(opportunities.id, row.id));
+      assert.equal(unchanged?.rowVersion, 0);
     });
 
     void it("rejects lifecycle decision bodies that reject without a reason or use invalid status", () => {
@@ -433,6 +461,22 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
     ping: () => Promise.resolve("up"),
     onModuleDestroy: () => Promise.resolve()
   } as unknown as DatabaseService;
+}
+
+function postgresErrorMatches(pattern: RegExp): (error: unknown) => boolean {
+  return (error) => {
+    const messages: string[] = [];
+    let current: unknown = error;
+    while (current && typeof current === "object") {
+      const record = current as { message?: unknown; cause?: unknown };
+      if (typeof record.message === "string") {
+        messages.push(record.message);
+      }
+      current = record.cause;
+    }
+    assert.match(messages.join("\n"), pattern);
+    return true;
+  };
 }
 
 function validBrief(

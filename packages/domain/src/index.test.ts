@@ -7,11 +7,51 @@ import {
   classifyRollbackReconciliation,
   deriveTechnicalAuditFindings,
   deriveWebsiteImportFacts,
+  decidePageProposalTargetAdmission,
   decideReleaseReadiness,
   decideReleaseVerificationStatus,
   hasActiveRollbackOperationEvidence,
   isActiveRollbackOperationStatus
 } from "./index.js";
+
+void describe("page proposal target admission", () => {
+  void it("allows a request pinned to the current eligible opportunity revision", () => {
+    assert.deepEqual(
+      decidePageProposalTargetAdmission({
+        expected: { status: "monitoring", rowVersion: 4 },
+        current: { status: "monitoring", rowVersion: 4 }
+      }),
+      { kind: "allow" }
+    );
+  });
+
+  void it("rejects a stale status or row version before queue admission", () => {
+    assert.deepEqual(
+      decidePageProposalTargetAdmission({
+        expected: { status: "new", rowVersion: 0 },
+        current: { status: "held", rowVersion: 1 }
+      }),
+      { kind: "stale", current: { status: "held", rowVersion: 1 } }
+    );
+  });
+
+  void it("denies rejected and completed proposal targets", () => {
+    assert.deepEqual(
+      decidePageProposalTargetAdmission({
+        expected: { status: "rejected", rowVersion: 2 },
+        current: { status: "rejected", rowVersion: 2 }
+      }),
+      { kind: "deny", reason: "rejected" }
+    );
+    assert.deepEqual(
+      decidePageProposalTargetAdmission({
+        expected: { status: "brief_created", rowVersion: 3 },
+        current: { status: "brief_created", rowVersion: 3 }
+      }),
+      { kind: "deny", reason: "proposal_already_created" }
+    );
+  });
+});
 
 void describe("release readiness decisions", () => {
   void it("blocks deploy when any blocker check fails", () => {

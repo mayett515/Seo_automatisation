@@ -20,12 +20,18 @@ import {
 } from "@localseo/db";
 import { eq } from "drizzle-orm";
 import {
+  createIntegrationDatabaseClient,
   createIntegrationTestDatabase,
   truncateIntegrationTables
 } from "../../../../packages/db/test-support/integration-database.js";
-import { createDrizzlePageProposalRepository, executePageProposal } from "./page-proposal.js";
+import {
+  createDrizzlePageProposalRepository,
+  executePageProposal,
+  type PersistedPageProposal
+} from "./page-proposal.js";
 
 type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDatabase>>;
+type SqlClient = IntegrationDatabase["sql"];
 
 type PageProposalFixture = {
   projectId: string;
@@ -115,6 +121,87 @@ void describe(
 
       const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, fixture.opportunityId));
       assert.equal(opportunity?.status, "brief_created");
+    });
+
+    void it("locks the opportunity before the agent run during success persistence", async () => {
+      assert.ok(testDatabaseUrl);
+      const fixture = await createPageProposalFixture(db);
+      await db
+        .update(agentRuns)
+        .set({ status: "running", updatedAt: new Date() })
+        .where(eq(agentRuns.id, fixture.runId));
+      const runBlocker = createIntegrationDatabaseClient(testDatabaseUrl);
+      const workerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const opportunityContender = createIntegrationDatabaseClient(testDatabaseUrl);
+      let heldRun: HeldDatabaseLock | undefined;
+      let persistedOutcome: Promise<PersistedPageProposal> | undefined;
+      let contenderDone: Promise<unknown> | undefined;
+      let workerSettled = false;
+      let contenderSettled = false;
+
+      try {
+        heldRun = await startHeldAgentRunLock(runBlocker.sql, fixture.runId);
+        const workerPid = await backendPid(workerHandle.sql);
+        persistedOutcome = createDrizzlePageProposalRepository(workerHandle.db)
+          .persistSuccess({
+            data: {
+              projectId: fixture.projectId,
+              runId: fixture.runId,
+              opportunityId: fixture.opportunityId
+            },
+            inputRef: `projects/${fixture.projectId}/agent-runs/${fixture.runId}/page-proposal-input.json`,
+            output: validPageProposalJson(fixture),
+            provider: "mock",
+            model: "lock-order-test",
+            diagnostics: { finishReason: "stop" }
+          })
+          .finally(() => {
+            workerSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: workerPid,
+          blockingPid: heldRun.pid,
+          isSettled: () => workerSettled
+        });
+
+        const contenderPid = await backendPid(opportunityContender.sql);
+        contenderDone = opportunityContender.sql
+          .begin(async (tx) => {
+            await tx`
+              UPDATE "opportunities"
+              SET "updated_at" = now()
+              WHERE "id" = ${fixture.opportunityId}
+            `;
+          })
+          .finally(() => {
+            contenderSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: contenderPid,
+          blockingPid: workerPid,
+          isSettled: () => contenderSettled
+        });
+
+        heldRun.commit();
+        await heldRun.done;
+        const persisted = await persistedOutcome;
+        await contenderDone;
+
+        assert.equal(persisted.route, "/dachreinigung-muenchen/");
+        const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, fixture.opportunityId));
+        assert.equal(opportunity?.status, "brief_created");
+        assert.equal(opportunity?.rowVersion, 2);
+      } finally {
+        heldRun?.rollback();
+        await heldRun?.done.catch(() => undefined);
+        await persistedOutcome?.catch(() => undefined);
+        await contenderDone?.catch(() => undefined);
+        await runBlocker.close();
+        await workerHandle.close();
+        await opportunityContender.close();
+      }
     });
 
     void it("persists an OpenCode Go Page Proposal response with worker-owned generation provenance", async () => {
@@ -333,4 +420,82 @@ function requestBodyText(body: BodyInit | null | undefined): string {
   }
 
   return body;
+}
+
+type HeldDatabaseLock = {
+  pid: number;
+  done: Promise<void>;
+  commit: () => void;
+  rollback: () => void;
+};
+
+async function startHeldAgentRunLock(sql: SqlClient, runId: string): Promise<HeldDatabaseLock> {
+  const locked = deferred<{ pid: number }>();
+  const finish = deferred<"commit" | "rollback">();
+  const done = sql.begin(async (tx) => {
+    const pid = await backendPid(tx);
+    await tx`SELECT "id" FROM "agent_runs" WHERE "id" = ${runId} FOR UPDATE`;
+    locked.resolve({ pid });
+
+    if ((await finish.promise) === "rollback") {
+      throw new Error("Rollback held agent-run lock.");
+    }
+  });
+
+  void done.catch((error: unknown) => {
+    locked.reject(error);
+  });
+
+  const { pid } = await locked.promise;
+  return {
+    pid,
+    done,
+    commit: () => finish.resolve("commit"),
+    rollback: () => finish.resolve("rollback")
+  };
+}
+
+async function backendPid(sql: SqlClient): Promise<number> {
+  const [row] = await sql<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+  assert.ok(row);
+  return row.pid;
+}
+
+async function waitForBlockingPid(
+  sql: SqlClient,
+  input: { blockedPid: number; blockingPid: number; isSettled: () => boolean }
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+
+  while (Date.now() < deadline) {
+    if (input.isSettled()) {
+      throw new Error("The blocked operation settled before the lock wait was observed.");
+    }
+
+    const [row] = await sql<{ blocking_pids: number[] }[]>`
+      SELECT pg_blocking_pids(${input.blockedPid}) AS blocking_pids
+    `;
+    if (row?.blocking_pids.includes(input.blockingPid)) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`Timed out waiting for backend ${input.blockedPid} to be blocked by ${input.blockingPid}.`);
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolvePromise: (value: T) => void = () => undefined;
+  let rejectPromise: (reason?: unknown) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
 }

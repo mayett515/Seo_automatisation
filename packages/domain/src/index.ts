@@ -1,4 +1,5 @@
 import type {
+  OpportunityTargetRevision,
   ReleaseCheck,
   ReleasePlan,
   ReleaseVerificationStatus,
@@ -11,6 +12,32 @@ export * from "./page-studio.js";
 export * from "./work-recovery.js";
 export * from "./media-storage-cleanup.js";
 export * from "./report.js";
+
+export type PageProposalTargetRevision = OpportunityTargetRevision;
+
+export type PageProposalTargetAdmissionDecision =
+  | { kind: "allow" }
+  | { kind: "stale"; current: PageProposalTargetRevision }
+  | { kind: "deny"; reason: "rejected" | "proposal_already_created" };
+
+export function decidePageProposalTargetAdmission(input: {
+  expected: PageProposalTargetRevision;
+  current: PageProposalTargetRevision;
+}): PageProposalTargetAdmissionDecision {
+  if (input.current.status !== input.expected.status || input.current.rowVersion !== input.expected.rowVersion) {
+    return { kind: "stale", current: input.current };
+  }
+
+  if (input.current.status === "rejected") {
+    return { kind: "deny", reason: "rejected" };
+  }
+
+  if (input.current.status === "brief_created") {
+    return { kind: "deny", reason: "proposal_already_created" };
+  }
+
+  return { kind: "allow" };
+}
 
 export type DeployDecision =
   | { kind: "blocked"; blockerCount: number; warnings: ReleaseCheck[] }

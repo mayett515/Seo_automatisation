@@ -470,9 +470,17 @@ export const CreateOpportunityScoutRunRequestSchema = z.object({
   maxBriefs: z.number().int().positive().max(12).optional()
 });
 
+export const OpportunityTargetRevisionSchema = z
+  .object({
+    status: OpportunityLifecycleStatusSchema,
+    rowVersion: z.number().int().nonnegative().max(2_147_483_647)
+  })
+  .strict();
+
 export const CreatePageProposalRunRequestSchema = z
   .object({
-    opportunityId: z.string().trim().min(1).max(200)
+    opportunityId: z.string().trim().min(1).max(200),
+    expectedOpportunity: OpportunityTargetRevisionSchema
   })
   .strict();
 
@@ -2044,6 +2052,7 @@ export const OpportunityExplorerOpportunitySchema = z.object({
   primaryKeyword: z.string().min(1),
   score: z.number().int(),
   status: OpportunityLifecycleStatusSchema,
+  rowVersion: z.number().int().nonnegative().max(2_147_483_647),
   statusReason: z.string().min(1).optional(),
   decidedByUserId: z.string().min(1).optional(),
   evidenceJson: OpportunityBriefSchema.nullable(),
@@ -2167,6 +2176,7 @@ export type TechnicalAuditFinding = z.output<typeof TechnicalAuditFindingSchema>
 export type TechnicalAuditRun = z.output<typeof TechnicalAuditRunSchema>;
 export type LatestTechnicalAuditResponse = z.output<typeof LatestTechnicalAuditResponseSchema>;
 export type CreateOpportunityScoutRunRequest = z.output<typeof CreateOpportunityScoutRunRequestSchema>;
+export type OpportunityTargetRevision = z.output<typeof OpportunityTargetRevisionSchema>;
 export type CreatePageProposalRunRequest = z.output<typeof CreatePageProposalRunRequestSchema>;
 export type CreateSectionCopySuggestionRequest = z.output<typeof CreateSectionCopySuggestionRequestSchema>;
 export type CreateRankingProofRequest = z.output<typeof CreateRankingProofRequestSchema>;

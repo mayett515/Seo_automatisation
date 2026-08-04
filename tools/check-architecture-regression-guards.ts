@@ -36,6 +36,21 @@ function requireNotRegex(path: string, pattern: RegExp, category: string, messag
   }
 }
 
+function requireOrderedIncludes(
+  path: string,
+  earlierText: string,
+  laterText: string,
+  category: string,
+  message: string
+): void {
+  const source = read(path);
+  const earlierIndex = source.indexOf(earlierText);
+  const laterIndex = source.indexOf(laterText, earlierIndex + earlierText.length);
+  if (earlierIndex < 0 || laterIndex < 0) {
+    failures.push({ category, message: `${path}: ${message}` });
+  }
+}
+
 function requireLatestMigrationDefinitionIncludes(
   functionName: string,
   text: string,
@@ -575,6 +590,91 @@ requireIncludes(
   "eq(agentRuns.subjectId, opportunityId)",
   "page-proposal-worker",
   "Page Proposal active-run guard must be scoped to the opportunity subject"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "expectedOpportunity: OpportunityTargetRevisionSchema",
+  "page-proposal-target-cas",
+  "Page Proposal requests must carry one strict expected opportunity revision"
+);
+
+requireIncludes(
+  "packages/db/migrations/0045_opportunity-target-revision.sql",
+  'CREATE TRIGGER "opportunities_row_version_guard"',
+  "page-proposal-target-cas",
+  "Opportunity revisions must remain database-managed"
+);
+
+requireIncludes(
+  "packages/db/migrations/0045_opportunity-target-revision.sql",
+  'BEFORE INSERT OR UPDATE ON "opportunities"',
+  "page-proposal-target-cas",
+  "Opportunity revisions must remain database-owned from initial insertion onward"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "await lockAndLoadPageProposalTarget(tx, projectId, input.opportunityId);",
+  "page-proposal-target-cas",
+  "Page Proposal admission must lock the target before checking its expected state"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "assertPageProposalTargetAdmission(input.expectedOpportunity, opportunity);",
+  "page-proposal-target-cas",
+  "Page Proposal admission must compare the current target with the client-frozen expectation"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "rejects page proposal admission when a concurrent lifecycle change wins the opportunity lock",
+  "page-proposal-target-cas",
+  "PostgreSQL integration must prove a lifecycle winner makes Page Proposal admission stale"
+);
+
+requireIncludes(
+  "apps/web/src/screens/opportunity-explorer.tsx",
+  "rowVersion: opportunity.rowVersion",
+  "page-proposal-target-cas",
+  "The Explorer must submit the displayed durable opportunity revision"
+);
+
+requireOrderedIncludes(
+  "apps/worker/src/handlers/page-proposal.ts",
+  'SELECT "id" FROM "opportunities"',
+  ".update(agentRuns)",
+  "page-proposal-target-cas",
+  "Page Proposal worker success must lock the target before updating agent-run truth"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.integration.ts",
+  "rejects a stale target before writing queue-unavailable dry-run audit truth",
+  "page-proposal-target-cas",
+  "Queue-unavailable Page Proposal audit must still reject stale target truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/page-proposal.integration.ts",
+  "locks the opportunity before the agent run during success persistence",
+  "page-proposal-target-cas",
+  "Worker integration must prove structural target-before-run lock ordering"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunities.integration.ts",
+  "keeps opportunity row versions database-owned on insert and update",
+  "page-proposal-target-cas",
+  "PostgreSQL integration must reject opportunity revision forgery"
+);
+
+requireIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "const exhaustiveReason: never = decision.reason;",
+  "page-proposal-target-cas",
+  "Page Proposal target denial reasons must remain exhaustively mapped"
 );
 
 requireIncludes(

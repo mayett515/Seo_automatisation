@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.31"
+version: "1.1.33"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -271,6 +271,9 @@ Agent constraint policy
   Real-provider smoke runs require explicit provider configuration, synthetic fixture data, redacted summaries, and the same contract/QA/registry/composition/render gates as normal jobs.
   Page Proposal success may move held/monitoring opportunities to brief_created because a proposal now exists; rejected opportunities are the hard stop and must not be overwritten.
   Page Proposal UI triggers only the durable API queue endpoint and reads status from page_brief_draft agent runs.
+  Page Proposal request admission requires the displayed opportunity status plus DB-managed row version, then locks and re-reads the project-owned opportunity before durable run creation.
+  A stale Page Proposal target must return a conflict and create neither agent-run truth nor queue work; rejected and brief-created targets remain independently ineligible.
+  Page Proposal API admission and worker success persistence share target-before-agent-run lock ordering; queue-unavailable dry-run audit is admitted only after the same target check.
   Section Text Generation remains read_evidence + draft_content only and returns one pinned SectionCopyRevisionOutput.
   Stale Section Text Generation may use bounded read/analyze recovery; provider-mutation recovery scope must not widen.
   Agent/session/tool approval is not product approval; product approval must be durable.

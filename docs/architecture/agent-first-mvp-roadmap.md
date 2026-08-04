@@ -653,7 +653,7 @@ Reference: [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md).
 
 ### 9. Page Proposal Workflow
 
-Status: worker foundation, real-provider smoke harness, UI trigger/status, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, media ingestion/processing, binary renderer/preview/deploy media parity, the first versioned `ImageText` media controls, and bounded physical media cleanup are implemented.
+Status: worker foundation, real-provider smoke harness, UI trigger/status, expected-state/revision-bound Page Proposal admission, durable page-version approval/request-changes flow, release-plan creation from approved page versions, release preflight/approval/deploy UI wiring, page-version lifecycle projection, controlled Page Studio backend/visual editing, controlled section replacement, bounded AI section-copy revision, media ingestion/processing, binary renderer/preview/deploy media parity, the first versioned `ImageText` media controls, and bounded physical media cleanup are implemented.
 
 Turn an operator-selected, non-rejected opportunity with valid evidence into a structured page proposal:
 
@@ -886,7 +886,7 @@ strict contracts and canonicalization (implemented)
 -> optional bounded AI headings/transitions with deterministic QA and fact-only fallback (implemented)
 ```
 
-Consequential command offers and PDF follow only after that vertical works. RAG remains deferred until report evidence cannot be loaded directly within the accepted limits.
+Consequential command offers and PDF follow only after that vertical works. The `request_page_proposal` target now has the first DB-managed expected-state/revision admission boundary; `prepare_release_plan` target hardening and report offer/receipt/dispatch truth remain next. RAG remains deferred until report evidence cannot be loaded directly within the accepted limits.
 
 Preferred modular-monolith placement for the new vertical:
 

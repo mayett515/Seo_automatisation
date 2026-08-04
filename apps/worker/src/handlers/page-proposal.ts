@@ -32,7 +32,7 @@ import {
   validatePageJsonAgainstRegistry
 } from "@localseo/page-registry";
 import type { Job } from "bullmq";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 import { policyForReasoningTask } from "../reasoning-policy.js";
 
@@ -400,6 +400,10 @@ export function createDrizzlePageProposalRepository(db: WorkerDb): PageProposalR
       try {
         return await db.transaction(async (tx) => {
           const now = new Date();
+          await tx.execute(
+            sql`SELECT "id" FROM "opportunities" WHERE "id" = ${input.data.opportunityId} AND "project_id" = ${input.data.projectId} FOR UPDATE`
+          );
+
           const updated = await tx
             .update(agentRuns)
             .set({

@@ -295,6 +295,26 @@ Implemented tests:
 
 These tests use a stateful fake BullMQ queue with a real database because the DB audit truth is the project-owned behavior. Full Redis/BullMQ worker processing remains out of scope for this milestone slice.
 
+### Page Proposal Target Admission
+
+Files:
+
+- [opportunity.test.ts](/C:/localseoproject/packages/contracts/src/opportunity.test.ts)
+- [index.test.ts](/C:/localseoproject/packages/domain/src/index.test.ts)
+- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
+
+Implemented tests:
+
+1. The strict request requires the displayed opportunity status and DB-managed row version and rejects unknown or invalid expectation fields.
+2. The pure target decision distinguishes allowed, stale, rejected, and already-created proposal states.
+3. Opportunity lifecycle writes advance the DB-managed revision exposed by the Explorer response.
+4. A stale request creates neither an agent run nor queue work.
+5. A `brief_created` opportunity remains server-side ineligible even when the caller submits its current revision.
+6. A real PostgreSQL interleaving holds a lifecycle update on the opportunity row, proves Page Proposal admission waits on that writer, then confirms the stale loser creates no durable or transport work.
+7. Queue-unavailable dry-run audit rejects a stale target before writing `job_runs` truth.
+8. Direct SQL cannot seed a nonzero opportunity revision or mutate the revision on update.
+9. A worker success interleaving holds the agent-run row, proves the worker already owns the opportunity lock, and then proves a competing opportunity writer waits behind the worker.
+
 ### Page Proposal Reasoning Worker
 
 Files:

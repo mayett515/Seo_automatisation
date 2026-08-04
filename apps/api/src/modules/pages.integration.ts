@@ -2,7 +2,13 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import type { MediaAssetStoragePort } from "@localseo/adapters";
-import { OpportunityBriefSchema, type PageJson, type PageProposalJson } from "@localseo/contracts";
+import {
+  OpportunityBriefSchema,
+  type OpportunityLifecycleStatus,
+  type OpportunityTargetRevision,
+  type PageJson,
+  type PageProposalJson
+} from "@localseo/contracts";
 import {
   agentRuns,
   approvals,
@@ -46,6 +52,16 @@ type OpportunityFixture = {
   userId: string;
   opportunityId: string;
 };
+
+function pageProposalRequest(
+  opportunityId: string,
+  expectedOpportunity: OpportunityTargetRevision = {
+    status: "new",
+    rowVersion: 0
+  }
+) {
+  return { opportunityId, expectedOpportunity };
+}
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const runIntegration = Boolean(testDatabaseUrl);
@@ -109,7 +125,7 @@ void describe(
 
       const result = await service.queuePageProposal(
         fixture.projectId,
-        { opportunityId: fixture.opportunityId },
+        pageProposalRequest(fixture.opportunityId),
         fixture.userId
       );
 
@@ -131,7 +147,10 @@ void describe(
       assert.equal(run?.subjectId, fixture.opportunityId);
       assert.equal(run?.task, "page_brief_draft");
       assert.equal(run?.status, "queued");
-      assert.deepEqual(run?.diagnosticsJson, { opportunityId: fixture.opportunityId });
+      assert.deepEqual(run?.diagnosticsJson, {
+        opportunityId: fixture.opportunityId,
+        admittedOpportunity: { status: "new", rowVersion: 0 }
+      });
 
       const [jobRun] = await db.select().from(jobRuns).where(eq(jobRuns.externalJobId, result.runId));
       assert.equal(jobRun?.queueName, "page-generation");
@@ -142,7 +161,7 @@ void describe(
     void it("returns explicit page proposal dry-run without agent_runs when the queue is unavailable", async () => {
       const fixture = await createOpportunityFixture(db, { name: "Proposal dry run" });
 
-      const result = await service.queuePageProposal(fixture.projectId, { opportunityId: fixture.opportunityId });
+      const result = await service.queuePageProposal(fixture.projectId, pageProposalRequest(fixture.opportunityId));
 
       assert.equal(result.status, "dry_run");
       assert.equal(result.type, "page_generation");
@@ -157,6 +176,131 @@ void describe(
       assert.equal(jobRunRows.length, 1);
       assert.equal(jobRunRows[0]?.status, "dry_run");
       assert.equal(jobRunRows[0]?.queueName, "page-generation");
+    });
+
+    void it("rejects a stale target before writing queue-unavailable dry-run audit truth", async () => {
+      const fixture = await createOpportunityFixture(db, { name: "Proposal stale dry run" });
+      const [updated] = await db
+        .update(opportunities)
+        .set({ status: "held", updatedAt: new Date() })
+        .where(eq(opportunities.id, fixture.opportunityId))
+        .returning();
+      assert.equal(updated?.rowVersion, 1);
+
+      await assert.rejects(
+        () => service.queuePageProposal(fixture.projectId, pageProposalRequest(fixture.opportunityId)),
+        /Opportunity changed after the page proposal request was prepared/u
+      );
+
+      assert.equal((await db.select().from(agentRuns)).length, 0);
+      assert.equal((await db.select().from(jobRuns)).length, 0);
+    });
+
+    void it("rejects a stale expected opportunity revision before creating page proposal work", async () => {
+      const fixture = await createOpportunityFixture(db, { name: "Proposal stale target" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setPageGenerationQueue(queueService, queue);
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      const [updated] = await db
+        .update(opportunities)
+        .set({ status: "held", updatedAt: new Date() })
+        .where(eq(opportunities.id, fixture.opportunityId))
+        .returning();
+      assert.equal(updated?.rowVersion, 1);
+
+      await assert.rejects(
+        () => service.queuePageProposal(fixture.projectId, pageProposalRequest(fixture.opportunityId)),
+        /Opportunity changed after the page proposal request was prepared/u
+      );
+
+      assert.equal(queue.addCalls.length, 0);
+      assert.equal((await db.select().from(agentRuns)).length, 0);
+    });
+
+    void it("rejects a target that already has a completed page proposal lifecycle", async () => {
+      const fixture = await createOpportunityFixture(db, { name: "Proposal already created" });
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setPageGenerationQueue(queueService, queue);
+      service = new PagesService(testDatabaseService(db), queueService);
+
+      const [updated] = await db
+        .update(opportunities)
+        .set({ status: "brief_created", updatedAt: new Date() })
+        .where(eq(opportunities.id, fixture.opportunityId))
+        .returning();
+      assert.equal(updated?.rowVersion, 1);
+
+      await assert.rejects(
+        () =>
+          service.queuePageProposal(
+            fixture.projectId,
+            pageProposalRequest(fixture.opportunityId, { status: "brief_created", rowVersion: 1 })
+          ),
+        /page proposal has already been created/u
+      );
+
+      assert.equal(queue.addCalls.length, 0);
+      assert.equal((await db.select().from(agentRuns)).length, 0);
+    });
+
+    void it("rejects page proposal admission when a concurrent lifecycle change wins the opportunity lock", async () => {
+      assert.ok(testDatabaseUrl);
+      const fixture = await createOpportunityFixture(db, { name: "Proposal lifecycle race" });
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const queueHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const queueService = new QueueProducerService(testDatabaseService(queueHandle.db));
+      const queue = new FakeQueue();
+      setPageGenerationQueue(queueService, queue);
+      const queueServiceBoundary = new PagesService(testDatabaseService(queueHandle.db), queueService);
+      let heldUpdate: HeldOpportunityLifecycleUpdate | undefined;
+      let queueSettled = false;
+
+      try {
+        heldUpdate = await startHeldOpportunityLifecycleUpdate(blockerHandle.sql, fixture.opportunityId, "held");
+        const queuePid = await backendPid(queueHandle.sql);
+        const queuedOutcome = queueServiceBoundary
+          .queuePageProposal(fixture.projectId, pageProposalRequest(fixture.opportunityId), fixture.userId)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            queueSettled = true;
+          });
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: queuePid,
+          blockingPid: heldUpdate.pid,
+          isSettled: () => queueSettled
+        });
+        heldUpdate.commit();
+        await heldUpdate.done;
+
+        const outcome = await queuedOutcome;
+        assert.equal(outcome.ok, false);
+        if (!outcome.ok) {
+          assert.match(
+            errorMessage(outcome.error),
+            /Opportunity changed after the page proposal request was prepared/u
+          );
+        }
+
+        const [opportunity] = await db
+          .select({ status: opportunities.status, rowVersion: opportunities.rowVersion })
+          .from(opportunities)
+          .where(eq(opportunities.id, fixture.opportunityId));
+        assert.deepEqual(opportunity, { status: "held", rowVersion: 1 });
+        assert.equal(queue.addCalls.length, 0);
+        assert.equal((await db.select().from(agentRuns)).length, 0);
+      } finally {
+        heldUpdate?.rollback();
+        await heldUpdate?.done.catch(() => undefined);
+        await blockerHandle.close();
+        await queueHandle.close();
+      }
     });
 
     void it("returns the active page proposal run instead of enqueueing a duplicate", async () => {
@@ -176,7 +320,7 @@ void describe(
         diagnosticsJson: { opportunityId: fixture.opportunityId }
       });
 
-      const result = await service.queuePageProposal(fixture.projectId, { opportunityId: fixture.opportunityId });
+      const result = await service.queuePageProposal(fixture.projectId, pageProposalRequest(fixture.opportunityId));
 
       assert.equal(result.status, "already_active");
       assert.equal(result.runId, "44444444-4444-4444-8444-444444444444");
@@ -206,7 +350,7 @@ void describe(
         diagnosticsJson: { opportunityId: fixture.opportunityId }
       });
 
-      const result = await service.queuePageProposal(fixture.projectId, { opportunityId: otherOpportunityId });
+      const result = await service.queuePageProposal(fixture.projectId, pageProposalRequest(otherOpportunityId));
 
       assert.equal(result.status, "queued");
       assert.equal(result.opportunityId, otherOpportunityId);
@@ -1940,12 +2084,54 @@ type HeldApprovalBlockerInsert = {
   rollback: () => void;
 };
 
+type HeldOpportunityLifecycleUpdate = {
+  pid: number;
+  done: Promise<void>;
+  commit: () => void;
+  rollback: () => void;
+};
+
 type HeldPageVersionLock = {
   pid: number;
   done: Promise<void>;
   release: () => void;
   rollback: () => void;
 };
+
+async function startHeldOpportunityLifecycleUpdate(
+  sql: SqlClient,
+  opportunityId: string,
+  status: OpportunityLifecycleStatus
+): Promise<HeldOpportunityLifecycleUpdate> {
+  const updated = deferred<{ pid: number }>();
+  const finish = deferred<"commit" | "rollback">();
+  const done = sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`;
+    const pid = await backendPid(tx);
+    await tx`
+      UPDATE "opportunities"
+      SET "status" = ${status}, "updated_at" = now()
+      WHERE "id" = ${opportunityId}
+    `;
+    updated.resolve({ pid });
+
+    if ((await finish.promise) === "rollback") {
+      throw new Error("Rollback held opportunity lifecycle update.");
+    }
+  });
+
+  void done.catch((error: unknown) => {
+    updated.reject(error);
+  });
+
+  const { pid } = await updated.promise;
+  return {
+    pid,
+    done,
+    commit: () => finish.resolve("commit"),
+    rollback: () => finish.resolve("rollback")
+  };
+}
 
 async function startHeldPageVersionLock(sql: SqlClient, pageVersionId: string): Promise<HeldPageVersionLock> {
   const locked = deferred<{ pid: number }>();
@@ -2024,7 +2210,7 @@ async function waitForBlockingPid(
 
   while (Date.now() < deadline) {
     if (input.isSettled()) {
-      throw new Error("Approval review settled before the lock wait was observed.");
+      throw new Error("The blocked operation settled before the lock wait was observed.");
     }
 
     const [row] = await sql<{ blocking_pids: number[] }[]>`
