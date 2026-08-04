@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.34"
+version: "1.1.36"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -295,8 +295,9 @@ Page Version approval
   Approval must not enqueue deploy or mutate providers; release planning/preflight/deploy remain separate deterministic steps.
   Release-plan creation may select only approved page versions with approval evidence.
   Release-plan creation requests must carry the displayed status and DB-managed row version for every selected page version.
-  Release-plan creation must lock selected project-owned page versions in stable id order, re-read them, and reject stale expected state before eligibility or persistence.
+  Release-plan creation must canonicalize externally supplied UUIDs, lock selected project-owned page versions in stable id order, re-read them, and reject stale expected state before eligibility or persistence.
   Page versions remain the terminal lock class for release-plan creation; the command must not lock an existing release plan after acquiring page-version locks.
+  Deploy approval and release-candidate demotion must acquire multi-page-version locks in stable ascending id order after their owning release-plan lock.
   Release-plan creation must persist actor evidence and must not return success-shaped plans without persistence.
   Release-plan creation must create draft release plans/items only; preflight, deploy approval, deploy, and verification remain separate steps.
   Release preflight and deploy approval must lock the release plan and re-check an explicit expected-status set before replacing checks, readiness, approval evidence, or page-version lifecycle state.

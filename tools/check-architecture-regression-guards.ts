@@ -1301,6 +1301,50 @@ requireIncludes(
   "Release-plan target admission must remain a pure domain decision"
 );
 
+requireOrderedIncludes(
+  "packages/db/src/release-lifecycle.ts",
+  'ORDER BY pv."id"',
+  "FOR UPDATE OF pv",
+  "release-page-version-lock-order",
+  "Shared release-candidate demotion must lock page versions in ascending id order"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "pageVersionId: target.pageVersionId.toLowerCase()",
+  "release-page-version-lock-order",
+  "Release planning must canonicalize request UUIDs before JavaScript lock ordering"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "].sort();\n\n      if (releasePageVersionIds.length > 0)",
+  "release-page-version-lock-order",
+  "Deploy approval must sort release page-version ids before locking them"
+);
+
+requireOrderedIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "for (const pageVersionId of releasePageVersionIds)",
+  ".update(pageVersions)",
+  "release-page-version-lock-order",
+  "Deploy approval must pre-lock sorted page-version targets before lifecycle projection"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "locks release-candidate demotion in ascending page-version order",
+  "release-page-version-lock-order",
+  "PostgreSQL integration must prove deterministic multi-page demotion lock ordering"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "normalizes uppercase page-version ids before deterministic release locking",
+  "release-page-version-lock-order",
+  "PostgreSQL integration must accept contract-valid uppercase UUIDs through canonical lock ordering"
+);
+
 requireIncludes(
   "packages/contracts/src/index.ts",
   "normalizePotentiallyDangerousUrl",

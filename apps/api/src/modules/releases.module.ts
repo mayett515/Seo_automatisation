@@ -150,9 +150,11 @@ export class ReleasesService {
 
   async createPlan(projectId: string, body: unknown, createdByUserId?: string): Promise<ReleasePlan> {
     const input = CreateReleasePlanRequestSchema.parse(body ?? {});
-    const requestedTargets = [...input.pageVersions].sort((left, right) =>
-      left.pageVersionId < right.pageVersionId ? -1 : left.pageVersionId > right.pageVersionId ? 1 : 0
-    );
+    const requestedTargets = input.pageVersions
+      .map((target) => ({ ...target, pageVersionId: target.pageVersionId.toLowerCase() }))
+      .sort((left, right) =>
+        left.pageVersionId < right.pageVersionId ? -1 : left.pageVersionId > right.pageVersionId ? 1 : 0
+      );
     const requestedPageVersionIds = requestedTargets.map((target) => target.pageVersionId);
     const expectedTargetByPageVersionId = new Map(
       requestedTargets.map((target) => [target.pageVersionId, target.expected] as const)
@@ -430,11 +432,19 @@ export class ReleasesService {
         .select({ pageVersionId: releasePlanItems.pageVersionId })
         .from(releasePlanItems)
         .where(and(eq(releasePlanItems.releasePlanId, releasePlanId), isNotNull(releasePlanItems.pageVersionId)));
-      const releasePageVersionIds = releaseItemRows
-        .map((row) => row.pageVersionId)
-        .filter((pageVersionId): pageVersionId is string => Boolean(pageVersionId));
+      const releasePageVersionIds = [
+        ...new Set(
+          releaseItemRows
+            .map((row) => row.pageVersionId)
+            .filter((pageVersionId): pageVersionId is string => Boolean(pageVersionId))
+        )
+      ].sort();
 
       if (releasePageVersionIds.length > 0) {
+        for (const pageVersionId of releasePageVersionIds) {
+          await tx.execute(sql`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`);
+        }
+
         await tx
           .update(pageVersions)
           .set({

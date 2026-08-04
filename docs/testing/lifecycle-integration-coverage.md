@@ -141,6 +141,8 @@ Implemented coverage:
 7. Page-version revisions are forced to zero on insert, advance on lifecycle updates, and reject direct revision forgery.
 8. Release-plan requests carry the expected status/revision for each selected page version and stale expectations write no plan or items.
 9. A real PostgreSQL interleaving holds a page-version lifecycle update, proves planning waits on that writer, then confirms the stale loser writes no plan or item.
+10. Contract-valid uppercase page-version UUIDs are canonicalized before deterministic request-side locking and still resolve to the stored target.
+11. A forced two-page cancellation interleaving proves shared release-candidate demotion locks the lower page-version id before waiting on the higher id.
 
 These tests prove release planning is a durable planning action only: it selects already approved artifacts, writes draft plan/item rows, and does not approve deploy, enqueue deploy, or mutate providers.
 
@@ -178,7 +180,7 @@ Implemented worker tests:
 10. A healthy verifier result arriving while rollback restore evidence is `restore_in_flight` persists an explicit `active_rollback_execution` suppression audit without projecting deployment, plan, or page-version truth.
 11. A healthy verifier result during `manual_reconciliation_required` persists detailed verification/check audit with an explicit suppression reason while leaving deployment and plan truth untouched.
 
-The focused release API file currently runs 34 cases, the focused verification-worker file runs 12 cases, and the focused deploy-worker file runs 16 cases. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
+The focused release API file currently runs 38 cases, the focused verification-worker file runs 12 cases, and the focused deploy-worker file runs 16 cases. The full API/worker integration commands also run queue/job audit and tracking/GSC integration tests.
 
 ### Rollback Queueing
 

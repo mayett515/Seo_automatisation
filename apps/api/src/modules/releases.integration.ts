@@ -29,7 +29,7 @@ import {
   users,
   type DatabaseClient
 } from "@localseo/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { QueueProducerService } from "../queue-producer.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ReleasesService } from "./releases.module.js";
@@ -277,6 +277,22 @@ void describe(
       const [target] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
       assert.equal(target?.status, "approved");
       assert.equal(target?.rowVersion, 0);
+    });
+
+    void it("normalizes uppercase page-version ids before deterministic release locking", async () => {
+      const fixture = await createPageVersionFixture(db, { projectName: "Canonical release target ids" });
+
+      const result = await service.createPlan(
+        fixture.projectId,
+        createReleasePlanRequest(fixture.pageVersionId.toUpperCase()),
+        fixture.userId
+      );
+
+      const [item] = await db
+        .select({ pageVersionId: releasePlanItems.pageVersionId })
+        .from(releasePlanItems)
+        .where(eq(releasePlanItems.releasePlanId, result.releasePlanId));
+      assert.equal(item?.pageVersionId, fixture.pageVersionId);
     });
 
     void it("keeps page-version revisions database-managed", async () => {
@@ -849,6 +865,90 @@ void describe(
       assert.notEqual(replanned.releasePlanId, fixture.releasePlanId);
     });
 
+    void it("locks release-candidate demotion in ascending page-version order", async () => {
+      const fixture = await createPreflightRollbackFixture(db);
+      const secondPageVersionId = await addApprovedPageVersionToReleasePlan(db, fixture, "/fassadenreinigung/");
+      const user = await createTestUser(db, "release-cancel-order@example.test");
+
+      assert.equal((await service.preflight(fixture.projectId, fixture.releasePlanId)).readiness, "ready");
+      assert.equal(
+        (await service.approveDeploy(fixture.projectId, fixture.releasePlanId, user.id)).status,
+        "approved_for_deploy"
+      );
+      assert.ok(testDatabaseUrl);
+
+      const [lowerPageVersionId, higherPageVersionId] = [fixture.pageVersionId, secondPageVersionId].sort();
+      assert.ok(lowerPageVersionId);
+      assert.ok(higherPageVersionId);
+
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const cancellationHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const contenderHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const cancellationService = new ReleasesService(
+        new QueueProducerService(testDatabaseService(cancellationHandle.db)),
+        testDatabaseService(cancellationHandle.db)
+      );
+      let heldLock: HeldPageVersionLock | undefined;
+      let cancellationSettled = false;
+      let contenderSettled = false;
+      let cancellationDone: Promise<unknown> | undefined;
+      let contenderDone: Promise<unknown> | undefined;
+
+      try {
+        heldLock = await startHeldPageVersionLock(blockerHandle.sql, higherPageVersionId);
+        const cancellationPid = await backendPid(cancellationHandle.sql);
+        const cancellationOutcome = cancellationService
+          .cancelPlan(fixture.projectId, fixture.releasePlanId, user.id)
+          .finally(() => {
+            cancellationSettled = true;
+          });
+        cancellationDone = cancellationOutcome;
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: cancellationPid,
+          blockingPid: heldLock.pid,
+          isSettled: () => cancellationSettled
+        });
+
+        const contenderPid = await backendPid(contenderHandle.sql);
+        const contenderOutcome = contenderHandle.sql`
+          UPDATE "page_versions"
+          SET "updated_at" = NOW()
+          WHERE "id" = ${lowerPageVersionId}
+        `.finally(() => {
+          contenderSettled = true;
+        });
+        contenderDone = contenderOutcome;
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: contenderPid,
+          blockingPid: cancellationPid,
+          isSettled: () => contenderSettled
+        });
+
+        heldLock.commit();
+        const cancelled = await cancellationOutcome;
+        assert.equal(cancelled.status, "failed");
+        await contenderOutcome;
+        await heldLock.done;
+      } finally {
+        heldLock?.rollback();
+        await heldLock?.done.catch(() => undefined);
+        await cancellationDone?.catch(() => undefined);
+        await contenderDone?.catch(() => undefined);
+        await contenderHandle.close();
+        await cancellationHandle.close();
+        await blockerHandle.close();
+      }
+
+      const pageVersionRows = await db
+        .select({ id: pageVersions.id, status: pageVersions.status })
+        .from(pageVersions)
+        .where(inArray(pageVersions.id, [fixture.pageVersionId, secondPageVersionId]));
+      assert.equal(pageVersionRows.length, 2);
+      assert.ok(pageVersionRows.every((row) => row.status === "approved"));
+    });
+
     void it("rejects deploy approval when a concurrent terminal transition wins the plan lock", async () => {
       const fixture = await createPreflightRollbackFixture(db);
       const user = await createTestUser(db, "release-race-approver@example.test");
@@ -1414,6 +1514,47 @@ async function createPriorRollbackSourceCandidate(
   return deployment.id;
 }
 
+async function addApprovedPageVersionToReleasePlan(
+  db: DatabaseClient,
+  fixture: PreflightRollbackFixture,
+  route: string
+): Promise<string> {
+  const [proposal] = await db
+    .insert(pageProposals)
+    .values({
+      projectId: fixture.projectId,
+      route,
+      primaryKeyword: "Fassadenreinigung",
+      uniquenessRationale: "Second approved release target.",
+      status: "approved",
+      sitemapReady: true
+    })
+    .returning();
+  assert.ok(proposal);
+
+  const [pageVersion] = await db
+    .insert(pageVersions)
+    .values({
+      pageProposalId: proposal.id,
+      versionNumber: 1,
+      status: "approved",
+      approvedAt: new Date("2026-06-30T10:00:00.000Z"),
+      pageJson: pageJson(route)
+    })
+    .returning();
+  assert.ok(pageVersion);
+
+  await db.insert(releasePlanItems).values({
+    releasePlanId: fixture.releasePlanId,
+    pageVersionId: pageVersion.id,
+    targetUrl: route,
+    action: "create",
+    status: "pending"
+  });
+
+  return pageVersion.id;
+}
+
 async function createRollbackPoint(
   db: DatabaseClient,
   fixture: ReleaseFixture,
@@ -1540,6 +1681,40 @@ type HeldPageVersionTransition = {
   commit: () => void;
   rollback: () => void;
 };
+
+type HeldPageVersionLock = {
+  pid: number;
+  done: Promise<void>;
+  commit: () => void;
+  rollback: () => void;
+};
+
+async function startHeldPageVersionLock(sql: SqlClient, pageVersionId: string): Promise<HeldPageVersionLock> {
+  const locked = deferred<{ pid: number }>();
+  const finish = deferred<"commit" | "rollback">();
+  const done = sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`;
+    const pid = await backendPid(tx);
+    await tx`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`;
+    locked.resolve({ pid });
+
+    if ((await finish.promise) === "rollback") {
+      throw new Error("Rollback held page-version lock.");
+    }
+  });
+
+  void done.catch((error: unknown) => {
+    locked.reject(error);
+  });
+
+  const { pid } = await locked.promise;
+  return {
+    pid,
+    done,
+    commit: () => finish.resolve("commit"),
+    rollback: () => finish.resolve("rollback")
+  };
+}
 
 async function startHeldPageVersionTransition(
   sql: SqlClient,
