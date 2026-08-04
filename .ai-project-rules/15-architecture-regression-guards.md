@@ -2,7 +2,7 @@
 description: "Regression guards for repeated architecture review findings"
 globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
 alwaysApply: false
-version: "1.1.36"
+version: "1.1.37"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -323,6 +323,7 @@ Page Version approval
 ```text
 Customer Report publication and Next Action
   CustomerReport is separate from the lead-facing PotentialReport.
+  The Nest report module owns transport/composition only; its stable ReportsService facade delegates generation, review/artifact, and publication/correction to focused capabilities while one internal aggregate store owns shared canonical persistence invariants.
   Current operational rows own live truth; one canonical immutable snapshot owns the historical customer statement.
   Normalized claims/evidence/events/actions/artifacts enforce provenance and audit but do not become a second publication authority.
   Published reads must not rebuild history from mutable ranking, release, verification, rollback, or recovery rows.

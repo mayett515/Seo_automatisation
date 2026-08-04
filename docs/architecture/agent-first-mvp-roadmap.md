@@ -894,7 +894,8 @@ Preferred modular-monolith placement for the new vertical:
 packages/contracts/src/report.ts       report snapshot, evidence-ref, narrative, and response contracts
 packages/domain/src/report.ts          pure eligibility, claim, lifecycle, and Next Action decisions
 packages/ai/src/report-narrative.ts    bounded task/prompt/QA helpers
-apps/api/src/modules/reports.module.ts authenticated report commands and reads
+apps/api/src/modules/reports.module.ts authenticated transport and Nest composition
+apps/api/src/modules/reports/          generation, review/artifact, publication, and aggregate-store capabilities
 apps/worker/src/handlers/report-*.ts deterministic assembly/narrative/render work
 apps/web/src/screens/reports.tsx       report list/detail/review and explicit actions
 ```

@@ -2473,35 +2473,84 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
   "canonicalizeCustomerReportFactProjection(snapshot.factProjection)",
   "customer-report-aggregate",
   "Snapshot admission must recompute rather than trust the embedded fact-projection digest"
 );
 
 requireIncludes(
+  "apps/api/src/modules/reports/reports.service.ts",
+  "return this.generation.admitGeneration(...args);",
+  "customer-report-module-boundaries",
+  "The stable ReportsService facade must delegate report generation to its focused capability"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports/reports.service.ts",
+  "return this.review.submitForReview(...args);",
+  "customer-report-module-boundaries",
+  "The stable ReportsService facade must delegate review and artifact lifecycle to its focused capability"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports/reports.service.ts",
+  "return this.publication.publish(...args);",
+  "customer-report-module-boundaries",
+  "The stable ReportsService facade must delegate publication and correction to its focused capability"
+);
+
+requireNotIncludes(
   "apps/api/src/modules/reports.module.ts",
+  ".transaction(",
+  "customer-report-module-boundaries",
+  "The Nest report transport/composition module must not regain aggregate transaction ownership"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  "DatabaseService",
+  "customer-report-module-boundaries",
+  "The Nest report transport/composition module must not regain direct database ownership"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  'from "@localseo/db"',
+  "customer-report-module-boundaries",
+  "The Nest report transport/composition module must not import report persistence tables"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/reports.module.ts",
+  'from "drizzle-orm"',
+  "customer-report-module-boundaries",
+  "The Nest report transport/composition module must not regain query construction"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
   "decideCustomerReportSnapshotEligibility(snapshot)",
   "customer-report-aggregate",
   "Every admitted snapshot must compose claim-level deterministic eligibility"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-generation.capability.ts",
   "Report generation idempotency key belongs to another request.",
   "customer-report-aggregate",
   "Report generation idempotency must remain bound to the original actor, cutoff, mode, and issue"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
   "evidenceProjectionReferencesMatch(row, item)",
   "customer-report-aggregate",
   "Normalized report evidence references must remain exact projections of canonical evidence"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
   "Customer report evidence source relationship was missing, mismatched, or belonged to another project.",
   "customer-report-aggregate",
   "Nested verification, deployment, and rollback evidence relationships must remain project coherent"
@@ -2543,14 +2592,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
   'SELECT "id" FROM "report_issues"',
   "customer-report-aggregate",
   "Generation and review must serialize on the stable report issue row"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-publication.capability.ts",
   "async publish",
   "customer-report-publication",
   "Digest-bound report publication must remain an explicit authenticated service boundary"
@@ -2669,7 +2718,7 @@ requireNotIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-generation.capability.ts",
   "assertSnapshotMatchesEvidencePacket(run, prepared.snapshot)",
   "customer-report-generation",
   "Internal draft completion must remain bound to the persisted deterministic evidence packet"
@@ -2781,7 +2830,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-generation.capability.ts",
   "Internal report draft persistence accepts fact-only snapshots only.",
   "customer-report-narrative",
   "The internal API harness must not become a second bounded-narrative persistence path"
@@ -2879,7 +2928,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-review.capability.ts",
   ".insert(reportArtifacts)",
   "customer-report-html-artifact",
   "Submit-for-review must create durable artifact truth before queue transport"
@@ -2991,29 +3040,29 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-publication.capability.ts",
   "lockCustomerReportEvidenceSources(tx, snapshot)",
   "customer-report-publication",
   "Publication must lock the bounded source set before aggregate rows"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
   "Release writers pin rv -> checks -> rollback -> deployment -> page version.",
   "customer-report-publication",
   "Publication source locking must remain compatible with verification and rollback writers"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
   'row.status !== "reviewed"',
   "customer-report-publication",
   "Ranking-proof invalidation-first publication blocking depends on current reviewed source truth"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
-  "verifyImmutableArtifactBytes(this.requireArtifactReader(), initialArtifact)",
+  "apps/api/src/modules/reports/report-publication.capability.ts",
+  "verifyImmutableArtifactBytes(requireArtifactReader(this.artifactReader), initialArtifact)",
   "customer-report-publication",
   "Publication must verify selected immutable artifact bytes before committing truth"
 );
@@ -3026,14 +3075,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-publication.capability.ts",
   '.set({ status: "resolved", resolvedAt: now, resolvedByReportId: published.id, updatedAt: now })',
   "customer-report-publication",
   "Correction publication must resolve predecessor source alerts transactionally"
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
+  "apps/api/src/modules/reports/report-review.capability.ts",
   'throw new ConflictException("Only a failed report artifact can be retried with a new request id.")',
   "customer-report-publication",
   "Artifact retry must create new work only after durable failure"
@@ -3082,10 +3131,17 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/reports.module.ts",
-  "return verifyImmutableArtifactBytes(this.requireArtifactReader(), artifact);",
+  "apps/api/src/modules/reports/report-review.capability.ts",
+  "return verifyImmutableArtifactBytes(requireArtifactReader(this.artifactReader), row.artifact);",
   "customer-report-ui",
   "Reviewed candidate documents must re-verify immutable artifact bytes"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports/report-publication.capability.ts",
+  "return verifyImmutableArtifactBytes(requireArtifactReader(this.artifactReader), artifact);",
+  "customer-report-ui",
+  "Published report documents must re-verify immutable artifact bytes"
 );
 
 requireIncludes(

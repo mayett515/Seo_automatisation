@@ -194,7 +194,12 @@ The Report bounded context remains inside the modular monolith:
 packages/contracts/src/report.ts       strict shared report/action/job schemas
 packages/domain/src/report.ts          pure eligibility, lifecycle, ordering, and action decisions
 packages/ai/src/report-narrative.ts    bounded prompt/output/QA helpers
-apps/api/src/modules/reports.module.ts authenticated commands, reads, publication, and repositories
+apps/api/src/modules/reports.module.ts authenticated transport and Nest composition
+apps/api/src/modules/reports/reports.service.ts stable facade over report capabilities
+apps/api/src/modules/reports/report-generation.capability.ts generation admission and draft persistence
+apps/api/src/modules/reports/report-review.capability.ts workspace, review, and artifact lifecycle
+apps/api/src/modules/reports/report-publication.capability.ts publication, correction, and published reads
+apps/api/src/modules/reports/report-aggregate-store.ts shared canonical persistence and evidence invariants
 apps/worker/src/handlers/report-*.ts   deterministic assembly/narrative/render/export work
 apps/web/src/screens/reports.tsx       list/detail/review/publication and typed action UI
 ```
@@ -243,6 +248,8 @@ Slice 6 implements optional bounded AI headings and transitions without changing
 The first command-offer prerequisite hardens `request_page_proposal` without introducing report action rows. A DB-managed opportunity row version is forced to zero on insert and advances on every update; the existing Page Proposal command now requires the displayed opportunity status/revision, locks and re-reads the project-owned target, and creates the durable run only when the expected target still matches and remains eligible. Queue-unavailable dry-run audit validates the same target first, while worker success persistence shares the structural `opportunity -> agent_run` lock order. Forced PostgreSQL lifecycle-update/request and worker-persistence lock interleavings prove the stale loser creates neither run nor queue work and the worker owns the target before changing run truth. `page:propose`, the existing active-run guard, Page Studio review, and every downstream approval/release boundary remain unchanged.
 
 The second command-offer prerequisite hardens `prepare_release_plan` without introducing report action rows. PostgreSQL owns a non-negative page-version row revision, forces zero on insert, and advances it on every update. The existing release-plan request freezes every selected page-version status/revision. Creation locks project-owned targets in sorted id order, re-reads exact current state, applies a pure stale-first admission decision, and inserts draft plan/item truth only when every target still matches and remains approved with approval evidence. A forced lifecycle-update/planning interleaving proves the stale loser creates neither plan nor item. This preserves page versions as the terminal class in the existing release lock order. Report offer, consent-receipt, and dispatch persistence remain separate.
+
+Before consequential command offers, the API report implementation was extracted without changing its public service, routes, transactions, lock order, schemas, or persistence behavior. `ReportsService` remains the Nest-facing facade and retains its constructor/method surface. Focused internal capabilities now own generation, review/artifacts, and publication/correction, while one aggregate-store module owns the shared canonical snapshot, provenance projection, evidence source, source-lock, and immutable-byte invariants. This is an internal modular-monolith cohesion refactor, not a new service or write path.
 
 The first vertical proof ends after the report UI slice. It must work without AI, command actions, PDF, RAG, a workflow engine, or public links.
 
