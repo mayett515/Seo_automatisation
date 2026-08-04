@@ -75,7 +75,7 @@ Use:
 - DO NOT make `AGENTS.md` huge.
 - DO NOT make skills generic.
 - DO NOT bury hard constraints in prose.
-- DO NOT exceed the default 15-rule budget unless a router, guard, guardrail, or anti-regression shard explicitly declares `rule_budget: "guard-exception"`.
+- DO NOT split, delete, or combine rules solely to force a file below the default 15-rule review threshold; review cohesion and routing first.
 - DO NOT generate nested active rule folders without explicit context-sharding reason.
 </absolute-constraints>
 

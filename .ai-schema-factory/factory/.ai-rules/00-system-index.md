@@ -2,7 +2,7 @@
 description: "Master router for the Pragmatic Codex Schema Factory."
 globs: "*"
 alwaysApply: true
-version: "1.1.0"
+version: "1.2.0"
 priority_schema: "critical > strong > guideline"
 routing_level: "L0"
 terminal: false
@@ -32,7 +32,7 @@ THEN load `.agents/skills/schema-auditor/SKILL.md` and `.ai-rules/09-anti-regres
 - DO NOT generate final schema files before planner approval.
 - DO NOT put the full rule system into `AGENTS.md`.
 - DO NOT create deeply nested active rule folders.
-- DO NOT exceed the default 15-rule budget unless a router, guard, guardrail, or anti-regression shard explicitly declares `rule_budget: "guard-exception"`.
+- DO NOT split, delete, or combine rules solely to force a file below the default 15-rule review threshold; review cohesion and routing first.
 - DO NOT let Level 2 terminal leaves route further downward.
 - DO NOT merge unrelated cognitive tasks into one shard.
 - DO NOT overwrite a codebase's existing agent instructions without a migration plan.

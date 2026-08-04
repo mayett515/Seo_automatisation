@@ -3,6 +3,7 @@ description: "Tracking, privacy, security, and observability rules for Local SEO
 globs: "**/*tracking*.{md,json,mmd,ts,tsx}, **/*analytics*.{md,json,mmd,ts,tsx}, **/*privacy*.{md,json,mmd,ts,tsx}, **/*security*.{md,json,mmd,ts,tsx}, **/*gsc*.{md,json,mmd,ts,tsx}, src/**/*.{ts,tsx}, apps/**/*.{ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -79,6 +80,8 @@ THEN treat it as publishable and scope it to a single project/domain with rotati
 ## 4. Domain Anchoring & Examples
 
 <context>
+This file retains 23 atomic rules because public tracking ingestion, project isolation, privacy minimization, side-effect honesty, and observability are one event-data lifecycle. Splitting privacy from ingestion and storage guidance would weaken the boundary it protects.
+
 Allowed event intent: observe page behavior and contact actions without collecting sensitive visitor content.
 
 <example>

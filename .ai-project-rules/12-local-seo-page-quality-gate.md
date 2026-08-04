@@ -3,6 +3,7 @@ description: "Reusable quality gate for local SEO service-location pages before 
 globs: "**/*local*.{md,json,mmd,ts,tsx}, **/*landing*.{md,json,mmd,ts,tsx}, **/*seo*.{md,json,mmd,ts,tsx}, **/*page*.{md,json,mmd,ts,tsx}, **/*deploy*.{md,json,mmd,ts,tsx}, **/*sitemap*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "guard-exception"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -131,6 +132,8 @@ THEN treat it as internal opportunity evidence, not customer-facing proof.
 ## 8. Domain Anchoring
 
 <context>
+This 38-rule file is an intentional guard exception: it is the single reusable admission gate spanning page purpose, content, technical SEO, cannibalization, internal linking, deployment, and reporting. Splitting the gate would weaken fail-closed review by allowing partial quality checks.
+
 Use the Dachau clear-out workflow as a reference pattern when relevant:
 
 ```text

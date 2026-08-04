@@ -3,6 +3,7 @@ description: "Portable TanStack ecosystem schema for Query, Router, Form, Table,
 globs: "apps/web/src/**/*.{ts,tsx}, packages/ui/src/**/*.{ts,tsx}, .ai-stack-rules/**/*.md, .ai-stack-findings/**/*.md, **/*tanstack*.md"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -70,6 +71,8 @@ THEN define its owner, workflow, source of truth, and verification path before a
 ## 4. Project-Owned TanStack Domains
 
 <context>
+This file retains 16 atomic rules because TanStack library roles, CLI discovery, add-on safety, and project-authority constraints form one ecosystem adoption decision. Splitting them would duplicate the same scaffold and compatibility boundaries.
+
 Current TanStack usage:
 
 ```text

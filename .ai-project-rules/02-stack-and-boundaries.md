@@ -2,7 +2,7 @@
 description: "Application stack, module boundaries, and adapter rules for the Local SEO platform"
 globs: "src/**/*.{ts,tsx}, apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, **/*architecture*.md, **/*boundary*.md"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -24,7 +24,8 @@ You have been routed here because the task touches stack choices, service bounda
 - Use PostgreSQL for product data, Redis/BullMQ-compatible queues for jobs, and object storage for artifacts.
 - Keep frontend, API, workers, agents, and external providers behind explicit boundaries.
 - Wrap Netlify, GSC, analytics, crawler, and storage providers behind adapters.
-- Follow `.ai-project-rules/14-architecture-direction.md` for modular-monolith structure, Clean Architecture dependency direction, Hexagonal ports/adapters, and DDD-lite bounded contexts.
+- Follow `.ai-project-rules/14-architecture-direction.md` for Clean Architecture dependency direction, Hexagonal ports/adapters, composition-root wiring, and shared contract ownership.
+- Follow `.ai-project-rules/14A-module-cohesion-and-capability-extraction.md` for modular-monolith structure, DDD-lite bounded contexts, and capability extraction inside a module.
 - Use the TypeScript source-of-truth rules from `.ai-rules/02C-type-source-of-truth-checker.md` for non-trivial shared types.
 </positive-directives>
 
@@ -44,9 +45,6 @@ You have been routed here because the task touches stack choices, service bounda
 <conditional-logic>
 IF a new external integration is introduced:
 THEN define the port, adapter, data contract, and failure mode.
-
-IF a shared request, response, event, or job payload type is created:
-THEN identify whether the truth is owned by a Zod schema, generated client, runtime object, or exported TypeScript type.
 
 IF a module needs long-running work:
 THEN route it through a queue and worker contract instead of a synchronous controller.
@@ -77,5 +75,4 @@ await this.netlifyClient.deploySite(projectId);
 <pre-flight-checklist>
 1. [ ] Did I keep provider logic behind an adapter?
 2. [ ] Did I preserve the frontend -> API -> queue -> worker boundary?
-3. [ ] Did I run the source-of-truth check for shared non-trivial types?
 </pre-flight-checklist>

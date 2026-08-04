@@ -2,7 +2,7 @@
 description: "Template for generating flat domain rule files"
 globs: ".ai-rules/*.md"
 alwaysApply: false
-version: "3.0.0"
+version: "3.2.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
@@ -20,7 +20,7 @@ Copy this structure when generating a new flat sibling rule file.
 description: "Strict rules for [DOMAIN]"
 globs: "[GLOBS]"
 alwaysApply: false
-version: "3.0.0"
+version: "3.2.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
@@ -67,7 +67,7 @@ priority_schema: "critical > strong > guideline"
 <absolute-constraints>
 - DO NOT create nested template folders.
 - DO NOT omit YAML frontmatter.
-- DO NOT exceed the rule ceiling.
+- DO NOT split, delete, or combine rules solely to force the generated file below the default 15-rule review threshold.
 </absolute-constraints>
 
 <pre-flight-checklist>

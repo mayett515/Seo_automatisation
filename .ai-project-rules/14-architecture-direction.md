@@ -1,8 +1,9 @@
 ---
-description: "Architecture direction for modular monolith, Clean Architecture, Hexagonal ports/adapters, DDD-lite bounded contexts, and system design"
+description: "Architecture direction for Clean Architecture dependency rules, Hexagonal ports/adapters, composition roots, agent authority, and system design"
 globs: "src/**/*.{ts,tsx}, apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, **/*architecture*.md, **/*boundary*.md, **/*port*.{ts,tsx}, **/*adapter*.{ts,tsx}, **/*schema*.{ts,tsx}"
 alwaysApply: false
-version: "1.0.2"
+version: "1.1.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -21,17 +22,15 @@ priority_schema: "critical > strong > guideline"
 # Domain Execution Contract: Architecture Direction
 
 <meta-instruction>
-You have been routed here because the task touches architecture style, dependency direction, module boundaries, ports/adapters, bounded contexts, composition roots, provider isolation, deployment topology, or whether logic belongs in core, adapter, worker, agent, API, or UI. Product-pack behavior still wins over architecture guidance when there is a conflict.
+You have been routed here because the task touches architecture style, dependency direction, package and layer boundaries, ports/adapters, composition roots, provider isolation, deployment topology, or whether logic belongs in core, adapter, worker, agent, API, or UI. Module decomposition, capability extraction, and stable-facade rules live in `.ai-project-rules/14A-module-cohesion-and-capability-extraction.md`. Product-pack behavior still wins over architecture guidance when there is a conflict.
 </meta-instruction>
 
 ## 1. Focused Best Practices
 
 <positive-directives>
-- Build a modular monolith first: one API process and one worker host sharing typed packages. Do not split into microservices yet.
 - Apply the Clean Architecture dependency rule: dependencies point inward; core packages do not import frameworks, provider SDKs, queue clients, or UI libraries.
 - Use Hexagonal Architecture for all external systems: site hosting, Search Console, crawler/import, analytics, object storage, AI/Mastra, tracking, sitemap, event publishing, verification, and rollback.
 - Name ports by purpose, not vendor. Vendor names belong in adapter implementations, provider records, and deployment configuration.
-- Use DDD-lite bounded contexts: Lead, Customer, Project, Website, Service, Area, Opportunity, PageProposal, PageVersion, MediaAsset, Approval, ReleasePlan, Deployment, GscSync, TrackingEvent, Report.
 - Keep Mastra agents/workflows in reasoning, orchestration, and proposal generation. Deterministic workers perform production mutations.
 - Keep agent constraints outcome-based: allowed tool categories and denied production outcomes must travel with the run, including subagent delegation.
 - Wire concrete adapters in process composition roots, not inside controllers, domain functions, agents, or random worker handlers.
@@ -50,7 +49,6 @@ You have been routed here because the task touches architecture style, dependenc
 - DO NOT let a child agent, tool runner, or workflow step widen the parent task's denied outcomes.
 - DO NOT introduce an external provider without a purpose-named port, adapter, failure mode, and test/fake strategy.
 - DO NOT hand-maintain duplicate shared enums, event names, or payload shapes without identifying the single source of truth.
-- DO NOT introduce microservices before the modular monolith boundaries are proven insufficient.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -81,6 +79,8 @@ THEN scan `.ai-stealer-rules/03-architecture-decision-domains.md` before finaliz
 ## 4. Domain Anchoring & Examples
 
 <context>
+This shard retains 16 atomic rules because shared type and payload truth must stay beside its source-of-truth trigger gate. Moving that constraint into module-decomposition guidance would fragment one architecture-ownership decision merely to satisfy the normal-domain review threshold.
+
 Port inventory:
 
 ```text
@@ -133,6 +133,5 @@ const mainWebsite = { netlifySiteId: "..." };
 4. [ ] Did agents stay in reasoning while deterministic workers own production mutations?
 5. [ ] Did new agent capabilities follow ADR 0019's constraint-profile policy?
 6. [ ] Did each shared enum, event, and payload shape have a declared source of truth?
-7. [ ] Did the design remain a modular monolith unless a proven boundary requires otherwise?
-8. [ ] Did I scan architecture decision domains for relevant cross-cutting concerns?
+7. [ ] Did I scan architecture decision domains for relevant cross-cutting concerns?
 </pre-flight-checklist>

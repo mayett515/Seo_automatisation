@@ -23,9 +23,9 @@ When project-specific planning or rules are needed, create or update files in:
 ## Status
 
 ```yaml
-snapshot_date: "2026-06-25"
+snapshot_date: "2026-08-04"
 status: "frozen_reference"
-edit_policy: "do_not_edit"
+edit_policy: "no_project_local_edits; upstream_resync_only"
+upstream: "C:\\Scheme\\pragmatic_typescript_v3_ai_rules_bundle_complete"
 purpose: "Local schema factory and template reference"
 ```
-

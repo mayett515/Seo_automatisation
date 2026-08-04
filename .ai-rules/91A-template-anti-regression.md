@@ -2,7 +2,7 @@
 description: "Template for anti-regression rule files"
 globs: ".ai-rules/*.md"
 alwaysApply: false
-version: "3.1.0"
+version: "3.2.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
@@ -65,7 +65,7 @@ THEN verify [previous fix] remains intact.
 
 <absolute-constraints>
 - DO NOT add positive directives to an anti-regression file unless it is explicitly marked with `anti_regression_mode: "hybrid-boundary"`.
-- DO NOT exceed the default 15-rule budget unless the file declares `rule_budget: "guard-exception"` and remains scannable.
+- DO NOT let a `guard-exception` file become unscannable; split it when enforcement can remain coherent across directly routed siblings.
 - DO NOT describe incidents vaguely.
 - DO NOT merge multiple regression bans into one bullet.
 </absolute-constraints>

@@ -95,6 +95,317 @@ requireIncludes(
   "rule 15 must declare its intentional hybrid anti-regression mode"
 );
 
+// These anchors intentionally make the active upstream-authored consumer schema a check dependency.
+requireIncludes(
+  ".ai-rules/90-schema-generation-spec.md",
+  "normal-domain review threshold, not an automatic ceiling",
+  "rule-budget-policy",
+  "the active schema must treat 15 rules as a review threshold rather than a hard ceiling"
+);
+
+requireIncludes(
+  ".ai-rules/90-schema-generation-spec.md",
+  "DO NOT split a cohesive rule file solely because it exceeds the default review threshold",
+  "rule-budget-policy",
+  "schema generation must not force count-only horizontal splits"
+);
+
+requireIncludes(
+  ".ai-rules/90-schema-generation-spec.md",
+  'rule_budget: "cohesion-retained"',
+  "rule-budget-policy",
+  "retained cohesive domains above the threshold must expose an auditable rationale marker"
+);
+
+requireNotIncludes(
+  ".ai-rules/90-schema-generation-spec.md",
+  "DO NOT exceed the default 15-rule budget",
+  "rule-budget-policy",
+  "the superseded hard normal-domain ceiling must not return"
+);
+
+requireNotIncludes(
+  ".ai-rules/91-template-domain.md",
+  "DO NOT exceed the rule ceiling",
+  "rule-budget-policy",
+  "the active domain template must not reintroduce a hard rule ceiling"
+);
+
+requireIncludes(
+  ".ai-rules/91-template-domain.md",
+  "DO NOT split, delete, or combine rules solely to force the generated file below the default 15-rule review threshold",
+  "rule-budget-policy",
+  "the active domain template must preserve the adaptive threshold policy"
+);
+
+requireIncludes(
+  ".ai-project-rules/00-system-index.md",
+  "THEN you MUST load and comply with: `.ai-project-rules/14A-module-cohesion-and-capability-extraction.md`.",
+  "rule-routing",
+  "the module cohesion shard must be routed from the project rules index"
+);
+
+requireNotIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "<routing-logic>",
+  "rule-routing",
+  "rule 14A must stay a terminal leaf without its own router"
+);
+
+requireNotIncludes(
+  ".ai-project-rules/14-architecture-direction.md",
+  "DO NOT introduce microservices before the modular monolith boundaries are proven insufficient",
+  "rule-routing",
+  "the modular-monolith topology rule must live only in rule 14A after the horizontal split"
+);
+
+requireNotIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "DO NOT hand-maintain duplicate shared enums",
+  "rule-routing",
+  "shared type and payload truth must stay in architecture direction rather than module decomposition"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "Build a modular monolith first:",
+  "module-cohesion",
+  "the modular-monolith topology rule must survive the horizontal split"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "Use DDD-lite bounded contexts:",
+  "module-cohesion",
+  "the bounded-context ownership rule must survive the horizontal split"
+);
+
+requireIncludes(
+  ".ai-project-rules/14-architecture-direction.md",
+  "DO NOT hand-maintain duplicate shared enums",
+  "architecture-direction",
+  "the shared-truth ownership rule must remain beside its architecture trigger gate"
+);
+
+requireIncludes(
+  ".ai-project-rules/14-architecture-direction.md",
+  'rule_budget: "cohesion-retained"',
+  "architecture-direction",
+  "the retained 16-rule architecture shard must expose its cohesion review decision"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "DO NOT introduce microservices before the modular monolith boundaries are proven insufficient",
+  "module-cohesion",
+  "the premature-microservices ban must survive the horizontal split"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "DO NOT split a Nest module solely because a review called it large or counted its lines",
+  "module-cohesion",
+  "module cohesion must not regress into a line-count split rule"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "Keep the module's public entrypoint stable across an extraction",
+  "module-cohesion",
+  "capability extraction must preserve the stable facade contract"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "in exactly one internal owner per bounded context",
+  "module-cohesion",
+  "shared canonicalization, transaction ordering, and lock order must keep one internal owner"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "do not split automatically",
+  "module-cohesion",
+  "ownership differences must trigger evidence collection rather than a forced split"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "eligibility alone does not choose the outcome",
+  "module-cohesion",
+  "extraction eligibility must remain necessary rather than automatically sufficient"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "IF ownership evidence is complete but extraction eligibility or a material cohesion benefit is not demonstrated:",
+  "module-cohesion",
+  "complete evidence must still permit an honest keep-cohesive decision"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "`keep_cohesive`, `extract_capability`, or `defer_pending_evidence`",
+  "module-cohesion",
+  "module-cohesion reviews must expose all three legitimate outcomes"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "IF reviewing a completed extraction:",
+  "module-cohesion",
+  "module extraction must have a soft post-change audit path"
+);
+
+requireIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  "IF reviewing a decision that kept the existing boundary:",
+  "module-cohesion",
+  "post-change review must support successful keep-cohesive and deferred outcomes"
+);
+
+for (const [branch, message] of [
+  [
+    "IF two or more of actor/permission, transaction root, lifecycle authority, external dependency set, or change cadence differ inside one module:\nTHEN mark the smaller side as an extraction candidate and document the differing ownership evidence; do not split automatically.",
+    "ownership differences must create a candidate without forcing extraction"
+  ],
+  [
+    "IF an extraction candidate is independently nameable, owns real policy, errors, and tests, and can preserve one owner for shared persistence and lock-order invariants:\nTHEN mark it eligible for extraction; eligibility alone does not choose the outcome.",
+    "eligibility must remain necessary rather than automatically sufficient"
+  ],
+  [
+    "IF an eligible extraction candidate materially improves cohesion, navigation, test isolation, or change isolation without increasing coordination cost:\nTHEN choose `extract_capability` and extract it behind the existing public entrypoint.",
+    "extraction must require a demonstrated material cohesion benefit"
+  ],
+  [
+    "IF ownership evidence is complete but extraction eligibility or a material cohesion benefit is not demonstrated:\nTHEN choose `keep_cohesive` and leave the current boundary unchanged.",
+    "complete evidence must support an honest keep-cohesive outcome"
+  ],
+  [
+    "IF ownership evidence is incomplete:\nTHEN choose `defer_pending_evidence` and leave the current boundary unchanged until the missing evidence is available.",
+    "incomplete evidence must defer rather than force a boundary change"
+  ],
+  [
+    "IF reviewing a completed extraction:\nTHEN verify the stable facade, one internal invariant owner, absence of pass-through capabilities, behavior tests, and moved regression guards.",
+    "completed extractions must receive the full post-change audit"
+  ],
+  [
+    "IF reviewing a decision that kept the existing boundary:\nTHEN verify the `keep_cohesive` or `defer_pending_evidence` rationale and treat `keep_cohesive` as a valid successful audit result.",
+    "kept boundaries must have their own successful post-change audit"
+  ]
+] as const) {
+  requireIncludes(
+    ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+    branch,
+    "module-cohesion",
+    message
+  );
+}
+
+requireIncludes(
+  ".ai-project-rules/00-system-index.md",
+  "shared enum/event/payload ownership, source-of-truth placement",
+  "rule-routing",
+  "shared contract ownership must route directly to architecture direction"
+);
+
+requireIncludes(
+  ".ai-project-rules/00-system-index.md",
+  "IF the task touches architecture style, layering, Clean Architecture dependency direction, Hexagonal ports/adapters, composition roots, agent authority, shared enum/event/payload ownership, source-of-truth placement, or where logic belongs:\nTHEN you MUST load and comply with: `.ai-project-rules/14-architecture-direction.md`.",
+  "rule-routing",
+  "the complete shared-contract ownership condition must route to rule 14"
+);
+
+requireNotIncludes(
+  ".ai-project-rules/02-stack-and-boundaries.md",
+  "IF a shared request, response, event, or job payload type is created:",
+  "rule-routing",
+  "stack guidance must not duplicate architecture-direction source-of-truth decisions"
+);
+
+requireNotIncludes(
+  ".ai-project-rules/02-stack-and-boundaries.md",
+  "Did I run the source-of-truth check for shared non-trivial types?",
+  "rule-routing",
+  "stack guidance must not reclaim source-of-truth verification ownership"
+);
+
+requireIncludes(
+  "AGENTS.md",
+  "Generic TypeScript rule authoring is owned upstream by",
+  "rule-authority",
+  "the thin project adapter must distinguish upstream authoring authority from the active consumer copy"
+);
+
+requireIncludes(
+  "AGENTS.md",
+  "`.ai-rules/` is the active canonical TypeScript consumer copy for this project.",
+  "rule-authority",
+  "the thin adapter must identify the project schema as the active consumer copy"
+);
+
+requireIncludes(
+  "AGENTS.md",
+  "update that authority first and resync `.ai-rules/`",
+  "rule-authority",
+  "generic TypeScript policy changes must originate upstream before project resync"
+);
+
+requireIncludes(
+  ".ai-planning-rules/00-system-index.md",
+  "Treat `C:\\Scheme\\pragmatic_typescript_v3_ai_rules_bundle_complete\\pragmatic_typescript_v3_ai_rules_bundle_flat\\.ai-rules\\` as generic TypeScript authoring authority and the project `.ai-rules/` folder as its active consumer copy.",
+  "rule-authority",
+  "the routed planning policy must preserve upstream authoring authority"
+);
+
+// These are explicit reviewed decisions, not a dynamic rule-count gate.
+for (const [path, budget] of [
+  [".ai-rules/02E-functional-library-selection.md", "cohesion-retained"],
+  [".ai-fastify-rules/06-production-recommendations.md", "cohesion-retained"],
+  [".ai-nest-rules/03-queues-workers-lifecycle.md", "cohesion-retained"],
+  [".ai-nest-rules/04-guards-auth-tenancy.md", "guard-exception"],
+  [".ai-project-rules/04-deployment-agent.md", "cohesion-retained"],
+  [".ai-project-rules/06-backend-workers-mastra.md", "cohesion-retained"],
+  [".ai-project-rules/07-tracking-privacy-observability.md", "cohesion-retained"],
+  [".ai-project-rules/10-seo-verification-gsc.md", "cohesion-retained"],
+  [".ai-project-rules/12-local-seo-page-quality-gate.md", "guard-exception"],
+  [".ai-project-rules/13-seo-opportunity-planning.md", "cohesion-retained"],
+  [".ai-stack-rules/02-react-render-hooks.md", "guard-exception"],
+  [".ai-stack-rules/03-tanstack-query-router.md", "guard-exception"],
+  [".ai-stack-rules/09-tanstack-ecosystem-schema.md", "cohesion-retained"]
+] as const) {
+  requireIncludes(
+    path,
+    `rule_budget: "${budget}"`,
+    "reviewed-rule-budget",
+    `${path} must retain its explicit cohesion-review classification`
+  );
+}
+
+for (const [path, rationale] of [
+  [".ai-rules/02E-functional-library-selection.md", "the alternatives must be compared in one adoption decision"],
+  [".ai-fastify-rules/06-production-recommendations.md", "form one HTTP-exposure review"],
+  [".ai-nest-rules/03-queues-workers-lifecycle.md", "are one end-to-end queue lifecycle"],
+  [".ai-project-rules/04-deployment-agent.md", "are one release state machine"],
+  [".ai-project-rules/06-backend-workers-mastra.md", "form one authority handoff"],
+  [".ai-project-rules/07-tracking-privacy-observability.md", "are one event-data lifecycle"],
+  [".ai-project-rules/10-seo-verification-gsc.md", "jointly decide indexing, monitoring, and report eligibility"],
+  [".ai-project-rules/12-local-seo-page-quality-gate.md", "This 38-rule file is an intentional guard exception"],
+  [".ai-project-rules/13-seo-opportunity-planning.md", "form one proof-escalation decision"],
+  [
+    ".ai-project-rules/14-architecture-direction.md",
+    "shared type and payload truth must stay beside its source-of-truth trigger gate"
+  ],
+  [".ai-stack-rules/09-tanstack-ecosystem-schema.md", "form one ecosystem adoption decision"]
+] as const) {
+  requireIncludes(
+    path,
+    rationale,
+    "reviewed-rule-budget",
+    `${path} must retain its file-specific cohesion-review rationale`
+  );
+}
+
 requireIncludes(
   "docs/architecture/decisions/0010-http-verification-and-release-status-projection.md",
   'Do not project `releasePlans.status = "live"` from `deployments.status = "provider_succeeded"`',

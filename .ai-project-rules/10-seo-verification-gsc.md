@@ -3,6 +3,7 @@ description: "GSC OAuth/API sync, indexing, keyword monitoring, post-deploy veri
 globs: "**/*gsc*.{md,json,mmd,ts,tsx}, **/*search-console*.{md,json,mmd,ts,tsx}, **/*performance*.{md,json,mmd,ts,tsx}, **/*verification*.{md,json,mmd,ts,tsx}, **/*keyword*.{md,json,mmd,ts,tsx}, **/*report*.{md,json,mmd,ts,tsx}, **/*qa*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -79,6 +80,8 @@ THEN treat that as a candidate for an opportunity brief, not automatic page crea
 ## 5. Domain Anchoring & Examples
 
 <context>
+This file retains 21 atomic rules because GSC evidence strength and deterministic post-deploy SEO verification jointly decide indexing, monitoring, and report eligibility. Splitting them would make weak-signal containment depend on cross-shard reconstruction.
+
 GSC is useful for diagnostics. Customer-facing proof should translate data into clear ranking tiers and decisions.
 
 <example>

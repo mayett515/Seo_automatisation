@@ -17,7 +17,8 @@ This project uses a portable hidden-folder rules system. Codex should treat this
 
 ## Frozen References
 
-- `.ai-rules/` is the canonical TypeScript schema for this project.
+- `.ai-rules/` is the active canonical TypeScript consumer copy for this project.
+- Generic TypeScript rule authoring is owned upstream by `C:\Scheme\pragmatic_typescript_v3_ai_rules_bundle_complete\pragmatic_typescript_v3_ai_rules_bundle_flat\.ai-rules\`; update that authority first and resync `.ai-rules/`. Project-specific behavior stays in editable project shards.
 - `.ai-schema-factory/` is frozen reference material for schema generation.
 - `.ai-stealer-catalog/` is the stable seed catalog for repo-catalog research.
 - `.ai-stealer-findings/` is the editable place for new discovered sources and extracted patterns.

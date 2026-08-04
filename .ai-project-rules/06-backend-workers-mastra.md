@@ -3,6 +3,7 @@ description: "NestJS, worker, queue, and Mastra workflow rules for backend imple
 globs: "src/**/*.{ts,tsx}, apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, **/*backend*.md, **/*worker*.md, **/*agent*.md"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -79,6 +80,8 @@ THEN recovery must read provider state or require manual reconciliation before r
 ## 4. Domain Anchoring & Examples
 
 <context>
+This file retains 19 atomic rules because HTTP admission, durable queue truth, deterministic workers, and bounded Mastra reasoning form one authority handoff. Splitting those stages could let one shard widen agent or transport authority without the others.
+
 Worker topology includes queues for pre-audit, website import, local analysis, page generation, SEO QA, deploy, GSC sync, analytics, report, and notifications.
 
 Agent constraint baseline:

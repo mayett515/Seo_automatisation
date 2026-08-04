@@ -2,7 +2,7 @@
 
 ```yaml
 title: "Universal System Architecture Planner & Interrogator"
-version: "1.2.0"
+version: "1.3.0"
 target_stack: "[INSERT CURRENT TECH STACK HERE - e.g., Fastify + TS + Prisma, Elixir/Phoenix, Flask + React]"
 project_root_intent: "Monorepo / Polyglot / Single-Service"
 ```
@@ -38,4 +38,4 @@ Upon receiving explicit approval from the user, apply the cascade routing rules 
 
 Only when the user signals to proceed after Phase 3, compile the final markdown configurations for every file mapped in the AI Rules directory tree.
 
-Every generated file MUST adhere to the default 15-rule budget or explicitly declare a router/guard/guardrail/anti-regression exception, U-shaped attention structure, strict atomic XML logic gates, and pre-flight self-verification checklists detailed in your layout specifications (`SPEC-01-SCHEMA-GENERATION.md`). Provide the raw markdown code blocks cleanly without conversational filler.
+Every generated file MUST treat 15 atomic directives and constraints as the default review threshold, perform an explicit cohesion and attention review above it, preserve U-shaped attention structure and strict atomic XML logic gates, and end with the pre-flight self-verification checklist defined by `SPEC-01-SCHEMA-GENERATION.md`. Split only when the approved siblings own independently coherent, directly routable concerns. A cohesive normal-domain file retained above the threshold must declare `rule_budget: "cohesion-retained"` and record its rationale in `<context>`. Provide the raw markdown code blocks cleanly without conversational filler.

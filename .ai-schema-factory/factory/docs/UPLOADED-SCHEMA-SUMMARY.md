@@ -13,9 +13,11 @@ The uploaded schema pack contains these important ideas:
 - Flat routing is preferred over deeply nested active rule folders.
 - `00-system-index.md` acts as master router.
 - Level 2 terminal leaves must not route downward.
-- Normal domain files should not contain more than 15 atomic behavioral rules inside constraint blocks.
-- Split horizontally when a normal domain becomes too large.
-- Router, guard, guardrail, and anti-regression shards may exceed the default only when they explicitly declare `rule_budget: "guard-exception"`.
+- Fifteen atomic behavioral rules is the default review threshold for normal domain files.
+- Review duplication, cohesion, routing precision, and attention density above the threshold.
+- Split horizontally only when each sibling owns an independently coherent and directly routable concern.
+- Keep tightly related rules together when splitting would fragment context, declare `rule_budget: "cohesion-retained"`, and record the rationale.
+- Router, guard, guardrail, and anti-regression shards that stay intentionally larger because splitting would weaken enforcement should declare `rule_budget: "guard-exception"`.
 
 ## Planner mode
 

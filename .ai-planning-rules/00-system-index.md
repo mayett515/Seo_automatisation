@@ -2,7 +2,7 @@
 description: "Planning, schema factory, context sharding, and Markdown generation router"
 globs: "**/*.{md,json,mmd,toml,yml,yaml}"
 alwaysApply: false
-version: "1.1.0"
+version: "1.2.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
@@ -30,14 +30,16 @@ THEN check `.ai-schema-factory/schema-files/CONTEXT SHARDING/ADVANCED-CONTEXT-SH
 - Use planner mode before generating multi-file rule systems.
 - Keep hidden rule folders flat and purpose-specific.
 - Keep frozen references separate from editable project rules.
+- Treat `C:\Scheme\pragmatic_typescript_v3_ai_rules_bundle_complete\pragmatic_typescript_v3_ai_rules_bundle_flat\.ai-rules\` as generic TypeScript authoring authority and the project `.ai-rules/` folder as its active consumer copy.
 - Use YAML for metadata, XML for behavior gates, and Markdown for human structure.
 - Require explicit approval before compiling large rule-file blueprints.
+- Mark a cohesive normal-domain file retained above the 15-rule review threshold with `rule_budget: "cohesion-retained"` and record its rationale in `<context>`.
 </positive-directives>
 
 <absolute-constraints>
 - DO NOT generate a hidden-folder rule system before a blueprint is approved.
 - DO NOT create deep nested active rule folders.
-- DO NOT exceed the default 15-rule budget unless a router, guard, guardrail, or anti-regression shard explicitly declares `rule_budget: "guard-exception"`.
+- DO NOT split, delete, or combine rules solely to force a file below the default 15-rule review threshold; review cohesion and routing first.
 - DO NOT edit frozen reference folders for project-specific behavior.
 - DO NOT duplicate the TypeScript schema into other shards.
 </absolute-constraints>

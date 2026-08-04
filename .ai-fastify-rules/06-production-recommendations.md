@@ -3,6 +3,7 @@ description: "Fastify production recommendation rules for reverse proxy, TLS ter
 globs: "apps/api/src/**/*.{ts,tsx}, docs/**/*.md, architectural_and_coding_decisions/**/*.md, **/*deployment*.md"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -13,6 +14,10 @@ priority_schema: "critical > strong > guideline"
 ---
 
 # Production Recommendations
+
+<context>
+This file retains 16 atomic rules because proxy trust, TLS ownership, readiness, rate limits, payload limits, and production boot policy form one HTTP-exposure review. Splitting them would make deployment readiness depend on partially loaded guidance.
+</context>
 
 <positive-directives>
 - Assume production HTTP traffic is behind a reverse proxy/load balancer for TLS termination, redirects, compression, and multi-domain concerns.

@@ -3,6 +3,7 @@ description: "BullMQ queue/worker rules for real enqueue boundaries, retries, id
 globs: "apps/api/src/**/*.{ts,tsx}, apps/worker/src/**/*.{ts,tsx}, packages/contracts/src/**/*.{ts,tsx}, **/*queue*.md, **/*worker*.md"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -14,6 +15,10 @@ priority_schema: "critical > strong > guideline"
 ---
 
 # Queues, Workers, And Lifecycle
+
+<context>
+This file retains 18 atomic rules because producer honesty, durable job identity, retries, idempotency, Redis transport, worker errors, and shutdown are one end-to-end queue lifecycle. Splitting them would fragment the meaning of queued and completed work.
+</context>
 
 <positive-directives>
 - Queue producers must call the real BullMQ queue before returning a queued job contract.

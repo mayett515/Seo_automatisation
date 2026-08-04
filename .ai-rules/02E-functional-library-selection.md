@@ -2,7 +2,8 @@
 description: "Optional rules for ts-pattern, neverthrow, Effect, and functional helper libraries"
 globs: "**/*.{ts,tsx,js,jsx,mts,cts}"
 alwaysApply: false
-version: "3.4.0-optional-audited"
+version: "3.5.0-optional-audited"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: ["optional: ts-pattern", "optional: neverthrow", "optional: effect", "optional: remeda"]
@@ -44,6 +45,8 @@ Use this file when considering ts-pattern, neverthrow, Effect, Remeda, fp-ts-lik
 ## Library Placement
 
 <context>
+This file retains 16 atomic rules because the alternatives must be compared in one adoption decision. Splitting by library would duplicate the same restraint criteria and obscure when plain TypeScript is the better choice.
+
 ```txt
 ts-pattern  -> Functional Core / complex decision matching
 neverthrow  -> Functional Core + Shell boundary for repeated expected failures

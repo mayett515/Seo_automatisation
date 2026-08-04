@@ -86,7 +86,7 @@ APPROVED
 - DO NOT skip directory mapping.
 - DO NOT forget Codex-native integration.
 - DO NOT collapse unrelated cognitive modes into one shard.
-- DO NOT create huge normal domain files; split horizontally or use an explicit `rule_budget: "guard-exception"` only for router, guard, guardrail, or anti-regression shards.
+- DO NOT split, delete, or combine rules solely to force a normal domain below the default 15-rule review threshold; review cohesion, routing precision, and attention density first.
 </absolute-constraints>
 
 </skill_contract>

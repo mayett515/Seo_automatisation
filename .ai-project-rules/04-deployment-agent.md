@@ -3,6 +3,7 @@ description: "Deployment Agent release-manager rules for Netlify, sitemap, verif
 globs: "**/*release*.{md,json,mmd,ts,tsx}, **/*deploy*.{md,json,mmd,ts,tsx}, **/*netlify*.{md,json,mmd,ts,tsx}, **/*sitemap*.{md,json,mmd,ts,tsx}, **/*rollback*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -80,6 +81,8 @@ THEN return an explicit `dry_run`, `not_configured`, `pending`, or `blocked` sta
 ## 4. Domain Anchoring & Examples
 
 <context>
+This file retains 21 atomic rules because release planning, durable approval, deploy execution, post-deploy verification, and rollback are one release state machine. Splitting them would hide transition and side-effect-honesty invariants between stages.
+
 Required preflight scope: approval, notes, components, assets, SEO metadata, canonical/robots, schema, route conflicts, DNS, sitemap readiness, tracking readiness, staging noindex.
 
 Project-scoped release API shape:

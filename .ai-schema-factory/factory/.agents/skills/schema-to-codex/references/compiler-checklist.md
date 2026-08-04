@@ -16,6 +16,6 @@ After generating files:
 - [ ] `AGENTS.md` is concise.
 - [ ] Every skill has good trigger phrases.
 - [ ] `.ai-rules` files use YAML/XML/Markdown.
-- [ ] No constraint block exceeds 15 rules.
+- [ ] Every normal-domain file above the default 15-rule threshold declares `rule_budget: "cohesion-retained"` and has a cohesion and attention rationale.
 - [ ] Terminal leaves do not route downward.
 - [ ] Test prompts are included.

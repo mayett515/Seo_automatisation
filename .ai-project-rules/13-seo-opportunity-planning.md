@@ -3,6 +3,7 @@ description: "Opportunity discovery, automated GSC opportunity mining, keyword t
 globs: "**/*opportun*.{md,json,mmd,ts,tsx}, **/*growth*.{md,json,mmd,ts,tsx}, **/*roadmap*.{md,json,mmd,ts,tsx}, **/*keyword*.{md,json,mmd,ts,tsx}, **/*market*.{md,json,mmd,ts,tsx}, **/*backlog*.{md,json,mmd,ts,tsx}, **/*potential*.{md,json,mmd,ts,tsx}, **/*performance*.{md,json,mmd,ts,tsx}, **/*gbp*.{md,json,mmd,ts,tsx}, **/*review*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
 version: "1.0.0"
+rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -100,6 +101,8 @@ THEN prioritize it when it has business value, SERP opportunity, and enough proo
 </positive-directives>
 
 <context>
+This file retains 37 atomic rules because source roles, opportunity tiers, rollout sequencing, market validation, GBP support signals, and the page-proposal gate form one proof-escalation decision. Splitting them could let weak signals bypass business-fit and quality-gate checks.
+
 Reusable opportunity examples:
 
 ```text

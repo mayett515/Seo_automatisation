@@ -33,7 +33,7 @@ Inspect:
 1. Root router quality
 2. Skill trigger clarity
 3. Format matrix compliance
-4. Default 15-rule budget and explicit exception markers
+4. Default 15-rule review threshold, `cohesion-retained` rationale, and explicit guard-exception markers
 5. terminal leaf compliance
 6. duplicate authority
 7. context shard boundaries
