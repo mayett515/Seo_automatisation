@@ -303,7 +303,7 @@ void describe(
 
       await assert.rejects(
         () => db.update(pageVersions).set({ rowVersion: 9 }).where(eq(pageVersions.id, fixture.pageVersionId)),
-        /Page version row_version is database-managed/u
+        postgresErrorMatches(/Page version row_version is database-managed/u)
       );
 
       const [unchanged] = await db.select().from(pageVersions).where(eq(pageVersions.id, fixture.pageVersionId));
@@ -1846,6 +1846,22 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
     ping: () => Promise.resolve("up"),
     onModuleDestroy: () => Promise.resolve()
   } as unknown as DatabaseService;
+}
+
+function postgresErrorMatches(pattern: RegExp): (error: unknown) => boolean {
+  return (error) => {
+    const messages: string[] = [];
+    let current: unknown = error;
+    while (current && typeof current === "object") {
+      const record = current as { message?: unknown; cause?: unknown };
+      if (typeof record.message === "string") {
+        messages.push(record.message);
+      }
+      current = record.cause;
+    }
+    assert.match(messages.join("\n"), pattern);
+    return true;
+  };
 }
 
 function setRollbackQueue(service: QueueProducerService, queue: FakeQueue): void {
