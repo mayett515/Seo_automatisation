@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 type GuardResult = {
   category: string;
@@ -59,17 +59,36 @@ function requireLatestMigrationDefinitionIncludes(
 ): void {
   const migrationDirectory = "packages/db/migrations";
   const definitionMarker = `CREATE OR REPLACE FUNCTION ${functionName}(`;
-  const latestDefinitionPath = readdirSync(migrationDirectory)
-    .filter((fileName) => /^\d+.*\.sql$/u.test(fileName))
-    .sort()
-    .map((fileName) => `${migrationDirectory}/${fileName}`)
-    .filter((path) => read(path).includes(definitionMarker))
-    .at(-1);
+  const journal = JSON.parse(read(`${migrationDirectory}/meta/_journal.json`)) as {
+    entries: Array<{ idx: number; tag: string }>;
+  };
+  let latestDefinition: { path: string; source: string } | undefined;
 
-  if (!latestDefinitionPath || !read(latestDefinitionPath).includes(text)) {
+  for (const entry of [...journal.entries].sort((left, right) => left.idx - right.idx)) {
+    const path = `${migrationDirectory}/${entry.tag}.sql`;
+    const migration = read(path);
+    let definitionStart = migration.indexOf(definitionMarker);
+    while (definitionStart >= 0) {
+      const afterMarker = migration.slice(definitionStart);
+      const delimiterMatch = /\bAS\s+(\$[A-Za-z0-9_]*\$)/u.exec(afterMarker);
+      if (!delimiterMatch) break;
+      const delimiter = delimiterMatch[1];
+      if (!delimiter) break;
+      const bodyStart = definitionStart + delimiterMatch.index + delimiterMatch[0].length;
+      const bodyEnd = migration.indexOf(delimiter, bodyStart);
+      if (bodyEnd < 0) break;
+      latestDefinition = {
+        path,
+        source: migration.slice(definitionStart, bodyEnd + delimiter.length)
+      };
+      definitionStart = migration.indexOf(definitionMarker, bodyEnd + delimiter.length);
+    }
+  }
+
+  if (!latestDefinition || !latestDefinition.source.includes(text)) {
     failures.push({
       category,
-      message: `${latestDefinitionPath ?? migrationDirectory}: ${message}`
+      message: `${latestDefinition?.path ?? migrationDirectory}: ${message}`
     });
   }
 }
@@ -86,6 +105,13 @@ requireIncludes(
   'rule_budget: "guard-exception"',
   "rule-routing",
   "rule 15 must declare its intentional guard-exception rule budget"
+);
+
+requireIncludes(
+  "tools/check-text-health.ts",
+  "assertRuleDependencyGraphAcyclic();",
+  "rule-system-cohesion",
+  "local hidden-rule dependencies must resolve and remain acyclic"
 );
 
 requireIncludes(
@@ -191,7 +217,7 @@ requireIncludes(
   ".ai-project-rules/14-architecture-direction.md",
   'rule_budget: "cohesion-retained"',
   "architecture-direction",
-  "the retained 16-rule architecture shard must expose its cohesion review decision"
+  "the retained architecture shard must expose its explicit cohesion review decision"
 );
 
 requireIncludes(
@@ -803,6 +829,996 @@ requireIncludes(
   "fails closed for reasoning tasks without a named policy profile",
   "agent-constraint-policy",
   "reasoning policy tests must prove unprofiled tasks fail closed"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0022-agentic-runtime-and-evidence-ledger.md",
+  "Status: Accepted",
+  "agentic-runtime-evidence-ledger",
+  "ADR 0022 must remain an accepted architecture boundary before live Mastra tools ship"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0022-agentic-runtime-and-evidence-ledger.md",
+  "Keep Three Truth Layers Separate",
+  "agentic-runtime-evidence-ledger",
+  "SEO source, agent execution, and product result truth must remain separate"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0022-agentic-runtime-and-evidence-ledger.md",
+  "Mastra Storage And Observability Are Operational Data",
+  "agentic-runtime-evidence-ledger",
+  "Mastra runtime storage and telemetry must not become product authority"
+);
+
+requireIncludes(
+  ".ai-project-rules/15-architecture-regression-guards.md",
+  "Only a PostgreSQL recovery claimant may ask Mastra to resume or restart a product workflow run.",
+  "agentic-runtime-evidence-ledger",
+  "product recovery must remain PostgreSQL-owned when Mastra restart support is added"
+);
+
+requireIncludes(
+  "docs/architecture/agent-first-mvp-roadmap.md",
+  "Status: ADR 0022 Slices 1-7 implemented; credentialed provider calibration and optional redacted telemetry remain operational follow-ups.",
+  "agentic-runtime-evidence-ledger",
+  "the roadmap must distinguish the shipped Opportunity Research vertical from operational follow-ups"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_agent_run_step_write",
+  "Agent run step retry must advance to the current execution epoch",
+  "agentic-runtime-evidence-ledger",
+  "the latest agent-step trigger must keep lifecycle, tenancy, and execution ownership database-enforced"
+);
+
+requireIncludes(
+  "packages/db/src/agent-ledger.ts",
+  "await lockActiveWorkflowRun(tx, input.projectId, input.runId, input.expectedExecutionEpoch);",
+  "agentic-runtime-evidence-ledger",
+  "ledger child writes must lock the durable parent run and verify its execution epoch"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "require_agent_workflow_lifecycle_event",
+  "Workflow execution takeover must resolve prior-epoch running steps",
+  "agentic-runtime-evidence-ledger",
+  "execution takeover must not leave a prior owner represented as running"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-execution.ts",
+  "Recovered delivery no longer owns the current recovery generation.",
+  "opportunity-research-recovery",
+  "recovered deliveries must prove their exact PostgreSQL recovery generation"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-execution.ts",
+  'audit.type !== "opportunity_research"',
+  "opportunity-research-recovery",
+  "every workflow delivery must prove its purpose-named durable queue audit"
+);
+
+requireIncludes(
+  "packages/contracts/src/opportunity-research.ts",
+  "OpportunityResearchEnqueueDataSchema.extend({ jobRunId: UuidSchema })",
+  "opportunity-research-recovery",
+  "worker-deliverable Opportunity Research data must carry the queue producer's durable audit id"
+);
+
+requireIncludes(
+  "packages/contracts/src/opportunity-research.test.ts",
+  "separates pre-audit enqueue data from worker-deliverable job identity",
+  "opportunity-research-recovery",
+  "contract coverage must reject transport jobs whose durable audit id was never injected"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-execution.ts",
+  "Opportunity Research requires the exact canonical workflow step set.",
+  "agentic-runtime-evidence-ledger",
+  "Mastra success cannot become product truth without the exact PostgreSQL workflow ledger"
+);
+
+requireIncludes(
+  "packages/contracts/src/opportunity-research.ts",
+  'toolKey: "public_web_search_follow_up"',
+  "agentic-runtime-evidence-ledger",
+  "the canonical Opportunity Research checkpoint set must pin its exact agent and tool identities"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "require_agent_workflow_lifecycle_event",
+  "step.\"agent_role\" = 'ResearchAgent'",
+  "agentic-runtime-evidence-ledger",
+  "the database success gate must reject canonical step keys executed by the wrong actor or tool"
+);
+
+requireOrderedIncludes(
+  "packages/db/src/agent-ledger.ts",
+  "for (const evidence of evidenceSources) {\n      await lockAgentEvidenceSource(tx, input.projectId, input.runId, evidence);\n    }",
+  "const run = await lockActiveWorkflowRun(tx, input.projectId, input.runId, input.expectedExecutionEpoch);",
+  "agentic-runtime-evidence-ledger",
+  "step completion must lock selected evidence sources before the parent run"
+);
+
+requireIncludes(
+  "packages/db/migrations/0050_loving_vapor.sql",
+  "agent_run_evidence_00_source_lock_order",
+  "agentic-runtime-evidence-ledger",
+  "direct evidence inserts must enter the source-before-parent database lock order"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "lock_agent_run_evidence_source_before_parent",
+  "PERFORM assert_agent_evidence_source_current(",
+  "agentic-runtime-evidence-ledger",
+  "the latest evidence source pre-lock must delegate to the installed current-source authority"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "assert_agent_evidence_source_current",
+  "FOR SHARE OF version, document",
+  "agentic-runtime-evidence-ledger",
+  "the installed source authority must lock joined mutable source identities"
+);
+
+requireOrderedIncludes(
+  "packages/db/src/agent-ledger.ts",
+  "await lockAgentEvidenceSource(tx, input.projectId, input.runId, input.evidence);",
+  "await lockActiveWorkflowRun(tx, input.projectId, input.runId, input.expectedExecutionEpoch);",
+  "agentic-runtime-evidence-ledger",
+  "standalone evidence binding must lock the source before the parent run"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "locks an evidence source before the workflow run to prevent the recovery lock cycle",
+  "agentic-runtime-evidence-ledger",
+  "real PostgreSQL coverage must prove the source-before-run evidence lock order"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-execution.ts",
+  "researchPlan.executionEpoch > followUpCapture.executionEpoch",
+  "agentic-runtime-evidence-ledger",
+  "durable workflow checkpoints must preserve canonical dependency order across recovery epochs"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-material.ts",
+  "evidencePacketSha256,\n    initialQueries",
+  "opportunity-research-policy",
+  "material identity must bind the exact server-owned packet and initial discovery queries"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "require_agent_workflow_lifecycle_event",
+  "Succeeded Opportunity Research run requires the exact completed workflow ledger",
+  "agentic-runtime-evidence-ledger",
+  "the latest lifecycle trigger must reject product success over a partial workflow ledger"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_agent_run_step_evidence_link",
+  "durable evidence no newer than the current execution epoch",
+  "agentic-runtime-evidence-ledger",
+  "recovery may reuse immutable evidence checkpoints but cannot link future or stale-owner writes"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "require_research_opportunity_source_truth",
+  "Research opportunity must match exact succeeded strategy output truth",
+  "opportunity-research-policy",
+  "research opportunities must project exact strategy output rather than merely citing a real run id"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "require_research_opportunity_source_truth",
+  "Research opportunity citations must match strategy evidence ledger truth",
+  "opportunity-research-policy",
+  "research opportunity citations must resolve through the succeeded strategy ledger"
+);
+
+requireIncludes(
+  "packages/db/migrations/0050_loving_vapor.sql",
+  "opportunities_prevent_research_delete",
+  "opportunity-research-policy",
+  "research opportunity product truth must not be erasable through direct SQL"
+);
+
+requireIncludes(
+  "packages/db/migrations/0050_loving_vapor.sql",
+  "project_opportunity_research_states_require_consistency",
+  "agentic-runtime-evidence-ledger",
+  "research state and active workflow truth must remain a deferred database invariant"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  'executionEpoch: integer("execution_epoch").notNull().default(0)',
+  "agentic-runtime-evidence-ledger",
+  "workflow events and evidence must retain durable execution ownership fields"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "reuses immutable succeeded checkpoints across a recovery execution epoch",
+  "opportunity-research-recovery",
+  "integration coverage must prove recovery preserves valid completed workflow checkpoints"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "rejects same-project research opportunities absent from succeeded strategy output",
+  "opportunity-research-policy",
+  "integration coverage must reject fabricated product rows even when source ids are same-project"
+);
+
+requireIncludes(
+  "apps/api/src/modules/project-context.module.ts",
+  'sourceKind === "agent"',
+  "project-knowledge-authority",
+  "public API knowledge admission must keep agent-authored records in the worker-owned proposal path"
+);
+
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  'expectedStatus: z.literal("captured")',
+  "ranking-proof-authority",
+  "ranking proof review must remain expected-state and revision bound"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-material.ts",
+  "loadOpportunityResearchMaterial",
+  "opportunity-research-policy",
+  "research admission and execution must share one durable material resolver"
+);
+
+requireIncludes(
+  "packages/domain/src/opportunity-research.ts",
+  "prepareOpportunityPortfolio",
+  "opportunity-research-policy",
+  "project-wide and same-run dedupe must happen before deterministic portfolio allocation"
+);
+
+requireIncludes(
+  "packages/domain/src/opportunity-research.test.ts",
+  "removes project-wide and same-run duplicates before allocating the 2/4/2 portfolio",
+  "opportunity-research-policy",
+  "portfolio tests must prove duplicate removal happens before lane allocation"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0022-agentic-runtime-and-evidence-ledger.md",
+  "The existing OpenCode Go adapter is removed only after equivalent direct-DeepSeek tests and a credentialed smoke pass succeed.",
+  "agentic-runtime-evidence-ledger",
+  "direct DeepSeek replacement must preserve parity and smoke evidence before removing the current adapter"
+);
+
+requireIncludes(
+  "docs/architecture/decisions/0022-agentic-runtime-and-evidence-ledger.md",
+  "A generic `runAnyWorkflow(name, payload)` port is forbidden.",
+  "agentic-runtime-evidence-ledger",
+  "the first Mastra runtime must stay behind a purpose-named product workflow port"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.ts",
+  "createOpportunityResearchWorkflowRuntime",
+  "opportunity-research-runtime",
+  "Mastra workflow storage composition must remain behind the purpose-named AI runtime factory"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.ts",
+  "schemaName: opportunityResearchMastraSchemaName",
+  "opportunity-research-runtime",
+  "Mastra workflow storage must remain isolated in its dedicated PostgreSQL schema"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  'assert.equal(opportunityResearchMastraSchemaName, "mastra_workflows")',
+  "opportunity-research-runtime",
+  "the dedicated Mastra workflow schema identity must remain test-pinned"
+);
+
+requireIncludes(
+  "apps/worker/src/main.ts",
+  "assertProductionWorkerEnv(env);",
+  "opportunity-research-runtime",
+  "production workers must fail closed before registering Opportunity Research work"
+);
+
+requireIncludes(
+  "packages/config/src/index.test.ts",
+  "fails closed across production worker transport, product truth, and Opportunity Research",
+  "opportunity-research-runtime",
+  "production composition tests must cover database, Redis, DeepSeek, Mastra storage, and public search"
+);
+
+requireOrderedIncludes(
+  "packages/ai/src/opportunity-research.ts",
+  ".then(researchPlanStep)",
+  ".then(followUpCaptureStep)",
+  "opportunity-research-runtime",
+  "model-derived follow-up plans must be persisted before a separate capture step consumes them"
+);
+
+requireOrderedIncludes(
+  "packages/ai/src/opportunity-research.ts",
+  ".then(followUpCaptureStep)",
+  ".then(strategyStep)",
+  "opportunity-research-runtime",
+  "the persisted follow-up capture must feed the final strategy step"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "replays the persisted follow-up plan instead of accepting a changed model plan after a crash",
+  "opportunity-research-runtime",
+  "workflow tests must prove crash recovery cannot replace the persisted follow-up plan"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "does not disclose provider response bodies through runtime errors",
+  "opportunity-research-disclosure",
+  "provider failures must stay redacted at the model boundary"
+);
+
+requireNotIncludes(
+  "apps/api/package.json",
+  '"drizzle-orm"',
+  "database-query-ownership",
+  "the API must consume the database package query DSL instead of installing a second ORM identity"
+);
+
+requireNotIncludes(
+  "apps/worker/package.json",
+  '"drizzle-orm"',
+  "database-query-ownership",
+  "the worker must consume the database package query DSL instead of installing a second ORM identity"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "require_agent_workflow_lifecycle_event",
+  "IF NEW.\"workflow_name\" = 'opportunity_research' THEN",
+  "agentic-runtime-evidence-ledger",
+  "the latest workflow-event trigger must verify Opportunity Research product identity"
+);
+
+requireIncludes(
+  "packages/contracts/src/opportunity-research.ts",
+  'evidencePolicy: z.literal("research_support_only")',
+  "public-web-search-policy",
+  "public discovery captures must remain research support rather than ranking proof"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "assert_agent_evidence_source_current",
+  "Agent evidence source is no longer current and admissible",
+  "agentic-runtime-evidence-ledger",
+  "the installed evidence authority must re-derive current source truth before evidence admission"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "rejects evidence binding when the selected source version changed",
+  "agentic-runtime-evidence-ledger",
+  "integration coverage must reject evidence after durable source-version drift"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "fences stale recovered deliveries by recovery generation and execution epoch",
+  "opportunity-research-recovery",
+  "integration coverage must fence stale recovery generations and execution owners"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "reclaims prior-epoch running steps when a genuine transport retry takes execution ownership",
+  "opportunity-research-recovery",
+  "transport retry coverage must prove prior-epoch running steps become durable terminal truth"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "rejects a stale provider response before capture persistence and binds current request identity",
+  "public-web-search-policy",
+  "public search responses must be fenced after the provider call and before evidence persistence"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  'workflowName: "opportunity_research"',
+  "opportunity-research-recovery",
+  "recovery integration coverage must include the Opportunity Research workflow lane"
+);
+
+requireIncludes(
+  "apps/worker/src/opportunity-research-scheduler.integration.ts",
+  "serializes competing scanners so only one run and one queue write win",
+  "opportunity-research-scheduler",
+  "competing Opportunity Research schedulers must be covered by a real database race"
+);
+
+requireIncludes(
+  "apps/web/src/screens/opportunity-research-panel.tsx",
+  "Research timeline",
+  "opportunity-research-operator-ui",
+  "the operator workflow must retain bounded research timeline visibility"
+);
+
+requireIncludes(
+  "apps/web/src/screens/opportunity-research-panel.tsx",
+  "<span>Research run</span>",
+  "opportunity-research-operator-ui",
+  "operators must be able to inspect bounded historical Opportunity Research runs"
+);
+
+requireIncludes(
+  "apps/web/e2e/opportunity-research.spec.ts",
+  "operates Opportunity Research from source truth without mobile overflow",
+  "opportunity-research-operator-ui",
+  "browser coverage must retain source-bound commands and mobile layout verification"
+);
+
+requireIncludes(
+  "apps/web/e2e/opportunity-research.spec.ts",
+  "await page.setViewportSize({ width: 768, height: 900 });",
+  "opportunity-research-operator-ui",
+  "browser coverage must retain tablet-width overflow verification"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunity-research.integration.ts",
+  "admits one revision-bound rerun and replays its idempotency key without duplicate transport",
+  "opportunity-research-api",
+  "API integration coverage must prove idempotent rerun admission before transport"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunity-research.integration.ts",
+  "terminalizes run and research-state truth when queue transport rejects admission",
+  "opportunity-research-api",
+  "API integration coverage must prove queue failure cannot leave active research truth"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunity-research.integration.ts",
+  "returns only the project-scoped bounded workflow timeline",
+  "opportunity-research-disclosure",
+  "API integration coverage must prove event payloads and provider failure messages stay private"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunity-research.integration.ts",
+  "projects persisted research candidates and their exact evidence citations into the Explorer",
+  "opportunity-research-disclosure",
+  "Explorer projection must remain citation-backed without exposing raw workflow evidence"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunities.module.ts",
+  "eq(opportunities.status, input.expectedStatus)",
+  "opportunity-research-decision-cas",
+  "operator decisions must remain expected-status bound at the SQL write boundary"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunities.module.ts",
+  "eq(opportunities.rowVersion, input.expectedRowVersion)",
+  "opportunity-research-decision-cas",
+  "operator decisions must remain expected-revision bound at the SQL write boundary"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/opportunity-research.test.ts",
+  "derives a stable run-scoped UUID from canonical candidate content",
+  "opportunity-research-policy",
+  "candidate identity must remain deterministic before same-run deduplication"
+);
+
+requireOrderedIncludes(
+  "packages/db/src/agent-ledger.ts",
+  "await lockAgentLedgerProject(tx, input.projectId);",
+  "for (const evidence of evidenceSources) {\n      await lockAgentEvidenceSource(tx, input.projectId, input.runId, evidence);\n    }",
+  "agentic-runtime-evidence-ledger",
+  "step completion must enter the project-before-source-before-run lock order"
+);
+
+requireOrderedIncludes(
+  "packages/db/migrations/0050_loving_vapor.sql",
+  'PERFORM "id" FROM "projects" WHERE "id" = NEW."project_id" FOR UPDATE;',
+  'CASE NEW."source_kind"::text',
+  "agentic-runtime-evidence-ledger",
+  "direct evidence inserts must lock the owning project before a selected source"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  'outputCanonicalText: text("output_canonical_text")',
+  "agentic-runtime-evidence-ledger",
+  "succeeded checkpoints must retain their exact canonical output bytes"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_agent_run_step_canonical_output",
+  "sha256(convert_to(NEW.\"output_canonical_text\", 'UTF8'))",
+  "agentic-runtime-evidence-ledger",
+  "the latest checkpoint trigger must verify SHA-256 over the stored canonical UTF-8 bytes"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "rejects checkpoint canonical-byte and digest corruption before workflow completion",
+  "agentic-runtime-evidence-ledger",
+  "real PostgreSQL coverage must reject canonical checkpoint byte and digest corruption"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  'executionRecoveryCount: integer("execution_recovery_count").default(0).notNull()',
+  "opportunity-research-recovery",
+  "workflow execution ownership must retain its exact recovery generation"
+);
+
+requireIncludes(
+  "packages/db/src/schema.ts",
+  'lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true })',
+  "opportunity-research-recovery",
+  "running Opportunity Research executions must retain durable heartbeat truth"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_agent_run_workflow_identity",
+  "Workflow heartbeat must monotonically renew the current running execution",
+  "opportunity-research-recovery",
+  "the latest workflow trigger must constrain heartbeat writes to the current owner"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "require_opportunity_research_execution_generation",
+  "executionRecoveryCount",
+  "opportunity-research-recovery",
+  "execution takeover must bind its durable event to the exact recovery generation"
+);
+
+requireIncludes(
+  "packages/config/src/index.ts",
+  "Opportunity Research heartbeat must run at least three times inside the stale-work window.",
+  "opportunity-research-recovery",
+  "configuration must leave multiple heartbeat opportunities inside the recovery window"
+);
+
+requireOrderedIncludes(
+  "apps/worker/src/handlers/opportunity-research.ts",
+  "return await withOpportunityResearchHeartbeat({",
+  "renewOpportunityResearchExecutionHeartbeat(dbHandle.db, {",
+  "opportunity-research-recovery",
+  "provider and persistence work must remain inside exact-owner heartbeat renewal"
+);
+
+requireRegex(
+  "apps/worker/src/work-recovery.ts",
+  /async function loadOpportunityResearchRecoveryCandidates[\s\S]*?lte\(opportunityResearchLivenessAt, staleBefore\)[\s\S]*?orderBy\(asc\(opportunityResearchLivenessAt\)\)/u,
+  "opportunity-research-recovery",
+  "Opportunity Research candidate loading must use heartbeat-aware liveness"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  "`${candidate.id}:recovery:${claimed.recoveryCount}`",
+  "opportunity-research-recovery",
+  "each recovery reservation must receive a distinct purpose-bound durable audit identity"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "does not recover a running Opportunity Research execution with a fresh heartbeat",
+  "opportunity-research-recovery",
+  "real PostgreSQL coverage must keep a fresh execution out of recovery"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "keeps a late original delivery claimable when recovery discovers active transport after its claim",
+  "opportunity-research-recovery",
+  "post-claim transport discovery must not strand the still-owning original delivery"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "renews only the exact current Opportunity Research execution heartbeat",
+  "opportunity-research-recovery",
+  "heartbeat integration coverage must reject stale execution identity"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "rejects direct prior-epoch workflow events after execution takeover",
+  "opportunity-research-recovery",
+  "direct SQL events must not append facts under a prior execution epoch"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-material.ts",
+  'eq(projectKnowledgeVersions.modelUsePolicy, "model_allowed")',
+  "project-knowledge-authority",
+  "only explicitly model-allowed current knowledge may enter a production model packet"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_project_knowledge_document_pointer",
+  "Knowledge retirement actor must have approval authority in the project",
+  "project-knowledge-authority",
+  "knowledge retirement must remain actor-authorized and database-enforced"
+);
+
+requireIncludes(
+  "apps/api/src/modules/project-context.integration.ts",
+  "admits only explicitly model-allowed knowledge and retires it without deleting history",
+  "project-knowledge-authority",
+  "knowledge integration coverage must prove model-use opt-in and non-destructive retirement"
+);
+
+requireOrderedIncludes(
+  "packages/ai/src/opportunity-research.ts",
+  "for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1)",
+  "assertOpportunityResearchModelEgressSafe(input.input);",
+  "opportunity-research-disclosure",
+  "obvious secret-like material must be rechecked inside every model request attempt"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "blocks obvious secret-like material before any model request",
+  "opportunity-research-disclosure",
+  "model-egress coverage must prove blocked input causes zero provider requests"
+);
+
+requireOrderedIncludes(
+  "packages/ai/src/opportunity-research.ts",
+  "assertOpportunityResearchModelEgressSafe(input.input);",
+  "await this.options.beforeProviderAttempt?.(input.providerIdentity);",
+  "opportunity-research-disclosure",
+  "static disclosure checks must precede the durable-material recheck on every provider attempt"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "revalidates current material before every provider retry",
+  "opportunity-research-disclosure",
+  "provider retries must rerun the durable-material egress guard"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers.ts",
+  "beforeProviderAttempt: db ? createOpportunityResearchProviderAttemptGuard(db) : undefined",
+  "opportunity-research-disclosure",
+  "the production DeepSeek adapter must wire the durable-material guard"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_project_knowledge_version_write",
+  "Knowledge creation actor must have write authority in the project",
+  "project-knowledge-authority",
+  "knowledge creation must reject actors without project write authority at the database boundary"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_project_knowledge_version_write",
+  "Knowledge review actor must have approval authority in the project",
+  "project-knowledge-authority",
+  "knowledge review must reject actors without project approval authority at the database boundary"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_ranking_proof_write",
+  "Ranking proof actor must have evidence authority in the project",
+  "ranking-proof-authority",
+  "ranking-proof capture and lifecycle evidence must remain project-authorized in PostgreSQL"
+);
+
+requireIncludes(
+  "apps/api/src/modules/project-context.integration.ts",
+  "rejects knowledge creation and review actors without project authority at the database boundary",
+  "project-knowledge-authority",
+  "real PostgreSQL coverage must reject unauthorized knowledge actors"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunities.integration.ts",
+  "rejects ranking-proof actors without project evidence authority at the database boundary",
+  "ranking-proof-authority",
+  "real PostgreSQL coverage must reject unauthorized ranking-proof actors"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_agent_run_step_write",
+  "Parent-terminalized pending steps must bind failure evidence to the current execution epoch",
+  "opportunity-research-recovery",
+  "pending workflow steps must not emit epoch-zero failure evidence under a claimed parent execution"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "terminalizedPendingStep?.executionEpoch, 1",
+  "opportunity-research-recovery",
+  "real PostgreSQL coverage must bind pending-step terminalization to the parent execution epoch"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  "loadReusableOpportunityResearchRecoveryClaim",
+  "opportunity-research-recovery",
+  "a committed pre-enqueue recovery reservation must be reused instead of consuming another generation"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "reuses a committed Opportunity Research recovery claim after a pre-enqueue crash",
+  "opportunity-research-recovery",
+  "real PostgreSQL coverage must prove recovery-claim crash convergence"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.integration.ts",
+  "fails Opportunity Research when a recovery transport completed without product truth",
+  "opportunity-research-recovery",
+  "purpose-bound recovery audits must expose completed transport without terminal product truth"
+);
+
+requireIncludes(
+  "packages/db/src/agent-ledger.ts",
+  "Agent evidence source is no longer current and admissible.",
+  "agentic-runtime-evidence-ledger",
+  "evidence replay must recheck current durable source state under the source lock"
+);
+
+requireIncludes(
+  "apps/worker/src/agent-ledger.integration.ts",
+  "rejects rebinding immutable evidence after its durable source becomes ineligible",
+  "agentic-runtime-evidence-ledger",
+  "real PostgreSQL coverage must reject stale evidence rebinding"
+);
+
+requireRegex(
+  "apps/worker/src/handlers/opportunity-research.ts",
+  /error instanceof OpportunityResearchRuntimeError && error\.code === "model_egress_blocked"[\s\S]*?needsResearch: false/u,
+  "opportunity-research-disclosure",
+  "unchanged secret-like material must fail visibly without scheduling a same-digest rerun loop"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.ts",
+  "fixtureCorpusSha256: opportunityResearchPromotionFixtureCorpusSha256",
+  "opportunity-research-promotion",
+  "credentialed promotion evidence must bind the exact deterministic fixture corpus"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "JSON.stringify(opportunityResearchPromotionFixtureCorpus)",
+  "opportunity-research-promotion",
+  "promotion-manifest tests must recompute the exact fixture-corpus digest"
+);
+
+requireIncludes(
+  "packages/contracts/src/opportunity-research.ts",
+  "evidenceKey: buildPublicWebSearchCaptureEvidenceKey(capture.id)",
+  "opportunity-research-citations",
+  "every model-visible public-search capture must expose its exact server-derived evidence key"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/opportunity-research.ts",
+  "evidenceKey: capture.evidenceKey",
+  "opportunity-research-citations",
+  "public-search ledger binding must use the same capture evidence key shown to the model"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "buildPublicWebSearchCaptureEvidenceKey(firstCapture.id)",
+  "opportunity-research-citations",
+  "Mastra workflow tests must prove public-search evidence keys reach the model boundary"
+);
+
+requireIncludes(
+  "packages/contracts/src/opportunity-research.ts",
+  "links: z.array(ProjectKnowledgeLinkInputSchema).max(50).optional()",
+  "project-knowledge-provenance",
+  "knowledge creation must accept bounded typed provenance links"
+);
+
+requireIncludes(
+  "apps/api/src/modules/project-context.module.ts",
+  "await tx.insert(projectKnowledgeLinks).values(",
+  "project-knowledge-provenance",
+  "typed knowledge links must persist while their source version is still proposed"
+);
+
+requireIncludes(
+  "apps/api/src/modules/project-context.integration.ts",
+  "assert.deepEqual(linked.links",
+  "project-knowledge-provenance",
+  "real-PostgreSQL coverage must prove creation-time knowledge provenance survives rehydration"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunity-research.module.ts",
+  "materialDigest: replay.inputSha256",
+  "opportunity-research-admission",
+  "exact idempotency replay must return the admitted material digest instead of mutable current material"
+);
+
+requireIncludes(
+  "apps/api/src/modules/opportunity-research.integration.ts",
+  "does not project an active legacy scout run as Opportunity Research",
+  "opportunity-research-admission",
+  "task-level mutual exclusion must not fabricate V2 workflow metadata for a legacy scout run"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/opportunity-research.test.ts",
+  "for (const fixture of opportunityResearchPromotionFixtureCorpus.cases)",
+  "opportunity-research-promotion",
+  "worker QA must execute the exact corpus bound by the promotion manifest"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "assert_agent_evidence_source_current",
+  "version.\"model_use_policy\" = 'model_allowed'",
+  "agentic-runtime-evidence-ledger",
+  "the installed evidence authority must reject operator-only knowledge at every binding boundary"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_agent_run_step_evidence_link",
+  "PERFORM assert_agent_evidence_source_current(",
+  "agentic-runtime-evidence-ledger",
+  "step-evidence links must revalidate current source truth before binding"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_research_opportunity_lifecycle_truth",
+  "Research opportunity brief_created truth requires a durable same-project page proposal",
+  "opportunity-research-lifecycle",
+  "research opportunity lifecycle projection must remain database-backed by page-proposal truth"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_project_business_profile_write",
+  "A changed business profile revision must return to draft review",
+  "project-context-authority",
+  "a replacement business-profile revision must not inherit stale confirmation evidence"
+);
+
+requireLatestMigrationDefinitionIncludes(
+  "enforce_canonical_business_entity_write",
+  "OLD.\"status\"::text = 'proposed' AND NEW.\"status\"::text = 'confirmed'",
+  "project-context-authority",
+  "canonical entity transitions without modeled actor evidence must remain fail-closed"
+);
+
+requireIncludes(
+  "packages/db/src/opportunity-research-execution.ts",
+  "state.pausedAt || input.suppressAutomaticRetry ? null",
+  "opportunity-research-recovery",
+  "unchanged deterministic failures must suppress automatic same-material scheduling"
+);
+
+requireIncludes(
+  "apps/worker/src/work-recovery.ts",
+  'recordRecoveryExhausted: reason !== "transport_completed_without_product_truth"',
+  "opportunity-research-recovery",
+  "transport inconsistency must not fabricate recovery-exhaustion evidence"
+);
+
+requireIncludes(
+  "packages/config/src/index.ts",
+  'deepSeekBaseUrl.hostname !== "api.deepseek.com"',
+  "opportunity-research-provider",
+  "production DeepSeek traffic must remain pinned to the official provider origin"
+);
+
+requireIncludes(
+  "packages/config/src/index.ts",
+  "DEEPSEEK_MAX_RESPONSE_BYTES",
+  "opportunity-research-provider",
+  "DeepSeek response buffering must stay explicitly bounded by configuration"
+);
+
+requireOrderedIncludes(
+  "apps/worker/src/handlers/opportunity-research.ts",
+  "controller.abort(error);",
+  "rejectLease(error);",
+  "opportunity-research-recovery",
+  "lease loss must abort provider work before the worker reports lost ownership"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "rejects an oversized provider response before decoding structured output",
+  "opportunity-research-provider",
+  "provider tests must prove oversized responses fail before structured decoding"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-research.test.ts",
+  "aborts an in-flight provider request without retrying after execution ownership is lost",
+  "opportunity-research-recovery",
+  "provider tests must prove lease-loss cancellation prevents retry and detached spend"
+);
+
+requireNotRegex(
+  "packages/contracts/src/index.ts",
+  /export const RankingProofSchema = z\.object\(\{[\s\S]*?screenshotArtifactKey/u,
+  "ranking-proof-disclosure",
+  "ranking-proof responses must not disclose private screenshot artifact keys"
+);
+
+requireNotRegex(
+  "packages/contracts/src/index.ts",
+  /export const CreateRankingProofRequestSchema = z[\s\S]*?screenshotArtifactKey/u,
+  "ranking-proof-disclosure",
+  "ranking-proof commands must not accept caller-selected private screenshot locators"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/projects.module.ts",
+  "artifactKey: row.artifactKey",
+  "opportunity-research-disclosure",
+  "website-import responses must not disclose private storage locators"
+);
+
+requireIncludes(
+  "packages/ai/src/opportunity-scout.test.ts",
+  'packet.rankingProofs.some((proof) => "screenshotArtifactKey" in proof)',
+  "opportunity-research-disclosure",
+  "legacy model packets must prove private artifact locators are stripped"
+);
+
+requireIncludes(
+  "packages/contracts/src/opportunity-research.ts",
+  "new TextEncoder().encode(value).byteLength <= 50_000",
+  "project-knowledge-authority",
+  "knowledge Markdown must enforce its storage budget over UTF-8 bytes rather than code units"
+);
+
+requireIncludes(
+  "apps/web/src/screens/opportunity-explorer.tsx",
+  "key={`${opportunity.id}:${opportunity.rowVersion}`}",
+  "opportunity-research-operator-ui",
+  "opportunity decision forms must reset when durable target truth advances"
+);
+
+requireIncludes(
+  "tools/check-text-health.ts",
+  "inlineDependencies.matchAll",
+  "rule-system-cohesion",
+  "hidden-rule dependency checks must include inline YAML dependency arrays"
+);
+
+requireIncludes(
+  ".ai-project-rules/05-frontend-tanstack.md",
+  "pre-authored, versioned scene definitions with typed allowlisted data slots",
+  "explanatory-visuals",
+  "explanatory motion must remain a reviewed scene catalog rather than generated presentation code"
+);
+
+requireIncludes(
+  ".ai-project-rules/05-frontend-tanstack.md",
+  "DO NOT generate customer-facing SVG, canvas commands, CSS keyframes, or explanatory layout dynamically from model prose at runtime",
+  "explanatory-visuals",
+  "models must not generate executable customer-facing animation or drawing programs"
 );
 
 requireIncludes(
@@ -3415,9 +4431,16 @@ requireIncludes(
 
 requireIncludes(
   "apps/api/src/modules/reports.integration.ts",
-  "blocks invalidated ranking evidence and resolves its alert only through a published correction",
+  "blocks invalidated ranking evidence before publication",
   "customer-report-publication",
-  "DB coverage must pin invalidation-first rejection and correction alert resolution"
+  "DB coverage must pin invalidation-first publication rejection"
+);
+
+requireIncludes(
+  "apps/api/src/modules/reports.integration.ts",
+  "resolves an invalidated published ranking alert only through a correction",
+  "customer-report-publication",
+  "DB coverage must pin correction-only alert resolution"
 );
 
 requireIncludes(

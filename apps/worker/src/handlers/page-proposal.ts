@@ -32,7 +32,7 @@ import {
   validatePageJsonAgainstRegistry
 } from "@localseo/page-registry";
 import type { Job } from "bullmq";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 import { policyForReasoningTask } from "../reasoning-policy.js";
 

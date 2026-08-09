@@ -15,7 +15,7 @@ import {
   type ResolvedPageMediaVariant,
   validatePageJsonAgainstRegistry
 } from "@localseo/page-registry";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@localseo/db/query";
 import { previewMediaManifestSha256, type PreviewMediaManifestEntry } from "./preview-capability.js";
 
 export type PreviewMediaVariant = PreviewMediaManifestEntry & {

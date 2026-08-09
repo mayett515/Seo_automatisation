@@ -9,7 +9,7 @@ import {
 } from "@localseo/contracts";
 import { serpSnapshots } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 
 export type SerpScoutRepository = {

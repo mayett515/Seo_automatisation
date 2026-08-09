@@ -5,7 +5,7 @@ import {
 } from "@localseo/adapters";
 import { mediaAssets, pageVersionMediaAssets } from "@localseo/db";
 import { decideMediaStorageCleanup, failedMediaDiagnosticRetentionMs } from "@localseo/domain";
-import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "@localseo/db/query";
 import type { WorkerDb } from "./job-run.js";
 
 const maxFailedDerivativeObjects = 16;

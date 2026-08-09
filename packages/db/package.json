@@ -10,6 +10,11 @@
       "production": "./dist/index.js",
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./query": {
+      "production": "./dist/query.js",
+      "types": "./dist/query.d.ts",
+      "default": "./src/query.ts"
     }
   },
   "scripts": {
@@ -21,6 +26,8 @@
   },
   "dependencies": {
     "@localseo/contracts": "workspace:*",
+    "@localseo/domain": "workspace:*",
+    "canonicalize": "3.0.0",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.7"
   },

@@ -7,7 +7,7 @@ import {
   type CustomerReportPublishedSummary
 } from "@localseo/contracts";
 import { reportArtifacts, reportEvidenceAlerts, reportIssues, reportLifecycleEvents, reports } from "@localseo/db";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "@localseo/db/query";
 import { DatabaseService } from "../../database/database.service.js";
 import type { ReportDocumentCapabilityClaims } from "../../report-document-capability.js";
 import {

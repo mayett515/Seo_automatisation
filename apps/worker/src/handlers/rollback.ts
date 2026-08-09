@@ -19,7 +19,7 @@ import {
   releasePlans,
   rollbackPoints
 } from "@localseo/db";
-import { and, eq, inArray, not, sql } from "drizzle-orm";
+import { and, eq, inArray, not, sql } from "@localseo/db/query";
 import type { Job } from "bullmq";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 

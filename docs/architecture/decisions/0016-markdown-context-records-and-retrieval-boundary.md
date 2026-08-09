@@ -1,7 +1,7 @@
 # 0016 - Markdown Context Records And Retrieval Boundary
 
 Date: 2026-07-06
-Status: Accepted
+Status: Superseded by ADR 0023 for active runtime project knowledge
 
 ## Context
 
@@ -38,6 +38,8 @@ Current operational truth already lives in Postgres:
 Postgres remains the source of operational product truth.
 
 Markdown may be used later as a schema-backed context-record layer for durable human-readable project memory, field evidence summaries, reusable SEO lessons, research findings, and agent handoffs.
+
+ADR 0023 supersedes the deferred file-backed runtime direction: active tenant-scoped Markdown knowledge now lives in versioned PostgreSQL rows. This ADR remains the boundary for repository documentation, field folders, and generated documentation indexes.
 
 The boundary is:
 

@@ -2,7 +2,7 @@
 description: "Frontend UX and TanStack rules for the Local SEO mission-control application"
 globs: "src/**/*.{tsx,ts}, apps/**/*.{tsx,ts}, packages/**/*.{tsx,ts}, **/*frontend*.md, **/*ux*.md"
 alwaysApply: false
-version: "1.0.0"
+version: "1.1.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -28,6 +28,7 @@ You have been routed here because the task touches React UI, routing, forms, tab
 - Use TanStack Store only for local/shared UI state that is not server state.
 - Build Page Studio as a constrained editor over structured PageJson, registry variants, legal movement helpers, notes, and preview. It is not a freeform component builder.
 - Keep product-state actions visible: approvals, rejects, holds, deploys, rollbacks, notes, ranking proof changes, and PageJson edits need pending/error/success feedback.
+- Build explanatory motion from pre-authored, versioned scene definitions with typed allowlisted data slots. Runtime data or AI may select a scene and fill those slots, but must not invent drawing primitives, layout coordinates, or animation programs.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -40,6 +41,7 @@ You have been routed here because the task touches React UI, routing, forms, tab
 - DO NOT let Page Studio React components write arbitrary HTML, CSS, className, style, JSX, or raw layout instructions into PageJson.
 - DO NOT bypass Page Studio domain helpers for section movement, replacement, variant switching, or publish-readiness decisions.
 - DO NOT treat query invalidation as the only user feedback for a productive customer-visible action.
+- DO NOT generate customer-facing SVG, canvas commands, CSS keyframes, or explanatory layout dynamically from model prose at runtime.
 </absolute-constraints>
 
 ## 3. Context-Dependent Trigger Gates
@@ -56,6 +58,9 @@ THEN include preview, note, approve, hold, reject, or rollback actions as approp
 
 IF the task edits PageJson:
 THEN expose only registry-owned, schema-backed controls and render preview through the page-registry renderer core.
+
+IF the task adds an animated explanation or diagram:
+THEN use an allowlisted scene version, validate its typed data payload, provide a static/reduced-motion fallback, and test framing plus text fit at supported viewports.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples
@@ -86,4 +91,5 @@ const [releaseStatus, setReleaseStatus] = useState<ReleaseStatus>("loading");
 3. [ ] Did I avoid copying inspiration HTML as implementation truth?
 4. [ ] Did Page Studio controls edit structured PageJson only through legal registry/domain actions?
 5. [ ] Did product-state actions surface pending, success, and error feedback?
+6. [ ] Are explanatory visuals pre-authored, versioned, data-bound, and usable with reduced motion?
 </pre-flight-checklist>

@@ -1,5 +1,6 @@
 import {
   AesGcmTokenCipher,
+  DuckDuckGoHtmlSearchAdapter,
   FileSystemObjectStorageAdapter,
   GoogleSearchConsoleAdapter,
   HttpWebsiteCrawlerAdapter,
@@ -23,6 +24,17 @@ import {
   type SiteHostingPort,
   type VerificationPort
 } from "@localseo/adapters";
+import {
+  DirectDeepSeekOpportunityResearchModel,
+  MastraOpportunityResearchAdapter,
+  MockOpportunityResearchModel,
+  NotConfiguredOpportunityResearchModel,
+  createOpportunityResearchWorkflowRuntime,
+  type OpportunityResearchModelPort,
+  type OpportunityResearchPort,
+  type OpportunityResearchWorkflowRuntime,
+  type PublicWebSearchPort
+} from "@localseo/ai";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { createDatabaseClient } from "@localseo/db";
 import { UnrecoverableError, type Job } from "bullmq";
@@ -58,6 +70,14 @@ import {
   OpportunityScoutEvidenceError,
   OpportunityScoutWorkflowError
 } from "./handlers/opportunity-scout.js";
+import {
+  handleOpportunityResearchJob,
+  createOpportunityResearchProviderAttemptGuard,
+  OpportunityResearchConfigurationError,
+  OpportunityResearchEvidenceError,
+  OpportunityResearchQaError,
+  parseOpportunityResearchJobData
+} from "./handlers/opportunity-research.js";
 import {
   handlePageProposalJob,
   PageProposalConfigurationError,
@@ -117,13 +137,27 @@ import {
   scanMediaStorageCleanup,
   type MediaStorageCleanupResult
 } from "./media-storage-cleanup.js";
+import { PersistedDuckDuckGoPublicWebSearch } from "./public-web-search.js";
+import {
+  emptyOpportunityResearchScheduleResult,
+  scanDueOpportunityResearch,
+  type OpportunityResearchScheduleResult
+} from "./opportunity-research-scheduler.js";
 
 const env = parseAppEnv(process.env);
 const sharedDbHandle = env.DATABASE_URL ? createDatabaseClient(env.DATABASE_URL) : undefined;
+const sharedMastraWorkflowRuntime = createOpportunityResearchWorkflowRuntime(env.MASTRA_WORKFLOW_DATABASE_URL);
 const sharedObjectStorage = createObjectStorageAdapter();
 const sharedSiteHosting = createSiteHostingAdapter(env.NETLIFY_AUTH_TOKEN, sharedObjectStorage);
 const sharedCrawler = createCrawlerAdapter(sharedObjectStorage);
 const sharedReasoning = createReasoningAdapter(env);
+const sharedPublicWebSearch = createPublicWebSearchAdapter(sharedDbHandle?.db, env);
+const sharedOpportunityResearch = createOpportunityResearchAdapter(
+  env,
+  sharedPublicWebSearch,
+  sharedMastraWorkflowRuntime,
+  sharedDbHandle?.db
+);
 const sharedSerpScout = createSerpScoutAdapter();
 const sharedReleaseVerification = createReleaseVerificationAdapter(env);
 const sharedSearchConsole = createSearchConsoleAdapter(env);
@@ -152,7 +186,12 @@ export async function handleJob(job: Job): Promise<Record<string, unknown>> {
 }
 
 export async function closeWorkerResources(): Promise<void> {
+  await sharedMastraWorkflowRuntime?.close();
   await sharedDbHandle?.close();
+}
+
+export async function initializeWorkerResources(): Promise<void> {
+  await sharedMastraWorkflowRuntime?.initialize();
 }
 
 export async function reconcileDeployments(): Promise<Record<string, unknown>> {
@@ -202,6 +241,17 @@ export async function recoverStaleWork(queues: WorkRecoveryQueues): Promise<Work
   });
 }
 
+export async function scheduleOpportunityResearch(
+  queue: WorkRecoveryQueues["opportunity-research"]
+): Promise<OpportunityResearchScheduleResult> {
+  if (!sharedDbHandle) return emptyOpportunityResearchScheduleResult();
+  return scanDueOpportunityResearch({
+    db: sharedDbHandle.db,
+    queue,
+    batchSize: env.WORK_RECOVERY_BATCH_SIZE
+  });
+}
+
 export async function cleanMediaStorage(): Promise<MediaStorageCleanupResult> {
   if (!sharedDbHandle) {
     return emptyMediaStorageCleanupResult();
@@ -227,6 +277,12 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 
   if (job.queueName === "website-import" || job.name === "website_import") {
     return handleWebsiteImportJob(job, sharedDbHandle, sharedCrawler);
+  }
+
+  if (job.queueName === "opportunity-research" || job.name === "opportunity_research") {
+    return handleOpportunityResearchJob(job, sharedDbHandle, sharedOpportunityResearch, {
+      heartbeatIntervalMs: env.OPPORTUNITY_RESEARCH_HEARTBEAT_MS
+    });
   }
 
   if (job.queueName === "opportunity-scout" || job.name === "opportunity_scout") {
@@ -286,6 +342,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
 
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
 export { parseOpportunityScoutJobData } from "./handlers/opportunity-scout.js";
+export { parseOpportunityResearchJobData };
 export { parsePageProposalJobData } from "./handlers/page-proposal.js";
 export { parseSectionCopySuggestionJobData } from "./handlers/section-copy-suggestion.js";
 export { parseMediaProcessingJobData };
@@ -310,6 +367,9 @@ export function isTerminalWorkerError(error: unknown): boolean {
     error instanceof OpportunityScoutConfigurationError ||
     error instanceof OpportunityScoutEvidenceError ||
     error instanceof OpportunityScoutWorkflowError ||
+    error instanceof OpportunityResearchConfigurationError ||
+    error instanceof OpportunityResearchEvidenceError ||
+    error instanceof OpportunityResearchQaError ||
     error instanceof PageProposalConfigurationError ||
     error instanceof PageProposalEvidenceError ||
     error instanceof PageProposalWorkflowError ||
@@ -404,6 +464,70 @@ export function createReasoningAdapter(
 
 function createSerpScoutAdapter(): SerpScoutPort {
   return new MockSerpScoutAdapter();
+}
+
+export function createOpportunityResearchAdapter(
+  input: Pick<
+    AppEnv,
+    | "OPPORTUNITY_RESEARCH_PROVIDER"
+    | "OPPORTUNITY_RESEARCH_MODEL"
+    | "DEEPSEEK_API_KEY"
+    | "DEEPSEEK_BASE_URL"
+    | "DEEPSEEK_TIMEOUT_MS"
+    | "DEEPSEEK_MAX_ATTEMPTS"
+    | "DEEPSEEK_MAX_RESPONSE_BYTES"
+  >,
+  publicWebSearch: PublicWebSearchPort,
+  workflowRuntime?: OpportunityResearchWorkflowRuntime,
+  db?: ReturnType<typeof createDatabaseClient>["db"]
+): OpportunityResearchPort {
+  let model: OpportunityResearchModelPort;
+  switch (input.OPPORTUNITY_RESEARCH_PROVIDER) {
+    case "mock":
+      model = new MockOpportunityResearchModel();
+      break;
+    case "deepseek":
+      model = input.DEEPSEEK_API_KEY
+        ? new DirectDeepSeekOpportunityResearchModel({
+            apiKey: input.DEEPSEEK_API_KEY,
+            model: input.OPPORTUNITY_RESEARCH_MODEL,
+            baseUrl: input.DEEPSEEK_BASE_URL,
+            timeoutMs: input.DEEPSEEK_TIMEOUT_MS,
+            maxAttempts: input.DEEPSEEK_MAX_ATTEMPTS,
+            maxResponseBytes: input.DEEPSEEK_MAX_RESPONSE_BYTES,
+            beforeProviderAttempt: db ? createOpportunityResearchProviderAttemptGuard(db) : undefined
+          })
+        : new NotConfiguredOpportunityResearchModel("DEEPSEEK_API_KEY is required for Opportunity Research.");
+      break;
+  }
+  return (
+    workflowRuntime?.createAdapter(model, publicWebSearch) ??
+    new MastraOpportunityResearchAdapter(model, publicWebSearch)
+  );
+}
+
+function createPublicWebSearchAdapter(
+  db: ReturnType<typeof createDatabaseClient>["db"] | undefined,
+  input: Pick<
+    AppEnv,
+    "PUBLIC_WEB_SEARCH_ENABLED" | "PUBLIC_WEB_SEARCH_TIMEOUT_MS" | "PUBLIC_WEB_SEARCH_MAX_RESPONSE_BYTES"
+  >
+): PublicWebSearchPort {
+  if (!db) {
+    return {
+      search() {
+        return Promise.reject(new OpportunityResearchConfigurationError("Public web search requires DATABASE_URL."));
+      }
+    };
+  }
+  return new PersistedDuckDuckGoPublicWebSearch(
+    db,
+    new DuckDuckGoHtmlSearchAdapter({
+      timeoutMs: input.PUBLIC_WEB_SEARCH_TIMEOUT_MS,
+      maxResponseBytes: input.PUBLIC_WEB_SEARCH_MAX_RESPONSE_BYTES
+    }),
+    input.PUBLIC_WEB_SEARCH_ENABLED
+  );
 }
 
 function createReleaseVerificationAdapter(

@@ -2,13 +2,11 @@
 description: "Architecture decision domains and cross-cutting concern scan for unknown-unknowns"
 globs: "**/*.{md,json,mmd,ts,tsx}"
 alwaysApply: false
-version: "1.0.0"
+version: "1.0.1"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
   - ".ai-stealer-rules/01-repo-catalog-workflow.md"
-  - ".ai-stealer-rules/02-stealer-checkpoints.md"
-  - ".ai-project-rules/14-architecture-direction.md"
 priority_schema: "critical > strong > guideline"
 ---
 

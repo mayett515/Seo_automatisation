@@ -18,6 +18,7 @@ import type {
 
 export * from "./google-search-console.js";
 export * from "./file-system-object-storage.js";
+export * from "./duckduckgo-html-search.js";
 export * from "./http-website-crawler.js";
 export * from "./http-release-verification.js";
 export * from "./media-storage-keys.js";

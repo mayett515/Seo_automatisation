@@ -7,8 +7,10 @@ import { GscModule } from "./modules/gsc.module.js";
 import { LeadsModule } from "./modules/leads.module.js";
 import { MediaModule } from "./modules/media.module.js";
 import { OpportunitiesModule } from "./modules/opportunities.module.js";
+import { OpportunityResearchModule } from "./modules/opportunity-research.module.js";
 import { PagesModule } from "./modules/pages.module.js";
 import { ProjectsModule } from "./modules/projects.module.js";
+import { ProjectContextModule } from "./modules/project-context.module.js";
 import { QueueProducerModule } from "./queue-producer.js";
 import { RedisModule } from "./redis/redis.module.js";
 import { ReleasesModule } from "./modules/releases.module.js";
@@ -30,7 +32,9 @@ import { MediaStorageModule } from "./media-storage.module.js";
     LeadsModule,
     MediaModule,
     OpportunitiesModule,
+    OpportunityResearchModule,
     PagesModule,
+    ProjectContextModule,
     ProjectsModule,
     ReleasesModule,
     ReportsModule,

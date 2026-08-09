@@ -25,7 +25,7 @@ import {
   canonicalizeCustomerReportSnapshot,
   canonicalizeCustomerReportSourcePayload
 } from "@localseo/domain";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "@localseo/db/query";
 import type { JobsOptions } from "bullmq";
 import {
   createIntegrationTestDatabase,
@@ -503,6 +503,7 @@ function recoveryQueues(): TestRecoveryQueues {
   return {
     "page-generation": new TestRecoveryQueue(),
     "media-processing": new TestRecoveryQueue(),
+    "opportunity-research": new TestRecoveryQueue(),
     "release-verification": new TestRecoveryQueue(),
     report: shared
   };

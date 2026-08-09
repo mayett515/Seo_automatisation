@@ -48,6 +48,7 @@ void describe("work recovery transport mapping", () => {
         queues: {
           "page-generation": queue,
           "media-processing": queue,
+          "opportunity-research": queue,
           "release-verification": queue,
           report: queue
         },
@@ -57,7 +58,7 @@ void describe("work recovery transport mapping", () => {
         batchSize: 25
       });
 
-      assert.equal(selectCount, 7);
+      assert.equal(selectCount, 8);
       assert.equal(result.errors, 1);
       assert.equal(result.checked, 0);
       assert.match(errors[0] ?? "", /page_proposal candidates/u);

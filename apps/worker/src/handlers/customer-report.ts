@@ -59,7 +59,7 @@ import {
   normalizeCustomerReportFactProjection
 } from "@localseo/domain";
 import type { Job } from "bullmq";
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, not, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, not, sql } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 import { policyForReasoningTask } from "../reasoning-policy.js";
 

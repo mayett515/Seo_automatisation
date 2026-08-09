@@ -1,8 +1,8 @@
 ---
 description: "Architecture direction for Clean Architecture dependency rules, Hexagonal ports/adapters, composition roots, agent authority, and system design"
-globs: "src/**/*.{ts,tsx}, apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, **/*architecture*.md, **/*boundary*.md, **/*port*.{ts,tsx}, **/*adapter*.{ts,tsx}, **/*schema*.{ts,tsx}"
+globs: "src/**/*.{ts,tsx,sql,json}, apps/**/*.{ts,tsx,sql,json}, packages/**/*.{ts,tsx,sql,json}, **/*architecture*.md, **/*boundary*.md, **/*port*.{ts,tsx}, **/*adapter*.{ts,tsx}, **/*schema*.{ts,tsx,sql,json}"
 alwaysApply: false
-version: "1.1.0"
+version: "1.3.1"
 rule_budget: "cohesion-retained"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
@@ -32,6 +32,7 @@ You have been routed here because the task touches architecture style, dependenc
 - Use Hexagonal Architecture for all external systems: site hosting, Search Console, crawler/import, analytics, object storage, AI/Mastra, tracking, sitemap, event publishing, verification, and rollback.
 - Name ports by purpose, not vendor. Vendor names belong in adapter implementations, provider records, and deployment configuration.
 - Keep Mastra agents/workflows in reasoning, orchestration, and proposal generation. Deterministic workers perform production mutations.
+- Expose product agent workflows through purpose-named application ports; do not add a generic arbitrary-workflow execution port.
 - Keep agent constraints outcome-based: allowed tool categories and denied production outcomes must travel with the run, including subagent delegation.
 - Wire concrete adapters in process composition roots, not inside controllers, domain functions, agents, or random worker handlers.
 - Use System Design guidance for AWS, Postgres, Redis, object storage, observability, security, retries, idempotency, and failure recovery.
@@ -69,6 +70,9 @@ THEN route it through a BullMQ job and deterministic worker.
 IF work is open-ended reasoning, strategy, SEO analysis, content proposal, or release evaluation:
 THEN model it as a Mastra workflow/agent output that is schema-validated before any worker acts.
 
+IF Mastra orchestrates a product workflow:
+THEN keep it behind a purpose-named port such as ADR 0022's implemented `OpportunityResearchPort`, while bounded single model calls remain behind `AiReasoningPort`.
+
 IF the work adds or widens an agent capability:
 THEN define or update the agent constraint profile from ADR 0019 before implementation.
 
@@ -79,7 +83,7 @@ THEN scan `.ai-stealer-rules/03-architecture-decision-domains.md` before finaliz
 ## 4. Domain Anchoring & Examples
 
 <context>
-This shard retains 16 atomic rules because shared type and payload truth must stay beside its source-of-truth trigger gate. Moving that constraint into module-decomposition guidance would fragment one architecture-ownership decision merely to satisfy the normal-domain review threshold.
+The cohesion rationale is that shared type and payload truth must stay beside its source-of-truth trigger gate, and the surrounding port and agent-authority rules form one architecture-ownership decision. Crossing the normal rule-count threshold triggers cohesion review; moving these constraints into module-decomposition guidance merely to satisfy a numeric target would fragment that decision.
 
 Port inventory:
 
@@ -91,7 +95,8 @@ AnalyticsPort          -> analytics provider or internal analytics adapter
 ObjectStoragePort      -> S3/object storage adapter
 MediaAssetStoragePort  -> S3/filesystem binary media adapter
 MediaAssetCleanupStoragePort -> bounded S3/filesystem private-byte cleanup adapter
-AiReasoningPort        -> Mastra workflow/agent adapter
+AiReasoningPort        -> bounded structured model adapter
+OpportunityResearchPort -> DeepSeek-backed Mastra workflow adapter (ADR 0022)
 TrackingPort           -> event ingestion adapter
 EventPublisherPort     -> domain event publisher adapter
 VerificationPort       -> post-deploy verification adapter
@@ -134,4 +139,5 @@ const mainWebsite = { netlifySiteId: "..." };
 5. [ ] Did new agent capabilities follow ADR 0019's constraint-profile policy?
 6. [ ] Did each shared enum, event, and payload shape have a declared source of truth?
 7. [ ] Did I scan architecture decision domains for relevant cross-cutting concerns?
+8. [ ] Did product workflows avoid a generic arbitrary-workflow port?
 </pre-flight-checklist>

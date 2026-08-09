@@ -31,7 +31,7 @@ import {
   rollbackPoints
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, desc, eq, inArray, isNull, lte, not, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, not, sql } from "@localseo/db/query";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 const maxGscInspectionUrlsPerVerification = 10;

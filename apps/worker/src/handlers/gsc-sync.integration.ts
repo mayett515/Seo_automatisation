@@ -13,7 +13,7 @@ import {
   type DatabaseClient
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables

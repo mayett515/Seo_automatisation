@@ -3,7 +3,7 @@ import { TechnicalAuditJobDataSchema, type TechnicalAuditJobData } from "@locals
 import { deriveTechnicalAuditFindings, type TechnicalAuditFindingDraft } from "@localseo/domain";
 import { technicalAuditFindings, technicalAuditRuns } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 
 type TechnicalAuditRunRow = typeof technicalAuditRuns.$inferSelect;

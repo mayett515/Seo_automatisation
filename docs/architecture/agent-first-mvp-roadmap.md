@@ -252,7 +252,7 @@ still next
 
 ### 5. Real Reasoning Adapter
 
-Status: OpenCode Go adapter baseline, Opportunity Scout credentialed smoke, and Page Proposal smoke harness implemented.
+Status: OpenCode Go adapter baseline, Opportunity Scout credentialed smoke, and Page Proposal smoke harness implemented. ADR 0022 now also implements direct DeepSeek plus Mastra for the separate Opportunity Research workflow without rewriting the working bounded-call lanes.
 
 After the mock worker loop is green, add the real provider behind the same port:
 
@@ -358,12 +358,56 @@ no provider-specific types leak into contracts, DB, UI, controllers, or product 
 Still deferred:
 
 ```text
-Mastra multi-agent orchestration
 Anthropic-style OpenCode Go /messages endpoint support for MiniMax/Qwen models
 credentialed Page Proposal smoke execution and sanitized review artifact
+credentialed DeepSeek Opportunity Research smoke execution and calibration
 model-specific prompt tuning from observed failed runs
 cost budget enforcement beyond recording usage metadata
 ```
+
+### 5A. Agentic Runtime And Evidence Ledger
+
+Status: ADR 0022 Slices 1-7 implemented; credentialed provider calibration and optional redacted telemetry remain operational follow-ups.
+
+The first agent milestone is not a generic agent platform. It is one implemented source-backed Opportunity Research workflow with a durable application-owned ledger:
+
+```text
+SEO source truth
+  -> one agent_runs header
+  -> typed agent_run_steps
+  -> compact append-only agent_run_events
+  -> immutable run evidence items plus step links
+  -> deterministic QA
+  -> existing opportunity persistence
+```
+
+Mastra owns typed orchestration, restartable workflow mechanics, and optional redacted observability. PostgreSQL owns run claims, evidence identity, recovery, approval, and product results. BullMQ remains transport. DeepSeek is direct provider configuration behind a purpose-named adapter, not a contract or database type.
+
+Implementation status:
+
+```text
+implemented
+  1. workflow run/step/event/evidence persistence foundation with canonical checkpoint bytes,
+     execution-generation events, exact-owner heartbeats, and distinct recovery audits
+  2. confirmed business profile, canonical service/area, PostgreSQL Markdown knowledge with
+     explicit model-use consent and non-destructive retirement, plus captured -> reviewed -> invalidated ranking-proof authority
+  3. material-digest readiness, pause/rerun CAS, independent opportunity axes,
+     deterministic lane derivation, and fixed 2/4/2 portfolio policy
+  4. direct DeepSeek + typed Mastra workflow with fixture/read-only tools, per-attempt
+     current-material plus obvious-secret blocking, and an exact-corpus-digest promotion manifest
+  5. owned DuckDuckGo HTML discovery capture (not ranking truth)
+  6. persisted research-plan -> follow-up-capture -> SEO-strategy workflow,
+     due-only scheduling, execution-epoch/heartbeat fencing, crash-reusable recovery reservations,
+     current-source evidence rebinding, and bounded recovery
+  7. project-scoped operator controls, exact citations, selectable run history,
+     and a redacted step/event/evidence timeline
+
+operational follow-ups
+  credentialed DeepSeek calibration with sanitized evidence
+  optional external Mastra telemetry only after redaction and retention tests
+```
+
+Memory/RAG, broad MCP catalogs, autonomous browser action, and agent-owned production commands remain deferred until a concrete product trigger exists.
 
 ### 6. Opportunity Explorer And Manual Evidence Entry
 
@@ -405,7 +449,7 @@ implemented now
 
 still deferred
   MapLibre/corridor map surface
-  agent_run_events streaming timeline
+  legacy Opportunity Scout event streaming and live push transport
 ```
 
 Explorer/run UX must also close two API-slice follow-ups:
@@ -904,9 +948,9 @@ These files remain re-exported/composed through their existing package and proce
 
 ### 13. RAG / Knowledge Retrieval
 
-RAG stays deferred. The direct evidence packet is the first implementation path.
+Vector/embedding RAG stays deferred. ADR 0023's bounded PostgreSQL Markdown retrieval is implemented for Opportunity Research: the server selects only current, approved, non-retired, task-scoped `model_allowed` versions and places them in the direct evidence packet. Generic agent retrieval tools, typed-link traversal, repository import, chunking, embeddings, and vector search remain deferred.
 
-After the Markdown context-db research pass, the accepted memory boundary is:
+The accepted memory boundary is:
 
 ```text
 Postgres = operational product truth
@@ -914,7 +958,7 @@ Markdown context records = durable project memory and field-evidence lessons
 generated index/vector store = derived search aid, rebuildable and non-authoritative
 ```
 
-Do not build vector retrieval or create a new `.ai-context-db` folder until the direct evidence/proposal workflow proves a real retrieval need. If a Markdown context-record layer is introduced later, it starts as schema-backed docs with human promotion, not as app state and not as customer-safe proof.
+Do not build vector retrieval or create a new `.ai-context-db` folder until the direct evidence/proposal workflow proves a real retrieval need. The shipped Markdown layer is schema-backed PostgreSQL product context with human approval and separate model-use consent; it is neither customer-safe proof nor file-backed runtime authority.
 
 Build retrieval only when one of these is true:
 
@@ -958,7 +1002,7 @@ one of the retrieval triggers above is real and a blueprint is approved.
 
 Status: first procedural scanner implemented.
 
-The worker host now scans stale Page Proposal `agent_runs` and running `release_verifications` after a configurable age. It compares Postgres product truth, `job_runs` audit state, and BullMQ transport state, then calls the pure ADR 0018 classifier.
+The worker host now scans seven safe/idempotent product lanes after a configurable age: Page Proposal, Section Copy, Media Processing, Customer Report Generation, Customer Report Artifact, Release Verification, and Opportunity Research. It compares Postgres product truth, `job_runs` audit state, and BullMQ transport state, then calls the pure ADR 0018 classifier.
 
 Implemented boundary:
 
@@ -968,7 +1012,7 @@ durable recovery_count and last_recovery_at on owning rows
 guarded claims so competing scanners cannot duplicate recovery
 registered lane candidate loads fail independently
 batch size is capped independently per registered lane
-visible Page Proposal failure after bounded exhaustion
+visible owning-row failure after bounded exhaustion
 release-verification execution_failed + warning evidence after bounded exhaustion
 unknown transport state is a no-op
 deploy and rollback queues are excluded
@@ -977,7 +1021,7 @@ deploy and rollback queues are excluded
 Still deferred:
 
 ```text
-Opportunity Scout and other safe-lane scanner expansion
+additional safe-lane scanner expansion only when a new durable workflow ships
 operator active/dead-work UI
 provider-mutation recovery beyond existing deploy/rollback reconcilers
 generic retry buttons
@@ -1023,11 +1067,10 @@ Mastra memory / RAG
   Markdown context records may be the first memory substrate, but only after
   an approved blueprint and human-promotion workflow.
 
-agent_run_events
-  After Opportunity Explorer, Page Studio, or report UI needs streaming/replay.
-  Until then, `agent_runs` remains the run header and task outputs/gate failures
-  remain redacted evidence. Do not add event streaming only because a provider
-  exposes tool-call traces.
+agent_run_events streaming UI
+  ADR 0022 now has compact append-only event persistence and a bounded timeline read.
+  Streaming transport and replay UI still wait for a concrete operator need.
+  Mastra/provider traces do not become product events merely because they exist.
 ```
 
 ## Source Map

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ConflictException,
   Get,
   Inject,
   Injectable,
@@ -20,6 +21,8 @@ import {
   CreateRankingProofRequestSchema,
   OpportunityExplorerListResponseSchema,
   OpportunityBriefSchema,
+  OpportunityResearchCitationSummarySchema,
+  OpportunityResearchStoredEvidenceSchema,
   RankingProofListResponseSchema,
   RankingProofSchema,
   ReasoningTaskSchema,
@@ -29,12 +32,15 @@ import {
   type CreateRankingProofRequest,
   type OpportunityExplorerOpportunity,
   type OpportunityExplorerListResponse,
+  type OpportunityResearchCitationSummary,
+  type OpportunityResearchStoredEvidence,
   type RankingProof,
   type RankingProofListResponse,
   type UpdateOpportunityLifecycleRequest,
   type UpdateRankingProofStatusRequest
 } from "@localseo/contracts";
 import {
+  agentRunEvidenceItems,
   agentRuns,
   opportunities,
   rankingProofs,
@@ -42,7 +48,8 @@ import {
   reportEvidenceItems,
   reports
 } from "@localseo/db";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "@localseo/db/query";
+import { decideRankingProofTransition } from "@localseo/domain";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
 import { RequireProjectPermission } from "../auth/permissions/require-permission.decorator.js";
@@ -64,9 +71,10 @@ export class OpportunitiesService {
       .orderBy(desc(opportunities.score), desc(opportunities.createdAt))
       .limit(100);
 
+    const responses = await opportunityRowsToResponses(db, projectId, rows);
     return OpportunityExplorerListResponseSchema.parse({
       projectId,
-      opportunities: rows.map((row) => opportunityToResponse(row))
+      opportunities: responses
     });
   }
 
@@ -118,6 +126,7 @@ export class OpportunitiesService {
     input: CreateRankingProofRequest,
     createdByUserId?: string
   ): Promise<RankingProof> {
+    if (!createdByUserId) throw new BadRequestException("Ranking proof capture requires a persisted actor.");
     const db = this.database.requireDb();
     const capturedAt = input.capturedAt ? new Date(input.capturedAt) : new Date();
     const [row] = await db
@@ -131,12 +140,11 @@ export class OpportunitiesService {
         searchEngine: input.searchEngine,
         device: input.device,
         locale: input.locale,
-        screenshotArtifactKey: input.screenshotArtifactKey,
         notes: input.notes,
         createdByUserId,
         evidenceJson: {
           sourceType: "ranking_proof",
-          proofTier: "customer_safe_proof",
+          proofTier: "internal_signal",
           locator: {
             query: input.query,
             pageUrl: input.pageUrl
@@ -145,7 +153,7 @@ export class OpportunitiesService {
             name: "rank",
             value: input.rank
           },
-          entrySource: "manual_operator_entry"
+          entrySource: "manual_operator_capture"
         }
       })
       .returning();
@@ -164,25 +172,51 @@ export class OpportunitiesService {
     userId?: string
   ): Promise<RankingProof> {
     const db = this.database.requireDb();
+    if (!userId) throw new BadRequestException("Ranking proof review requires a persisted actor.");
     const invalidating = input.status === "invalidated";
     let result: typeof rankingProofs.$inferSelect | undefined;
     await db.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT "id" FROM "ranking_proofs" WHERE "id" = ${proofId} AND "project_id" = ${projectId} FOR UPDATE`
       );
+      const [current] = await tx
+        .select()
+        .from(rankingProofs)
+        .where(and(eq(rankingProofs.id, proofId), eq(rankingProofs.projectId, projectId)))
+        .limit(1);
+      if (!current) throw new NotFoundException("Ranking proof was not found for this project.");
+      if (current.status !== input.expectedStatus || current.rowVersion !== input.expectedRowVersion) {
+        throw new ConflictException("Ranking proof changed before this decision was applied.");
+      }
+      const decision = decideRankingProofTransition({
+        currentStatus: current.status,
+        nextStatus: input.status,
+        reason: "reason" in input ? input.reason : undefined
+      });
+      if (decision.kind === "deny")
+        throw new ConflictException(`Ranking proof transition rejected: ${decision.reason}.`);
       const now = new Date();
       const [row] = await tx
         .update(rankingProofs)
         .set({
           status: input.status,
+          reviewedAt: input.status === "reviewed" ? now : current.reviewedAt,
+          reviewedByUserId: input.status === "reviewed" ? userId : current.reviewedByUserId,
           invalidatedAt: invalidating ? now : null,
-          invalidatedByUserId: invalidating ? (userId ?? null) : null,
-          invalidationReason: invalidating ? input.reason : null,
+          invalidatedByUserId: invalidating ? userId : null,
+          invalidationReason: invalidating && "reason" in input ? input.reason : null,
           updatedAt: now
         })
-        .where(and(eq(rankingProofs.id, proofId), eq(rankingProofs.projectId, projectId)))
+        .where(
+          and(
+            eq(rankingProofs.id, proofId),
+            eq(rankingProofs.projectId, projectId),
+            eq(rankingProofs.status, input.expectedStatus),
+            eq(rankingProofs.rowVersion, input.expectedRowVersion)
+          )
+        )
         .returning();
-      if (!row) throw new NotFoundException("Ranking proof was not found for this project.");
+      if (!row) throw new ConflictException("Ranking proof changed before this decision was applied.");
 
       if (invalidating) {
         await tx.execute(sql`
@@ -249,14 +283,33 @@ export class OpportunitiesService {
         decidedByUserId: decidedByUserId ?? null,
         updatedAt: new Date()
       })
-      .where(and(eq(opportunities.id, opportunityId), eq(opportunities.projectId, projectId)))
+      .where(
+        and(
+          eq(opportunities.id, opportunityId),
+          eq(opportunities.projectId, projectId),
+          eq(opportunities.status, input.expectedStatus),
+          eq(opportunities.rowVersion, input.expectedRowVersion)
+        )
+      )
       .returning();
 
     if (!row) {
-      throw new NotFoundException("Opportunity was not found for this project.");
+      const [current] = await db
+        .select({ id: opportunities.id })
+        .from(opportunities)
+        .where(and(eq(opportunities.id, opportunityId), eq(opportunities.projectId, projectId)))
+        .limit(1);
+
+      if (!current) {
+        throw new NotFoundException("Opportunity was not found for this project.");
+      }
+
+      throw new ConflictException("Opportunity changed after it was loaded. Refresh and review the current state.");
     }
 
-    return opportunityToResponse(row);
+    const [response] = await opportunityRowsToResponses(db, projectId, [row]);
+    if (!response) throw new Error("Opportunity response projection produced no result.");
+    return response;
   }
 }
 
@@ -377,16 +430,117 @@ async function countOpportunitiesByRun(
   return counts;
 }
 
-function opportunityToResponse(row: typeof opportunities.$inferSelect) {
+type OpportunityResearchProjection = {
+  artifact: OpportunityResearchStoredEvidence;
+  citations: OpportunityResearchCitationSummary[];
+};
+
+async function opportunityRowsToResponses(
+  db: ReturnType<DatabaseService["requireDb"]>,
+  projectId: string,
+  rows: Array<typeof opportunities.$inferSelect>
+): Promise<OpportunityExplorerOpportunity[]> {
+  const artifactsByOpportunityId = new Map<string, OpportunityResearchStoredEvidence>();
+  const runIds = new Set<string>();
+  const evidenceKeys = new Set<string>();
+
+  for (const row of rows) {
+    if (!hasOpportunityResearchProjection(row)) continue;
+    const artifact = OpportunityResearchStoredEvidenceSchema.safeParse(row.evidenceJson);
+    if (!artifact.success || !row.agentRunId) {
+      throw new Error(`Opportunity Research evidence is invalid for opportunity ${row.id}.`);
+    }
+    assertOpportunityResearchProjectionMatches(row, artifact.data);
+    artifactsByOpportunityId.set(row.id, artifact.data);
+    runIds.add(row.agentRunId);
+    for (const evidenceKey of artifact.data.citedEvidenceKeys) evidenceKeys.add(evidenceKey);
+  }
+
+  const evidenceRows =
+    runIds.size > 0 && evidenceKeys.size > 0
+      ? await db
+          .select({
+            agentRunId: agentRunEvidenceItems.agentRunId,
+            evidenceKey: agentRunEvidenceItems.evidenceKey,
+            sourceKind: agentRunEvidenceItems.sourceKind,
+            proofTier: agentRunEvidenceItems.proofTier,
+            evidenceJson: agentRunEvidenceItems.evidenceJson
+          })
+          .from(agentRunEvidenceItems)
+          .where(
+            and(
+              eq(agentRunEvidenceItems.projectId, projectId),
+              inArray(agentRunEvidenceItems.agentRunId, [...runIds]),
+              inArray(agentRunEvidenceItems.evidenceKey, [...evidenceKeys])
+            )
+          )
+      : [];
+  const evidenceByRunAndKey = new Map(
+    evidenceRows.map((row) => [researchEvidenceMapKey(row.agentRunId, row.evidenceKey), row] as const)
+  );
+
+  return rows.map((row) => {
+    const artifact = artifactsByOpportunityId.get(row.id);
+    if (!artifact) return opportunityToResponse(row);
+    if (!row.agentRunId) throw new Error(`Opportunity Research run identity is missing for opportunity ${row.id}.`);
+    const citations = artifact.citedEvidenceKeys.map((evidenceKey) => {
+      const evidence = evidenceByRunAndKey.get(researchEvidenceMapKey(row.agentRunId!, evidenceKey));
+      if (!evidence) {
+        throw new Error(`Opportunity Research citation ${evidenceKey} is missing for opportunity ${row.id}.`);
+      }
+      return OpportunityResearchCitationSummarySchema.parse({
+        evidenceKey,
+        sourceKind: evidence.sourceKind,
+        proofTier: evidence.proofTier,
+        summary: evidenceSummary(evidence.evidenceJson, evidence.sourceKind)
+      });
+    });
+    return opportunityToResponse(row, { artifact, citations });
+  });
+}
+
+function opportunityToResponse(
+  row: typeof opportunities.$inferSelect,
+  researchProjection?: OpportunityResearchProjection
+): OpportunityExplorerOpportunity {
   const parsedBrief = OpportunityBriefSchema.safeParse(row.evidenceJson);
 
   return OpportunityExplorerListResponseSchema.shape.opportunities.element.parse({
     id: row.id,
     projectId: row.projectId,
     agentRunId: row.agentRunId ?? undefined,
-    classification: row.classification,
+    areaId: row.areaId ?? undefined,
+    serviceId: row.serviceId ?? undefined,
+    classification: row.classification ?? undefined,
     primaryKeyword: row.primaryKeyword,
-    score: row.score,
+    score: row.score ?? undefined,
+    research:
+      researchProjection &&
+      row.rankingMilestone &&
+      row.evidenceReadiness &&
+      row.businessValue &&
+      row.marketDifficulty &&
+      row.executionEffort &&
+      row.lane &&
+      row.policyVersion &&
+      row.researchMaterialDigest &&
+      row.candidateKey
+        ? {
+            rankingMilestone: row.rankingMilestone,
+            evidenceReadiness: row.evidenceReadiness,
+            businessValue: row.businessValue,
+            marketDifficulty: row.marketDifficulty,
+            executionEffort: row.executionEffort,
+            lane: row.lane,
+            policyVersion: row.policyVersion,
+            materialDigest: row.researchMaterialDigest,
+            candidateKey: row.candidateKey,
+            portfolioSelected: row.portfolioSelected,
+            portfolioOrder: row.portfolioOrder ?? undefined,
+            candidate: researchProjection.artifact.candidate,
+            citations: researchProjection.citations
+          }
+        : undefined,
     status: row.status,
     rowVersion: row.rowVersion,
     statusReason: row.statusReason ?? undefined,
@@ -397,20 +551,68 @@ function opportunityToResponse(row: typeof opportunities.$inferSelect) {
   });
 }
 
+function hasOpportunityResearchProjection(row: typeof opportunities.$inferSelect): boolean {
+  return [
+    row.rankingMilestone,
+    row.evidenceReadiness,
+    row.businessValue,
+    row.marketDifficulty,
+    row.executionEffort,
+    row.lane,
+    row.policyVersion,
+    row.researchMaterialDigest,
+    row.candidateKey
+  ].some((value) => value !== null);
+}
+
+function assertOpportunityResearchProjectionMatches(
+  row: typeof opportunities.$inferSelect,
+  artifact: OpportunityResearchStoredEvidence
+): void {
+  const matches =
+    row.serviceId === artifact.candidate.serviceId &&
+    row.areaId === artifact.candidate.areaId &&
+    row.primaryKeyword === artifact.candidate.primaryKeyword &&
+    row.rankingMilestone === artifact.derivedAxes.rankingMilestone &&
+    row.evidenceReadiness === artifact.derivedAxes.evidenceReadiness &&
+    row.businessValue === artifact.derivedAxes.businessValue &&
+    row.marketDifficulty === artifact.derivedAxes.marketDifficulty &&
+    row.executionEffort === artifact.derivedAxes.executionEffort &&
+    row.lane === artifact.derivedAxes.lane;
+  if (!matches) throw new Error(`Opportunity Research projection drifted for opportunity ${row.id}.`);
+}
+
+function researchEvidenceMapKey(runId: string, evidenceKey: string): string {
+  return `${runId}\u0000${evidenceKey}`;
+}
+
+function evidenceSummary(value: unknown, fallback: string): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const summary = (value as Record<string, unknown>).summary;
+    if (typeof summary === "string" && summary.trim().length > 0) return summary.slice(0, 1_000);
+  }
+  return fallback.replaceAll("_", " ");
+}
+
 function agentRunToResponse(row: typeof agentRuns.$inferSelect, opportunityCount: number) {
   const failureCode = parseFailureCode(row.failureCode);
   const diagnostics = recordFromUnknown(row.diagnosticsJson);
   const gateId = stringFromUnknown(diagnostics.gateId);
   const message =
-    failureCode === "qa_rejected" && gateId === "dedupe_gate"
-      ? "No new opportunities; the run only found duplicates of existing open opportunities."
-      : stringFromUnknown(diagnostics.message);
+    row.workflowName === "opportunity_research"
+      ? publicOpportunityResearchFailureMessage(failureCode)
+      : failureCode === "qa_rejected" && gateId === "dedupe_gate"
+        ? "No new opportunities; the run only found duplicates of existing open opportunities."
+        : stringFromUnknown(diagnostics.message);
 
   return AgentRunListResponseSchema.shape.runs.element.parse({
     id: row.id,
     projectId: row.projectId,
     subjectId: row.subjectId ?? undefined,
     task: row.task,
+    workflowName: row.workflowName ?? undefined,
+    workflowVersion: row.workflowVersion ?? undefined,
+    constraintProfileVersion: row.constraintProfileVersion ?? undefined,
     status: row.status,
     failureCode,
     failure: failureCode ? { code: failureCode, gateId, message } : undefined,
@@ -425,6 +627,40 @@ function agentRunToResponse(row: typeof agentRuns.$inferSelect, opportunityCount
   });
 }
 
+function publicOpportunityResearchFailureMessage(failureCode: string | undefined): string | undefined {
+  if (!failureCode) return undefined;
+  switch (failureCode) {
+    case "configuration_error":
+    case "provider_not_configured":
+      return "Opportunity Research is not configured.";
+    case "provider_timeout":
+      return "Opportunity Research provider timed out.";
+    case "provider_unavailable":
+      return "Opportunity Research provider is unavailable.";
+    case "provider_response_invalid":
+      return "Opportunity Research provider returned invalid structured output.";
+    case "model_egress_blocked":
+      return "Opportunity Research was stopped because selected material matched the secret-egress policy.";
+    case "material_or_evidence_invalid":
+    case "material_stale":
+      return "Opportunity Research evidence changed or is no longer eligible.";
+    case "qa_rejected":
+      return "Opportunity Research output failed deterministic QA.";
+    case "enqueue_failed":
+    case "queue_enqueue_failed":
+      return "Opportunity Research could not be queued.";
+    case "work_recovery_exhausted":
+      return "Opportunity Research exhausted its bounded recovery attempts.";
+    case "work_transport_inconsistent":
+      return "Opportunity Research transport completed without terminal product truth.";
+    case "lifecycle_conflict":
+    case "workflow_in_progress":
+      return "Opportunity Research lost workflow lifecycle ownership.";
+    default:
+      return "Opportunity Research failed. Review the failure code and timeline.";
+  }
+}
+
 function rankingProofToResponse(row: typeof rankingProofs.$inferSelect): RankingProof {
   return RankingProofSchema.parse({
     id: row.id,
@@ -436,9 +672,11 @@ function rankingProofToResponse(row: typeof rankingProofs.$inferSelect): Ranking
     searchEngine: row.searchEngine,
     device: row.device,
     locale: row.locale ?? undefined,
-    screenshotArtifactKey: row.screenshotArtifactKey ?? undefined,
     notes: row.notes ?? undefined,
     status: row.status,
+    rowVersion: row.rowVersion,
+    reviewedAt: row.reviewedAt?.toISOString(),
+    reviewedByUserId: row.reviewedByUserId ?? undefined,
     invalidatedAt: row.invalidatedAt?.toISOString(),
     invalidatedByUserId: row.invalidatedByUserId ?? undefined,
     invalidationReason: row.invalidationReason ?? undefined,

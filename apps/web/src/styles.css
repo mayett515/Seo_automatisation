@@ -398,6 +398,78 @@ a {
   align-items: end;
 }
 
+.opportunity-research-workspace {
+  display: grid;
+  gap: 16px;
+  border-top: 1px solid #d9ddd5;
+  border-bottom: 1px solid #d9ddd5;
+  padding: 20px 0;
+}
+
+.opportunity-research-foundation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.research-pause-form,
+.knowledge-reject-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) max-content;
+  gap: 8px;
+  align-items: end;
+}
+
+.research-pause-form {
+  min-width: min(100%, 420px);
+}
+
+.research-checklist {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #e0e4dc;
+  padding: 10px;
+}
+
+.research-checklist label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.research-issue-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.research-issue-list span {
+  border-left: 3px solid #d58a1f;
+  padding: 5px 8px;
+  color: #5b3c00;
+  background: #fff7df;
+}
+
+.knowledge-review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.opportunity-research-timeline__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.opportunity-research-timeline__grid h4 {
+  margin: 0;
+}
+
 .command-card {
   display: grid;
   grid-template-columns: minmax(110px, 1fr) max-content;
@@ -1002,6 +1074,10 @@ a {
   .command-card--wide,
   .explorer-layout,
   .explorer-lower-grid,
+  .opportunity-research-foundation-grid,
+  .opportunity-research-timeline__grid,
+  .research-pause-form,
+  .knowledge-reject-form,
   .data-table__row--opportunity,
   .decision-button-row,
   .metric-row--compact,

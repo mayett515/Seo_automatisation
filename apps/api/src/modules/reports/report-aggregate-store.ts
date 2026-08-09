@@ -56,7 +56,7 @@ import {
   rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "@localseo/db/query";
 
 export type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
 export type ReportIssueRow = typeof reportIssues.$inferSelect;

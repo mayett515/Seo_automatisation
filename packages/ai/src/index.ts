@@ -25,6 +25,7 @@ import {
 } from "@localseo/contracts";
 
 export * from "./report-narrative.js";
+export * from "./opportunity-research.js";
 
 export const mastraAgents = [
   "ResearchAgent",
@@ -871,7 +872,7 @@ export function buildOpportunityScoutEvidencePacket(
     ...input,
     websiteImport: input.websiteImport
       ? {
-          ...input.websiteImport,
+          ...omitRecordKeys(input.websiteImport, ["artifactKey"]),
           discoveredRoutes: capStringArray(
             input.websiteImport.discoveredRoutes,
             opportunityScoutEvidencePacketLimits.existingRoutes
@@ -885,7 +886,10 @@ export function buildOpportunityScoutEvidencePacket(
     tracking: {
       recentEvents: sortRecords(input.tracking.recentEvents, ["occurredAt", "eventName", "route"])
     },
-    rankingProofs: sortRecords(input.rankingProofs, ["sourceId", "query", "pageUrl", "capturedAt"]),
+    rankingProofs: sortRecords(
+      input.rankingProofs.map((proof) => omitRecordKeys(proof, ["screenshotArtifactKey"])),
+      ["sourceId", "query", "pageUrl", "capturedAt"]
+    ),
     serpSnapshots: sortRecords(input.serpSnapshots, ["sourceId", "query", "capturedAt"]),
     technicalAuditFindings: sortRecords(input.technicalAuditFindings, ["severity", "sourceId", "route", "checkKey"]),
     existingRoutes: [...input.existingRoutes].sort().slice(0, opportunityScoutEvidencePacketLimits.existingRoutes),
@@ -893,6 +897,12 @@ export function buildOpportunityScoutEvidencePacket(
       .sort()
       .slice(0, opportunityScoutEvidencePacketLimits.existingOpportunityKeys)
   };
+}
+
+function omitRecordKeys(value: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const result = { ...value };
+  for (const key of keys) delete result[key];
+  return result;
 }
 
 function capStringArray(value: unknown, limit: number): unknown {

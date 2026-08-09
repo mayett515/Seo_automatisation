@@ -63,3 +63,5 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0019 - Agent Constraint Architecture And Tool Policy](0019-agent-constraint-architecture-and-tool-policy.md)
 - [0020 - Project-Scoped Media Asset Pipeline](0020-project-scoped-media-asset-pipeline.md)
 - [0021 - Digest-Bound Customer Report Publication And Typed Next Action Boundary](0021-digest-bound-customer-report-publication.md)
+- [0022 - Agentic Runtime And Evidence Ledger](0022-agentic-runtime-and-evidence-ledger.md)
+- [0023 - PostgreSQL Markdown Project Knowledge](0023-postgresql-markdown-project-knowledge.md)

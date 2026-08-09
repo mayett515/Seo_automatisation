@@ -1,8 +1,8 @@
 ---
 description: "Local SEO product and application architecture router"
-globs: "**/*.{md,json,mmd,ts,tsx}"
+globs: "**/*.{md,json,mmd,sql,ts,tsx,yaml,yml}"
 alwaysApply: false
-version: "1.1.0"
+version: "1.2.1"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies: []
@@ -31,7 +31,7 @@ THEN you MUST load and comply with: `.ai-project-rules/14-architecture-direction
 IF the task touches module cohesion, use-case extraction, facade or service decomposition, bounded-context ownership, modular monolith versus microservices, a post-change module-boundary audit, or whether a module should be split:
 THEN you MUST load and comply with: `.ai-project-rules/14A-module-cohesion-and-capability-extraction.md`.
 
-IF the task touches repeated review findings, regression guards, persisted JSON read/write seams, PageJson safety, Page Registry source-of-truth seams, project-scoped media assets, page-version approval, approval-blocker serialization, Page Proposal lifecycle, release-plan actor evidence, customer-report snapshot/publication/Next Action boundaries, provider mutations in API routes, release live-truth projection, deploy artifact approval, or stale implemented/deferred roadmap lists:
+IF the task touches repeated review findings, regression guards, persisted JSON read/write seams, PageJson safety, Page Registry source-of-truth seams, project-scoped media assets, page-version approval, approval-blocker serialization, Page Proposal lifecycle, release-plan actor evidence, customer-report snapshot/publication/Next Action boundaries, agent execution/evidence ledgers, Opportunity Research recovery or promotion, project-knowledge model use or retirement, provider mutations in API routes, release live-truth projection, deploy artifact approval, or stale implemented/deferred roadmap lists:
 THEN you MUST load and comply with: `.ai-project-rules/15-architecture-regression-guards.md`.
 
 IF the task touches customer approval, previews, notes, generated suggestions, or productive customer changes:
@@ -46,7 +46,7 @@ THEN you MUST load and comply with: `.ai-project-rules/12-local-seo-page-quality
 IF the task touches React UI, routes, forms, tables, app state, preview UX, dashboards, maps, or diagrams:
 THEN you MUST load and comply with: `.ai-project-rules/05-frontend-tanstack.md`.
 
-IF the task touches NestJS modules, Fastify HTTP, workers, queues, Mastra workflows, Mastra agents, or job contracts:
+IF the task touches NestJS modules, Fastify HTTP, workers, queues, Mastra workflows, Mastra agents, DeepSeek model calls, public-search tools, execution heartbeats, evidence-ledger recovery, or job contracts:
 THEN you MUST load and comply with: `.ai-project-rules/06-backend-workers-mastra.md`.
 
 IF the task touches tracking, analytics, GSC OAuth, privacy, security, tenant isolation, logs, or observability:
@@ -85,7 +85,7 @@ THEN you MUST load and comply with: `.ai-project-rules/13-seo-opportunity-planni
 - Use `.ai-project-rules/12-local-seo-page-quality-gate.md` as the reusable checklist for generated local SEO pages before preview approval, deploy, and report handoff.
 - Use `.ai-project-rules/13-seo-opportunity-planning.md` when deciding future markets, page opportunities, keyword tiers, or execution sequence.
 - Use `.ai-project-rules/14-architecture-direction.md` for dependency direction, ports/adapters, and provider isolation, and `.ai-project-rules/14A-module-cohesion-and-capability-extraction.md` for module cohesion and capability extraction.
-- Use `.ai-project-rules/15-architecture-regression-guards.md` when touching a seam that previous reviews identified, especially PageJson safety, persisted JSON, project-scoped media assets, page-version approval, approval-blocker serialization, Page Proposal lifecycle, release-plan actor evidence, customer-report publication and typed Next Actions, provider mutation ownership, release live truth, deploy artifact approval, and roadmap drift.
+- Use `.ai-project-rules/15-architecture-regression-guards.md` when touching a seam that previous reviews identified, especially PageJson safety, persisted JSON, project-scoped media assets, page-version approval, approval-blocker serialization, Page Proposal lifecycle, release-plan actor evidence, customer-report publication and typed Next Actions, agent execution/evidence truth, Opportunity Research recovery/promotion, project-knowledge model use/retirement, provider mutation ownership, release live truth, deploy artifact approval, and roadmap drift.
 - Use `.ai-stack-rules/00-system-index.md` for stack-specific implementation guardrails; it complements but does not override `.ai-rules/` or project product rules.
 </positive-directives>
 

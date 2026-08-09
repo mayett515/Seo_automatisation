@@ -47,6 +47,8 @@ Local environment recommendation:
 
 ## Current Coverage
 
+The current integration command discovers 309 real-PostgreSQL cases across 26 suites: 156 API cases in 10 files and 153 worker cases in 16 files. They skip when `TEST_DATABASE_URL` is absent; the GitHub Actions `integration` job supplies PostgreSQL 17 and runs the complete command. Historical local result snippets below are retained only as dated evidence for the slices they originally accompanied and are not current totals.
+
 ### Customer Report Contract, Domain, And Aggregate Foundation
 
 Files:
@@ -198,13 +200,13 @@ Implemented tests:
 
 These tests prove the API boundary. The provider mutation belongs to the worker tests below.
 
-Verified local run:
+Historical local baseline captured before later integration slices expanded the command:
 
 ```text
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/api test:integration
 
-tests 29 | pass 29 | fail 0
+tests 29 | pass 29 | fail 0 (historical snapshot; not the current suite count)
 ```
 
 These tests intentionally use a fake verification port. HTML parsing, canonical normalization, sitemap parsing, and JSON-LD extraction remain adapter unit-test responsibilities.
@@ -276,13 +278,13 @@ Implemented tests:
 
 These tests use a fake `SearchConsolePort` and fake token decryptor. The database writes, deletes, foreign keys, and transaction ordering are real; no live Google Search Console network calls are made.
 
-Verified local worker integration run:
+Historical local worker baseline captured before later integration slices expanded the command:
 
 ```text
 $env:TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/local_seo_test"
 corepack pnpm --filter @localseo/worker test:integration
 
-tests 31 | pass 31 | fail 0
+tests 31 | pass 31 | fail 0 (historical snapshot; not the current suite count)
 ```
 
 ### Queue And Job Audit
@@ -299,6 +301,33 @@ Implemented tests:
 4. Queue add failure marks the queued audit row `failed` with failure evidence.
 
 These tests use a stateful fake BullMQ queue with a real database because the DB audit truth is the project-owned behavior. Full Redis/BullMQ worker processing remains out of scope for this milestone slice.
+
+### ADR 0022 Opportunity Research
+
+Files:
+
+- [project-context.integration.ts](/C:/localseoproject/apps/api/src/modules/project-context.integration.ts)
+- [opportunity-research.integration.ts](/C:/localseoproject/apps/api/src/modules/opportunity-research.integration.ts)
+- [agent-ledger.integration.ts](/C:/localseoproject/apps/worker/src/agent-ledger.integration.ts)
+- [opportunity-research-scheduler.integration.ts](/C:/localseoproject/apps/worker/src/opportunity-research-scheduler.integration.ts)
+- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
+- [opportunity-research.spec.ts](/C:/localseoproject/apps/web/e2e/opportunity-research.spec.ts)
+
+Implemented tests prove:
+
+1. Imported or manual profile revisions create exact canonical service/area truth, stale revisions fail without phantom writes, omitted entities retire explicitly, and approved task-scoped Markdown remains immutable and searchable. Direct database tests reject unauthorized knowledge creation/review and ranking-proof capture/review actors. Only current non-retired versions explicitly marked `model_allowed` enter model material; retirement clears selection without deleting history.
+2. Explicit rerun admission binds project, actor, material digest, expected state revision, and idempotency key before one durable run/event and one `jobId = runId` queue write; replay does not duplicate transport.
+3. Paused research rejects rerun without agent-run or job-run truth, while queue failure terminalizes both the run and project research state with an exact `run.failed` event.
+4. Project-scoped timeline reads expose only bounded typed steps, events, and evidence summaries; adversarial event payload and step failure detail never reach the response.
+5. Step claims, application-canonical output bytes, terminal output digests, selected source-version drift rejection, current-source eligibility revalidation on later bindings, parent-current-epoch failure evidence for pending steps, current-epoch lifecycle events, terminal immutability, cross-project rejection, same-project forged-candidate rejection, duplicate-delivery ownership, and succeeded replay are enforced against the real schema; a real lock interleaving proves the project and selected evidence sources are owned before the parent run.
+6. Dirty/weekly scheduling admits ready due material once, serializes competing scanners, defers incomplete material for one day, and does not rescan it every interval.
+7. Recovery re-enqueues stale Opportunity Research under the same run id and a distinct exact recovery job-run/count generation; a crash after the reservation but before enqueue reuses that exact generation and event, completed recovery transport without product truth fails visibly, fresh exact-owner heartbeats prevent recovery, post-claim active transport cancels only the recovery audit while the original remains claimable, execution takeover increments one epoch, fails prior-epoch running steps, reuses immutable succeeded checkpoints and source evidence, rejects late writes and stale provider responses, and bounded exhaustion atomically clears active research state.
+8. Product success requires exactly the canonical research-plan, follow-up-capture, and strategy checkpoints with their exact agent/tool identities in dependency order; zero-step Mastra replay, canonical-byte/digest corruption, prior-epoch direct events, wrong-tool identity, unresolved direct-SQL success, run/state drift, and opportunity rows absent from strategy output fail closed.
+9. Mastra workflow tests prove the exact persisted follow-up plan survives a crash without a second model-plan call, and the framework status matrix replays, restarts, or rejects explicitly.
+10. Deterministic domain tests prove existing project candidates and same-run duplicates are removed before fixed 2/4/2 allocation; the versioned promotion corpus rejects weak-proof promotion, unknown citations, competitor substitution, and existing-route collisions while retaining one valid German service-area candidate. Its manifest binds workflow, policy, prompt, exact fixture-corpus digest, and model identity. Adapter tests prove every direct-provider retry reruns its worker-supplied current-material guard before transport.
+11. Chromium at 390 px and 768 px renders profile/knowledge/proof controls, selectable run history, and bounded timelines; it sends revision-bound rerun/proof-review commands without horizontal overflow.
+
+Live DeepSeek and public-internet DuckDuckGo calls remain credentialed/manual smoke gates. CI uses deterministic model/search fakes around the real product ledger and lifecycle boundaries.
 
 ### Page Proposal Target Admission
 
@@ -359,6 +388,12 @@ Implemented tests:
 10. A stale fact-only report generation run is claimed once and re-enqueued on the `report` queue with `jobId = runId`.
 11. Exhausted report recovery and completed transport without persisted report truth both terminalize the durable run with stable failure evidence.
 12. Exhausted report recovery also terminalizes an active report-scoped narrative agent run so parent and audit truth cannot diverge.
+13. Stale Opportunity Research is re-enqueued with the same run id and `recovery.claimed` event.
+14. A running Opportunity Research execution with a fresh exact-owner heartbeat is not reclaimed.
+15. If original transport becomes active after the recovery reservation, the recovery audit is cancelled while the original delivery remains claimable under generation zero.
+16. Exhausted Opportunity Research atomically fails the workflow, records `recovery.exhausted` plus `run.failed`, and clears the project state's active run.
+17. A crash after committing an Opportunity Research recovery reservation but before enqueue reuses the same recovery count, purpose-bound audit row, and `recovery.claimed` event on the next scan.
+18. Completed Opportunity Research recovery transport without terminal product truth fails the workflow with stable `work_transport_inconsistent` evidence instead of consuming another generation.
 
 The scanner tests use real Postgres migrations and a stateful fake queue. This proves product-row claims and audit transactions without requiring Redis to manufacture the race timing.
 
@@ -577,7 +612,7 @@ Do not include these in Lifecycle Integration Coverage:
 - real Netlify calls,
 - live public-deploy browser verification,
 - live Google Search Console calls,
-- Mastra or AI reasoning behavior,
+- credentialed live Mastra/DeepSeek or public-search provider behavior,
 - full public-internet end-to-end deploys.
 
 Those belong to later foundation milestones after the database/API/worker lifecycle is proven.

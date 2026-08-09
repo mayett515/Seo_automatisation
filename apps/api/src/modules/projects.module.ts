@@ -44,6 +44,7 @@ import {
   agentRuns,
   isDatabaseUniqueViolation,
   mainWebsites,
+  projects,
   technicalAuditRuns,
   websiteImportRuns,
   type DatabaseClient
@@ -56,7 +57,9 @@ import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "@localseo/db/query";
+
+type TransactionClient = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
 
 @Injectable()
 export class ProjectsService {
@@ -267,21 +270,23 @@ export class ProjectsService {
     }
 
     const db = this.database.requireDb();
-    const activeRun = await findActiveOpportunityScoutRun(db, projectId);
-    if (activeRun) {
-      return activeOpportunityScoutResponse(activeRun);
-    }
-
     const runId = randomUUID();
     const jobId = runId;
 
     try {
-      await db.insert(agentRuns).values({
-        id: runId,
-        projectId,
-        task: "opportunity_scout",
-        status: "queued"
+      const activeRun = await db.transaction(async (tx) => {
+        await lockProjectForOpportunityScout(tx, projectId);
+        const active = await findActiveOpportunityScoutRun(tx, projectId);
+        if (active) return active;
+        await tx.insert(agentRuns).values({
+          id: runId,
+          projectId,
+          task: "opportunity_scout",
+          status: "queued"
+        });
+        return undefined;
       });
+      if (activeRun) return activeOpportunityScoutResponse(activeRun);
     } catch (error) {
       if (isDatabaseUniqueViolation(error)) {
         const conflictingRun = await findActiveOpportunityScoutRun(db, projectId);
@@ -723,7 +728,9 @@ async function markOpportunityScoutQueueFailure(
       completedAt: new Date(),
       updatedAt: new Date()
     })
-    .where(eq(agentRuns.id, runId));
+    .where(
+      and(eq(agentRuns.id, runId), isNull(agentRuns.workflowName), inArray(agentRuns.status, ["queued", "running"]))
+    );
 }
 
 async function markTechnicalAuditQueueFailure(db: DatabaseClient, auditRunId: string, message: string): Promise<void> {
@@ -755,7 +762,12 @@ function normalizeOpportunityScoutQueueFailure(error: unknown): string {
   return message.slice(0, 500);
 }
 
-async function findActiveOpportunityScoutRun(db: DatabaseClient, projectId: string) {
+async function lockProjectForOpportunityScout(tx: TransactionClient, projectId: string): Promise<void> {
+  const rows = await tx.execute(sql`SELECT "id" FROM ${projects} WHERE "id" = ${projectId} FOR UPDATE`);
+  if (rows.length === 0) throw new BadRequestException("Project was not found.");
+}
+
+async function findActiveOpportunityScoutRun(db: Pick<DatabaseClient, "select">, projectId: string) {
   const [run] = await db
     .select()
     .from(agentRuns)
@@ -794,7 +806,6 @@ function websiteImportRunToResponse(row: typeof websiteImportRuns.$inferSelect) 
     projectId: row.projectId,
     sourceUrl: row.sourceUrl,
     status: row.status,
-    artifactKey: row.artifactKey ?? undefined,
     pageCount: numberFromUnknown(summary.pageCount),
     discoveredRoutes: stringArrayFromUnknown(summary.discoveredRoutes),
     facts: summary.facts,

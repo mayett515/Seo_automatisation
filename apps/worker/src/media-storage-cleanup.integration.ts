@@ -19,7 +19,7 @@ import {
   users,
   type DatabaseClient
 } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables

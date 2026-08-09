@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import type { MediaAssetStoragePort, MediaStoredObjectMetadata, MediaUploadGrant } from "@localseo/adapters";
 import { customers, mediaAssets, mediaAssetVariants, projects, users, type DatabaseClient } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import sharp from "sharp";
 import {
   createIntegrationTestDatabase,

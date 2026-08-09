@@ -2,6 +2,8 @@
 
 Status: Design review accepted, implementation slice 1-2 of the agent-first MVP roadmap
 
+Implementation note (2026-08-09): this document remains the historical contract for the legacy single-call `AiReasoningPort` and Opportunity Scout lane. ADR 0022 now supersedes its deferred Mastra, run-event/evidence-ledger, DuckDuckGo capture, and expanded Opportunity Explorer statements with an implemented purpose-named Opportunity Research workflow.
+
 This document reviews the `C:\big eater` handoff design (AI Reasoning Port, Opportunity Scout contracts, nearby-Orte/corridor model, minimal agent runs) against the actual codebase and pins the shapes for the next implementation slice. The frontend design prompt (Opportunity Explorer, Page Studio) is used here only to pressure-test the contracts; no UI is built in this slice.
 
 Related: [Agent-First MVP Roadmap](agent-first-mvp-roadmap.md), [Page Studio Layout-Zone Editor](page-studio-layout-zone-editor.md), [Frontend UI And Page Registry](frontend-ui-and-page-registry.md).
@@ -30,7 +32,7 @@ Accepted as-is from the handoff:
 - Classification vocabulary: `proven_win | near_term_target | internal_radar | rejected`.
 - Nearby Orte / corridors are first-class contract objects, not prose notes.
 - Opportunity groups are first-class hints. They may be GSC query/page clusters, corridor clusters, or agent-suggested groups now; later the user can curate or create their own groups without changing the opportunity contract.
-- Persist both: `opportunities.evidenceJson` as the product artifact and a minimal `agent_runs` table as the run audit. Defer `agent_run_events`.
+- Persist both: `opportunities.evidenceJson` as the product artifact and a minimal `agent_runs` table as the run audit. The original slice deferred `agent_run_events`; ADR 0022 now implements them for workflow-backed Opportunity Research runs.
 - First output is `OpportunityBrief` only. `PageBrief` is slice 6; `recommendedAction: "create_page_proposal"` is just a flag, not a page draft.
 - GSC is internal radar. Customer proof is real SERP visibility (Top 10 / Top 5 / Top 3 / rank 1).
 - Competitor data is strategy evidence, never copy source.
@@ -39,7 +41,7 @@ Accepted as-is from the handoff:
 
 These are the deltas between the handoff sketch and what the repo already has. They change the design in small but load-bearing ways.
 
-### 1. Port placement follows the existing port convention
+### 1. Port placement follows the existing legacy reasoning-port convention
 
 The handoff proposes the `AiReasoningPort` interface in `packages/ai`. In this repo, every port (`CrawlerPort`, `AnalyticsPort`, `ObjectStoragePort`, `TrackingPort`, `EventPublisherPort`, and the current `AiReasoningPort`) lives in `packages/adapters/src/index.ts`. Keep that convention:
 
@@ -51,17 +53,17 @@ packages/ai          pure prompt/task builders, evidence packet assembly, output
 apps/worker          opportunity-scout handler: load evidence, call packages/ai, persist
 ```
 
-Do not split port definitions across two homes. `packages/ai` stays free of provider types and free of DB access.
+Do not split the legacy generic reasoning port across two homes. Its OpenCode/mock implementations remain adapter-local. ADR 0022 deliberately places the purpose-named `OpportunityResearchPort`, Mastra runtime factory, and direct DeepSeek model gateway together in `packages/ai`; product contracts remain free of provider/framework types, and this successor capability does not move or widen the legacy generic port.
 
 ### 2. `ReasoningTask` replaces `workflowId`
 
-`packages/ai` currently exports `mastraWorkflows` string names (`localSeoAnalysisWorkflow`, ...) that nothing implements. The port keys on a closed task union instead; the workflow name list remains aspirational documentation until real Mastra workflows exist.
+The legacy `mastraWorkflows` name list is not an execution registry. The single-call port keys on a closed task union; ADR 0022 separately implements the closed `opportunity_research` workflow identity through a purpose-named port.
 
 ```ts
 type ReasoningTask = "opportunity_scout" | "page_brief_draft" | "section_text_generation" | "report_narrative";
 ```
 
-The original foundation slice implemented only `opportunity_scout`. The same closed union now also drives the implemented `page_brief_draft` and `section_text_generation` workers; `report_narrative` remains future work.
+The original foundation slice implemented only `opportunity_scout`. The same closed union now also drives the implemented `page_brief_draft`, `section_text_generation`, and bounded `report_narrative` workers. Opportunity Research uses its own workflow identity rather than widening this task union.
 
 ### 3. The model never emits the final score
 
@@ -245,7 +247,7 @@ This is a runtime-routing policy, not a product contract. The current
 keys should be added before automated SERP/search workers land. Model ids still
 belong in adapter config and `agent_runs` metadata only.
 
-DeepSeek can be the model behind the future SERP/search worker: it may plan
+DeepSeek now drives the separate ADR 0022 Opportunity Research workflow: it may plan
 queries, choose nearby Orte/service combinations to check, call read-only search
 or SERP snapshot tools, and interpret the results. The actual snapshot capture is
 still a deterministic adapter path (`SerpSnapshotPort` or equivalent) that writes
@@ -518,7 +520,7 @@ agent_runs
   started_at / completed_at / timestamps
 ```
 
-Why `agent_runs` now and not later: a failed run produces zero opportunity rows. Without the table, failures and cost are invisible, and the Opportunity Explorer's run timeline has no data source. Deferred until actually needed: `agent_run_events` (streaming timeline/replay), token-level traces, multi-step tool event logs.
+Why `agent_runs` now and not later: a failed run produces zero opportunity rows. Without the table, failures and cost are invisible, and the Opportunity Explorer's run timeline has no data source. ADR 0022 now adds compact product events, stable steps, and evidence links for workflow-backed runs; token-level traces and raw tool/provider logs remain deferred operational telemetry.
 
 ### Worker flow
 
@@ -745,9 +747,9 @@ GET /projects/:projectId/agent-runs?task=opportunity_scout
 
 **Are the classification states correct?** Yes, with one semantic note: `proven_win` is a report-lane fact, not an actionable opportunity. QA restricts its `recommendedAction` to `monitor`; it feeds slice 10 reporting, never page creation on its own.
 
-**Missing evidence fields?** Added versus the first sketch: `locator`, `dateRange`, `observedMetric`, `proofTier`, `excerpt` cap. Removed: stored `customerVisible` (derived). Deliberately not added: screenshots/artifacts blobs (ObjectStoragePort refs later), evidence hashing (audit depth deferred with `agent_run_events`).
+**Missing evidence fields?** Added versus the first sketch: `locator`, `dateRange`, `observedMetric`, `proofTier`, `excerpt` cap. Removed: stored `customerVisible` (derived). Deliberately not added to the legacy Opportunity Scout packet: screenshot/artifact blobs. ADR 0022's separate Opportunity Research ledger now stores source-version and payload-digest evidence plus canonical step-output bytes without changing this older bounded-call contract.
 
-**Persist now vs defer?** Now: `opportunities.evidenceJson` + `classification` + `agent_run_id`, minimal `agent_runs`. Deferred: `agent_run_events`, streaming, replay, per-step tool audit.
+**Persist now vs defer?** The original lane persisted `opportunities.evidenceJson` + `classification` + `agent_run_id` with minimal `agent_runs`. ADR 0022 adds bounded events, replayable step state, and immutable evidence links for Opportunity Research while raw streaming/tool traces remain deferred.
 
 **Failure modes that could let LLM output become unsafe product truth?** Each mapped to a gate: invented evidence (gate 1), self-promoted proof (gates 2-3), competitor copying (gate 4), thin doorway pages (gates 5-7), self-graded ranking (gate 8 / Correction 3), provider type leakage (adapter boundary + opaque provider strings), silent partial persistence (all-or-nothing run persistence, idempotent runId).
 
@@ -778,12 +780,10 @@ No contract field exists solely for a UI that does not exist yet except `mapGrou
 The list below records the original Opportunity Scout foundation scope. Page Proposal generation has since landed as a separate constrained worker slice and must be judged against ADR 0017/0019 plus the current roadmap.
 
 ```text
-Mastra multi-agent orchestration (single scout task first)
-agent_run_events / streaming timeline
-additional Explorer UI beyond the current table/detail/run/proof/decision baseline
-read-only tool plumbing beyond what the worker loads directly
 MapLibre, RAG, agent memory
 ```
+
+ADR 0022 now accepts the successor architecture for the first two deferred items. Live Mastra tools justify a compact application-owned step/event/evidence ledger before a streaming UI exists. `agent_runs` remains the top-level run header; Mastra snapshots, traces, and token streams remain operational data and cannot become product events, evidence, approval, or recovery truth.
 
 ## Open Decisions (Non-Blocking, Defaults Chosen)
 

@@ -11,7 +11,7 @@ import {
 } from "@localseo/contracts";
 import { decideCustomerReportTransition } from "@localseo/domain";
 import { reportArtifacts, reportGenerationRuns, reportIssues, reportLifecycleEvents, reports } from "@localseo/db";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "@localseo/db/query";
 import { DatabaseService } from "../../database/database.service.js";
 import type { ReportDocumentCapabilityClaims } from "../../report-document-capability.js";
 import {

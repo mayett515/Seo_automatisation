@@ -68,34 +68,34 @@ flowchart TD
 
 The codebase is a modular monolith: one API process, one worker host, and shared typed packages. Boundaries are kept explicit so the system can grow without prematurely splitting into microservices.
 
-| Runtime lane             | Responsibility                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------------- |
-| `apps/web`               | Operator/customer workflow UI, TanStack data loading, forms, tables, and preview surfaces     |
-| `apps/api`               | HTTP contracts, auth, tenant guards, and queue-producing application services                 |
-| `apps/worker`            | BullMQ jobs, retries, provider mutations, reconciliation, recovery, and maintenance workflows |
-| `packages/contracts`     | Shared Zod request, response, job, model-output, and product-artifact contracts               |
-| `packages/domain`        | Pure page-editing, release, rollback, verification, recovery, and retention decisions         |
-| `packages/ai`            | Prompt/task builders, deterministic AI-output QA gates, scoring, and redaction policy         |
-| `packages/adapters`      | Purpose-named ports and provider adapters for hosting, GSC, crawling, storage, and reasoning  |
-| `packages/config`        | Runtime configuration contracts and fail-closed environment parsing                           |
-| `packages/db`            | Drizzle schema, migrations, and persistence source of truth                                   |
-| `packages/page-registry` | Deployable section schemas, editor metadata, PageJson validation, and deterministic rendering |
-| `packages/seo`           | Deterministic SEO checks, release facts, and customer-report safety guards                    |
-| `packages/ui`            | Reusable operator-application UI primitives                                                   |
+| Runtime lane             | Responsibility                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `apps/web`               | Operator/customer workflow UI, TanStack data loading, forms, tables, and preview surfaces            |
+| `apps/api`               | HTTP contracts, auth, tenant guards, and queue-producing application services                        |
+| `apps/worker`            | BullMQ jobs, retries, provider mutations, reconciliation, recovery, and maintenance workflows        |
+| `packages/contracts`     | Shared Zod request, response, job, model-output, and product-artifact contracts                      |
+| `packages/domain`        | Pure page-editing, release, rollback, verification, recovery, and retention decisions                |
+| `packages/ai`            | Prompt/QA code plus the purpose-named Opportunity Research Mastra runtime and DeepSeek model gateway |
+| `packages/adapters`      | Legacy generic reasoning, hosting, GSC, crawling, storage, and other infrastructure ports/adapters   |
+| `packages/config`        | Runtime configuration contracts and fail-closed environment parsing                                  |
+| `packages/db`            | Drizzle schema, migrations, and persistence source of truth                                          |
+| `packages/page-registry` | Deployable section schemas, editor metadata, PageJson validation, and deterministic rendering        |
+| `packages/seo`           | Deterministic SEO checks, release facts, and customer-report safety guards                           |
+| `packages/ui`            | Reusable operator-application UI primitives                                                          |
 
 ## Stack
 
-| Layer            | Stack                                                                                                   |
-| ---------------- | ------------------------------------------------------------------------------------------------------- |
-| Frontend         | React, TypeScript, TanStack Router, Query, Form, Table, Store, Virtual                                  |
-| API              | NestJS, Fastify, Better Auth, CSRF, project-scoped guards, RBAC                                         |
-| Workers          | BullMQ, Redis, deterministic job handlers, retry/failure evidence                                       |
-| AI lane          | Mastra-ready `AiReasoningPort`, mock/OpenCode Go adapters, named task policies, structured output gates |
-| Data             | PostgreSQL, Drizzle schema/migrations, object storage artifact refs                                     |
-| SEO integrations | Google OAuth, Search Console port, tracking ingestion, website import/crawl evidence                    |
-| Deployment       | Netlify adapter, release preflight, post-deploy verification, rollback reconciliation                   |
-| Verification     | HTTP/HTML checks, browser smoke via Playwright, GSC warning checks                                      |
-| Quality          | pnpm workspace, ESLint, Prettier, TypeScript, unit/integration/browser checks, CI                       |
+| Layer            | Stack                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Frontend         | React, TypeScript, TanStack Router, Query, Form, Table, Store, Virtual                                                  |
+| API              | NestJS, Fastify, Better Auth, CSRF, project-scoped guards, RBAC                                                         |
+| Workers          | BullMQ, Redis, deterministic job handlers, retry/failure evidence                                                       |
+| AI lane          | Constrained `AiReasoningPort` lanes plus the ADR 0022 DeepSeek/Mastra Opportunity Research workflow and evidence ledger |
+| Data             | PostgreSQL, Drizzle schema/migrations, object storage artifact refs                                                     |
+| SEO integrations | Google OAuth, Search Console port, tracking ingestion, website import/crawl evidence                                    |
+| Deployment       | Netlify adapter, release preflight, post-deploy verification, rollback reconciliation                                   |
+| Verification     | HTTP/HTML checks, browser smoke via Playwright, GSC warning checks                                                      |
+| Quality          | pnpm workspace, ESLint, Prettier, TypeScript, unit/integration/browser checks, CI                                       |
 
 ## Current Foundation
 
@@ -201,7 +201,9 @@ failed  -> running   # retry
 succeeded is terminal
 ```
 
-### Opportunity Scout Contracts
+### Legacy Opportunity Scout Contracts
+
+This section records the bounded single-call lane that remains supported behind `AiReasoningPort`. ADR 0022's implemented Opportunity Research workflow is the current multi-step DeepSeek/Mastra research path and does not reinterpret these historical contracts as V2 truth.
 
 The first AI product output is an `OpportunityBrief`, not a generated page. The model can propose, but deterministic code decides what can become product state.
 
@@ -294,10 +296,17 @@ strict report contracts, canonicalization, eligibility, lifecycle, and permissio
 
 Mastra/RAG posture:
 
-- Mastra belongs behind `AiReasoningPort`.
-- The first version is one structured reasoning call, not a broad multi-agent platform.
+- Existing bounded calls remain behind `AiReasoningPort`; the first multi-step runtime uses a purpose-named Mastra workflow adapter.
+- ADR 0022 keeps source evidence, agent execution, and product result truth separate.
+- Mastra snapshots and traces are operational data; PostgreSQL owns run claims, evidence identity, recovery, approval, and product results.
+- Direct DeepSeek plus one bounded Opportunity Research workflow is implemented as persisted research-plan, follow-up-capture, and strategy steps.
+- PostgreSQL execution epochs and exact-owner heartbeats fence late step, event, search-capture, success, and failure writes; recovery consumes one exact stored follow-up plan and recovery generation.
+- Succeeded checkpoints retain application-canonical bytes plus SHA-256, and replay recomputes both before reuse.
+- Production model context includes only current approved, task-scoped, explicitly model-allowed knowledge; retirement preserves history while removing current/model selection.
+- An obvious-secret egress gate runs before DeepSeek transport, and promotion evidence binds workflow, policy, prompt, fixture-corpus, and model identity.
+- The credentialed DeepSeek provider smoke remains an operational gate.
 - RAG is deferred until direct evidence packets are too large or retrieval has a clear product need.
-- SERP, WebExtract, and browser tools stay read-only and must snapshot evidence before the model cites it.
+- The shipped public discovery tool is the purpose-owned DuckDuckGo HTML adapter; it stores bounded `research_support_only` captures before the model may cite them. Generic page reading, browser acting, authenticated browsing, and broad MCP/web-tool catalogs remain unavailable.
 
 ## Rule-Guided Development
 
@@ -437,11 +446,12 @@ The repository has a strong foundation for an AI-assisted Local SEO MVP:
 - tracking and GSC foundations,
 - website import evidence,
 - Opportunity Scout, Explorer, ranking-proof, SERP, and technical-audit baselines,
+- ADR 0022 Opportunity Research with confirmed project context, approved PostgreSQL Markdown knowledge, direct DeepSeek/Mastra orchestration, bounded DuckDuckGo capture, exact citations, recovery, and operator timelines,
 - typed PageJson, deterministic Page Registry rendering, and append-only Page Studio editing,
 - bounded AI page/copy proposal workflows with human-owned application and approval,
 - project-scoped media upload, processing, preview/deploy parity, placement, and physical cleanup,
 - release/deploy/verify/rollback truth hardening,
-- DB-before-queue recovery for the safe page, media, and verification lanes,
+- DB-before-queue recovery for seven registered safe/idempotent page, media, report, verification, and Opportunity Research lanes,
 - AI reasoning boundaries and named task policies.
 
 The controlled page lane now runs from evidence-backed opportunity through proposal, versioned editing, media-aware preview, durable approval, release planning, deploy, verification, rollback, and bounded cleanup. The customer-safe Report and Next Action milestone now includes ADR 0021 Slices 0-6: strict snapshot/provenance contracts, deterministic fact-only assembly, optional bounded report-scoped AI headings/transitions with fact-only fallback, digest-bound review, immutable reviewed HTML, actor-backed render retry, source-serialized publication/correction, correction alerts, authenticated snapshot-owned reads, and the report list/detail/review/publication/history workspace. The useful report vertical remains complete without AI; command offers, PDF, RAG, public links, and direct prose editing remain optional later work.

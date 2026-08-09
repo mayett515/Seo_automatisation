@@ -7,7 +7,7 @@ import {
 } from "@localseo/contracts";
 import { mediaAssets, mediaAssetVariants } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "@localseo/db/query";
 import sharp from "sharp";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 

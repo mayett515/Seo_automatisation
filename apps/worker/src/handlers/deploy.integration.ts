@@ -38,7 +38,7 @@ import {
   type DatabaseClient
 } from "@localseo/db";
 import { buildReleaseDeploymentKey } from "@localseo/domain";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables

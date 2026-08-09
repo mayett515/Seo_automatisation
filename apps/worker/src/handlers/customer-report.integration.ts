@@ -32,7 +32,7 @@ import {
   users,
   type DatabaseClient
 } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables
@@ -343,24 +343,36 @@ async function createFixture(
     .values({ email: `${suffix}@example.test`, name: "Report Operator" })
     .returning();
   assert.ok(user);
-  const [customer] = await db.insert(customers).values({ name: "Report Customer" }).returning();
+  const [customer] = await db.insert(customers).values({ name: "Report Customer", ownerUserId: user.id }).returning();
   assert.ok(customer);
   const [project] = await db.insert(projects).values({ customerId: customer.id, name: "Report Project" }).returning();
   assert.ok(project);
-  await db.insert(rankingProofs).values({
-    projectId: project.id,
-    query: "dachreinigung dachau",
-    pageUrl: "https://example.test/dachreinigung-dachau/",
-    rank: 3,
-    capturedAt: new Date("2026-07-25T09:00:00.000Z"),
-    searchEngine: "google",
-    device: "mobile",
-    locale: "de-DE",
-    status: "reviewed",
-    createdByUserId: user.id,
-    createdAt: new Date("2026-07-25T09:00:00.000Z"),
-    updatedAt: new Date("2026-07-25T09:00:00.000Z")
-  });
+  const [capturedRankingProof] = await db
+    .insert(rankingProofs)
+    .values({
+      projectId: project.id,
+      query: "dachreinigung dachau",
+      pageUrl: "https://example.test/dachreinigung-dachau/",
+      rank: 3,
+      capturedAt: new Date("2026-07-25T09:00:00.000Z"),
+      searchEngine: "google",
+      device: "mobile",
+      locale: "de-DE",
+      createdByUserId: user.id,
+      createdAt: new Date("2026-07-25T09:00:00.000Z"),
+      updatedAt: new Date("2026-07-25T09:00:00.000Z")
+    })
+    .returning();
+  assert.ok(capturedRankingProof);
+  await db
+    .update(rankingProofs)
+    .set({
+      status: "reviewed",
+      reviewedAt: new Date("2026-07-25T09:05:00.000Z"),
+      reviewedByUserId: user.id,
+      updatedAt: new Date("2026-07-25T09:05:00.000Z")
+    })
+    .where(eq(rankingProofs.id, capturedRankingProof.id));
   const [opportunity] = await db
     .insert(opportunities)
     .values({

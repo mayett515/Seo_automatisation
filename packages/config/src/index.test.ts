@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { allowsLocalScaffoldAuth, assertProductionRuntimeEnv, parseAppEnv } from "./index.js";
+import {
+  allowsLocalScaffoldAuth,
+  assertProductionWorkerEnv,
+  assertProductionRuntimeEnv,
+  parseAppEnv
+} from "./index.js";
 
 void describe("AppEnvSchema", () => {
   void it("rejects weak Better Auth secrets", () => {
@@ -57,6 +62,15 @@ void describe("AppEnvSchema", () => {
     assert.equal(configured.WORK_RECOVERY_STALE_AFTER_MS, 300_000);
     assert.equal(configured.WORK_RECOVERY_MAX_COUNT, 5);
     assert.equal(configured.WORK_RECOVERY_BATCH_SIZE, 40);
+
+    assert.throws(
+      () =>
+        parseAppEnv({
+          OPPORTUNITY_RESEARCH_HEARTBEAT_MS: "100000",
+          WORK_RECOVERY_STALE_AFTER_MS: "300000"
+        }),
+      /heartbeat must run at least three times/iu
+    );
   });
 
   void it("keeps media upload and project quotas within the accepted MVP bounds", () => {
@@ -222,6 +236,71 @@ void describe("AppEnvSchema", () => {
           PREVIEW_CAPABILITY_SECRET: "replace-with-at-least-32-characters"
         }),
       /PREVIEW_CAPABILITY_SECRET/u
+    );
+  });
+
+  void it("fails closed across production worker transport, product truth, and Opportunity Research", () => {
+    const apiEnv = parseAppEnv(productionEnv());
+    assert.doesNotThrow(() => assertProductionRuntimeEnv(productionEnv(), apiEnv));
+    assert.throws(
+      () => assertProductionWorkerEnv(parseAppEnv({ ...productionEnv(), DATABASE_URL: undefined })),
+      /DATABASE_URL/u
+    );
+    assert.throws(
+      () => assertProductionWorkerEnv(parseAppEnv({ ...productionEnv(), REDIS_URL: undefined })),
+      /REDIS_URL/u
+    );
+    assert.throws(() => assertProductionWorkerEnv(apiEnv), /OPPORTUNITY_RESEARCH_PROVIDER=deepseek/u);
+    assert.throws(
+      () =>
+        assertProductionWorkerEnv(
+          parseAppEnv({
+            ...productionEnv(),
+            OPPORTUNITY_RESEARCH_PROVIDER: "deepseek",
+            DEEPSEEK_API_KEY: "test-key",
+            DEEPSEEK_BASE_URL: "https://deepseek-proxy.example.test/v1",
+            MASTRA_WORKFLOW_DATABASE_URL: "postgres://mastra:secret@example.com:5432/mastra_workflows",
+            PUBLIC_WEB_SEARCH_ENABLED: "true"
+          })
+        ),
+      /official https:\/\/api\.deepseek\.com origin/iu
+    );
+    assert.throws(
+      () =>
+        assertProductionWorkerEnv(
+          parseAppEnv({
+            ...productionEnv(),
+            OPPORTUNITY_RESEARCH_PROVIDER: "deepseek",
+            DEEPSEEK_API_KEY: "test-key",
+            PUBLIC_WEB_SEARCH_ENABLED: "true"
+          })
+        ),
+      /MASTRA_WORKFLOW_DATABASE_URL/u
+    );
+    assert.throws(
+      () =>
+        assertProductionWorkerEnv(
+          parseAppEnv({
+            ...productionEnv(),
+            OPPORTUNITY_RESEARCH_PROVIDER: "deepseek",
+            DEEPSEEK_API_KEY: "test-key",
+            MASTRA_WORKFLOW_DATABASE_URL: "postgres://mastra:secret@example.com:5432/mastra_workflows",
+            PUBLIC_WEB_SEARCH_ENABLED: "false"
+          })
+        ),
+      /PUBLIC_WEB_SEARCH_ENABLED=true/u
+    );
+    assert.doesNotThrow(() =>
+      assertProductionWorkerEnv(
+        parseAppEnv({
+          ...productionEnv(),
+          OPPORTUNITY_RESEARCH_PROVIDER: "deepseek",
+          DEEPSEEK_API_KEY: "test-key",
+          DEEPSEEK_BASE_URL: "https://api.deepseek.com/v1",
+          MASTRA_WORKFLOW_DATABASE_URL: "postgres://mastra:secret@example.com:5432/mastra_workflows",
+          PUBLIC_WEB_SEARCH_ENABLED: "true"
+        })
+      )
     );
   });
 });

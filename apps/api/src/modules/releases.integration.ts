@@ -29,7 +29,7 @@ import {
   users,
   type DatabaseClient
 } from "@localseo/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "@localseo/db/query";
 import { QueueProducerService } from "../queue-producer.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ReleasesService } from "./releases.module.js";

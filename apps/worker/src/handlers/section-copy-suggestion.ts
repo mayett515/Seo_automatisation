@@ -35,7 +35,7 @@ import {
   validatePageSectionProps
 } from "@localseo/page-registry";
 import type { Job } from "bullmq";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 import { policyForReasoningTask } from "../reasoning-policy.js";
 

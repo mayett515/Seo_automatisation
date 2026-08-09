@@ -98,7 +98,7 @@ import {
   validatePageJsonAgainstRegistry,
   validatePageSectionProps
 } from "@localseo/page-registry";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "@localseo/db/query";
 import type { FastifyReply } from "fastify";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";

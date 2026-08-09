@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { TrackingEvent } from "@localseo/contracts";
 import { customers, projectTrackingKeys, projects, trackingEvents, type DatabaseClient } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import { RedisService } from "../redis/redis.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { TrackingRateLimiter, TrackingService } from "./tracking.module.js";

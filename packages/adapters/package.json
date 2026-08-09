@@ -23,6 +23,7 @@
     "@localseo/contracts": "workspace:*",
     "@localseo/domain": "workspace:*",
     "@localseo/page-registry": "workspace:*",
+    "cheerio": "1.2.0",
     "playwright": "^1.61.1"
   }
 }

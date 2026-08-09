@@ -2,6 +2,8 @@
 
 This folder records chronological project progress.
 
+Latest: [2026-08-09 - ADR 0022 Slices 1-7 Opportunity Research vertical](2026-08-09.md).
+
 Use this for "what changed when" and link to commits, reviews, and follow-up work. Use ADRs for "why we chose this direction."
 
 ## Difference From ADRs
@@ -52,3 +54,8 @@ Do not log every tiny edit. Commit history already covers that.
 - [2026-07-15.md](2026-07-15.md)
 - [2026-07-17.md](2026-07-17.md)
 - [2026-08-01.md](2026-08-01.md)
+- [2026-08-02.md](2026-08-02.md)
+- [2026-08-03.md](2026-08-03.md)
+- [2026-08-04.md](2026-08-04.md)
+- [2026-08-08.md](2026-08-08.md)
+- [2026-08-09.md](2026-08-09.md)

@@ -1,18 +1,21 @@
 import { createRedisConnection } from "@localseo/adapters";
-import { parseAppEnv } from "@localseo/config";
+import { assertProductionWorkerEnv, parseAppEnv } from "@localseo/config";
 import { Queue, Worker } from "bullmq";
 import {
   closeWorkerResources,
   cleanMediaStorage,
   handleJob,
+  initializeWorkerResources,
   reconcileDeployments,
   reconcileRollbacks,
-  recoverStaleWork
+  recoverStaleWork,
+  scheduleOpportunityResearch
 } from "./handlers.js";
 import { queueNames } from "./queue-names.js";
 import type { WorkRecoveryQueues } from "./work-recovery.js";
 
 const env = parseAppEnv(process.env);
+assertProductionWorkerEnv(env);
 const lifecycleReconcileIntervalMs = 60_000;
 
 if (!env.REDIS_URL) {
@@ -21,10 +24,13 @@ if (!env.REDIS_URL) {
   process.exit(0);
 }
 
+await initializeWorkerResources();
+
 const connection = createRedisConnection(env.REDIS_URL);
 const recoveryQueues: WorkRecoveryQueues = {
   "page-generation": new Queue("page-generation", { connection }),
   "media-processing": new Queue("media-processing", { connection }),
+  "opportunity-research": new Queue("opportunity-research", { connection }),
   "release-verification": new Queue("release-verification", { connection }),
   report: new Queue("report", { connection })
 };
@@ -53,14 +59,18 @@ const lifecycleReconcileInterval = setInterval(() => {
     reconcileDeployments(),
     reconcileRollbacks(),
     recoverStaleWork(recoveryQueues),
-    cleanMediaStorage()
+    cleanMediaStorage(),
+    scheduleOpportunityResearch(recoveryQueues["opportunity-research"])
   ])
-    .then(([, , recovery, cleanup]) => {
+    .then(([, , recovery, cleanup, researchSchedule]) => {
       if (recovery.checked > 0 || recovery.expiredMediaUploads > 0 || recovery.errors > 0) {
         console.log("Bounded work recovery scan completed", recovery);
       }
       if (cleanup.checked > 0 || cleanup.exhausted > 0 || cleanup.errors > 0) {
         console.log("Bounded media storage cleanup scan completed", cleanup);
+      }
+      if (researchSchedule.checked > 0 || researchSchedule.errors > 0) {
+        console.log("Opportunity Research scheduling scan completed", researchSchedule);
       }
     })
     .catch((error) => {

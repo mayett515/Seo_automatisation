@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { MockSerpScoutAdapter, type SerpScoutResult } from "@localseo/adapters";
 import { buildSerpSnapshotCacheKey, type SerpScoutJobData } from "@localseo/contracts";
 import { customers, projects, serpSnapshots, type DatabaseClient } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables

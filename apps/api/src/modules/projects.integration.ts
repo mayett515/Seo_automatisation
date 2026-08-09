@@ -11,7 +11,7 @@ import {
   users,
   type DatabaseClient
 } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import { QueueProducerService } from "../queue-producer.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ProjectsService } from "./projects.module.js";

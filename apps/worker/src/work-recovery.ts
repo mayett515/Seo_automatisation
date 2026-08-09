@@ -4,15 +4,19 @@ import {
   CustomerReportGenerationJobDataSchema,
   CustomerReportHtmlRenderJobDataSchema,
   MediaProcessingJobDataSchema,
+  OpportunityResearchJobDataSchema,
   ReleaseVerificationJobDataSchema,
   SectionCopySuggestionJobDataSchema,
   type AgentRunStatus
 } from "@localseo/contracts";
 import {
   agentRuns,
+  agentRunEvents,
+  failOpportunityResearchExecution,
   jobRuns,
   mediaAssets,
   pageSectionCopySuggestions,
+  projectOpportunityResearchStates,
   releasePlans,
   releaseVerifications,
   reportArtifacts,
@@ -21,7 +25,7 @@ import {
 } from "@localseo/db";
 import { classifyWorkRecovery, type WorkRecoveryDecision, type WorkRecoveryTransportState } from "@localseo/domain";
 import type { JobsOptions } from "bullmq";
-import { and, asc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lte, or, sql } from "@localseo/db/query";
 import type { WorkerDb } from "./job-run.js";
 import { markReleaseVerificationRecoveryFailure } from "./handlers/release-verification.js";
 
@@ -29,11 +33,18 @@ const pageProposalQueueName = "page-generation";
 const releaseVerificationQueueName = "release-verification";
 const mediaProcessingQueueName = "media-processing";
 const reportQueueName = "report";
+const opportunityResearchQueueName = "opportunity-research";
 const activeBullMqStates = new Set(["active", "waiting", "waiting-children", "delayed", "prioritized"]);
 const terminalJobRunStatuses = new Set(["completed", "failed", "cancelled", "dry_run"]);
+const activeJobRunStatuses = ["queued", "running", "retrying", "waiting_for_external", "waiting_for_approval"] as const;
 const activeAgentRunStatuses = ["queued", "running"] as const satisfies readonly AgentRunStatus[];
+const opportunityResearchLivenessAt = sql<Date>`CASE
+  WHEN ${agentRuns.status} = 'running' THEN COALESCE(${agentRuns.lastHeartbeatAt}, ${agentRuns.updatedAt})
+  ELSE ${agentRuns.updatedAt}
+END`;
 
 export type WorkRecoveryTransportJob = {
+  readonly data?: unknown;
   getState(): Promise<string>;
   remove(): Promise<void>;
 };
@@ -48,6 +59,7 @@ export type WorkRecoveryQueues = {
   "page-generation": WorkRecoveryQueue;
   "media-processing": WorkRecoveryQueue;
   "release-verification": WorkRecoveryQueue;
+  "opportunity-research": WorkRecoveryQueue;
   report: WorkRecoveryQueue;
 };
 
@@ -120,12 +132,22 @@ type CustomerReportArtifactRecoveryCandidate = {
   recoveryCount: number;
 };
 
+type OpportunityResearchRecoveryCandidate = {
+  kind: "opportunity_research";
+  id: string;
+  projectId: string;
+  materialDigest: string;
+  durableState: "queued" | "running";
+  recoveryCount: number;
+};
+
 type RecoveryCandidate =
   | PageProposalRecoveryCandidate
   | SectionCopySuggestionRecoveryCandidate
   | MediaProcessingRecoveryCandidate
   | CustomerReportRecoveryCandidate
   | CustomerReportArtifactRecoveryCandidate
+  | OpportunityResearchRecoveryCandidate
   | ReleaseVerificationRecoveryCandidate;
 
 type RecoveryJobSpec = {
@@ -135,6 +157,11 @@ type RecoveryJobSpec = {
   jobType: string;
   data: Record<string, unknown>;
   options: JobsOptions;
+};
+
+type RecoveryClaim = {
+  jobRunId: string;
+  recoveryCount: number;
 };
 
 export async function scanStaleWork(input: {
@@ -160,14 +187,16 @@ export async function scanStaleWork(input: {
     mediaProcessingLoad,
     releaseVerificationLoad,
     customerReportLoad,
-    customerReportArtifactLoad
+    customerReportArtifactLoad,
+    opportunityResearchLoad
   ] = await Promise.allSettled([
     loadPageProposalRecoveryCandidates(input.db, staleBefore, input.batchSize),
     loadSectionCopySuggestionRecoveryCandidates(input.db, staleBefore, input.batchSize),
     loadMediaProcessingRecoveryCandidates(input.db, staleBefore, input.batchSize),
     loadReleaseVerificationRecoveryCandidates(input.db, staleBefore, input.batchSize),
     loadCustomerReportRecoveryCandidates(input.db, staleBefore, input.batchSize),
-    loadCustomerReportArtifactRecoveryCandidates(input.db, staleBefore, input.batchSize)
+    loadCustomerReportArtifactRecoveryCandidates(input.db, staleBefore, input.batchSize),
+    loadOpportunityResearchRecoveryCandidates(input.db, staleBefore, input.batchSize)
   ]);
   const candidates: RecoveryCandidate[] = [];
 
@@ -228,6 +257,16 @@ export async function scanStaleWork(input: {
     console.error(
       "Work recovery failed to load customer_report_artifact candidates",
       normalizeErrorMessage(customerReportArtifactLoad.reason)
+    );
+  }
+
+  if (opportunityResearchLoad.status === "fulfilled") {
+    candidates.push(...opportunityResearchLoad.value);
+  } else {
+    result.errors += 1;
+    console.error(
+      "Work recovery failed to load opportunity_research candidates",
+      normalizeErrorMessage(opportunityResearchLoad.reason)
     );
   }
 
@@ -327,7 +366,7 @@ async function recoverCandidate(input: {
 }): Promise<void> {
   const spec = recoveryJobSpec(input.candidate);
   const queue = input.queues[spec.queueName];
-  const transportState = await observeTransportState(input.db, queue, spec);
+  const transportState = await observeTransportState(input.db, queue, spec, input.candidate);
   const decision = classifyWorkRecovery({
     workflowCategory:
       input.candidate.kind === "release_verification"
@@ -395,19 +434,11 @@ async function reenqueueCandidate(
   },
   reason: Extract<WorkRecoveryDecision, { kind: "reenqueue" }>["reason"]
 ): Promise<void> {
-  const claim = await claimRecoveryAttempt(input.db, input.candidate, input.spec, input.now, input.staleBefore, reason);
-
-  if (!claim) {
-    input.result.staleNoop += 1;
-    return;
-  }
-
   const currentJob = await input.queue.getJob(input.spec.jobId);
   if (currentJob) {
     const currentState = transportStateFromBullMqJobState(await currentJob.getState());
 
     if (currentState === "active" || currentState === "unknown") {
-      await markRecoveryJobRunCancelled(input.db, claim.jobRunId, input.now);
       input.result.coalesced += 1;
       return;
     }
@@ -415,8 +446,31 @@ async function reenqueueCandidate(
     await currentJob.remove();
   }
 
+  const reusableClaim = await loadReusableOpportunityResearchRecoveryClaim(input.db, input.candidate, input.spec);
+  const claim =
+    reusableClaim ??
+    (await claimRecoveryAttempt(input.db, input.candidate, input.spec, input.now, input.staleBefore, reason));
+
+  if (!claim) {
+    input.result.staleNoop += 1;
+    return;
+  }
+
+  const postClaimJob = await input.queue.getJob(input.spec.jobId);
+  if (postClaimJob) {
+    const postClaimState = transportStateFromBullMqJobState(await postClaimJob.getState());
+    if (postClaimState === "active" || postClaimState === "unknown") {
+      if (transportJobRunId(postClaimJob) !== claim.jobRunId) {
+        await markRecoveryJobRunCancelled(input.db, claim.jobRunId, input.now);
+      }
+      input.result.coalesced += 1;
+      return;
+    }
+    await postClaimJob.remove();
+  }
+
   try {
-    const spec = recoveryJobSpec(input.candidate, claim.jobRunId);
+    const spec = recoveryJobSpec(input.candidate, claim.jobRunId, claim.recoveryCount);
     await input.queue.add(spec.jobName, spec.data, spec.options);
     input.result.reEnqueued += 1;
   } catch (error) {
@@ -428,7 +482,8 @@ async function reenqueueCandidate(
 async function observeTransportState(
   db: WorkerDb,
   queue: WorkRecoveryQueue,
-  spec: RecoveryJobSpec
+  spec: RecoveryJobSpec,
+  candidate: RecoveryCandidate
 ): Promise<WorkRecoveryTransportState> {
   const job = await queue.getJob(spec.jobId);
 
@@ -436,11 +491,23 @@ async function observeTransportState(
     return transportStateFromBullMqJobState(await job.getState());
   }
 
-  const [audit] = await db
+  const recoveryAuditExternalJobId =
+    candidate.kind === "opportunity_research" && candidate.recoveryCount > 0
+      ? `${candidate.id}:recovery:${candidate.recoveryCount}`
+      : undefined;
+  const [recoveryAudit] = recoveryAuditExternalJobId
+    ? await db
+        .select({ status: jobRuns.status })
+        .from(jobRuns)
+        .where(and(eq(jobRuns.externalJobId, recoveryAuditExternalJobId), eq(jobRuns.queueName, spec.queueName)))
+        .limit(1)
+    : [];
+  const [baseAudit] = await db
     .select({ status: jobRuns.status })
     .from(jobRuns)
     .where(and(eq(jobRuns.externalJobId, spec.jobId), eq(jobRuns.queueName, spec.queueName)))
     .limit(1);
+  const audit = recoveryAudit ?? baseAudit;
 
   if (audit?.status === "completed") {
     return "completed";
@@ -451,6 +518,29 @@ async function observeTransportState(
   }
 
   return "missing";
+}
+
+async function loadReusableOpportunityResearchRecoveryClaim(
+  db: WorkerDb,
+  candidate: RecoveryCandidate,
+  spec: RecoveryJobSpec
+): Promise<RecoveryClaim | undefined> {
+  if (candidate.kind !== "opportunity_research" || candidate.recoveryCount <= 0) return undefined;
+  const [audit] = await db
+    .select({ id: jobRuns.id })
+    .from(jobRuns)
+    .where(
+      and(
+        eq(jobRuns.projectId, candidate.projectId),
+        eq(jobRuns.externalJobId, `${candidate.id}:recovery:${candidate.recoveryCount}`),
+        eq(jobRuns.queueName, spec.queueName),
+        eq(jobRuns.type, spec.jobType),
+        eq(jobRuns.triggerSource, "work_recovery"),
+        inArray(jobRuns.status, activeJobRunStatuses)
+      )
+    )
+    .limit(1);
+  return audit ? { jobRunId: audit.id, recoveryCount: candidate.recoveryCount } : undefined;
 }
 
 async function loadPageProposalRecoveryCandidates(
@@ -671,6 +761,56 @@ async function loadCustomerReportArtifactRecoveryCandidates(
   }));
 }
 
+async function loadOpportunityResearchRecoveryCandidates(
+  db: WorkerDb,
+  staleBefore: Date,
+  batchSize: number
+): Promise<OpportunityResearchRecoveryCandidate[]> {
+  const rows = await db
+    .select({
+      id: agentRuns.id,
+      projectId: agentRuns.projectId,
+      materialDigest: agentRuns.inputSha256,
+      status: agentRuns.status,
+      recoveryCount: agentRuns.recoveryCount
+    })
+    .from(agentRuns)
+    .innerJoin(
+      projectOpportunityResearchStates,
+      and(
+        eq(projectOpportunityResearchStates.projectId, agentRuns.projectId),
+        eq(projectOpportunityResearchStates.activeRunId, agentRuns.id)
+      )
+    )
+    .where(
+      and(
+        eq(agentRuns.workflowName, "opportunity_research"),
+        eq(agentRuns.task, "opportunity_scout"),
+        inArray(agentRuns.status, activeAgentRunStatuses),
+        inArray(projectOpportunityResearchStates.status, ["queued", "running"]),
+        isNotNull(agentRuns.inputSha256),
+        lte(opportunityResearchLivenessAt, staleBefore)
+      )
+    )
+    .orderBy(asc(opportunityResearchLivenessAt))
+    .limit(batchSize);
+
+  return rows.flatMap((row) =>
+    row.materialDigest && (row.status === "queued" || row.status === "running")
+      ? [
+          {
+            kind: "opportunity_research" as const,
+            id: row.id,
+            projectId: row.projectId,
+            materialDigest: row.materialDigest,
+            durableState: row.status,
+            recoveryCount: row.recoveryCount
+          }
+        ]
+      : []
+  );
+}
+
 async function claimRecoveryAttempt(
   db: WorkerDb,
   candidate: RecoveryCandidate,
@@ -678,10 +818,86 @@ async function claimRecoveryAttempt(
   now: Date,
   staleBefore: Date,
   reason: string
-): Promise<{ jobRunId: string; recoveryCount: number } | undefined> {
+): Promise<RecoveryClaim | undefined> {
   return db.transaction(async (tx) => {
-    let claimedRows: Array<{ recoveryCount: number }>;
-    if (candidate.kind === "release_verification") {
+    let claimedRows: Array<{ recoveryCount: number; executionEpoch?: number }>;
+    if (candidate.kind === "opportunity_research") {
+      await tx.execute(sql`SELECT "id" FROM "projects" WHERE "id" = ${candidate.projectId} FOR UPDATE`);
+      await tx.execute(
+        sql`SELECT "project_id" FROM "project_opportunity_research_states" WHERE "project_id" = ${candidate.projectId} FOR UPDATE`
+      );
+      const [state] = await tx
+        .select({
+          status: projectOpportunityResearchStates.status,
+          activeRunId: projectOpportunityResearchStates.activeRunId
+        })
+        .from(projectOpportunityResearchStates)
+        .where(eq(projectOpportunityResearchStates.projectId, candidate.projectId))
+        .limit(1);
+      if (!state || state.activeRunId !== candidate.id || !["queued", "running"].includes(state.status)) {
+        return undefined;
+      }
+      await tx.execute(
+        sql`SELECT "id" FROM "agent_runs" WHERE "id" = ${candidate.id} AND "project_id" = ${candidate.projectId} FOR UPDATE`
+      );
+      const [workflowRun] = await tx
+        .select({
+          status: agentRuns.status,
+          recoveryCount: agentRuns.recoveryCount,
+          updatedAt: agentRuns.updatedAt,
+          lastHeartbeatAt: agentRuns.lastHeartbeatAt,
+          executionEpoch: agentRuns.executionEpoch,
+          workflowName: agentRuns.workflowName
+        })
+        .from(agentRuns)
+        .where(and(eq(agentRuns.id, candidate.id), eq(agentRuns.projectId, candidate.projectId)))
+        .limit(1);
+      if (
+        !workflowRun ||
+        workflowRun.workflowName !== "opportunity_research" ||
+        !activeAgentRunStatuses.includes(workflowRun.status as (typeof activeAgentRunStatuses)[number]) ||
+        workflowRun.recoveryCount !== candidate.recoveryCount ||
+        (workflowRun.status === "running"
+          ? (workflowRun.lastHeartbeatAt ?? workflowRun.updatedAt)
+          : workflowRun.updatedAt) > staleBefore
+      ) {
+        return undefined;
+      }
+      claimedRows = await tx
+        .update(agentRuns)
+        .set({
+          recoveryCount: sql<number>`${agentRuns.recoveryCount} + 1`,
+          lastRecoveryAt: now,
+          lastHeartbeatAt: sql<Date>`CASE
+            WHEN ${agentRuns.status} = 'running' THEN ${now}
+            ELSE ${agentRuns.lastHeartbeatAt}
+          END`,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(agentRuns.id, candidate.id),
+            eq(agentRuns.projectId, candidate.projectId),
+            eq(agentRuns.workflowName, "opportunity_research"),
+            inArray(agentRuns.status, activeAgentRunStatuses),
+            eq(agentRuns.recoveryCount, candidate.recoveryCount),
+            lte(opportunityResearchLivenessAt, staleBefore)
+          )
+        )
+        .returning({ recoveryCount: agentRuns.recoveryCount, executionEpoch: agentRuns.executionEpoch });
+      const [claimedWorkflow] = claimedRows;
+      if (claimedWorkflow) {
+        await tx.insert(agentRunEvents).values({
+          projectId: candidate.projectId,
+          agentRunId: candidate.id,
+          eventKey: `recovery.claimed.${claimedWorkflow.recoveryCount}`,
+          eventType: "recovery.claimed",
+          executionEpoch: claimedWorkflow.executionEpoch ?? 0,
+          payloadJson: { recoveryCount: claimedWorkflow.recoveryCount, reason },
+          occurredAt: now
+        });
+      }
+    } else if (candidate.kind === "release_verification") {
       claimedRows = await tx
         .update(releaseVerifications)
         .set({
@@ -792,10 +1008,15 @@ async function claimRecoveryAttempt(
       return undefined;
     }
 
+    const auditExternalJobId =
+      candidate.kind === "opportunity_research" ? `${candidate.id}:recovery:${claimed.recoveryCount}` : spec.jobId;
     const [existingAudit] = await tx
-      .select({ id: jobRuns.id, status: jobRuns.status })
+      .select({
+        id: jobRuns.id,
+        status: jobRuns.status
+      })
       .from(jobRuns)
-      .where(and(eq(jobRuns.externalJobId, spec.jobId), eq(jobRuns.queueName, spec.queueName)))
+      .where(and(eq(jobRuns.externalJobId, auditExternalJobId), eq(jobRuns.queueName, spec.queueName)))
       .limit(1);
 
     if (existingAudit) {
@@ -827,7 +1048,7 @@ async function claimRecoveryAttempt(
     await tx.insert(jobRuns).values({
       id: jobRunId,
       projectId: candidate.projectId,
-      externalJobId: spec.jobId,
+      externalJobId: auditExternalJobId,
       queueName: spec.queueName,
       type: spec.jobType,
       status: "queued",
@@ -873,6 +1094,23 @@ async function markCandidateRecoveryFailed(
       input.staleBefore,
       reason
     );
+  } else if (input.candidate.kind === "opportunity_research") {
+    updated = await failOpportunityResearchExecution(input.db, {
+      projectId: input.candidate.projectId,
+      runId: input.candidate.id,
+      failureCode:
+        reason === "transport_completed_without_product_truth"
+          ? "work_transport_inconsistent"
+          : "work_recovery_exhausted",
+      failureMessage:
+        reason === "transport_completed_without_product_truth"
+          ? "Queue transport completed without terminal Opportunity Research truth."
+          : "Opportunity Research exhausted bounded recovery.",
+      expectedRecoveryCount: input.candidate.recoveryCount,
+      recordRecoveryExhausted: reason !== "transport_completed_without_product_truth",
+      staleBefore: input.staleBefore,
+      occurredAt: input.now
+    });
   } else {
     updated = await markReleaseVerificationRecoveryFailure({
       db: input.db,
@@ -891,7 +1129,7 @@ async function markCandidateRecoveryFailed(
   }
 
   if (updated) {
-    await markCurrentJobRunFailed(input.db, input.spec, input.now, reason);
+    await markCurrentJobRunFailed(input.db, input.candidate, input.spec, input.now, reason);
   }
 
   return updated;
@@ -1144,7 +1382,17 @@ async function markPageProposalRecoveryFailed(
   return Boolean(updated);
 }
 
-async function markCurrentJobRunFailed(db: WorkerDb, spec: RecoveryJobSpec, now: Date, reason: string): Promise<void> {
+async function markCurrentJobRunFailed(
+  db: WorkerDb,
+  candidate: RecoveryCandidate,
+  spec: RecoveryJobSpec,
+  now: Date,
+  reason: string
+): Promise<void> {
+  const externalJobPredicate =
+    candidate.kind === "opportunity_research"
+      ? or(eq(jobRuns.externalJobId, spec.jobId), sql`${jobRuns.externalJobId} LIKE ${`${candidate.id}:recovery:%`}`)
+      : eq(jobRuns.externalJobId, spec.jobId);
   await db
     .update(jobRuns)
     .set({
@@ -1157,11 +1405,7 @@ async function markCurrentJobRunFailed(db: WorkerDb, spec: RecoveryJobSpec, now:
       updatedAt: now
     })
     .where(
-      and(
-        eq(jobRuns.externalJobId, spec.jobId),
-        eq(jobRuns.queueName, spec.queueName),
-        inArray(jobRuns.status, ["queued", "running", "retrying", "waiting_for_external", "waiting_for_approval"])
-      )
+      and(externalJobPredicate, eq(jobRuns.queueName, spec.queueName), inArray(jobRuns.status, activeJobRunStatuses))
     );
 }
 
@@ -1183,13 +1427,23 @@ async function markRecoveryJobRunCancelled(db: WorkerDb, jobRunId: string, now: 
     .set({
       status: "cancelled",
       completedAt: now,
-      failureJson: { message: "Transport became active before the recovery enqueue was applied." },
+      failureJson: { message: "Transport became active after the recovery reservation was committed." },
       updatedAt: now
     })
-    .where(eq(jobRuns.id, jobRunId));
+    .where(and(eq(jobRuns.id, jobRunId), inArray(jobRuns.status, activeJobRunStatuses)));
 }
 
-function recoveryJobSpec(candidate: RecoveryCandidate, jobRunId?: string): RecoveryJobSpec {
+function transportJobRunId(job: WorkRecoveryTransportJob): string | undefined {
+  if (!job.data || typeof job.data !== "object" || Array.isArray(job.data)) return undefined;
+  const value = (job.data as Record<string, unknown>).jobRunId;
+  return typeof value === "string" ? value : undefined;
+}
+
+function recoveryJobSpec(
+  candidate: RecoveryCandidate,
+  jobRunId?: string,
+  expectedRecoveryCount?: number
+): RecoveryJobSpec {
   if (candidate.kind === "page_proposal") {
     const attempts = 3;
     return {
@@ -1300,6 +1554,32 @@ function recoveryJobSpec(candidate: RecoveryCandidate, jobRunId?: string): Recov
         ...(jobRunId ? { jobRunId } : {}),
         triggerSource: "work_recovery"
       }),
+      options: {
+        attempts,
+        jobId: candidate.id,
+        backoff: { type: "exponential", delay: 5000 }
+      }
+    };
+  }
+
+  if (candidate.kind === "opportunity_research") {
+    const attempts = 3;
+    return {
+      queueName: opportunityResearchQueueName,
+      jobName: "opportunity_research",
+      jobId: candidate.id,
+      jobType: "opportunity_research",
+      data:
+        jobRunId && expectedRecoveryCount !== undefined
+          ? OpportunityResearchJobDataSchema.parse({
+              projectId: candidate.projectId,
+              runId: candidate.id,
+              materialDigest: candidate.materialDigest,
+              triggerSource: "work_recovery",
+              jobRunId,
+              expectedRecoveryCount
+            })
+          : {},
       options: {
         attempts,
         jobId: candidate.id,

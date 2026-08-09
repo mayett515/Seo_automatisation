@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  AgentWorkflowNameSchema,
+  OpportunityResearchAxesSchema,
+  OpportunityResearchCandidateSchema,
+  OpportunityResearchCitationSummarySchema,
+  OpportunityResearchFailureCodeSchema
+} from "./opportunity-research.js";
+
+export * from "./opportunity-research.js";
 
 export * from "./report.js";
 
@@ -18,6 +27,7 @@ export const jobTypes = [
   "pre_audit",
   "website_import",
   "opportunity_scout",
+  "opportunity_research",
   "serp_scout",
   "technical_audit",
   "local_analysis",
@@ -39,6 +49,7 @@ export const queueNames = [
   "pre-audit",
   "website-import",
   "opportunity-scout",
+  "opportunity-research",
   "serp-scout",
   "technical-audit",
   "local-analysis",
@@ -215,7 +226,7 @@ export const evidenceSourceTypes = [
 export const evidenceStrengths = ["weak", "medium", "strong"] as const;
 export const evidenceProofTiers = ["internal_signal", "supporting_context", "customer_safe_proof"] as const;
 export const rankingProofDevices = ["desktop", "mobile"] as const;
-export const rankingProofStatuses = ["reviewed", "invalidated"] as const;
+export const rankingProofStatuses = ["captured", "reviewed", "invalidated"] as const;
 export const rankingProofMaxAgeDays = 30 as const;
 export const technicalAuditFindingSeverities = ["info", "warning", "blocker"] as const;
 export const technicalAuditFindingCategories = [
@@ -525,26 +536,27 @@ export const CreateRankingProofRequestSchema = z
     searchEngine: z.string().trim().min(1).max(60).default("google"),
     device: RankingProofDeviceSchema.default("desktop"),
     locale: z.string().trim().min(1).max(100).optional(),
-    screenshotArtifactKey: z.string().trim().min(1).max(500).optional(),
     notes: z.string().trim().min(1).max(2_000).optional()
   })
   .strict();
 
-export const UpdateRankingProofStatusRequestSchema = z
-  .object({
-    status: RankingProofStatusSchema,
-    reason: z.string().trim().min(1).max(2_000).optional()
-  })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (value.status === "invalidated" && !value.reason) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["reason"],
-        message: "Invalidating ranking proof requires a reason."
-      });
-    }
-  });
+export const UpdateRankingProofStatusRequestSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("reviewed"),
+      expectedStatus: z.literal("captured"),
+      expectedRowVersion: z.number().int().nonnegative()
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("invalidated"),
+      expectedStatus: z.literal("reviewed"),
+      expectedRowVersion: z.number().int().nonnegative(),
+      reason: z.string().trim().min(1).max(2_000)
+    })
+    .strict()
+]);
 
 export const SerpScoutRequestSchema = z
   .object({
@@ -635,6 +647,8 @@ export const SerpSnapshotSchema = z
 
 export const UpdateOpportunityLifecycleRequestSchema = z
   .object({
+    expectedStatus: OpportunityLifecycleStatusSchema,
+    expectedRowVersion: z.number().int().nonnegative().max(2_147_483_647),
     status: OpportunityLifecycleStatusSchema.exclude(["brief_created"]),
     reason: z.string().trim().min(1).max(1_000).optional()
   })
@@ -1560,7 +1574,6 @@ export const WebsiteImportRunSchema = z.object({
   projectId: ProjectIdSchema,
   sourceUrl: WebsiteImportSourceUrlSchema,
   status: WebsiteImportStatusSchema,
-  artifactKey: z.string().min(1).optional(),
   pageCount: z.number().int().nonnegative().default(0),
   discoveredRoutes: z.array(z.string().min(1)).default([]),
   facts: z
@@ -2014,6 +2027,15 @@ export const OpportunityScoutQueueResponseSchema = QueueJobSchema.extend({
   status: OpportunityScoutQueueStatusSchema,
   runId: z.string().min(1).optional()
 });
+export const OpportunityResearchQueueResponseSchema = QueueJobSchema.extend({
+  type: z.literal("opportunity_research"),
+  status: OpportunityScoutQueueStatusSchema,
+  runId: z.string().uuid(),
+  materialDigest: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/u)
+    .optional()
+});
 export const PageProposalQueueResponseSchema = QueueJobSchema.extend({
   status: PageProposalQueueStatusSchema,
   runId: z.string().min(1).optional(),
@@ -2051,9 +2073,11 @@ export const RankingProofSchema = z.object({
   searchEngine: z.string().min(1),
   device: RankingProofDeviceSchema,
   locale: z.string().min(1).optional(),
-  screenshotArtifactKey: z.string().min(1).optional(),
   notes: z.string().min(1).optional(),
   status: RankingProofStatusSchema,
+  rowVersion: z.number().int().nonnegative(),
+  reviewedAt: z.string().datetime().optional(),
+  reviewedByUserId: z.string().uuid().optional(),
   invalidatedAt: z.string().datetime().optional(),
   invalidatedByUserId: z.string().min(1).optional(),
   invalidationReason: z.string().min(1).optional(),
@@ -2070,6 +2094,7 @@ export const AgentRunFailureCodeSchema = z.union([
   AiReasoningAdapterFailureCodeSchema,
   AiReasoningWorkflowFailureCodeSchema,
   AiReasoningEnqueueFailureCodeSchema,
+  OpportunityResearchFailureCodeSchema,
   z.enum(aiReasoningRecoveryFailureCodes),
   z.literal("operator_cancelled")
 ]);
@@ -2078,9 +2103,22 @@ export const OpportunityExplorerOpportunitySchema = z.object({
   id: z.string().min(1),
   projectId: ProjectIdSchema,
   agentRunId: z.string().min(1).optional(),
-  classification: OpportunityClassificationSchema,
+  areaId: z.string().uuid().optional(),
+  serviceId: z.string().uuid().optional(),
+  classification: OpportunityClassificationSchema.optional(),
   primaryKeyword: z.string().min(1),
-  score: z.number().int(),
+  score: z.number().int().optional(),
+  research: OpportunityResearchAxesSchema.extend({
+    policyVersion: z.string().min(1),
+    materialDigest: z.string().regex(/^[0-9a-f]{64}$/u),
+    candidateKey: z.string().min(1),
+    portfolioSelected: z.boolean(),
+    portfolioOrder: z.number().int().min(1).max(8).optional(),
+    candidate: OpportunityResearchCandidateSchema,
+    citations: z.array(OpportunityResearchCitationSummarySchema).min(1).max(25)
+  })
+    .strict()
+    .optional(),
   status: OpportunityLifecycleStatusSchema,
   rowVersion: z.number().int().nonnegative().max(2_147_483_647),
   statusReason: z.string().min(1).optional(),
@@ -2106,6 +2144,9 @@ export const AgentRunSummarySchema = z.object({
   projectId: ProjectIdSchema,
   subjectId: z.string().min(1).optional(),
   task: ReasoningTaskSchema,
+  workflowName: AgentWorkflowNameSchema.optional(),
+  workflowVersion: z.string().min(1).max(80).optional(),
+  constraintProfileVersion: z.string().min(1).max(80).optional(),
   status: AgentRunStatusSchema,
   failureCode: AgentRunFailureCodeSchema.optional(),
   failure: AgentRunFailureSummarySchema.optional(),
@@ -2258,6 +2299,7 @@ export type AiReasoningEnqueueFailureCode = z.output<typeof AiReasoningEnqueueFa
 export type AgentRunFailureCode = z.output<typeof AgentRunFailureCodeSchema>;
 export type OpportunityLifecycleStatus = z.output<typeof OpportunityLifecycleStatusSchema>;
 export type OpportunityScoutQueueStatus = z.output<typeof OpportunityScoutQueueStatusSchema>;
+export type OpportunityResearchQueueResponse = z.output<typeof OpportunityResearchQueueResponseSchema>;
 export type PageProposalQueueStatus = z.output<typeof PageProposalQueueStatusSchema>;
 export type ReleaseVerificationQueueStatus = z.output<typeof ReleaseVerificationQueueStatusSchema>;
 export type OpportunityExplorerOpportunity = z.output<typeof OpportunityExplorerOpportunitySchema>;

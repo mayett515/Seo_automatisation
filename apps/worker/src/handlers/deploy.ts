@@ -47,7 +47,7 @@ import {
 } from "@localseo/db";
 import type { ResolvedPageVersionMediaVariantRecord } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq, inArray, isNotNull, not, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, not, or, sql } from "@localseo/db/query";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 export type DeploymentRow = typeof deployments.$inferSelect;

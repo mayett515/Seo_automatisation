@@ -5,7 +5,7 @@ import type { GscOpportunitySignalType, GscSearchAnalyticsRow } from "@localseo/
 import type { parseAppEnv } from "@localseo/config";
 import { gscConnections, gscOpportunitySignals, gscSearchAnalyticsRows, gscSyncRuns } from "@localseo/db";
 import type { Job } from "bullmq";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 
 type WorkerEnv = ReturnType<typeof parseAppEnv>;

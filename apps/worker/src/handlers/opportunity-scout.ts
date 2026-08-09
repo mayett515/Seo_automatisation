@@ -31,7 +31,7 @@ import {
   websiteImportRuns
 } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, ne } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 import { policyForReasoningTask } from "../reasoning-policy.js";
 
@@ -232,7 +232,9 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
       const [run] = await db
         .select()
         .from(agentRuns)
-        .where(and(eq(agentRuns.id, data.runId), eq(agentRuns.projectId, data.projectId)))
+        .where(
+          and(eq(agentRuns.id, data.runId), eq(agentRuns.projectId, data.projectId), isNull(agentRuns.workflowName))
+        )
         .limit(1);
 
       return run;
@@ -259,6 +261,7 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
             and(
               eq(agentRuns.id, data.runId),
               eq(agentRuns.projectId, data.projectId),
+              isNull(agentRuns.workflowName),
               inArray(agentRuns.status, ["queued", "failed"])
             )
           )
@@ -285,6 +288,7 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
           and(
             eq(agentRuns.id, input.data.runId),
             eq(agentRuns.projectId, input.data.projectId),
+            isNull(agentRuns.workflowName),
             ne(agentRuns.status, "succeeded")
           )
         );
@@ -316,6 +320,7 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
             and(
               eq(agentRuns.id, input.data.runId),
               eq(agentRuns.projectId, input.data.projectId),
+              isNull(agentRuns.workflowName),
               eq(agentRuns.status, "running")
             )
           )
@@ -368,6 +373,7 @@ export function createDrizzleOpportunityScoutRepository(db: WorkerDb): Opportuni
           and(
             eq(agentRuns.id, input.data.runId),
             eq(agentRuns.projectId, input.data.projectId),
+            isNull(agentRuns.workflowName),
             ne(agentRuns.status, "succeeded")
           )
         );
@@ -495,7 +501,6 @@ async function loadOpportunityScoutEvidence(
           sourceId: latestImport.id,
           sourceUrl: latestImport.sourceUrl,
           status: latestImport.status,
-          artifactKey: latestImport.artifactKey,
           facts: importSummary.facts,
           discoveredRoutes: importRoutes
         }
@@ -541,7 +546,6 @@ async function loadOpportunityScoutEvidence(
       searchEngine: proof.searchEngine,
       device: proof.device,
       locale: proof.locale,
-      screenshotArtifactKey: proof.screenshotArtifactKey,
       notes: proof.notes
     })),
     serpSnapshots: snapshotRows.map((snapshot) => ({

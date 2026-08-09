@@ -48,7 +48,7 @@ import {
   type OnModuleDestroy,
   type Provider
 } from "@nestjs/common";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne } from "@localseo/db/query";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Queue } from "bullmq";
 import { BetterAuthService } from "../auth/better-auth/better-auth.service.js";

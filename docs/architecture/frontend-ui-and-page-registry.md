@@ -398,7 +398,7 @@ The first real product screen should make AI-assisted opportunity discovery visi
 Left:
   project/service filters
   place cluster list
-  score legend
+  lane and portfolio legend
 
 Center:
   opportunity table/list first
@@ -407,14 +407,18 @@ Center:
 
 Right:
   "why this page should exist"
-  evidence stack
+  independent ranking/evidence/value/difficulty/effort axes
+  exact evidence citations and missing-evidence list
   GSC/search signal summary
   competitor observations
   existing page match
   next action controls
 
 Bottom:
-  worker/activity/monitoring timeline
+  confirmed business-profile and knowledge-review controls
+  ranking-proof review
+  pause/resume/rerun controls
+  selectable redacted run/step/event/evidence timeline
 ```
 
 Opportunity objects should support:
@@ -431,8 +435,12 @@ PlaceNode
 ServiceLocationOpportunity
   service
   location
-  score
-  evidence tier
+  ranking milestone
+  evidence readiness
+  business value
+  market difficulty
+  execution effort
+  derived lane and portfolio order
   recommended action
   cannibalization / uniqueness note
 ```
@@ -445,8 +453,11 @@ create brief
 create proposal
 hold
 reject
-approve for release
 ```
+
+Opportunity actions do not approve releases directly. `create proposal` enters the durable Page Proposal lane; a concrete PageVersion then requires its own human review, release-plan preparation, deploy approval, and verification.
+
+Legacy Opportunity Scout rows may still display their historical classification/score. New Opportunity Research rows use the independent axes above and leave the legacy magic-score fields empty. The initial 2/4/2 portfolio is a visible calibration policy with explicit shortfalls, not a claim that every project contains those eight opportunities.
 
 GSC/search/SERP/competitor signals can justify investigation and page proposals. They are not customer-facing success proof by themselves.
 
@@ -468,6 +479,8 @@ WorkerQueuedCard
 WorkerCompletedCard
 WorkerFailedCard
 ```
+
+The shipped Opportunity Research timeline uses the closed ADR 0022 event vocabulary and bounded step/evidence summaries rather than arbitrary card names. The list above remains a UI-component vocabulary; it is not permission to invent new persisted event types.
 
 Do not show hidden chain-of-thought, raw tenant data dumps, or deploy/rollback controls without approval and risk context.
 
@@ -494,9 +507,15 @@ D3 / canvas / WebGL
   Add only when maps, tables, and ordinary charts cannot express the dense relationship or graph view.
 ```
 
+## Explanatory Motion Boundary
+
+Explanatory animation is authored ahead of time as a small, versioned scene catalog. A scene owns its drawing primitives, composition, transitions, timing, labels, and reduced-motion/static fallback. Runtime code supplies only a strict typed payload and an allowlisted scene version; AI may propose the scene key and bounded copy/data, but it does not generate SVG markup, canvas commands, CSS keyframes, coordinates, or executable animation logic.
+
+This keeps explanations reviewable, visually consistent, deterministic in screenshots, and cheap to test across desktop/mobile. A new visual grammar or scene behavior is a reviewed code/asset change rather than untrusted generated presentation.
+
 ## MVP Scope
 
-Build now:
+Implemented baseline:
 
 ```text
 Project Mission Control shell
@@ -508,6 +527,11 @@ Page brief/proposal action
 Preview decision card
 Approve / hold / reject controls
 Worker timeline
+Business-profile confirmation
+Knowledge proposal review
+Ranking-proof review/invalidation
+Opportunity Research pause/resume/rerun
+Lane/portfolio/citation/shortfall views
 ```
 
 Defer:
@@ -519,6 +543,7 @@ freeform website builder
 full design-system documentation site
 heavy graph-generation research
 canvas animation framework
+runtime-generated explanation graphics
 custom chart grammar
 automatic rollback
 agent-owned production mutation

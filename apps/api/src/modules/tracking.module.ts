@@ -31,7 +31,7 @@ import {
   type CreateTrackingKeyResponse
 } from "@localseo/contracts";
 import { projectTrackingKeys, trackingEvents } from "@localseo/db";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "@localseo/db/query";
 import type { FastifyRequest } from "fastify";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";

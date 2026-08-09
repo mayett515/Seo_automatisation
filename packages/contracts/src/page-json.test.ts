@@ -21,6 +21,7 @@ void describe("AgentRunFailureCodeSchema", () => {
     assert.equal(AgentRunFailureCodeSchema.parse("work_recovery_exhausted"), "work_recovery_exhausted");
     assert.equal(AgentRunFailureCodeSchema.parse("work_transport_inconsistent"), "work_transport_inconsistent");
     assert.equal(AgentRunFailureCodeSchema.parse("operator_cancelled"), "operator_cancelled");
+    assert.equal(AgentRunFailureCodeSchema.parse("workflow_execution_failed"), "workflow_execution_failed");
   });
 });
 

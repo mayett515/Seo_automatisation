@@ -102,7 +102,6 @@ function ImportEvidence(props: { run?: WebsiteImportRun }) {
       <div className="metric-row">
         <EvidenceMetric title="Source" value={props.run.sourceUrl} />
         <EvidenceMetric title="Pages" value={props.run.pageCount.toString()} />
-        <EvidenceMetric title="Artifact" value={props.run.artifactKey ?? "pending"} />
       </div>
 
       <div className="fact-grid">

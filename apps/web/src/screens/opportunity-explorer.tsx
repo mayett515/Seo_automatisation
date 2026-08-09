@@ -14,6 +14,7 @@ import {
   RankingProofListResponseSchema,
   RankingProofSchema,
   UpdateOpportunityLifecycleRequestSchema,
+  UpdateRankingProofStatusRequestSchema,
   type AgentRunSummary,
   type EvidenceRef,
   type OpportunityBrief,
@@ -24,6 +25,7 @@ import {
   type RankingProof
 } from "@localseo/contracts";
 import { getJson, patchJson, postJson } from "../lib/api";
+import { OpportunityResearchPanel } from "./opportunity-research-panel";
 
 type RankingProofFormState = {
   query: string;
@@ -128,14 +130,16 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
     }
   });
   const updateOpportunityDecision = useMutation({
-    mutationFn: (input: { opportunityId: string; decision: OpportunityDecisionFormState }) => {
+    mutationFn: (input: { opportunity: OpportunityExplorerOpportunity; decision: OpportunityDecisionFormState }) => {
       const body = UpdateOpportunityLifecycleRequestSchema.parse({
+        expectedStatus: input.opportunity.status,
+        expectedRowVersion: input.opportunity.rowVersion,
         status: input.decision.status,
         reason: normalizedReason(input.decision.reason)
       });
 
       return patchJson(
-        projectApiPath(projectId, `/opportunities/${encodeURIComponent(input.opportunityId)}/status`),
+        projectApiPath(projectId, `/opportunities/${encodeURIComponent(input.opportunity.id)}/status`),
         body,
         OpportunityExplorerOpportunitySchema
       );
@@ -146,6 +150,44 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["agent-runs", projectId, "opportunity_scout"] })
+      ]);
+    },
+    onError: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] });
+    }
+  });
+  const updateRankingProof = useMutation({
+    mutationFn: (input: { proof: RankingProof; status: "reviewed" | "invalidated"; reason?: string }) => {
+      const body = UpdateRankingProofStatusRequestSchema.parse(
+        input.status === "reviewed"
+          ? {
+              expectedStatus: input.proof.status,
+              expectedRowVersion: input.proof.rowVersion,
+              status: "reviewed"
+            }
+          : {
+              expectedStatus: input.proof.status,
+              expectedRowVersion: input.proof.rowVersion,
+              status: "invalidated",
+              reason: input.reason
+            }
+      );
+      return patchJson(
+        projectApiPath(projectId, `/ranking-proofs/${encodeURIComponent(input.proof.id)}/status`),
+        body,
+        RankingProofSchema
+      );
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["ranking-proofs", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["opportunity-research-state", projectId] })
+      ]);
+    },
+    onError: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["ranking-proofs", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["opportunity-research-state", projectId] })
       ]);
     }
   });
@@ -190,6 +232,8 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
     : undefined;
   const hasActiveRun = runs.data?.runs.some(isActiveRun) ?? false;
   const hasActivePageProposalRun = pageProposalRuns.data?.runs.some(isActiveRun) ?? false;
+  const opportunityResearchRuns = (runs.data?.runs ?? []).filter((run) => run.workflowName === "opportunity_research");
+  const legacyScoutRuns = (runs.data?.runs ?? []).filter((run) => run.workflowName !== "opportunity_research");
   const table = useOpportunityTable(opportunityRows);
 
   useEffect(() => {
@@ -235,6 +279,13 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
               : `${opportunityRows.length} opportunities`}
         </StatusPill>
       </header>
+
+      <OpportunityResearchPanel
+        projectId={projectId}
+        runs={opportunityResearchRuns}
+        runsError={runs.isError}
+        runsPending={runs.isPending}
+      />
 
       <section className="explorer-command-strip">
         <ScoutRunForm
@@ -313,18 +364,18 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
           pageProposalRunsPending={pageProposalRuns.isPending}
           projectId={projectId}
           opportunity={selectedOpportunity}
-          onDecide={(opportunityId, decision) => updateOpportunityDecision.mutate({ opportunityId, decision })}
+          onDecide={(opportunity, decision) => updateOpportunityDecision.mutate({ opportunity, decision })}
           onQueuePageProposal={(opportunity) => queuePageProposal.mutate(opportunity)}
         />
       </section>
 
       <section className="explorer-lower-grid">
         <AgentRunList
-          emptyMessage="No scout runs have been recorded."
+          emptyMessage="No legacy scout runs have been recorded."
           isError={runs.isError}
           isPending={runs.isPending}
-          runs={runs.data?.runs ?? []}
-          title="Scout runs"
+          runs={legacyScoutRuns}
+          title="Legacy scout runs"
         />
         <AgentRunList
           emptyMessage="No page proposal runs have been recorded."
@@ -333,8 +384,19 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
           runs={pageProposalRuns.data?.runs ?? []}
           title="Page proposal runs"
         />
-        <RankingProofList proofs={proofs.data?.proofs ?? []} isPending={proofs.isPending} isError={proofs.isError} />
+        <RankingProofList
+          proofs={proofs.data?.proofs ?? []}
+          isPending={proofs.isPending}
+          isError={proofs.isError}
+          mutationPending={updateRankingProof.isPending}
+          onUpdate={(proof, status, reason) => updateRankingProof.mutate({ proof, status, reason })}
+        />
       </section>
+      {updateRankingProof.isError ? (
+        <div className="notice notice--danger">
+          {errorMessage(updateRankingProof.error, "Ranking proof decision could not be saved.")}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -342,29 +404,42 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
 function useOpportunityTable(rows: OpportunityExplorerOpportunity[]) {
   const columns = useMemo(
     () => [
-      opportunityColumn.accessor((row) => row.evidenceJson?.service ?? "Unknown service", {
-        id: "service",
-        header: "Service",
-        cell: (info) => <strong>{info.getValue()}</strong>
+      opportunityColumn.accessor(
+        (row) => row.research?.candidate.service ?? row.evidenceJson?.service ?? "Unknown service",
+        {
+          id: "service",
+          header: "Service",
+          cell: (info) => <strong>{info.getValue()}</strong>
+        }
+      ),
+      opportunityColumn.accessor(
+        (row) => row.research?.candidate.area ?? row.evidenceJson?.location.name ?? "Unknown Ort",
+        {
+          id: "location",
+          header: "Ort",
+          cell: (info) => info.getValue()
+        }
+      ),
+      opportunityColumn.accessor((row) => row.research?.lane ?? row.classification, {
+        id: "lane",
+        header: "Lane",
+        cell: (info) => (
+          <StatusPill tone={classificationTone(info.getValue())}>{label(info.getValue() ?? "unclassified")}</StatusPill>
+        )
       }),
-      opportunityColumn.accessor((row) => row.evidenceJson?.location.name ?? "Unknown Ort", {
-        id: "location",
-        header: "Ort",
-        cell: (info) => info.getValue()
+      opportunityColumn.accessor((row) => row.research?.portfolioOrder ?? row.score, {
+        id: "portfolio",
+        header: "Portfolio",
+        cell: (info) => info.getValue()?.toString() ?? "-"
       }),
-      opportunityColumn.accessor("classification", {
-        header: "Class",
-        cell: (info) => <StatusPill tone={classificationTone(info.getValue())}>{label(info.getValue())}</StatusPill>
-      }),
-      opportunityColumn.accessor("score", {
-        header: "Score",
-        cell: (info) => info.getValue().toString()
-      }),
-      opportunityColumn.accessor((row) => row.evidenceJson?.recommendedAction ?? row.status, {
-        id: "action",
-        header: "Next",
-        cell: (info) => label(info.getValue())
-      })
+      opportunityColumn.accessor(
+        (row) => row.research?.evidenceReadiness ?? row.evidenceJson?.recommendedAction ?? row.status,
+        {
+          id: "evidence",
+          header: "Evidence",
+          cell: (info) => label(info.getValue())
+        }
+      )
     ],
     []
   );
@@ -442,7 +517,7 @@ function OpportunityDetail(props: {
   pageProposalRun?: AgentRunSummary;
   pageProposalRunsPending: boolean;
   projectId: string;
-  onDecide: (opportunityId: string, decision: OpportunityDecisionFormState) => void;
+  onDecide: (opportunity: OpportunityExplorerOpportunity, decision: OpportunityDecisionFormState) => void;
   onQueuePageProposal: (opportunity: OpportunityExplorerOpportunity) => void;
 }) {
   const opportunity = props.opportunity;
@@ -454,6 +529,17 @@ function OpportunityDetail(props: {
         <h2>Evidence</h2>
         <div className="notice notice--neutral">Select an opportunity to inspect the evidence stack.</div>
       </section>
+    );
+  }
+
+  if (opportunity.research) {
+    return (
+      <ResearchOpportunityDetail
+        decisionPending={props.decisionPending}
+        opportunity={opportunity}
+        research={opportunity.research}
+        onDecide={props.onDecide}
+      />
     );
   }
 
@@ -483,11 +569,13 @@ function OpportunityDetail(props: {
         <Metric title="Confidence" value={`${Math.round(brief.confidence * 100)}%`} />
       </div>
 
+      {opportunity.research ? <OpportunityResearchMetrics research={opportunity.research} /> : null}
+
       <OpportunityDecisionForm
-        key={opportunity.id}
+        key={`${opportunity.id}:${opportunity.rowVersion}`}
         isPending={props.decisionPending}
         opportunity={opportunity}
-        onSubmit={(decision) => props.onDecide(opportunity.id, decision)}
+        onSubmit={(decision) => props.onDecide(opportunity, decision)}
       />
 
       <PageProposalActionCard
@@ -530,6 +618,68 @@ function OpportunityDetail(props: {
       <DetailSection title="Corridor">
         <p>{brief.corridorCluster?.rationale ?? "No corridor context recorded."}</p>
         <CompactList items={brief.corridorCluster?.recommendedSequence ?? []} empty="No sequence recorded." />
+      </DetailSection>
+    </section>
+  );
+}
+
+function ResearchOpportunityDetail(props: {
+  opportunity: OpportunityExplorerOpportunity;
+  research: NonNullable<OpportunityExplorerOpportunity["research"]>;
+  decisionPending: boolean;
+  onDecide: (opportunity: OpportunityExplorerOpportunity, decision: OpportunityDecisionFormState) => void;
+}) {
+  const { candidate } = props.research;
+
+  return (
+    <section className="detail-panel">
+      <header className="panel-heading">
+        <div>
+          <h2>{candidate.primaryKeyword}</h2>
+          <p>{`${candidate.service} / ${candidate.area}`}</p>
+        </div>
+        <StatusPill tone={researchEvidenceTone(props.research.evidenceReadiness)}>
+          {label(props.research.evidenceReadiness)}
+        </StatusPill>
+      </header>
+
+      <OpportunityResearchMetrics research={props.research} />
+
+      <div className="metric-row metric-row--compact metric-row--three">
+        <Metric title="Page type" value={label(candidate.suggestedPageType)} />
+        <Metric title="Route" value={candidate.suggestedRoute ?? "not set"} />
+        <Metric title="Confidence" value={`${Math.round(candidate.confidence * 100)}%`} />
+      </div>
+
+      <OpportunityDecisionForm
+        key={`${props.opportunity.id}:${props.opportunity.rowVersion}`}
+        isPending={props.decisionPending}
+        opportunity={props.opportunity}
+        onSubmit={(decision) => props.onDecide(props.opportunity, decision)}
+      />
+
+      <DetailSection title="Research rationale">
+        <p>{candidate.rationale}</p>
+      </DetailSection>
+
+      <DetailSection title="Evidence citations">
+        {props.research.citations.map((citation) => (
+          <article className="evidence-item" key={citation.evidenceKey}>
+            <div>
+              <strong>{label(citation.sourceKind)}</strong>
+              <StatusPill tone={proofTierTone(citation.proofTier)}>{label(citation.proofTier)}</StatusPill>
+            </div>
+            <span>{citation.summary}</span>
+          </article>
+        ))}
+      </DetailSection>
+
+      <DetailSection title="Secondary keywords">
+        <CompactList items={candidate.secondaryKeywords} empty="No secondary keywords selected." />
+      </DetailSection>
+
+      <DetailSection title="Missing evidence">
+        <CompactList items={candidate.missingEvidence} empty="No missing evidence recorded." />
       </DetailSection>
     </section>
   );
@@ -788,7 +938,13 @@ function AgentRunList(props: {
   );
 }
 
-function RankingProofList(props: { proofs: RankingProof[]; isPending: boolean; isError: boolean }) {
+function RankingProofList(props: {
+  proofs: RankingProof[];
+  isPending: boolean;
+  isError: boolean;
+  mutationPending: boolean;
+  onUpdate: (proof: RankingProof, status: "reviewed" | "invalidated", reason?: string) => void;
+}) {
   return (
     <section className="table-panel">
       <h2>Ranking proof</h2>
@@ -801,13 +957,93 @@ function RankingProofList(props: { proofs: RankingProof[]; isPending: boolean; i
             <div>
               <strong>{proof.query}</strong>
               <span>{safeUrlLabel(proof.pageUrl)}</span>
+              <RankingProofActions isPending={props.mutationPending} proof={proof} onUpdate={props.onUpdate} />
             </div>
-            <span>{new Date(proof.capturedAt).toLocaleDateString()}</span>
+            <StatusPill
+              tone={proof.status === "reviewed" ? "success" : proof.status === "invalidated" ? "danger" : "warning"}
+            >
+              {proof.status}
+            </StatusPill>
           </article>
         ))}
         {props.proofs.length === 0 && !props.isPending ? (
           <div className="notice notice--neutral">No manual ranking proof has been recorded.</div>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function RankingProofActions(props: {
+  proof: RankingProof;
+  isPending: boolean;
+  onUpdate: (proof: RankingProof, status: "reviewed" | "invalidated", reason?: string) => void;
+}) {
+  const form = useForm({
+    defaultValues: { reason: "" },
+    onSubmit: ({ value }) => {
+      const reason = normalizedReason(value.reason);
+      if (reason) props.onUpdate(props.proof, "invalidated", reason);
+    }
+  });
+
+  if (props.proof.status === "captured") {
+    return (
+      <button
+        className="button-secondary"
+        disabled={props.isPending}
+        type="button"
+        onClick={() => props.onUpdate(props.proof, "reviewed")}
+      >
+        Confirm proof
+      </button>
+    );
+  }
+
+  if (props.proof.status !== "reviewed") return null;
+
+  return (
+    <form
+      className="knowledge-reject-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void form.handleSubmit();
+      }}
+    >
+      <form.Field name="reason">
+        {(field) => (
+          <input
+            aria-label={`Invalidation reason for ${props.proof.query}`}
+            maxLength={2000}
+            placeholder="Invalidation reason"
+            value={field.state.value}
+            onBlur={field.handleBlur}
+            onChange={(event) => field.handleChange(event.target.value)}
+          />
+        )}
+      </form.Field>
+      <form.Subscribe selector={(state) => state.values.reason.trim().length > 0}>
+        {(hasReason) => (
+          <button className="button-secondary" disabled={!hasReason || props.isPending} type="submit">
+            Invalidate
+          </button>
+        )}
+      </form.Subscribe>
+    </form>
+  );
+}
+
+function OpportunityResearchMetrics(props: { research: NonNullable<OpportunityExplorerOpportunity["research"]> }) {
+  return (
+    <section className="detail-section">
+      <h3>Research axes</h3>
+      <div className="metric-row metric-row--compact">
+        <Metric title="Ranking" value={label(props.research.rankingMilestone)} />
+        <Metric title="Evidence" value={label(props.research.evidenceReadiness)} />
+        <Metric title="Business value" value={label(props.research.businessValue)} />
+        <Metric title="Difficulty" value={label(props.research.marketDifficulty)} />
+        <Metric title="Effort" value={label(props.research.executionEffort)} />
+        <Metric title="Lane" value={label(props.research.lane)} />
       </div>
     </section>
   );
@@ -870,12 +1106,16 @@ function maxProofTier(brief: OpportunityBrief): EvidenceRef["proofTier"] {
   return "internal_signal";
 }
 
-function classificationTone(classification: OpportunityExplorerOpportunity["classification"]) {
-  if (classification === "proven_win") {
+function classificationTone(classification: string | undefined) {
+  if (classification === "proven_win" || classification === "defend_advance") {
     return "success";
   }
 
-  if (classification === "near_term_target") {
+  if (
+    classification === "near_term_target" ||
+    classification === "quick_win" ||
+    classification === "strategic_market"
+  ) {
     return "warning";
   }
 
@@ -895,6 +1135,12 @@ function proofTierTone(proofTier: EvidenceRef["proofTier"]) {
     return "warning";
   }
 
+  return "neutral";
+}
+
+function researchEvidenceTone(readiness: NonNullable<OpportunityExplorerOpportunity["research"]>["evidenceReadiness"]) {
+  if (readiness === "reviewed_proof") return "success";
+  if (readiness === "supporting_context") return "warning";
   return "neutral";
 }
 

@@ -23,3 +23,7 @@ License: [license if code is copied or closely adapted]
 
 ## Decision
 ```
+
+## Current Agentic Runtime Finding
+
+- [2026-08-08 - Agentic Runtime And Evidence Ledger](2026-08-08-agentic-runtime-evidence-ledger.md)

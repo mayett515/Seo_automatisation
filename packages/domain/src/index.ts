@@ -13,6 +13,7 @@ export * from "./page-studio.js";
 export * from "./work-recovery.js";
 export * from "./media-storage-cleanup.js";
 export * from "./report.js";
+export * from "./opportunity-research.js";
 
 export type PageProposalTargetRevision = OpportunityTargetRevision;
 

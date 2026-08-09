@@ -910,6 +910,11 @@ void test("buildOpportunityScoutEvidencePacket stays within the saturated smoke 
 
   assert.ok(Array.isArray(discoveredRoutes));
   assert.equal(discoveredRoutes.length, opportunityScoutEvidencePacketLimits.existingRoutes);
+  assert.equal("artifactKey" in (packet.websiteImport ?? {}), false);
+  assert.equal(
+    packet.rankingProofs.some((proof) => "screenshotArtifactKey" in proof),
+    false
+  );
   assert.equal(packet.serpSnapshots.length, opportunityScoutEvidencePacketLimits.serpSnapshots);
   assert.equal(packet.technicalAuditFindings.length, opportunityScoutEvidencePacketLimits.technicalAuditFindings);
   assert.equal(packet.existingRoutes.length, opportunityScoutEvidencePacketLimits.existingRoutes);

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@mastra/core": "1.46.0",
+    "@mastra/pg": "1.12.0",
     "@localseo/contracts": "workspace:*"
   }
 }

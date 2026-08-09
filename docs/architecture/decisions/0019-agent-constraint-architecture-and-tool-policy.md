@@ -70,7 +70,7 @@ draft_page_json
 render_preview
 ```
 
-Ask / approval-needed categories, only for a future explicit slice:
+Broad or consequential ask / approval-needed categories, only for a future explicit slice:
 
 ```text
 search_web
@@ -79,6 +79,8 @@ create_page_proposal
 create_report_draft
 request_customer_approval
 ```
+
+ADR 0022 implements one narrower exception that does not turn `search_web` into a generic agent capability: the Opportunity Research profile may invoke the exact application-owned `public_web_search_follow_up` tool automatically. It accepts only the persisted bounded query plan, performs read-only DuckDuckGo discovery, and first normalizes every result into immutable `public_web_search_captures` with `research_support_only` policy. It cannot read arbitrary pages, carry browser state, authenticate, mutate providers, or promote a result to ranking/customer proof. Any broader web-search or page-reading capability remains in the approval-needed class above and requires a new named profile.
 
 Denied for product agents in the MVP:
 
@@ -163,8 +165,10 @@ implemented 2026-07-07
   release-plan creation selects approved page versions, records actor evidence, and creates draft release items
   release detail UI can run preflight, save deploy approval, and enqueue deploy through existing release APIs
 
-still deferred
-  agent_run_events timeline
+ADR 0022 Opportunity Research now implemented
+  purpose-named DeepSeek/Mastra workflow with read-only public-search capture
+  application-owned agent_run_steps, compact append-only agent_run_events, and immutable evidence links
+  project-scoped bounded run timeline; raw Mastra traces and provider bodies remain undisclosed
 ```
 
 Report Narrative:
@@ -220,35 +224,30 @@ Subagents must not produce direct worker commands. They may produce structured p
 
 ### Audit
 
-`agent_runs` remains the run header for current MVP work. `agent_run_events` stays deferred until the UI needs streaming, replay, or per-tool timelines.
+`agent_runs` remains the run header. ADR 0022 implements typed run steps, append-only events, and source-backed evidence links because live Mastra tools create an audit/evidence need before a streaming UI exists.
 
-When added, `agent_run_events` should record event categories such as:
+`agent_run_events` records the compact ADR 0022 product-event vocabulary below. Mastra traces and token streams remain separate operational telemetry. Approval/suspension/subagent/worker events are not shipped vocabulary; adding one requires a contract, database, disclosure, and lifecycle decision rather than an ad hoc event string.
 
 ```text
 run.queued
 run.started
-run.finished
+run.succeeded
 run.failed
 step.started
-step.finished
+step.succeeded
 step.failed
+step.skipped
 tool.call.requested
 tool.call.allowed
 tool.call.blocked
-tool.approval.required
-tool.result
-tool.error
+tool.result.captured
+tool.call.failed
+evidence.bound
 qa.gate.passed
 qa.gate.failed
-workflow.suspended
-workflow.resumed
 proposal.persisted
-approval.required
-subagent.started
-subagent.finished
-subagent.policy_inherited
-subagent.policy_violation
-worker.job.queued
+recovery.claimed
+recovery.exhausted
 ```
 
 Do not persist raw chain-of-thought, secrets, unredacted provider bodies, long competitor copy, or full browser session data. Persist source ids, artifact refs, redacted diagnostics, gate ids, failure codes, tool category decisions, latency/cost, and actor ids for approvals.
@@ -279,12 +278,14 @@ Completed implementation work:
 - kept Opportunity Scout on `read_evidence` and `analyze` only;
 - added fail-closed tests for unprofiled reasoning tasks;
 - added the durable page-version review API so product approval is an explicit `page:approve` human/operator action tied to one `pageVersionId`, not a Mastra/session/tool approval.
+- implemented ADR 0022's purpose-named Opportunity Research workflow, run-step/event/evidence ledger, product-owned recovery, bounded DuckDuckGo discovery capture, and project-scoped operator timeline.
 
 Remaining implementation work:
 
 - execute and record a credentialed Page Proposal smoke run against the synthetic fixture before model-specific calibration;
+- execute and record a credentialed DeepSeek Opportunity Research smoke run before provider-specific calibration;
 - add policy tests that reject provider mutation, approval, shell/file/db writes, browser state-changing actions, and unknown tool categories once those categories exist as executable tool calls;
-- add `agent_run_events` only when the UI needs live/replay event timelines.
+- add optional redacted Mastra telemetry only after privacy tests and an operational need justify it.
 
 ## Alternatives Considered
 
@@ -319,6 +320,7 @@ Future agent work must not:
 - `docs/architecture/backend-foundation-status.md`
 - `docs/architecture/decisions/0017-page-registry-and-page-json-source-of-truth.md`
 - `docs/architecture/decisions/0018-db-before-queue-work-recovery-policy.md`
+- `docs/architecture/decisions/0022-agentic-runtime-and-evidence-ledger.md`
 - `.ai-project-rules/06-backend-workers-mastra.md`
 - `.ai-project-rules/14-architecture-direction.md`
 - `.ai-project-rules/15-architecture-regression-guards.md`

@@ -110,7 +110,9 @@ AnalyticsPort          -> analytics provider or internal analytics adapter
 ObjectStoragePort      -> S3/object storage adapter
 MediaAssetStoragePort  -> S3/filesystem binary media adapter
 MediaAssetCleanupStoragePort -> bounded S3/filesystem private-byte cleanup adapter
-AiReasoningPort        -> Mastra workflow/agent adapter
+AiReasoningPort        -> bounded structured model adapter
+OpportunityResearchPort -> DeepSeek-backed Mastra workflow adapter (ADR 0022)
+PublicWebSearchPort     -> bounded DuckDuckGo HTML discovery adapter; research-support capture only
 TrackingPort           -> event ingestion adapter
 EventPublisherPort     -> domain event publisher adapter
 VerificationPort       -> post-deploy verification adapter
@@ -120,7 +122,7 @@ RollbackPort           -> rollback prepare/execute adapter
 
 ## Implementation Checkpoint
 
-The MVP control path is implemented through Opportunity Scout, Page Proposal, Page Studio, media-aware preview, approval, release planning, deploy, verification, rollback, safe-work recovery, and bounded physical media cleanup. The next product milestone is customer-safe Report and Next Action. ADR 0021 now fixes the digest-bound snapshot/provenance/publication/action architecture, while runtime reporting still has only schema/task/event vocabulary, a skeletal `reports` table, safety guards, and a frontend placeholder. Implementation starts with contracts, canonicalization, the core aggregate, and a deterministic fact-only publication path.
+The controlled product path is implemented through Opportunity Scout, Page Proposal, Page Studio, media-aware preview, approval, release planning, deploy, verification, rollback, bounded cleanup, and the ADR 0021 customer-report workspace/publication vertical. ADR 0022 Slices 1-7 add the application-owned run/step/event/evidence ledger, confirmed project context, reviewed Markdown knowledge with explicit model-use consent and non-destructive retirement, ranking-proof lifecycle, deterministic Opportunity Research policy, a purpose-named DeepSeek/Mastra V2 workflow with a persisted follow-up-search plan, immutable DuckDuckGo discovery captures, execution-epoch/heartbeat-fenced scheduling and recovery, canonical checkpoint replay, pre-provider obvious-secret blocking, version-bound promotion evidence, project-wide candidate dedupe, and operator controls with selectable redacted run history. The existing structured single-call reasoning lanes remain behind `AiReasoningPort`; they are not implicitly migrated to Mastra.
 
 ## Non-Negotiables
 

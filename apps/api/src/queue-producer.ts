@@ -5,7 +5,7 @@ import { parseAppEnv } from "@localseo/config";
 import type { QueueName } from "@localseo/contracts";
 import { jobRuns } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "@localseo/db/query";
 import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
@@ -15,6 +15,7 @@ export type ApiQueueName = Extract<
   | "pre-audit"
   | "website-import"
   | "opportunity-scout"
+  | "opportunity-research"
   | "page-generation"
   | "media-processing"
   | "serp-scout"
@@ -57,6 +58,7 @@ export class QueueProducerService implements OnModuleDestroy {
           "pre-audit": new Queue("pre-audit", { connection: redisConnection }),
           "website-import": new Queue("website-import", { connection: redisConnection }),
           "opportunity-scout": new Queue("opportunity-scout", { connection: redisConnection }),
+          "opportunity-research": new Queue("opportunity-research", { connection: redisConnection }),
           "page-generation": new Queue("page-generation", { connection: redisConnection }),
           "media-processing": new Queue("media-processing", { connection: redisConnection }),
           "serp-scout": new Queue("serp-scout", { connection: redisConnection }),

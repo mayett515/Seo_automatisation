@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { CrawledWebsiteSnapshot, CrawlerPort } from "@localseo/adapters";
 import { customers, projects, technicalAuditFindings, technicalAuditRuns, type DatabaseClient } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables

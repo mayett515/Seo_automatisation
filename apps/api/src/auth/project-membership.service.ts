@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { customerMemberships, customers, projects } from "@localseo/db";
-import { and, eq, ne, or } from "drizzle-orm";
+import { and, eq, ne, or } from "@localseo/db/query";
 import { DatabaseService } from "../database/database.service.js";
 import type { ProjectAccessContext } from "./types/authenticated-request.js";
 

@@ -17,7 +17,7 @@ import {
   decideCustomerReportArtifactTransition
 } from "@localseo/domain";
 import type { Job } from "bullmq";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 
 const activeArtifactStatuses = ["pending", "running"] as const;

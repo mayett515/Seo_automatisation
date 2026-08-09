@@ -30,7 +30,7 @@ import {
   canonicalizeCustomerReportFactProjection,
   canonicalizeCustomerReportSourcePayload
 } from "@localseo/domain";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables
@@ -709,7 +709,7 @@ void describe(
       assert.equal(correction.kind, "created");
     });
 
-    void it("blocks invalidated ranking evidence and resolves its alert only through a published correction", async () => {
+    void it("blocks invalidated ranking evidence before publication", async () => {
       const fixture = await createReportFixture(db, "Evidence correction");
       const first = await createReviewedCandidate(
         service,
@@ -721,7 +721,12 @@ void describe(
       await opportunitiesService.updateRankingProofStatus(
         fixture.projectId,
         fixture.rankingProofId,
-        { status: "invalidated", reason: "Source screenshot was incorrect." },
+        {
+          status: "invalidated",
+          expectedStatus: "reviewed",
+          expectedRowVersion: 1,
+          reason: "Source screenshot was incorrect."
+        },
         fixture.userId
       );
       await assert.rejects(
@@ -738,13 +743,17 @@ void describe(
           }),
         /missing, mismatched, or belonged to another project/u
       );
+    });
 
-      await opportunitiesService.updateRankingProofStatus(
-        fixture.projectId,
-        fixture.rankingProofId,
-        { status: "reviewed" },
-        fixture.userId
+    void it("resolves an invalidated published ranking alert only through a correction", async () => {
+      const fixture = await createReportFixture(db, "Evidence correction");
+      const first = await createReviewedCandidate(
+        service,
+        db,
+        fixture,
+        rankingReportSnapshot(fixture, "Ranking report")
       );
+      await stageArtifact(db, artifactReader, first.artifact);
       const firstPublished = await service.publish({
         projectId: fixture.projectId,
         reportId: first.reportId,
@@ -758,7 +767,12 @@ void describe(
       await opportunitiesService.updateRankingProofStatus(
         fixture.projectId,
         fixture.rankingProofId,
-        { status: "invalidated", reason: "Later audit invalidated the proof." },
+        {
+          status: "invalidated",
+          expectedStatus: "reviewed",
+          expectedRowVersion: 1,
+          reason: "Later audit invalidated the proof."
+        },
         fixture.userId
       );
       const [openAlert] = await db
@@ -835,7 +849,7 @@ async function createReportFixture(db: DatabaseClient, name: string): Promise<Re
   assert.ok(user);
   const [customer] = await db
     .insert(customers)
-    .values({ name: `${name} Customer` })
+    .values({ name: `${name} Customer`, ownerUserId: user.id })
     .returning();
   assert.ok(customer);
   const [project] = await db
@@ -855,7 +869,7 @@ async function createReportFixture(db: DatabaseClient, name: string): Promise<Re
     })
     .returning();
   assert.ok(opportunity);
-  const [rankingProof] = await db
+  const [capturedRankingProof] = await db
     .insert(rankingProofs)
     .values({
       projectId: project.id,
@@ -866,9 +880,14 @@ async function createReportFixture(db: DatabaseClient, name: string): Promise<Re
       searchEngine: "google",
       device: "mobile",
       locale: "de-DE",
-      status: "reviewed",
       createdByUserId: user.id
     })
+    .returning();
+  assert.ok(capturedRankingProof);
+  const [rankingProof] = await db
+    .update(rankingProofs)
+    .set({ status: "reviewed", reviewedAt: new Date("2026-07-25T09:05:00.000Z"), reviewedByUserId: user.id })
+    .where(eq(rankingProofs.id, capturedRankingProof.id))
     .returning();
   assert.ok(rankingProof);
   return {

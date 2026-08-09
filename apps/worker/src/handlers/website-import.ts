@@ -3,7 +3,7 @@ import { WebsiteImportJobDataSchema, type WebsiteImportJobData } from "@localseo
 import { deriveWebsiteImportFacts } from "@localseo/domain";
 import { websiteImportRuns } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@localseo/db/query";
 import type { WorkerDb, WorkerDbHandle } from "../job-run.js";
 
 type WebsiteImportRunRow = typeof websiteImportRuns.$inferSelect;

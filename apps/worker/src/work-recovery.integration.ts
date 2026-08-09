@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { buildCanonicalPageProposalOutputExample } from "@localseo/ai";
 import {
   agentRuns,
+  agentRunEvents,
+  claimOpportunityResearchExecution,
   customers,
   deployments,
   jobRuns,
@@ -12,6 +14,7 @@ import {
   pageProposals,
   pageSectionCopySuggestions,
   pageVersions,
+  projectOpportunityResearchStates,
   projects,
   releasePlans,
   releaseVerificationChecks,
@@ -22,7 +25,7 @@ import {
   type DatabaseClient
 } from "@localseo/db";
 import type { JobsOptions } from "bullmq";
-import { eq } from "drizzle-orm";
+import { and, eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables
@@ -85,6 +88,148 @@ void describe(
       assert.equal(audit?.queueName, "page-generation");
       assert.equal(audit?.triggerSource, "work_recovery");
       assert.equal(queues["page-generation"].addCalls[0]?.data.jobRunId, audit?.id);
+    });
+
+    void it("re-enqueues stale Opportunity Research with the same run id and recovery evidence", async () => {
+      const fixture = await createOpportunityResearchRecoveryFixture(db);
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.reEnqueued, 1);
+      assert.equal(queues["opportunity-research"].addCalls.length, 1);
+      assert.equal(queues["opportunity-research"].addCalls[0]?.options.jobId, fixture.runId);
+      assert.equal(queues["opportunity-research"].addCalls[0]?.data.runId, fixture.runId);
+      assert.equal(queues["opportunity-research"].addCalls[0]?.data.materialDigest, fixture.materialDigest);
+      assert.equal(queues["opportunity-research"].addCalls[0]?.data.triggerSource, "work_recovery");
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "queued");
+      assert.equal(run?.recoveryCount, 1);
+      const events = await db.select().from(agentRunEvents).where(eq(agentRunEvents.agentRunId, fixture.runId));
+      assert.equal(
+        events.some((event) => event.eventType === "recovery.claimed"),
+        true
+      );
+    });
+
+    void it("reuses a committed Opportunity Research recovery claim after a pre-enqueue crash", async () => {
+      const fixture = await createOpportunityResearchRecoveryFixture(db, { recoveryCount: 1 });
+      const recoveryJobRunId = randomUUID();
+      await db.insert(jobRuns).values({
+        id: recoveryJobRunId,
+        projectId: fixture.projectId,
+        externalJobId: `${fixture.runId}:recovery:1`,
+        queueName: "opportunity-research",
+        type: "opportunity_research",
+        status: "queued",
+        inputRef: fixture.runId,
+        actorType: "system",
+        triggerSource: "work_recovery"
+      });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.reEnqueued, 1);
+      assert.equal(queues["opportunity-research"].addCalls.length, 1);
+      assert.equal(queues["opportunity-research"].addCalls[0]?.data.jobRunId, recoveryJobRunId);
+      assert.equal(queues["opportunity-research"].addCalls[0]?.data.expectedRecoveryCount, 1);
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.recoveryCount, 1);
+      const events = await db.select().from(agentRunEvents).where(eq(agentRunEvents.agentRunId, fixture.runId));
+      assert.equal(events.filter((event) => event.eventType === "recovery.claimed").length, 1);
+    });
+
+    void it("fails Opportunity Research when a recovery transport completed without product truth", async () => {
+      const fixture = await createOpportunityResearchRecoveryFixture(db, { recoveryCount: 1 });
+      await db.insert(jobRuns).values({
+        projectId: fixture.projectId,
+        externalJobId: `${fixture.runId}:recovery:1`,
+        queueName: "opportunity-research",
+        type: "opportunity_research",
+        status: "completed",
+        inputRef: fixture.runId,
+        actorType: "system",
+        triggerSource: "work_recovery",
+        completedAt: now
+      });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues["opportunity-research"].addCalls.length, 0);
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "failed");
+      assert.equal(run?.failureCode, "work_transport_inconsistent");
+      const events = await db.select().from(agentRunEvents).where(eq(agentRunEvents.agentRunId, fixture.runId));
+      assert.equal(
+        events.some((event) => event.eventType === "recovery.exhausted"),
+        false
+      );
+    });
+
+    void it("does not recover a running Opportunity Research execution with a fresh heartbeat", async () => {
+      const fixture = await createOpportunityResearchRecoveryFixture(db, {
+        runningHeartbeatAt: new Date(now.getTime() - 60_000)
+      });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.reEnqueued, 0);
+      assert.equal(queues["opportunity-research"].addCalls.length, 0);
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      assert.equal(run?.status, "running");
+      assert.equal(run?.recoveryCount, 0);
+    });
+
+    void it("keeps a late original delivery claimable when recovery discovers active transport after its claim", async () => {
+      const fixture = await createOpportunityResearchRecoveryFixture(db);
+      const opportunityQueue = new LateActiveFakeQueue();
+      const queues = fakeQueues({ opportunityQueue });
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.coalesced, 1);
+      assert.equal(opportunityQueue.addCalls.length, 0);
+      const claimed = await claimOpportunityResearchExecution(db, {
+        projectId: fixture.projectId,
+        runId: fixture.runId,
+        materialDigest: fixture.materialDigest,
+        triggerSource: "weekly_scan",
+        jobRunId: fixture.jobRunId,
+        executionClaimToken: `${fixture.jobRunId}:late-original`
+      });
+      assert.deepEqual(claimed, { kind: "claimed", executionEpoch: 1, executionRecoveryCount: 0 });
+    });
+
+    void it("terminalizes Opportunity Research and clears its active state after recovery exhaustion", async () => {
+      const fixture = await createOpportunityResearchRecoveryFixture(db, { recoveryCount: 3 });
+      const queues = fakeQueues();
+
+      const result = await scan(db, queues);
+
+      assert.equal(result.markedExecutionFailed, 1);
+      assert.equal(queues["opportunity-research"].addCalls.length, 0);
+      const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, fixture.runId));
+      const [state] = await db
+        .select()
+        .from(projectOpportunityResearchStates)
+        .where(eq(projectOpportunityResearchStates.projectId, fixture.projectId));
+      assert.equal(run?.status, "failed");
+      assert.equal(run?.failureCode, "work_recovery_exhausted");
+      assert.equal(state?.status, "failed");
+      assert.equal(state?.activeRunId, null);
+      const events = await db.select().from(agentRunEvents).where(eq(agentRunEvents.agentRunId, fixture.runId));
+      assert.equal(
+        events.some((event) => event.eventType === "recovery.exhausted"),
+        true
+      );
+      assert.equal(
+        events.some((event) => event.eventType === "run.failed"),
+        true
+      );
     });
 
     void it("re-enqueues stale fact-only report generation with the same run id", async () => {
@@ -420,6 +565,117 @@ async function createProject(db: DatabaseClient): Promise<string> {
   return project.id;
 }
 
+async function createOpportunityResearchRecoveryFixture(
+  db: DatabaseClient,
+  input: { recoveryCount?: number; runningHeartbeatAt?: Date } = {}
+): Promise<{ projectId: string; runId: string; materialDigest: string; jobRunId: string }> {
+  const projectId = await createProject(db);
+  const runId = randomUUID();
+  const materialDigest = "a".repeat(64);
+  await db.transaction(async (tx) => {
+    await tx.insert(agentRuns).values({
+      id: runId,
+      projectId,
+      subjectId: projectId,
+      task: "opportunity_scout",
+      status: "queued",
+      workflowName: "opportunity_research",
+      workflowVersion: "opportunity-research.v2",
+      constraintProfileVersion: "opportunity-research-policy.v1",
+      triggerSource: "weekly_scan",
+      idempotencyKey: randomUUID(),
+      inputSha256: materialDigest,
+      createdAt: staleUpdatedAt,
+      updatedAt: staleUpdatedAt
+    });
+    await tx.insert(agentRunEvents).values({
+      projectId,
+      agentRunId: runId,
+      eventKey: "run.queued",
+      eventType: "run.queued",
+      payloadJson: { materialDigest },
+      occurredAt: staleUpdatedAt
+    });
+    await tx.insert(projectOpportunityResearchStates).values({
+      projectId,
+      status: "queued",
+      materialDigest,
+      activeRunId: runId,
+      createdAt: staleUpdatedAt,
+      updatedAt: staleUpdatedAt
+    });
+    const jobRunId = randomUUID();
+    await tx.insert(jobRuns).values({
+      id: jobRunId,
+      projectId,
+      externalJobId: runId,
+      queueName: "opportunity-research",
+      type: "opportunity_research",
+      status: "queued",
+      inputRef: runId,
+      actorType: "system",
+      triggerSource: "weekly_scan"
+    });
+  });
+  if (input.runningHeartbeatAt) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(projectOpportunityResearchStates)
+        .set({ status: "running", updatedAt: input.runningHeartbeatAt })
+        .where(eq(projectOpportunityResearchStates.projectId, projectId));
+      await tx
+        .update(agentRuns)
+        .set({
+          status: "running",
+          startedAt: input.runningHeartbeatAt,
+          executionEpoch: 1,
+          executionClaimToken: `${runId}:running-fixture`,
+          executionRecoveryCount: 0,
+          lastHeartbeatAt: input.runningHeartbeatAt,
+          updatedAt: input.runningHeartbeatAt
+        })
+        .where(eq(agentRuns.id, runId));
+      await tx.insert(agentRunEvents).values({
+        projectId,
+        agentRunId: runId,
+        eventKey: "run.started",
+        eventType: "run.started",
+        executionEpoch: 1,
+        payloadJson: { executionRecoveryCount: 0 },
+        occurredAt: input.runningHeartbeatAt
+      });
+    });
+  }
+  for (let count = 0; count < (input.recoveryCount ?? 0); count += 1) {
+    const claimTime = new Date(staleUpdatedAt.getTime() + (count + 1) * 1_000);
+    await db.transaction(async (tx) => {
+      await tx
+        .update(agentRuns)
+        .set({
+          recoveryCount: count + 1,
+          lastRecoveryAt: claimTime,
+          updatedAt: claimTime
+        })
+        .where(eq(agentRuns.id, runId));
+      await tx.insert(agentRunEvents).values({
+        projectId,
+        agentRunId: runId,
+        eventKey: `recovery.claimed.${count + 1}`,
+        eventType: "recovery.claimed",
+        payloadJson: { recoveryCount: count + 1, reason: "integration_fixture" },
+        occurredAt: claimTime
+      });
+    });
+  }
+  const [audit] = await db
+    .select({ id: jobRuns.id })
+    .from(jobRuns)
+    .where(and(eq(jobRuns.externalJobId, runId), eq(jobRuns.queueName, "opportunity-research")))
+    .limit(1);
+  assert.ok(audit);
+  return { projectId, runId, materialDigest, jobRunId: audit.id };
+}
+
 async function createCustomerReportRecoveryFixture(
   db: DatabaseClient,
   input: { recoveryCount?: number; narrativeRunning?: boolean } = {}
@@ -671,16 +927,18 @@ async function createPendingMediaUploadFixture(db: DatabaseClient): Promise<{ as
 type FakeWorkRecoveryQueues = WorkRecoveryQueues & {
   "page-generation": FakeQueue;
   "media-processing": FakeQueue;
+  "opportunity-research": FakeQueue;
   "release-verification": FakeQueue;
   report: FakeQueue;
 };
 
 function fakeQueues(
-  input: { pageQueue?: FakeQueue; releaseVerificationQueue?: FakeQueue } = {}
+  input: { pageQueue?: FakeQueue; opportunityQueue?: FakeQueue; releaseVerificationQueue?: FakeQueue } = {}
 ): FakeWorkRecoveryQueues {
   return {
     "page-generation": input.pageQueue ?? new FakeQueue(),
     "media-processing": new FakeQueue(),
+    "opportunity-research": input.opportunityQueue ?? new FakeQueue(),
     "release-verification": input.releaseVerificationQueue ?? new FakeQueue(),
     report: new FakeQueue()
   };
@@ -689,7 +947,8 @@ function fakeQueues(
 class FakeTransportJob implements WorkRecoveryTransportJob {
   constructor(
     private readonly state: string,
-    private readonly removeEffect: () => void = () => undefined
+    private readonly removeEffect: () => void = () => undefined,
+    readonly data?: Record<string, unknown>
   ) {}
 
   getState(): Promise<string> {
@@ -718,7 +977,7 @@ class FakeQueue implements WorkRecoveryQueue {
 
     this.addCalls.push({ name, data, options });
     const jobId = String(options.jobId);
-    this.jobs.set(jobId, new FakeTransportJob("waiting", () => this.jobs.delete(jobId)));
+    this.jobs.set(jobId, new FakeTransportJob("waiting", () => this.jobs.delete(jobId), data));
     return Promise.resolve();
   }
 
@@ -757,6 +1016,6 @@ class LateActiveFakeQueue extends FakeQueue {
 
   override getJob(): Promise<WorkRecoveryTransportJob | undefined> {
     this.observationCount += 1;
-    return Promise.resolve(this.observationCount === 1 ? undefined : new FakeTransportJob("active"));
+    return Promise.resolve(this.observationCount < 3 ? undefined : new FakeTransportJob("active"));
   }
 }

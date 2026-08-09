@@ -1,6 +1,6 @@
 import { jobRuns, type createDatabaseClient } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@localseo/db/query";
 
 export type WorkerDbHandle = ReturnType<typeof createDatabaseClient>;
 export type WorkerDb = WorkerDbHandle["db"];

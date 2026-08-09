@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { agentRuns, customers, opportunities, projects, rankingProofs, users, type DatabaseClient } from "@localseo/db";
@@ -6,7 +7,7 @@ import {
   UpdateOpportunityLifecycleRequestSchema,
   UpdateRankingProofStatusRequestSchema
 } from "@localseo/contracts";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import { DatabaseService } from "../database/database.service.js";
 import { OpportunitiesService } from "./opportunities.module.js";
 import {
@@ -40,7 +41,7 @@ void describe(
       await handle?.close();
     });
 
-    void it("creates manual ranking proof as project-owned customer-safe evidence", async () => {
+    void it("creates manual ranking proof as project-owned evidence pending human review", async () => {
       const fixture = await createProjectFixture(db);
       const service = new OpportunitiesService(testDatabaseService(db));
 
@@ -54,7 +55,6 @@ void describe(
           searchEngine: "google",
           device: "desktop",
           locale: "de-DE",
-          screenshotArtifactKey: "ranking-proofs/example.png",
           notes: "Manual incognito SERP check."
         },
         fixture.userId
@@ -64,12 +64,13 @@ void describe(
       assert.equal(proof.rank, 4);
       assert.equal(proof.createdByUserId, fixture.userId);
       assert.equal(proof.capturedAt, "2026-07-03T10:00:00.000Z");
+      assert.equal(Object.hasOwn(proof, "screenshotArtifactKey"), false);
 
       const [row] = await db.select().from(rankingProofs).where(eq(rankingProofs.id, proof.id));
       assert.equal(row?.projectId, fixture.projectId);
       assert.deepEqual(row?.evidenceJson, {
         sourceType: "ranking_proof",
-        proofTier: "customer_safe_proof",
+        proofTier: "internal_signal",
         locator: {
           query: "entruempelung dachau",
           pageUrl: "https://customer.example/entruempelung-dachau/"
@@ -78,7 +79,7 @@ void describe(
           name: "rank",
           value: 4
         },
-        entrySource: "manual_operator_entry"
+        entrySource: "manual_operator_capture"
       });
     });
 
@@ -87,30 +88,42 @@ void describe(
       const second = await createProjectFixture(db, "Second");
       const service = new OpportunitiesService(testDatabaseService(db));
 
-      await service.createRankingProof(first.projectId, {
-        query: "dachdecker dachau",
-        pageUrl: "https://first.example/dachdecker-dachau/",
-        rank: 3,
-        capturedAt: "2026-07-03T09:00:00.000Z",
-        searchEngine: "google",
-        device: "desktop"
-      });
-      await service.createRankingProof(second.projectId, {
-        query: "dachdecker karlsfeld",
-        pageUrl: "https://second.example/dachdecker-karlsfeld/",
-        rank: 2,
-        capturedAt: "2026-07-03T11:00:00.000Z",
-        searchEngine: "google",
-        device: "desktop"
-      });
-      await service.createRankingProof(first.projectId, {
-        query: "dachdecker indersdorf",
-        pageUrl: "https://first.example/dachdecker-indersdorf/",
-        rank: 1,
-        capturedAt: "2026-07-03T12:00:00.000Z",
-        searchEngine: "google",
-        device: "desktop"
-      });
+      await service.createRankingProof(
+        first.projectId,
+        {
+          query: "dachdecker dachau",
+          pageUrl: "https://first.example/dachdecker-dachau/",
+          rank: 3,
+          capturedAt: "2026-07-03T09:00:00.000Z",
+          searchEngine: "google",
+          device: "desktop"
+        },
+        first.userId
+      );
+      await service.createRankingProof(
+        second.projectId,
+        {
+          query: "dachdecker karlsfeld",
+          pageUrl: "https://second.example/dachdecker-karlsfeld/",
+          rank: 2,
+          capturedAt: "2026-07-03T11:00:00.000Z",
+          searchEngine: "google",
+          device: "desktop"
+        },
+        second.userId
+      );
+      await service.createRankingProof(
+        first.projectId,
+        {
+          query: "dachdecker indersdorf",
+          pageUrl: "https://first.example/dachdecker-indersdorf/",
+          rank: 1,
+          capturedAt: "2026-07-03T12:00:00.000Z",
+          searchEngine: "google",
+          device: "desktop"
+        },
+        first.userId
+      );
 
       const list = await service.listRankingProofs(first.projectId);
 
@@ -121,40 +134,105 @@ void describe(
       );
     });
 
-    void it("invalidates and re-reviews ranking proof with user provenance", async () => {
+    void it("reviews and then invalidates ranking proof with actor-bound revisions", async () => {
       const fixture = await createProjectFixture(db, "Proof Status");
       const service = new OpportunitiesService(testDatabaseService(db));
-      const proof = await service.createRankingProof(fixture.projectId, {
-        query: "dachdecker dachau",
-        pageUrl: "https://customer.example/dachdecker-dachau/",
-        rank: 7,
-        capturedAt: "2026-07-03T10:00:00.000Z",
-        searchEngine: "google",
-        device: "desktop"
-      });
+      const proof = await service.createRankingProof(
+        fixture.projectId,
+        {
+          query: "dachdecker dachau",
+          pageUrl: "https://customer.example/dachdecker-dachau/",
+          rank: 7,
+          capturedAt: "2026-07-03T10:00:00.000Z",
+          searchEngine: "google",
+          device: "desktop"
+        },
+        fixture.userId
+      );
+
+      const reviewed = await service.updateRankingProofStatus(
+        fixture.projectId,
+        proof.id,
+        { status: "reviewed", expectedStatus: "captured", expectedRowVersion: proof.rowVersion },
+        fixture.userId
+      );
+
+      assert.equal(reviewed.status, "reviewed");
+      assert.equal(reviewed.rowVersion, 1);
+      assert.equal(reviewed.reviewedByUserId, fixture.userId);
+      assert.ok(reviewed.reviewedAt);
 
       const invalidated = await service.updateRankingProofStatus(
         fixture.projectId,
         proof.id,
-        { status: "invalidated", reason: "Rank was entered for the wrong URL." },
+        {
+          status: "invalidated",
+          expectedStatus: "reviewed",
+          expectedRowVersion: reviewed.rowVersion,
+          reason: "Rank was entered for the wrong URL."
+        },
         fixture.userId
       );
 
       assert.equal(invalidated.status, "invalidated");
+      assert.equal(invalidated.rowVersion, 2);
       assert.equal(invalidated.invalidatedByUserId, fixture.userId);
       assert.equal(invalidated.invalidationReason, "Rank was entered for the wrong URL.");
       assert.ok(invalidated.invalidatedAt);
+    });
 
-      const reviewed = await service.updateRankingProofStatus(fixture.projectId, proof.id, { status: "reviewed" });
+    void it("rejects ranking-proof actors without project evidence authority at the database boundary", async () => {
+      const fixture = await createProjectFixture(db, "Proof Authority");
+      const [outsider] = await db
+        .insert(users)
+        .values({ email: `${randomUUID()}@example.com`, name: "Proof Outsider" })
+        .returning();
+      assert.ok(outsider);
+      await assert.rejects(
+        () =>
+          db.insert(rankingProofs).values({
+            projectId: fixture.projectId,
+            query: "unauthorized proof",
+            pageUrl: "https://customer.example/unauthorized/",
+            rank: 9,
+            capturedAt: new Date(),
+            createdByUserId: outsider.id
+          }),
+        /actor must have evidence authority/iu
+      );
 
-      assert.equal(reviewed.status, "reviewed");
-      assert.equal(reviewed.invalidatedAt, undefined);
-      assert.equal(reviewed.invalidatedByUserId, undefined);
-      assert.equal(reviewed.invalidationReason, undefined);
+      const service = new OpportunitiesService(testDatabaseService(db));
+      const captured = await service.createRankingProof(
+        fixture.projectId,
+        {
+          query: "authorized capture",
+          pageUrl: "https://customer.example/authorized/",
+          rank: 6,
+          capturedAt: new Date().toISOString(),
+          searchEngine: "google",
+          device: "desktop"
+        },
+        fixture.userId
+      );
+      await assert.rejects(
+        () =>
+          db
+            .update(rankingProofs)
+            .set({ status: "reviewed", reviewedAt: new Date(), reviewedByUserId: outsider.id })
+            .where(eq(rankingProofs.id, captured.id)),
+        /actor must have evidence authority/iu
+      );
     });
 
     void it("rejects invalidating ranking proof without a reason", () => {
-      assert.equal(UpdateRankingProofStatusRequestSchema.safeParse({ status: "invalidated" }).success, false);
+      assert.equal(
+        UpdateRankingProofStatusRequestSchema.safeParse({
+          status: "invalidated",
+          expectedStatus: "reviewed",
+          expectedRowVersion: 1
+        }).success,
+        false
+      );
     });
 
     void it("lists explorer opportunities only for the requested project", async () => {
@@ -245,7 +323,12 @@ void describe(
       const rejected = await service.updateOpportunityLifecycle(
         fixture.projectId,
         row.id,
-        { status: "rejected", reason: "No service fit for this Ort yet." },
+        {
+          expectedStatus: "new",
+          expectedRowVersion: 0,
+          status: "rejected",
+          reason: "No service fit for this Ort yet."
+        },
         fixture.userId
       );
 
@@ -254,12 +337,66 @@ void describe(
       assert.equal(rejected.statusReason, "No service fit for this Ort yet.");
       assert.equal(rejected.decidedByUserId, fixture.userId);
 
-      const reopened = await service.updateOpportunityLifecycle(fixture.projectId, row.id, { status: "monitoring" });
+      const reopened = await service.updateOpportunityLifecycle(fixture.projectId, row.id, {
+        expectedStatus: "rejected",
+        expectedRowVersion: 1,
+        status: "monitoring"
+      });
 
       assert.equal(reopened.status, "monitoring");
       assert.equal(reopened.rowVersion, 2);
       assert.equal(reopened.statusReason, undefined);
       assert.equal(reopened.decidedByUserId, undefined);
+    });
+
+    void it("rejects a stale opportunity decision instead of overwriting newer operator truth", async () => {
+      const fixture = await createProjectFixture(db, "Lifecycle Decision CAS");
+      const service = new OpportunitiesService(testDatabaseService(db));
+      const [row] = await db
+        .insert(opportunities)
+        .values({
+          projectId: fixture.projectId,
+          classification: "near_term_target",
+          primaryKeyword: "fassadenreinigung unterschleissheim",
+          score: 67,
+          status: "new",
+          evidenceJson: validBrief(fixture.projectId)
+        })
+        .returning();
+      assert.ok(row);
+
+      await service.updateOpportunityLifecycle(
+        fixture.projectId,
+        row.id,
+        {
+          expectedStatus: "new",
+          expectedRowVersion: 0,
+          status: "held",
+          reason: "Awaiting service confirmation."
+        },
+        fixture.userId
+      );
+
+      await assert.rejects(
+        () =>
+          service.updateOpportunityLifecycle(
+            fixture.projectId,
+            row.id,
+            {
+              expectedStatus: "new",
+              expectedRowVersion: 0,
+              status: "rejected",
+              reason: "Stale rejection must not win."
+            },
+            fixture.userId
+          ),
+        /changed after it was loaded/u
+      );
+
+      const [current] = await db.select().from(opportunities).where(eq(opportunities.id, row.id));
+      assert.equal(current?.status, "held");
+      assert.equal(current?.rowVersion, 1);
+      assert.equal(current?.statusReason, "Awaiting service confirmation.");
     });
 
     void it("keeps opportunity row versions database-owned on insert and update", async () => {
@@ -289,10 +426,17 @@ void describe(
     });
 
     void it("rejects lifecycle decision bodies that reject without a reason or use invalid status", () => {
-      assert.equal(UpdateOpportunityLifecycleRequestSchema.safeParse({ status: "rejected" }).success, false);
-      assert.equal(UpdateOpportunityLifecycleRequestSchema.safeParse({ status: "brief_created" }).success, false);
+      const expected = { expectedStatus: "new", expectedRowVersion: 0 };
       assert.equal(
-        UpdateOpportunityLifecycleRequestSchema.safeParse({ status: "not_real", reason: "No." }).success,
+        UpdateOpportunityLifecycleRequestSchema.safeParse({ ...expected, status: "rejected" }).success,
+        false
+      );
+      assert.equal(
+        UpdateOpportunityLifecycleRequestSchema.safeParse({ ...expected, status: "brief_created" }).success,
+        false
+      );
+      assert.equal(
+        UpdateOpportunityLifecycleRequestSchema.safeParse({ ...expected, status: "not_real", reason: "No." }).success,
         false
       );
     });
@@ -318,7 +462,13 @@ void describe(
       assert.ok(row);
 
       await assert.rejects(
-        () => service.updateOpportunityLifecycle(first.projectId, row.id, { status: "held", reason: "Later." }),
+        () =>
+          service.updateOpportunityLifecycle(first.projectId, row.id, {
+            expectedStatus: "new",
+            expectedRowVersion: 0,
+            status: "held",
+            reason: "Later."
+          }),
         /not found/u
       );
 
@@ -438,7 +588,7 @@ async function createProjectFixture(
 
   const [customer] = await db
     .insert(customers)
-    .values({ name: `${name} Customer` })
+    .values({ name: `${name} Customer`, ownerUserId: user.id })
     .returning();
   assert.ok(customer);
 

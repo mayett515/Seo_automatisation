@@ -1,8 +1,8 @@
 ---
 description: "Regression guards for repeated architecture review findings"
-globs: "apps/**/*.{ts,tsx}, packages/**/*.{ts,tsx}, docs/architecture/**/*.md, docs/progress/**/*.md"
+globs: "apps/**/*.{ts,tsx,json}, packages/**/*.{ts,tsx,sql,json}, tools/**/*.ts, docs/architecture/**/*.md, docs/progress/**/*.md, package.json, pnpm-lock.yaml"
 alwaysApply: false
-version: "1.1.37"
+version: "1.1.47"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
 dependencies:
@@ -148,7 +148,7 @@ DB-before-queue recovery policy
   Durable run rows must define active guards, terminal states, and stale recovery behavior.
   Recovery decisions belong in pure domain policy; recovery controllers are procedural shells.
   Read/analyze work may be re-enqueued by deterministic job id when safe.
-  The bounded scanner currently owns Page Proposal, Section Copy, media-processing artifact capture, and release-verification transport gaps only.
+  The bounded scanner currently owns Page Proposal, Section Copy, media-processing artifact capture, release verification, customer-report generation/artifacts, and Opportunity Research transport gaps only.
   A candidate-load failure in one registered lane must not suppress scanning another registered lane.
   Recovery attempts must be durably counted and claimed before re-enqueue.
   `job_runs` must record each recovered enqueue as system-triggered recovery audit.
@@ -278,6 +278,50 @@ Agent constraint policy
   Stale Section Text Generation may use bounded read/analyze recovery; provider-mutation recovery scope must not widen.
   Agent/session/tool approval is not product approval; product approval must be durable.
   Subagents inherit or narrow parent denied outcomes.
+  ADR 0022 separates SEO source truth, agent execution truth, and product result truth.
+  Mastra snapshots, traces, memory, schedules, and workflow status are operational runtime data, not product truth.
+  Live tool results become evidence only after normalization into a project-owned source row or immutable artifact with version and digest.
+  Agent run events are compact append-only audit facts; raw chain-of-thought, token streams, secrets, and full provider bodies are forbidden.
+  Only a PostgreSQL recovery claimant may ask Mastra to resume or restart a product workflow run.
+  Workflow-backed agent runs use one durable header, CAS-owned typed steps, append-only bounded events, and immutable source-backed evidence links.
+  Project knowledge is versioned Markdown in PostgreSQL; only approved task-scoped versions are agent-readable, and agent-authored versions cannot self-approve.
+  Ranking proof becomes customer-safe only after captured -> reviewed actor evidence; DuckDuckGo discovery never supplies rank or customer-safe proof.
+  Opportunity Research persists independent source-owned axes and a deterministic 2/4/2 portfolio, never a model-owned magic score.
+  Opportunity Research runs only behind its purpose-named port; Mastra and DeepSeek types do not cross into product contracts or product rows.
+  Opportunity Research public-search results must persist as immutable project/run-scoped captures before a workflow step can cite them.
+  Production Opportunity Research workers fail closed unless DeepSeek, dedicated Mastra workflow storage, and public search are explicitly configured.
+  Opportunity Research duplicate delivery, stale transport, and bounded exhaustion converge through the PostgreSQL-owned run/state lifecycle under jobId = agentRunId.
+  Opportunity Research delivery ownership is execution-epoch fenced; takeover must fail prior-epoch running steps before any new step claim.
+  Parent failure must bind unstarted step-failure evidence to the parent's current execution epoch; a claimed run cannot emit epoch-zero terminal events.
+  Succeeded workflow steps are immutable checkpoints across execution takeover; final success still requires the exact canonical ordered step set and strategy output digest.
+  Every Opportunity Research delivery carries its exact durable user/system job-run identity; recovery additionally carries the exact recovery count, and stale or archived deliveries cannot reclaim or terminalize the run.
+  A model-derived follow-up search plan is one persisted typed step output; recovery replays it and cannot ask the model to silently replace it.
+  Selected source versions survive packet assembly and must match durable source truth when evidence is bound.
+  Rebinding an existing immutable evidence item must recheck the source's current status and exact version under the source lock; an earlier valid binding is not continuing eligibility.
+  Direct step-evidence links must run the same current-source authority check; an immutable evidence row alone cannot authorize a new citation.
+  Evidence binding locks selected sources in stable source-kind/id order before the parent run; this prevents source -> research-state -> run recovery cycles while lifecycle-only writes remain parent-run-first.
+  Opportunity Research material identity binds source versions, canonical evidence-packet bytes, and exact initial query seeds.
+  Project research state and run lifecycle must agree at transaction commit; terminal state cannot abandon an active workflow run.
+  Research opportunity rows are durable immutable projections of one exact succeeded strategy candidate and its cited PostgreSQL evidence ledger; lifecycle decisions cannot rewrite or hard-delete that provenance.
+  Research opportunity lifecycle writes are database-guarded: rows enter as undecided new work, operator decisions require same-project write authority, rejection requires a reason, and brief_created requires a durable same-project page proposal.
+  Project-wide and same-run candidate dedupe happen before deterministic 2/4/2 portfolio allocation.
+  Public web-search response persistence rechecks the current execution epoch and immutable request identity after the provider call.
+  Running Opportunity Research uses an exact epoch/token/recovery-generation heartbeat; stale recovery reads that heartbeat, while queued work uses its ordinary update time.
+  A recovery reservation has its own purpose-bound job-run audit and never archives the still-valid original delivery merely because transport appeared after the claim.
+  A recovery reservation committed before queue enqueue is reusable under the same recovery generation and audit id; scanner restart must not consume another bounded attempt.
+  Succeeded step replay re-canonicalizes stored JSON, compares the exact canonical UTF-8 text, and verifies SHA-256 before reuse or product success.
+  Direct events cannot append under a prior execution epoch, and every execution takeover event binds the exact recovery generation.
+  Approved project knowledge enters a model packet only when the current version is explicitly `model_allowed`; operator-only approval remains outside model egress.
+  Knowledge retirement is actor-authorized, compare-and-set bound, clears only the current pointer, and preserves immutable historical versions.
+  Knowledge creation/review and ranking-proof capture/review actors are rechecked against project-owned role authority at the database boundary.
+  Business-profile revision replacement returns confirmed truth to draft review; confirmation evidence cannot be rewritten under the same lifecycle status.
+  Canonical service/area lifecycle transitions without modeled actor evidence remain forbidden rather than inferred from a status string.
+  Every external Opportunity Research model attempt reruns both the bounded obvious-secret gate and current durable-material check before provider transport, including provider retries.
+  Production DeepSeek transport uses only the official HTTPS origin, bounds response bytes before JSON decoding, and aborts in-flight provider work when the PostgreSQL execution lease is lost.
+  A deterministic model-egress block is visible failed truth and must not schedule an immediate same-material rerun loop.
+  Completed transport without product truth is visible transport-inconsistency failure, not fabricated recovery-exhaustion evidence.
+  Model promotion evidence binds workflow, constraint profile, prompt digests, the exact fixture-corpus digest, fixture-set version, and model id; a fixture pass alone is not a credentialed smoke result.
+  Operator timelines and ranking-proof responses expose bounded typed summaries, never raw model output, provider bodies, private screenshot/storage keys, or Mastra traces.
 ```
 
 </context>

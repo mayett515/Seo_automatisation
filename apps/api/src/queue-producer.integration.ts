@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { customers, jobRuns, projects, type DatabaseClient } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import { QueueProducerService } from "./queue-producer.js";
 import { DatabaseService } from "./database/database.service.js";
 import {

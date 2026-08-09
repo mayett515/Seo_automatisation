@@ -39,7 +39,7 @@ import {
   type MediaUploadIntentResponse
 } from "@localseo/contracts";
 import { mediaAssets, mediaAssetVariants, type DatabaseClient } from "@localseo/db";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "@localseo/db/query";
 import type { FastifyReply } from "fastify";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";

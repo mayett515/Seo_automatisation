@@ -11,7 +11,7 @@ The project uses Postgres durable rows for product truth and BullMQ/Redis for wo
 - a BullMQ job can vanish or exhaust retries while the product row remains `queued` or `running`;
 - a worker can crash after marking product work in progress;
 - provider mutations can leave remote state uncertain;
-- Page Proposal, section-copy, media-processing, and release-verification workers add durable workflows on top of the same pattern.
+- Page Proposal, section-copy, media-processing, customer-report generation/artifact, release-verification, and Opportunity Research workers add durable workflows on top of the same pattern.
 
 The 2026-07-07 Big Eater recovery research reviewed DB-backed queues, Redis workers, and durable workflow engines. The common useful semantics are leases, visibility-timeout thinking, idempotency keys, dead-letter/manual retry vocabulary, and recovery scans. The research did not justify replacing BullMQ with another runtime.
 
@@ -61,23 +61,26 @@ Implementation note, 2026-07-07:
 - The classifier has no Postgres, Redis, BullMQ, provider, or worker dependencies.
 - It distinguishes read/analyze, artifact capture, provider handoff warning, provider mutation, and projection/approval categories.
 - It permits deterministic re-enqueue only for safe/idempotent categories, routes provider mutation uncertainty to provider reconciliation/manual handling, and keeps projection/approval recovery manual.
-- `apps/worker/src/work-recovery.ts` is now the procedural scanner around that policy. It reads stale Page Proposal/Section Copy `agent_runs`, `media_assets`, and `release_verifications`, combines durable `job_runs` evidence with BullMQ state, calls the classifier, and applies guarded effects.
+- `apps/worker/src/work-recovery.ts` is now the procedural scanner around that policy. It reads seven registered product lanes: Page Proposal, Section Copy, Media Processing, Customer Report Generation, Customer Report Artifact, Release Verification, and Opportunity Research. It combines owning durable rows and `job_runs` evidence with BullMQ state, calls the classifier, and applies guarded effects.
 - Recovery attempts are counted on the owning durable row, audited as system-triggered `job_runs`, and re-enqueued with the original deterministic run/verification id.
 - Competing scanners claim an attempt through recovery-count and stale-timestamp predicates. A lost claim is a stale no-op, not a second enqueue.
+- A committed purpose-bound recovery reservation that crashed before enqueue is reused by the next scan; it must not consume another recovery count or append another recovery event merely because transport is still absent.
 - Unknown transport state is conservative `noop`. Completed transport without terminal product truth becomes a visible failure instead of an automatic replay.
-- The scanner deliberately registers only `page-generation`, `media-processing`, and `release-verification`; deploy and rollback remain owned by provider-state reconcilers/manual reconciliation.
+- The scanner deliberately registers only the safe/idempotent `page-generation`, `media-processing`, `report`, `opportunity-research`, and `release-verification` queues. Deploy and rollback remain owned by provider-state reconcilers/manual reconciliation.
 - Candidate discovery is isolated per registered lane, so one lane's query failure is recorded without suppressing the other lane for that scan.
-- `WORK_RECOVERY_BATCH_SIZE` is a per-lane cap. Page Proposal, Section Copy, media processing, and release verification each apply the configured cap independently.
+- `WORK_RECOVERY_BATCH_SIZE` is a per-lane cap. Each of the seven registered product lanes applies the configured cap independently; the Opportunity Research due-work scheduler currently reuses the same bounded setting for its own candidate batch.
 
 ## Consequences
 
 This gives the project the useful durability semantics of workflow engines without introducing a second runtime model.
 
-The first recovery implementation stays intentionally small:
+The recovery implementation stays intentionally bounded:
 
 - Page Proposal read/analyze work may re-add `jobId = runId` after a guarded claim;
 - release verification may re-add `jobId = verificationId` because its provider handoff is warning-level/idempotent and its final product projection is transaction-guarded;
 - media processing may re-add `jobId = assetId` because source verification and deterministic derivative keys make the artifact-capture writes idempotent;
+- customer report generation and immutable report-artifact capture may re-add their original run/artifact ids because their guarded persistence and byte identities are deterministic;
+- Opportunity Research may re-add `jobId = agentRunId` only after a project-state/run claim, with execution-epoch fencing and exact checkpoint ownership;
 - bounded Page Proposal exhaustion becomes a visible failed agent run;
 - bounded release-verification exhaustion becomes `execution_failed` plus warning evidence without claiming observed bad page health;
 - transport-completed inconsistency and bounded exhaustion retain distinct release-verification evidence messages;
@@ -103,6 +106,7 @@ Future worker slices must not:
 - treat Redis/BullMQ state as product truth;
 - return success only because a queue job completed;
 - leave durable `queued` or `running` rows without a recovery or terminal policy;
+- increment recovery again while an active purpose-bound reservation for the current generation can be reused after a pre-enqueue crash;
 - re-run provider mutation work from a generic stuck-job scanner;
 - add a new durable workflow without naming its operation key, active-run guard, terminal states, and stale recovery behavior;
 - hide terminal work failures only in logs or Redis dead-letter state.

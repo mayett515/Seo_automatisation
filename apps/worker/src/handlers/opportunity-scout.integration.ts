@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { MockReasoningAdapter, type ObjectStoragePort } from "@localseo/adapters";
@@ -15,10 +16,11 @@ import {
   technicalAuditFindings,
   technicalAuditRuns,
   trackingEvents,
+  users,
   websiteImportRuns,
   type DatabaseClient
 } from "@localseo/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@localseo/db/query";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables
@@ -874,9 +876,14 @@ void describe(
 );
 
 async function createScoutFixture(db: DatabaseClient, input: { name?: string } = {}): Promise<ScoutFixture> {
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${randomUUID()}@example.test`, name: `${input.name ?? "Scout"} Operator` })
+    .returning();
+  assert.ok(user);
   const [customer] = await db
     .insert(customers)
-    .values({ name: `${input.name ?? "Scout"} Customer` })
+    .values({ name: `${input.name ?? "Scout"} Customer`, ownerUserId: user.id })
     .returning();
   assert.ok(customer);
 
@@ -979,6 +986,7 @@ async function createScoutFixture(db: DatabaseClient, input: { name?: string } =
       capturedAt: new Date(),
       searchEngine: "google",
       device: "desktop",
+      createdByUserId: user.id,
       evidenceJson: { entrySource: "manual_operator_entry" }
     })
     .returning();
