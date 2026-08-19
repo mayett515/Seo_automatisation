@@ -94,16 +94,39 @@ export function previewMediaManifestToRenderVariants(manifest: PreviewMediaManif
   }));
 }
 
+const maxConcurrentManifestByteReads = 5;
+
 export async function verifyPreviewMediaManifestBytes(
   storage: Pick<MediaAssetStoragePort, "readPrivateObject">,
   manifest: PreviewMediaManifest
 ): Promise<void> {
-  for (const entry of manifest.entries) {
+  await mapWithConcurrency(manifest.entries, maxConcurrentManifestByteReads, async (entry) => {
     const body = await storage.readPrivateObject({ key: entry.storageKey, maxBytes: entry.bytes });
     if (body.byteLength !== entry.bytes || sha256Hex(body) !== entry.sha256) {
       throw new Error(`Media bytes do not match immutable manifest path '${entry.path}'.`);
     }
+  });
+}
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  limit: number,
+  mapper: (value: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index] as T);
+    }
   }
+
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, () => worker()));
+
+  return results;
 }
 
 function sha256Hex(value: Uint8Array): string {

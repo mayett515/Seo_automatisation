@@ -186,6 +186,27 @@ export class ReleasesService {
       throw new BadRequestException("Release page version ids must be UUIDs.");
     }
 
+    // Media bytes are verified against storage before any row locks are taken so the
+    // transaction never spans network calls. The remaining window is closed by the
+    // DB-only manifest hash re-check inside the transaction below.
+    const preVerificationRows = await db
+      .select({ pageVersionId: pageVersions.id, pageJson: pageVersions.pageJson })
+      .from(pageVersions)
+      .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+      .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, requestedPageVersionIds)));
+
+    if (preVerificationRows.length !== requestedPageVersionIds.length) {
+      throw new BadRequestException("Every release page version must belong to this project.");
+    }
+
+    const verifiedManifestSha256ByPageVersionId = new Map<string, string>();
+    for (const row of preVerificationRows) {
+      verifiedManifestSha256ByPageVersionId.set(
+        row.pageVersionId,
+        await assertReleasePageMediaAvailable(db, this.mediaStorage, projectId, row.pageVersionId, row.pageJson)
+      );
+    }
+
     const insertedPlan = await db.transaction(async (tx) => {
       for (const pageVersionId of requestedPageVersionIds) {
         await tx.execute(sql`
@@ -255,7 +276,13 @@ export class ReleasesService {
       }));
 
       for (const row of validatedPageVersionRows) {
-        await assertReleasePageMediaAvailable(tx, this.mediaStorage, projectId, row.pageVersionId, row.pageJson);
+        await assertReleasePageMediaManifestUnchanged(
+          tx,
+          projectId,
+          row.pageVersionId,
+          row.pageJson,
+          verifiedManifestSha256ByPageVersionId.get(row.pageVersionId)
+        );
       }
 
       const activePlanRows = await tx
@@ -1039,7 +1066,7 @@ async function assertReleasePageMediaAvailable(
   projectId: string,
   pageVersionId: string,
   pageJsonInput: unknown
-): Promise<void> {
+): Promise<string> {
   const pageJson = PageJsonSchema.safeParse(pageJsonInput);
   if (!pageJson.success) {
     throw new BadRequestException("Release page version does not contain valid PageJson.");
@@ -1048,7 +1075,36 @@ async function assertReleasePageMediaAvailable(
   try {
     const manifest = await loadPreviewMediaManifest(db, projectId, pageVersionId, pageJson.data);
     await verifyPreviewMediaManifestBytes(storage, manifest);
+    return manifest.sha256;
   } catch {
+    throw new BadRequestException(
+      "Release page media references are unavailable or do not match the immutable project manifest."
+    );
+  }
+}
+
+async function assertReleasePageMediaManifestUnchanged(
+  db: Pick<DatabaseClient, "select">,
+  projectId: string,
+  pageVersionId: string,
+  pageJsonInput: unknown,
+  verifiedManifestSha256: string | undefined
+): Promise<void> {
+  const pageJson = PageJsonSchema.safeParse(pageJsonInput);
+  if (!pageJson.success) {
+    throw new BadRequestException("Release page version does not contain valid PageJson.");
+  }
+
+  let currentManifestSha256: string;
+  try {
+    currentManifestSha256 = (await loadPreviewMediaManifest(db, projectId, pageVersionId, pageJson.data)).sha256;
+  } catch {
+    throw new BadRequestException(
+      "Release page media references are unavailable or do not match the immutable project manifest."
+    );
+  }
+
+  if (!verifiedManifestSha256 || currentManifestSha256 !== verifiedManifestSha256) {
     throw new BadRequestException(
       "Release page media references are unavailable or do not match the immutable project manifest."
     );
