@@ -6,7 +6,14 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "eslint.config.mjs", "packages/db/migrations/**"]
+    ignores: [
+      "**/dist/**",
+      "**/coverage/**",
+      "**/node_modules/**",
+      "eslint.config.mjs",
+      "packages/db/migrations/**",
+      ".claude/worktrees/**"
+    ]
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
