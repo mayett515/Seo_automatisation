@@ -3,7 +3,7 @@ import { Global, Inject, Injectable, Module, type OnModuleDestroy } from "@nestj
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
 import type { QueueName } from "@localseo/contracts";
-import { jobRuns } from "@localseo/db";
+import { jobRuns, type DatabaseClient } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
 import { and, eq, inArray, sql } from "@localseo/db/query";
 import { DatabaseService } from "./database/database.service.js";
@@ -47,9 +47,17 @@ type EnqueueInput = {
   audit?: QueueAuditInput;
 };
 
+type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
+type DatabaseExecutor = DatabaseClient | DatabaseTransaction;
+
+// queue.add failures are reported as a value so the surrounding transaction can
+// commit the failed audit row instead of rolling it back.
+type EnqueueOutcome = { ok: true } | { ok: false; error: unknown };
+
 @Injectable()
 export class QueueProducerService implements OnModuleDestroy {
   private readonly queues: QueueRegistry;
+  private readonly enqueueChains = new Map<string, Promise<void>>();
 
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {
     const redisConnection = env.REDIS_URL ? createRedisConnection(env.REDIS_URL) : undefined;
@@ -80,26 +88,84 @@ export class QueueProducerService implements OnModuleDestroy {
     const attempts = typeof input.options?.attempts === "number" ? input.options.attempts : 3;
 
     if (!queue) {
-      await this.recordJobRun(input, "dry_run");
+      await this.recordJobRun(this.database.db, input, "dry_run");
       return false;
     }
 
+    const outcome = await this.serializeEnqueue(input, (db) => this.replaceOrCoalesceJob(queue, input, attempts, db));
+
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+
+    return true;
+  }
+
+  // Two concurrent enqueues of the same job id must not both pass the coalesce
+  // check: the loser would remove the job the winner just added. Enqueues are
+  // serialized per (queueName, jobId) in-process, and across instances via a
+  // Postgres advisory lock held for the whole check/remove/record/add sequence.
+  private async serializeEnqueue(
+    input: EnqueueInput,
+    task: (db: DatabaseExecutor | undefined) => Promise<EnqueueOutcome>
+  ): Promise<EnqueueOutcome> {
+    const key = `${input.queueName}:${input.jobId}`;
+    const previous = this.enqueueChains.get(key) ?? Promise.resolve();
+    const current = previous.then(() => this.runEnqueueTransaction(input, task));
+    const settled = current.then(
+      () => undefined,
+      () => undefined
+    );
+    this.enqueueChains.set(key, settled);
+    void settled.then(() => {
+      if (this.enqueueChains.get(key) === settled) {
+        this.enqueueChains.delete(key);
+      }
+    });
+
+    return current;
+  }
+
+  private async runEnqueueTransaction(
+    input: EnqueueInput,
+    task: (db: DatabaseExecutor | undefined) => Promise<EnqueueOutcome>
+  ): Promise<EnqueueOutcome> {
+    const db = this.database.db;
+
+    if (!db || !input.audit) {
+      return task(db);
+    }
+
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.queueName}), hashtext(${input.jobId}))`);
+      return task(tx);
+    });
+  }
+
+  private async replaceOrCoalesceJob(
+    queue: Queue,
+    input: EnqueueInput,
+    attempts: number,
+    db: DatabaseExecutor | undefined
+  ): Promise<EnqueueOutcome> {
     const existingJob = await queue.getJob(input.jobId);
 
     if (existingJob) {
       const existingJobState = await existingJob.getState();
 
       if (shouldCoalesceExistingBullMqJob(existingJobState)) {
-        return true;
+        return { ok: true };
       }
 
       await existingJob.remove();
-      await this.archiveJobRun(input);
     }
 
-    await this.archiveTerminalJobRun(input);
+    // Only terminal rows may be archived. A row that is still running keeps its
+    // external id, so recordJobRun reuses it via the unique-index conflict and
+    // the worker's status updates stay attached to the same audit row.
+    await this.archiveTerminalJobRun(db, input);
 
-    const jobRunId = await this.recordJobRun(input, "queued");
+    const jobRunId = await this.recordJobRun(db, input, "queued");
 
     try {
       await queue.add(
@@ -120,20 +186,22 @@ export class QueueProducerService implements OnModuleDestroy {
         }
       );
     } catch (error) {
-      await this.markJobRunFailed(jobRunId, error);
-      throw error;
+      await this.markJobRunFailed(db, jobRunId, error);
+      return { ok: false, error };
     }
 
-    return true;
+    return { ok: true };
   }
 
   async onModuleDestroy(): Promise<void> {
     await Promise.all(Object.values(this.queues).map((queue) => queue.close()));
   }
 
-  private async recordJobRun(input: EnqueueInput, status: "queued" | "dry_run"): Promise<string | undefined> {
-    const db = this.database.db;
-
+  private async recordJobRun(
+    db: DatabaseExecutor | undefined,
+    input: EnqueueInput,
+    status: "queued" | "dry_run"
+  ): Promise<string | undefined> {
     if (!db || !input.audit) {
       return undefined;
     }
@@ -172,25 +240,7 @@ export class QueueProducerService implements OnModuleDestroy {
     return existing?.id;
   }
 
-  private async archiveJobRun(input: EnqueueInput): Promise<void> {
-    const db = this.database.db;
-
-    if (!db || !input.audit) {
-      return;
-    }
-
-    await db
-      .update(jobRuns)
-      .set({
-        externalJobId: sql<string>`${jobRuns.externalJobId} || ':archived:' || ${jobRuns.id}::text`,
-        updatedAt: new Date()
-      })
-      .where(and(eq(jobRuns.externalJobId, input.jobId), eq(jobRuns.queueName, input.queueName)));
-  }
-
-  private async archiveTerminalJobRun(input: EnqueueInput): Promise<void> {
-    const db = this.database.db;
-
+  private async archiveTerminalJobRun(db: DatabaseExecutor | undefined, input: EnqueueInput): Promise<void> {
     if (!db || !input.audit) {
       return;
     }
@@ -210,9 +260,11 @@ export class QueueProducerService implements OnModuleDestroy {
       );
   }
 
-  private async markJobRunFailed(jobRunId: string | undefined, error: unknown): Promise<void> {
-    const db = this.database.db;
-
+  private async markJobRunFailed(
+    db: DatabaseExecutor | undefined,
+    jobRunId: string | undefined,
+    error: unknown
+  ): Promise<void> {
     if (!db || !jobRunId) {
       return;
     }
