@@ -9,11 +9,11 @@ import {
   Inject,
   Injectable,
   Module,
+  NotFoundException,
   Param,
   Post,
   Req,
   ServiceUnavailableException,
-  UnauthorizedException,
   UseGuards
 } from "@nestjs/common";
 import {
@@ -149,7 +149,15 @@ export class ReleasesService {
   ) {}
 
   async createPlan(projectId: string, body: unknown, createdByUserId?: string): Promise<ReleasePlan> {
-    const input = CreateReleasePlanRequestSchema.parse(body ?? {});
+    const parsed = CreateReleasePlanRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException(
+        "Release plan creation requires unique page-version targets pinned to their expected revisions."
+      );
+    }
+
+    const input = parsed.data;
     const requestedTargets = input.pageVersions
       .map((target) => ({ ...target, pageVersionId: target.pageVersionId.toLowerCase() }))
       .sort((left, right) =>
@@ -392,7 +400,7 @@ export class ReleasesService {
       const plan = await lockReleasePlan(tx, projectId, releasePlanId);
 
       if (!approvableReleaseStatusSet.has(plan.status)) {
-        throw new BadRequestException("Release plan is not in an approvable state.");
+        throw new ConflictException("Release plan is not in an approvable state.");
       }
 
       const checks = await loadReleaseChecks(tx, releasePlanId);
@@ -418,7 +426,7 @@ export class ReleasesService {
         .returning({ id: releasePlans.id });
 
       if (!approvedPlan) {
-        throw new BadRequestException("Release plan is not in an approvable state.");
+        throw new ConflictException("Release plan is not in an approvable state.");
       }
 
       await tx.insert(approvals).values({
@@ -497,7 +505,7 @@ export class ReleasesService {
         .returning();
 
       if (!updatedPlan) {
-        throw new BadRequestException("Release plan is not cancellable.");
+        throw new ConflictException("Release plan is not cancellable.");
       }
 
       await tx.insert(approvals).values({
@@ -613,7 +621,13 @@ export class ReleasesService {
 
   async executeRollback(projectId: string, releasePlanId: string, userId: string | undefined, body: unknown) {
     await this.assertReleasePlanForProject(projectId, releasePlanId);
-    const input = ExecuteRollbackRequestSchema.parse(body ?? {});
+    const parsed = ExecuteRollbackRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Rollback execution requires a valid rollbackPointId.");
+    }
+
+    const input = parsed.data;
     const db = this.database.db;
     const jobId = rollbackJobId(releasePlanId, input.rollbackPointId);
 
@@ -690,7 +704,13 @@ export class ReleasesService {
     body: unknown
   ): Promise<ReleaseVerificationQueueResponse> {
     await this.assertReleasePlanForProject(projectId, releasePlanId);
-    const input = VerifyReleaseRequestSchema.parse(body ?? {});
+    const parsed = VerifyReleaseRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Release verification requires a valid optional deploymentId.");
+    }
+
+    const input = parsed.data;
     const db = this.database.db;
 
     if (!db || !isPersistedId(releasePlanId)) {
@@ -905,7 +925,7 @@ export class ReleasesService {
     const db = this.database.db;
 
     if (!db) {
-      throw new UnauthorizedException("Release persistence is required for persisted release plans.");
+      throw new ServiceUnavailableException("Release persistence is required for persisted release plans.");
     }
 
     const [plan] = await db
@@ -915,7 +935,7 @@ export class ReleasesService {
       .limit(1);
 
     if (!plan) {
-      throw new UnauthorizedException("Release plan is not authorized for this project.");
+      throw new NotFoundException("Release plan was not found for this project.");
     }
 
     return plan;
@@ -1049,7 +1069,7 @@ async function persistReleasePreflight(
     const plan = await lockReleasePlan(tx, input.projectId, input.releasePlanId);
 
     if (!preflightableReleasePlanStatusSet.has(plan.status)) {
-      throw new BadRequestException("Release plan is not in a preflightable state.");
+      throw new ConflictException("Release plan is not in a preflightable state.");
     }
 
     await tx.delete(releaseChecks).where(eq(releaseChecks.releasePlanId, input.releasePlanId));
@@ -1086,7 +1106,7 @@ async function persistReleasePreflight(
       .returning({ id: releasePlans.id });
 
     if (!updatedPlan) {
-      throw new BadRequestException("Release plan is not in a preflightable state.");
+      throw new ConflictException("Release plan is not in a preflightable state.");
     }
 
     if (plan.status === "approved_for_deploy") {
@@ -1115,7 +1135,7 @@ async function lockReleasePlan(
     .limit(1);
 
   if (!plan) {
-    throw new UnauthorizedException("Release plan is not authorized for this project.");
+    throw new NotFoundException("Release plan was not found for this project.");
   }
 
   return plan;

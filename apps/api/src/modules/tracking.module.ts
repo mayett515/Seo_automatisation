@@ -310,7 +310,13 @@ export class TrackingService {
   }
 
   async createKey(projectId: string, body: unknown): Promise<CreateTrackingKeyResponse> {
-    const input = CreateTrackingKeyRequestSchema.parse(body ?? {});
+    const parsed = CreateTrackingKeyRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Tracking key creation requires at least one valid http(s) allowed origin.");
+    }
+
+    const input = parsed.data;
     const db = this.database.requireDb();
     const trackingKey = createPublishableTrackingKey();
     const [row] = await db
@@ -436,8 +442,13 @@ class TrackingController {
     @Headers("origin") origin: string | string[] | undefined,
     @Headers("referer") referer: string | string[] | undefined
   ) {
-    const event = TrackingEventSchema.parse(body);
-    return this.tracking.ingest(event, {
+    const parsed = TrackingEventSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Tracking events require a valid projectId, eventName, and path-only route.");
+    }
+
+    return this.tracking.ingest(parsed.data, {
       trackingKey: readFirstHeader(trackingKey),
       origin: readFirstHeader(origin),
       referer: readFirstHeader(referer)

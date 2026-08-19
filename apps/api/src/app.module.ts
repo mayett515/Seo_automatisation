@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { APP_FILTER } from "@nestjs/core";
 import { BetterAuthModule } from "./auth/better-auth/better-auth.module.js";
 import { AuthzModule } from "./auth/authz.module.js";
 import { DatabaseModule } from "./database/database.module.js";
@@ -18,6 +19,7 @@ import { ReportsModule } from "./modules/reports.module.js";
 import { SecurityModule } from "./security/security.module.js";
 import { TrackingModule } from "./modules/tracking.module.js";
 import { MediaStorageModule } from "./media-storage.module.js";
+import { ZodValidationExceptionFilter } from "./zod-validation.filter.js";
 
 @Module({
   imports: [
@@ -40,6 +42,12 @@ import { MediaStorageModule } from "./media-storage.module.js";
     ReportsModule,
     TrackingModule
   ],
-  controllers: [HealthController]
+  controllers: [HealthController],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: ZodValidationExceptionFilter
+    }
+  ]
 })
 export class AppModule {}

@@ -32,6 +32,7 @@ import {
   type DatabaseClient
 } from "@localseo/db";
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -329,7 +330,13 @@ class GscService implements OnModuleDestroy {
   }
 
   async queueSync(projectId: string, requestInput: unknown, userId?: string): Promise<QueueJob | GscConnection> {
-    const request = GscSyncRequestSchema.parse(requestInput ?? {});
+    const parsed = GscSyncRequestSchema.safeParse(requestInput ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("GSC sync requests require a valid optional dateRange and propertyUrl.");
+    }
+
+    const request = parsed.data;
     const connection = await this.getConnection(projectId);
 
     const db = this.database.db;

@@ -183,7 +183,7 @@ void describe(
 
       await assert.rejects(
         () => service.verify(projectA.projectId, projectB.releasePlanId, undefined, {}),
-        /not authorized for this project/u
+        /not found for this project/u
       );
 
       const rows = await db

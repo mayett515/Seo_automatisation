@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Body, Controller, Get, Inject, Injectable, Module, Param, Post } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Inject, Injectable, Module, Param, Post } from "@nestjs/common";
 import {
   CreateLeadSchema,
   LeadSchema,
@@ -61,8 +61,13 @@ class LeadsController {
 
   @Post()
   createLead(@Body() body: unknown) {
-    const input = CreateLeadSchema.parse(body);
-    return this.leads.createLead(input);
+    const parsed = CreateLeadSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Lead creation requires a valid websiteUrl and optional business details.");
+    }
+
+    return this.leads.createLead(parsed.data);
   }
 
   @Post(":id/start-pre-audit")

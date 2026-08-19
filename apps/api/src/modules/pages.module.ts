@@ -752,7 +752,15 @@ export class PagesService {
     body: unknown,
     createdByUserId?: string
   ): Promise<PageSectionNote> {
-    const input = CreatePageSectionNoteRequestSchema.parse(body ?? {});
+    const parsed = CreatePageSectionNoteRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException(
+        "Page section notes require a valid sectionId, fieldPath, instructionType, and note."
+      );
+    }
+
+    const input = parsed.data;
     const row = await this.loadPageVersion(projectId, pageVersionId);
     const pageJson = parseStoredPageJson(row);
 
@@ -831,7 +839,13 @@ export class PagesService {
     body: unknown,
     createdByUserId?: string
   ): Promise<PageVersionEditResponse> {
-    const input = EditPageVersionRequestSchema.parse(body ?? {});
+    const parsed = EditPageVersionRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Page Studio edit requires a valid explicit edit command.");
+    }
+
+    const input = parsed.data;
 
     if (!createdByUserId) {
       throw new BadRequestException("Page Studio editing requires an authenticated persisted user id.");
@@ -1024,7 +1038,13 @@ export class PagesService {
     body: unknown,
     decidedByUserId?: string
   ): Promise<PageVersionReviewResponse> {
-    const input = ReviewPageVersionRequestSchema.parse(body ?? {});
+    const parsed = ReviewPageVersionRequestSchema.safeParse(body ?? {});
+
+    if (!parsed.success) {
+      throw new BadRequestException("Page version review requires a valid review decision.");
+    }
+
+    const input = parsed.data;
 
     if (!decidedByUserId) {
       throw new BadRequestException("Page version review requires an authenticated persisted user id.");
