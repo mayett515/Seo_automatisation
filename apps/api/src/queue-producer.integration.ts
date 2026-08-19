@@ -97,6 +97,50 @@ void describe(
       assert.equal(completedJob.removed, true);
     });
 
+    void it("keeps a still-running job run attached to its external id when re-enqueueing the same job id", async () => {
+      const fixture = await createQueueFixture(db);
+      const service = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setDeployQueue(service, queue);
+
+      assert.equal(await service.enqueue(queueInput(fixture)), true);
+      await db
+        .update(jobRuns)
+        .set({ status: "running", startedAt: new Date() })
+        .where(eq(jobRuns.externalJobId, fixture.jobId));
+      // BullMQ already reports the previous job as terminal, but the worker has not
+      // written its terminal status yet - the audit row is still running.
+      const staleJob = new FakeJob("completed");
+      queue.existingJob = staleJob;
+
+      assert.equal(await service.enqueue(queueInput(fixture)), true);
+
+      const rows = await db.select().from(jobRuns).where(eq(jobRuns.queueName, "deploy"));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.status, "running");
+      assert.equal(rows[0]?.externalJobId, fixture.jobId);
+      assert.equal(staleJob.removed, true);
+      assert.equal(queue.addCalls.length, 2);
+      assert.equal(queue.addCalls[1]?.data.jobRunId, rows[0]?.id);
+    });
+
+    void it("serializes concurrent enqueues of the same job id instead of double-replacing the job", async () => {
+      const fixture = await createQueueFixture(db);
+      const service = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      queue.existingJob = new FakeJob("completed");
+      setDeployQueue(service, queue);
+
+      const results = await Promise.all([service.enqueue(queueInput(fixture)), service.enqueue(queueInput(fixture))]);
+
+      assert.deepEqual(results, [true, true]);
+      assert.equal(queue.addCalls.length, 1);
+      const rows = await db.select().from(jobRuns).where(eq(jobRuns.queueName, "deploy"));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.status, "queued");
+      assert.equal(rows[0]?.externalJobId, fixture.jobId);
+    });
+
     void it("marks queued audit rows failed when queue.add throws", async () => {
       const fixture = await createQueueFixture(db);
       const service = new QueueProducerService(testDatabaseService(db));
