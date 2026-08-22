@@ -4,6 +4,7 @@ import type { ReleaseCheck, ReleasePlan } from "@localseo/contracts";
 import {
   buildReleaseDeploymentKey,
   canDeployRelease,
+  classifyRankingProof,
   classifyRollbackReconciliation,
   deriveTechnicalAuditFindings,
   deriveWebsiteImportFacts,
@@ -315,6 +316,25 @@ void describe("deriveTechnicalAuditFindings", () => {
     );
     assert.equal(findings[0]?.severity, "blocker");
     assert.equal(findings.at(-1)?.severity, "info");
+  });
+});
+
+void describe("ranking proof classification", () => {
+  void it("treats the proven rank 1..10 window as customer proof", () => {
+    for (const rank of [1, 2, 3, 5, 10]) {
+      assert.equal(classifyRankingProof(rank), "customer_proof");
+    }
+  });
+
+  void it("keeps ranks beyond the top 10 internal", () => {
+    assert.equal(classifyRankingProof(11), "internal_radar");
+    assert.equal(classifyRankingProof(100), "internal_radar");
+  });
+
+  void it("never promotes a non-positive or non-integer rank to customer proof", () => {
+    for (const rank of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(classifyRankingProof(rank), "internal_radar");
+    }
   });
 });
 

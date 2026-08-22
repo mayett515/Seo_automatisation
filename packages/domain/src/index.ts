@@ -191,13 +191,14 @@ export function chooseLocalRouteStrategy(input: {
 
 export type RankingProofTier = "customer_proof" | "internal_roadmap" | "internal_radar";
 
-export function classifyRankingProof(input: {
-  isTop10: boolean;
-  isTop5: boolean;
-  isTop3: boolean;
-  isPositionOne: boolean;
-}): RankingProofTier {
-  if (input.isTop10 || input.isTop5 || input.isTop3 || input.isPositionOne) {
+// An unparsed or out-of-range rank must never become customer-facing proof, so anything
+// outside the proven 1..10 window stays internal.
+export function classifyRankingProof(rank: number): RankingProofTier {
+  if (!Number.isSafeInteger(rank) || rank < 1) {
+    return "internal_radar";
+  }
+
+  if (rank <= 10) {
     return "customer_proof";
   }
 
