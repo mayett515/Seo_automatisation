@@ -1,6 +1,6 @@
 # Migration ledger: retired rule bundles → native layer
 
-Date: 2026-08-20. Verbs are honest: **covered** (content verifiably present at
+Date: 2026-08-22. Verbs are honest: **covered** (content verifiably present at
 the named destination), **lifted** (was missing natively, added in this
 change), **dropped** (passed the drop test: describes how a language, library,
 or tool behaves — not a decision this project made), **superseded** (the job
@@ -90,7 +90,7 @@ native layer and is kept purely as history.
 - `.ai-stealer-catalog/`, `.ai-stealer-findings/`, `.ai-stack-findings/`,
   `.ai-project-references/` — reference data, not rules.
 
-## Amendments (2026-08-20, after the Codex cross-review)
+## Amendments (2026-08-22, after the Codex cross-review)
 
 An independent Codex review sampled the coverage claims. Accepted findings,
 fixed the same day:
@@ -107,10 +107,11 @@ fixed the same day:
 - Worker status-honesty wording was over-absolute and contradicted the live
   admission/reservation invariants (`.ai-project-rules/06`, `15`); reworded
   to permit durable intent/run/reservation rows before enqueue.
-- Archive protection now covers the whole `archive/` segment (including this
-  ledger) with resolved-path normalization; the shell-command regex is
-  labeled defense-in-depth, not a guarantee. This ledger is maintained
-  deliberately outside Cursor sessions.
+- Archive protection: Cursor `Write`/`Delete` tool calls into `archive/` are
+  denied with resolved-path normalization (this ledger included). Shell
+  execution cannot be fully policed — the command regex is defense-in-depth
+  only, so the guarantee is scoped to the file-tool layer. Controlled
+  amendments to this ledger happen outside Cursor sessions.
 - Root `AGENTS.md` now carries the generic Pragmatic TypeScript layer
   natively (previously only in the external pack, which does not exist on
   every machine): the pack remains the authoring master, the repo carries

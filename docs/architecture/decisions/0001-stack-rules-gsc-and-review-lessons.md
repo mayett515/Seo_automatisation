@@ -1,3 +1,8 @@
+> Historical note (2026-08-22): rule-bundle paths in this ADR that begin
+> with `archive/` refer to retired bundles kept as read-only history. New
+> lessons are promoted into the native layer (root/nested `AGENTS.md`,
+> `.agents/skills/`) or the pack master — never into the archive.
+
 # 0001 - Stack Rules, GSC Slice, And Review Lessons
 
 Date: 2026-06-25

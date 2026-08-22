@@ -1,7 +1,7 @@
 ---
 description: "Operational guide for the flat .ai-rules bundle"
 globs: ".ai-rules/**/*.md"
-alwaysApply: true
+alwaysApply: false
 version: "3.0.0"
 model_target: "universal-router-hybrid"
 protocol_compat: "mcp: 2026-05"
@@ -12,6 +12,10 @@ priority_schema: "critical > strong > guideline"
 # SYSTEM PROMPT & DIRECTORY GUIDE FOR LLM (RETIRED — frozen reference; see FROZEN.md)
 
 <meta-instruction>
+HISTORICAL (retired 2026-08-22): this bundle is frozen reference material; the
+native `AGENTS.md` layer and the pack master are canonical. The instructions
+below describe how this bundle used to be executed and are kept for reading
+the archive, not for routing live work.
 You are operating inside a flat AI rules ecosystem. Read `00-system-index.md` first, then load any directly referenced rule files required by the task. Do not assume nested folders exist.
 </meta-instruction>
 

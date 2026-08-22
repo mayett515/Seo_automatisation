@@ -11,7 +11,7 @@ New sources, research notes, extracted architecture patterns, and implementation
 - `.ai-stealer-findings/`
 - project planning docs
 - ADRs
-- `archive/.ai-stealer-rules/` when the workflow itself changes
+- `the `inspiration-pass` skill (historical bundle: `archive/.ai-stealer-rules/`)` when the workflow itself changes
 
 ## Usage
 

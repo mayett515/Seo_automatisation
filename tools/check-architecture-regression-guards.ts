@@ -449,16 +449,30 @@ requireIncludes(
 
 requireIncludes(
   ".cursor/hooks/pre-tool-policy.mjs",
-  "archive",
+  "archive/ is read-only history",
   "native-layer",
-  "the Cursor hook must protect the archive/ segment"
+  "the Cursor hook must carry the archive deny rule, not merely mention the word"
 );
 
 requireIncludes(
   "archive/MIGRATION-LEDGER.md",
-  "# Migration ledger",
+  "## Amendments",
   "native-layer",
-  "the migration coverage ledger must remain with the archive"
+  "the ledger must keep its post-review amendments, not only its title"
+);
+
+requireIncludes(
+  "apps/worker/AGENTS.md",
+  "Durable intent, run, and reservation rows written before enqueue",
+  "native-layer",
+  "the corrected durable-row wording must not regress to an absolute ban"
+);
+
+requireIncludes(
+  "apps/api/AGENTS.md",
+  "reverse proxy/edge, never to the Node process",
+  "native-layer",
+  "the fastify edge-ownership lift must remain in the API invariants"
 );
 
 // These are explicit reviewed decisions, not a dynamic rule-count gate.

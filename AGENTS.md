@@ -65,6 +65,7 @@ the error-shape taxonomy and branching escalation, read
 - For Local SEO product planning, controlled automation, stack decisions, deployment-agent flow, tracking privacy, or product docs, load `.ai-project-rules/00-system-index.md`.
 - For architecture decisions, production hardening decisions, repeated review findings, or regression guards, read the relevant ADR in `docs/architecture/decisions/`.
 - For chronological project progress, review responses, completed slices, or remaining next steps, update `docs/progress/`.
+- For research, findings, and lessons that are NOT yet rules: collect them host-neutrally in `.ai-stack-findings/` and `.ai-stealer-findings/` (both editable). Promotion is deliberate, never automatic: stable + repeated + mechanically checkable -> lint/hook/CI; otherwise the owning nested `AGENTS.md` or the pack master. Never promote into `archive/`.
 
 ## Archive (retired rule bundles)
 
@@ -77,8 +78,10 @@ coverage ledger is `archive/MIGRATION-LEDGER.md`:
 - `.ai-stack-rules`, `.ai-nest-rules`, `.ai-fastify-rules` — merged into the reusable TypeScript pack and the nested `AGENTS.md` files
 - `.ai-schema-factory` — superseded by the pack factory
 
-Archived material never loads automatically and is never edited. To consult
-it, ask explicitly, for example: "read archive/.ai-nest-rules/03-queues-workers-lifecycle.md".
+Archived material never loads automatically. Archived bundles are immutable;
+the coverage ledger (`archive/MIGRATION-LEDGER.md`) receives controlled
+amendments outside Cursor sessions. To consult the archive, ask explicitly,
+for example: "read archive/.ai-nest-rules/03-queues-workers-lifecycle.md".
 New lessons go into the native layer, never into the archive.
 
 ## Frozen References

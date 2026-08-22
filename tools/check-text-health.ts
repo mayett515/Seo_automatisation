@@ -23,7 +23,8 @@ const requiredTextFiles: RequiredTextFile[] = [
 const failures: string[] = [];
 
 // Archived bundles (archive/.ai-*) are deliberately NOT health-checked:
-// they are read-only history. Only live rule roots are validated.
+// they are read-only history. Validated roots are the live product rules
+// plus the deliberately retained frozen reference (.ai-rules).
 const ruleRoots = [".ai-rules", ".ai-project-rules"] as const;
 
 for (const file of requiredTextFiles) {

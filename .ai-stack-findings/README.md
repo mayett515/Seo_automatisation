@@ -9,4 +9,4 @@ Use this folder for:
 - broader adjacent-source scans when a category is under-specified, for example TanStack Form/Table, Nest lifecycle hooks, fetch/URL Web APIs, API versioning, or worker idempotency
 - links to official docs and short summaries of why a finding matters
 
-Do not put Local SEO product truth here. Promote only stable, recurring implementation lessons into `archive/.ai-stack-rules/`.
+Do not put Local SEO product truth here. Promote only stable, recurring implementation lessons into `the native layer (nested `AGENTS.md`or the pack master; historical bundle:`archive/.ai-stack-rules/`)`.

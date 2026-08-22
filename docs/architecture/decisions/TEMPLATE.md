@@ -38,5 +38,5 @@ Examples:
 ## Related Files
 
 - `path/to/file.ts`
-- `archive/.ai-stack-rules/example.md`
+- `apps/api/AGENTS.md (or the owning nested AGENTS.md)/example.md`
 - `docs/architecture/app-blueprint.md`

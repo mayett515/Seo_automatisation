@@ -9,9 +9,7 @@ dependencies:
   - ".ai-project-rules/02-stack-and-boundaries.md"
   - ".ai-project-rules/14-architecture-direction.md"
   - ".ai-project-rules/15-architecture-regression-guards.md"
-  - ".ai-rules/06-modular-architecture.md"
-  - ".ai-rules/01C-readable-code-for-humans-and-ai.md"
-  - ".ai-rules/09-anti-regression.md"
+  - "AGENTS.md"
   - "archive/.ai-nest-rules/01-providers-composition-root.md"
 priority_schema: "critical > strong > guideline"
 ---
