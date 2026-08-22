@@ -1031,22 +1031,24 @@ void describe(
 
       await assert.rejects(
         () =>
-          db.insert(opportunities).values({
-            projectId: fixture.projectId,
-            agentRunId: fixture.runId,
-            serviceId: otherEntities.serviceId,
-            areaId: otherEntities.areaId,
-            primaryKeyword: "cross-project candidate",
-            policyVersion: "opportunity-portfolio.v1",
-            researchMaterialDigest: fixture.materialDigest,
-            candidateKey: `cross-project:${randomUUID()}`,
-            rankingMilestone: "unverified",
-            evidenceReadiness: "supporting_context",
-            businessValue: "medium",
-            marketDifficulty: "medium",
-            executionEffort: "medium",
-            lane: "quick_win",
-            evidenceJson: { workflowVersion: "opportunity-research.v2" }
+          db.transaction(async (tx) => {
+            await tx.insert(opportunities).values({
+              projectId: fixture.projectId,
+              agentRunId: fixture.runId,
+              serviceId: otherEntities.serviceId,
+              areaId: otherEntities.areaId,
+              primaryKeyword: "cross-project candidate",
+              policyVersion: "opportunity-portfolio.v1",
+              researchMaterialDigest: fixture.materialDigest,
+              candidateKey: `cross-project:${randomUUID()}`,
+              rankingMilestone: "unverified",
+              evidenceReadiness: "supporting_context",
+              businessValue: "medium",
+              marketDifficulty: "medium",
+              executionEffort: "medium",
+              lane: "quick_win",
+              evidenceJson: { workflowVersion: "opportunity-research.v2" }
+            });
           }),
         /confirmed same-project service and area truth/iu
       );
@@ -1259,25 +1261,31 @@ void describe(
       const fixture = await createFixture(db);
       await assert.rejects(
         () =>
-          db
-            .update(projectOpportunityResearchStates)
-            .set({ status: "failed", activeRunId: null })
-            .where(eq(projectOpportunityResearchStates.projectId, fixture.projectId)),
-        /cannot abandon an active workflow run/iu
+          db.transaction(async (tx) => {
+            await tx
+              .update(projectOpportunityResearchStates)
+              .set({ status: "failed", activeRunId: null })
+              .where(eq(projectOpportunityResearchStates.projectId, fixture.projectId));
+          }),
+        postgresErrorMatches(/cannot abandon an active workflow run/iu)
       );
+      const forgedStartedAt = new Date();
       await assert.rejects(
         () =>
-          db
-            .update(agentRuns)
-            .set({
-              status: "running",
-              startedAt: new Date(),
-              executionEpoch: 1,
-              executionClaimToken: "forged-without-event",
-              updatedAt: new Date()
-            })
-            .where(eq(agentRuns.id, fixture.runId)),
-        /requires its exact durable event/iu
+          db.transaction(async (tx) => {
+            await tx
+              .update(agentRuns)
+              .set({
+                status: "running",
+                startedAt: forgedStartedAt,
+                lastHeartbeatAt: forgedStartedAt,
+                executionEpoch: 1,
+                executionClaimToken: "forged-without-event",
+                updatedAt: forgedStartedAt
+              })
+              .where(eq(agentRuns.id, fixture.runId));
+          }),
+        postgresErrorMatches(/requires its exact durable event/iu)
       );
       await claimFixtureExecution(db, fixture, "lifecycle-test:attempt-1");
       await assert.rejects(
@@ -1290,7 +1298,7 @@ void describe(
             executionEpoch: 0,
             payloadJson: {}
           }),
-        /current workflow execution epoch/iu
+        postgresErrorMatches(/current workflow execution epoch/iu)
       );
       await assert.rejects(
         () =>
@@ -1307,13 +1315,14 @@ void describe(
             proofTier: "internal_signal",
             evidenceJson: {}
           }),
-        /current running workflow execution epoch/iu
+        postgresErrorMatches(/current running workflow execution epoch/iu)
       );
       const runningStep = await claimAgentRunStep(db, {
         projectId: fixture.projectId,
         runId: fixture.runId,
         stepKey: "research.running",
         stepKind: "agent",
+        agentRole: "ResearchAgent",
         eventKey: "step.research.running.started.1",
         maxAttempts: 3
       });
@@ -1371,9 +1380,12 @@ void describe(
             .update(agentRuns)
             .set({ diagnosticsJson: { forged: true } })
             .where(eq(agentRuns.id, fixture.runId)),
-        /terminal workflow runs are immutable/iu
+        postgresErrorMatches(/terminal workflow runs are immutable/iu)
       );
-      await assert.rejects(() => db.delete(agentRuns).where(eq(agentRuns.id, fixture.runId)), /durable audit truth/iu);
+      await assert.rejects(
+        () => db.delete(agentRuns).where(eq(agentRuns.id, fixture.runId)),
+        postgresErrorMatches(/durable audit truth/iu)
+      );
       await assert.rejects(
         () =>
           db.insert(agentRunEvents).values({
@@ -1385,7 +1397,7 @@ void describe(
             payloadJson: { failureCode: "test_terminal" },
             occurredAt: steps[0]?.completedAt ?? new Date()
           }),
-        /terminal workflow lifecycle event already exists|exact terminal event/iu
+        postgresErrorMatches(/workflow lifecycle event already exists|exact terminal event/iu)
       );
       await assert.rejects(
         () =>
@@ -1397,7 +1409,7 @@ void describe(
             role: "cited",
             ordinal: 1
           }),
-        /running workflow and step/iu
+        postgresErrorMatches(/running workflow and step/iu)
       );
     });
 
@@ -1411,49 +1423,51 @@ void describe(
 
       await assert.rejects(
         () =>
-          db.insert(opportunities).values({
-            projectId: fixture.projectId,
-            agentRunId: fixture.runId,
-            serviceId: entities.serviceId,
-            areaId: entities.areaId,
-            primaryKeyword: "fabricated same-project candidate",
-            policyVersion: "opportunity-portfolio.v1",
-            researchMaterialDigest: fixture.materialDigest,
-            candidateKey: `fabricated:${randomUUID()}`,
-            rankingMilestone: "unverified",
-            evidenceReadiness: "supporting_context",
-            businessValue: "medium",
-            marketDifficulty: "medium",
-            executionEffort: "medium",
-            lane: "build_cluster",
-            evidenceJson: {
-              workflowVersion: "opportunity-research.v2",
-              candidate: {
-                serviceId: entities.serviceId,
-                areaId: entities.areaId,
-                service: "Fabricated service",
-                area: "Fabricated area",
-                primaryKeyword: "fabricated same-project candidate",
-                secondaryKeywords: [],
-                suggestedPageType: "normal_page",
-                businessValue: "medium",
-                marketDifficulty: "medium",
-                executionEffort: "medium",
-                evidenceKeys: [`ranking_proof:${fixture.proofId}`],
-                rationale: "Fabricated",
-                missingEvidence: [],
-                confidence: 0.5
-              },
-              derivedAxes: {
-                rankingMilestone: "unverified",
-                evidenceReadiness: "supporting_context",
-                businessValue: "medium",
-                marketDifficulty: "medium",
-                executionEffort: "medium",
-                lane: "build_cluster"
-              },
-              citedEvidenceKeys: [`ranking_proof:${fixture.proofId}`]
-            }
+          db.transaction(async (tx) => {
+            await tx.insert(opportunities).values({
+              projectId: fixture.projectId,
+              agentRunId: fixture.runId,
+              serviceId: entities.serviceId,
+              areaId: entities.areaId,
+              primaryKeyword: "fabricated same-project candidate",
+              policyVersion: "opportunity-portfolio.v1",
+              researchMaterialDigest: fixture.materialDigest,
+              candidateKey: `fabricated:${randomUUID()}`,
+              rankingMilestone: "unverified",
+              evidenceReadiness: "supporting_context",
+              businessValue: "medium",
+              marketDifficulty: "medium",
+              executionEffort: "medium",
+              lane: "build_cluster",
+              evidenceJson: {
+                workflowVersion: "opportunity-research.v2",
+                candidate: {
+                  serviceId: entities.serviceId,
+                  areaId: entities.areaId,
+                  service: "Fabricated service",
+                  area: "Fabricated area",
+                  primaryKeyword: "fabricated same-project candidate",
+                  secondaryKeywords: [],
+                  suggestedPageType: "normal_page",
+                  businessValue: "medium",
+                  marketDifficulty: "medium",
+                  executionEffort: "medium",
+                  evidenceKeys: [`ranking_proof:${fixture.proofId}`],
+                  rationale: "Fabricated",
+                  missingEvidence: [],
+                  confidence: 0.5
+                },
+                derivedAxes: {
+                  rankingMilestone: "unverified",
+                  evidenceReadiness: "supporting_context",
+                  businessValue: "medium",
+                  marketDifficulty: "medium",
+                  executionEffort: "medium",
+                  lane: "build_cluster"
+                },
+                citedEvidenceKeys: [`ranking_proof:${fixture.proofId}`]
+              }
+            });
           }),
         /must match exact succeeded strategy output truth/iu
       );
