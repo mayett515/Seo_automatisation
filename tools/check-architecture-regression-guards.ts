@@ -1318,7 +1318,7 @@ requireLatestMigrationDefinitionIncludes(
 
 requireIncludes(
   "apps/worker/src/agent-ledger.integration.ts",
-  "rejects evidence binding when the selected source version changed",
+  "research.source-version-drift",
   "agentic-runtime-evidence-ledger",
   "integration coverage must reject evidence after durable source-version drift"
 );
@@ -1517,7 +1517,7 @@ requireOrderedIncludes(
 
 requireRegex(
   "apps/worker/src/work-recovery.ts",
-  /async function loadOpportunityResearchRecoveryCandidates[\s\S]*?lte\(opportunityResearchLivenessAt, staleBefore\)[\s\S]*?orderBy\(asc\(opportunityResearchLivenessAt\)\)/u,
+  /async function loadOpportunityResearchRecoveryCandidates[\s\S]*?lte\(opportunityResearchLivenessAt, sql`\$\{staleBefore\.toISOString\(\)\}::timestamptz`\)[\s\S]*?orderBy\(asc\(opportunityResearchLivenessAt\)\)/u,
   "opportunity-research-recovery",
   "Opportunity Research candidate loading must use heartbeat-aware liveness"
 );
