@@ -469,6 +469,20 @@ requireIncludes(
 );
 
 requireIncludes(
+  ".claude/hooks/protect-paths.mjs",
+  "archive/ is read-only history",
+  "native-layer",
+  "the Claude hook must carry the repo-specific archive deny rule"
+);
+
+requireIncludes(
+  ".claude/settings.json",
+  "protect-paths.mjs",
+  "native-layer",
+  "the Claude settings must register the protected-path hook"
+);
+
+requireIncludes(
   "archive/MIGRATION-LEDGER.md",
   'The blanket "covered" was overclaimed',
   "native-layer",
