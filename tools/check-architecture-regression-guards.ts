@@ -392,6 +392,20 @@ requireIncludes(
 );
 
 requireIncludes(
+  "AGENTS.md",
+  "4+ meaningful variants",
+  "native-layer",
+  "the library policy must keep the concrete ts-pattern threshold, not a vague paraphrase"
+);
+
+requireIncludes(
+  "AGENTS.md",
+  ".exhaustive()",
+  "native-layer",
+  "the library policy must require exhaustive matching on closed unions"
+);
+
+requireIncludes(
   ".agents/skills/anti-regression/SKILL.md",
   "name: anti-regression",
   "native-layer",

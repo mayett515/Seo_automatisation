@@ -41,6 +41,13 @@ Confirming that existing code is already right is a valid outcome.
 - Shell code loads state, asks the core for a decision, performs the effect, and normalizes provider failures. Never report success when an effect failed.
 - Do not hide business policy inside controllers, workers, repositories, framework hooks, or anonymous schema refinements.
 
+### Libraries
+
+- Plain TypeScript first: `if`, `switch`, named functions, and typed `Record` maps.
+- Pattern matching (ts-pattern) is earned only at 4+ meaningful variants or state-and-event matched together. On closed unions use `.exhaustive()`; `.otherwise()` only for intentionally open external input.
+- neverthrow only when typed expected failures repeat across several functions AND combinators remove boilerplate without hiding step names. Effect only when a module genuinely needs typed errors, retries, interruption, and resource management together — never for a small Result.
+- Collection utils (Remeda etc.) only when they replace helpers the repo already repeats; no custom pipe/compose/combinator helpers without repeated local evidence. Never introduce a new FP ecosystem locally, and never let library syntax outrank domain names.
+
 ### Boundaries
 
 Choose the smallest rung that owns the concern: pure function -> injected
