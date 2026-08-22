@@ -72,6 +72,79 @@ void describe("buildReleasePreflightChecks", () => {
     assert.equal(checks.find((check) => check.checkKey === "release_action_materialization_check")?.result, "passed");
   });
 
+  void it("returns the complete preflight catalog in stable evaluation order", () => {
+    const checks = buildReleasePreflightChecks(readyEvidence());
+
+    assert.deepEqual(
+      checks.map(({ checkKey, scope, severity, result, message }) => ({ checkKey, scope, severity, result, message })),
+      [
+        {
+          checkKey: "approval_check",
+          scope: "page",
+          severity: "blocker",
+          result: "passed",
+          message: "Every renderable release item references an approved page version."
+        },
+        {
+          checkKey: "media_manifest_check",
+          scope: "page",
+          severity: "blocker",
+          result: "passed",
+          message: "Every renderable release item has an exact, available immutable media manifest."
+        },
+        {
+          checkKey: "staging_noindex_check",
+          scope: "domain",
+          severity: "blocker",
+          result: "passed",
+          message: "Every preview page carries noindex evidence."
+        },
+        {
+          checkKey: "resolved_robots_check",
+          scope: "domain",
+          severity: "blocker",
+          result: "passed",
+          message: "Release actions resolve to deterministic robots directives."
+        },
+        {
+          checkKey: "release_action_materialization_check",
+          scope: "domain",
+          severity: "blocker",
+          result: "passed",
+          message: "Every release action materializes to a rendered page artifact."
+        },
+        {
+          checkKey: "local_seo_page_quality_gate",
+          scope: "page",
+          severity: "blocker",
+          result: "passed",
+          message: "Local SEO page quality gate has no blockers."
+        },
+        {
+          checkKey: "rollback_point_ready",
+          scope: "project",
+          severity: "blocker",
+          result: "passed",
+          message: "Rollback point artifact is available."
+        },
+        {
+          checkKey: "local_seo_page_quality_warning",
+          scope: "page",
+          severity: "warning",
+          result: "passed",
+          message: "Local SEO page quality gate has no warnings."
+        },
+        {
+          checkKey: "tracking_key_ready",
+          scope: "tracking",
+          severity: "warning",
+          result: "passed",
+          message: "At least one active project tracking key has allowed origins."
+        }
+      ]
+    );
+  });
+
   void it("blocks renderable actions when immutable media references cannot be resolved exactly", () => {
     const evidence = readyEvidence();
     const page = evidence.pages[0];

@@ -68,6 +68,12 @@ export type ReleasePreflightEvidence = {
   usableTrackingKeyCount: number;
 };
 
+type ReleasePreflightCheckDefinition = Omit<ReleaseCheck, "message" | "result"> & {
+  passed: boolean;
+  passedMessage: string;
+  failedMessage: string;
+};
+
 export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence): ReleaseCheck[] {
   const renderablePages = evidence.pages.filter(isRenderableReleasePage);
   const missingApproval = renderablePages.filter((page) => !page.pageVersionId || !page.approvedAt);
@@ -97,62 +103,56 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
   const releaseItemCount = evidence.pages.length;
   const pageCount = renderablePages.length;
 
-  return [
-    ReleaseCheckSchema.parse({
+  const checkDefinitions: ReleasePreflightCheckDefinition[] = [
+    {
       checkKey: "approval_check",
       scope: "page",
       severity: "blocker",
-      result: releaseItemCount > 0 && missingApproval.length === 0 ? "passed" : "failed",
-      message:
-        releaseItemCount > 0 && missingApproval.length === 0
-          ? "Every renderable release item references an approved page version."
-          : "Every create/update release item must reference an approved page version before deploy approval.",
+      passed: releaseItemCount > 0 && missingApproval.length === 0,
+      passedMessage: "Every renderable release item references an approved page version.",
+      failedMessage: "Every create/update release item must reference an approved page version before deploy approval.",
       evidence: {
         pageCount,
         releaseItemCount,
         missingApprovalCount: missingApproval.length,
         missingApprovalPageVersionIds: missingApproval.map((page) => page.pageVersionId ?? "missing_page_version")
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "media_manifest_check",
       scope: "page",
       severity: "blocker",
-      result: releaseItemCount > 0 && invalidMediaManifests.length === 0 ? "passed" : "failed",
-      message:
-        releaseItemCount > 0 && invalidMediaManifests.length === 0
-          ? "Every renderable release item has an exact, available immutable media manifest."
-          : "Every create/update page must resolve its exact PageJson media references before deploy approval.",
+      passed: releaseItemCount > 0 && invalidMediaManifests.length === 0,
+      passedMessage: "Every renderable release item has an exact, available immutable media manifest.",
+      failedMessage:
+        "Every create/update page must resolve its exact PageJson media references before deploy approval.",
       evidence: {
         pageCount,
         invalidMediaManifestCount: invalidMediaManifests.length,
         invalidMediaPageVersionIds: invalidMediaManifests.map((page) => page.pageVersionId ?? "missing_page_version")
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "staging_noindex_check",
       scope: "domain",
       severity: "blocker",
-      result: releaseItemCount > 0 && missingNoindex.length === 0 ? "passed" : "failed",
-      message:
-        releaseItemCount > 0 && missingNoindex.length === 0
-          ? "Every preview page carries noindex evidence."
-          : "Every create/update preview page must carry noindex evidence before deploy approval.",
+      passed: releaseItemCount > 0 && missingNoindex.length === 0,
+      passedMessage: "Every preview page carries noindex evidence.",
+      failedMessage: "Every create/update preview page must carry noindex evidence before deploy approval.",
       evidence: {
         pageCount,
         missingNoindexCount: missingNoindex.length,
         missingNoindexTargets: missingNoindex.map((page) => page.targetUrl)
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "resolved_robots_check",
       scope: "domain",
       severity: "blocker",
-      result: releaseItemCount > 0 && unresolvedLiveRobots.length === 0 ? "passed" : "failed",
-      message:
-        releaseItemCount > 0 && unresolvedLiveRobots.length === 0
-          ? "Release actions resolve to deterministic robots directives."
-          : "Every release action must resolve to a deterministic robots directive or a non-rendering operation.",
+      passed: releaseItemCount > 0 && unresolvedLiveRobots.length === 0,
+      passedMessage: "Release actions resolve to deterministic robots directives.",
+      failedMessage:
+        "Every release action must resolve to a deterministic robots directive or a non-rendering operation.",
       evidence: {
         releaseItemCount,
         resolvedRobots: evidence.pages.map((page) => ({
@@ -162,16 +162,14 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
         })),
         unresolvedTargets: unresolvedLiveRobots.map((page) => page.targetUrl)
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "release_action_materialization_check",
       scope: "domain",
       severity: "blocker",
-      result: releaseItemCount > 0 && unmaterializedActions.length === 0 ? "passed" : "failed",
-      message:
-        releaseItemCount > 0 && unmaterializedActions.length === 0
-          ? "Every release action materializes to a rendered page artifact."
-          : "Non-rendering release actions require directive artifact support before deploy approval.",
+      passed: releaseItemCount > 0 && unmaterializedActions.length === 0,
+      passedMessage: "Every release action materializes to a rendered page artifact.",
+      failedMessage: "Non-rendering release actions require directive artifact support before deploy approval.",
       evidence: {
         releaseItemCount,
         unmaterializedActionCount: unmaterializedActions.length,
@@ -180,67 +178,69 @@ export function buildReleasePreflightChecks(evidence: ReleasePreflightEvidence):
           targetUrl: page.targetUrl
         }))
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "local_seo_page_quality_gate",
       scope: "page",
       severity: "blocker",
-      result: releaseItemCount > 0 && qaBlockers.length === 0 ? "passed" : "failed",
-      message:
-        releaseItemCount > 0 && qaBlockers.length === 0
-          ? "Local SEO page quality gate has no blockers."
-          : "Local SEO page quality gate has blockers that must be resolved before deploy approval.",
+      passed: releaseItemCount > 0 && qaBlockers.length === 0,
+      passedMessage: "Local SEO page quality gate has no blockers.",
+      failedMessage: "Local SEO page quality gate has blockers that must be resolved before deploy approval.",
       evidence: {
         pageCount,
         blockerCount: qaBlockers.length,
         blockers: qaBlockers
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "rollback_point_ready",
       scope: "project",
       severity: "blocker",
-      result: hasRollbackEvidence(evidence) ? "passed" : "failed",
-      message:
+      passed: hasRollbackEvidence(evidence),
+      passedMessage:
         evidence.rollbackPointCount > 0
           ? "Rollback point artifact is available."
-          : evidence.priorSuccessfulDeploymentCount === 0
-            ? "First deploy has no prior live deployment to snapshot."
-            : "A rollback point artifact must exist before deploy approval.",
+          : "First deploy has no prior live deployment to snapshot.",
+      failedMessage: "A rollback point artifact must exist before deploy approval.",
       evidence: {
         rollbackPointCount: evidence.rollbackPointCount,
         priorSuccessfulDeploymentCount: evidence.priorSuccessfulDeploymentCount
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "local_seo_page_quality_warning",
       scope: "page",
       severity: "warning",
-      result: qaWarnings.length === 0 ? "passed" : "failed",
-      message:
-        qaWarnings.length === 0
-          ? "Local SEO page quality gate has no warnings."
-          : "Local SEO page quality gate has warnings to review before deploy.",
+      passed: qaWarnings.length === 0,
+      passedMessage: "Local SEO page quality gate has no warnings.",
+      failedMessage: "Local SEO page quality gate has warnings to review before deploy.",
       evidence: {
         pageCount,
         warningCount: qaWarnings.length,
         warnings: qaWarnings
       }
-    }),
-    ReleaseCheckSchema.parse({
+    },
+    {
       checkKey: "tracking_key_ready",
       scope: "tracking",
       severity: "warning",
-      result: evidence.usableTrackingKeyCount > 0 ? "passed" : "failed",
-      message:
-        evidence.usableTrackingKeyCount > 0
-          ? "At least one active project tracking key has allowed origins."
-          : "No active project tracking key with allowed origins exists; post-deploy tracking verification may be incomplete.",
+      passed: evidence.usableTrackingKeyCount > 0,
+      passedMessage: "At least one active project tracking key has allowed origins.",
+      failedMessage:
+        "No active project tracking key with allowed origins exists; post-deploy tracking verification may be incomplete.",
       evidence: {
         usableTrackingKeyCount: evidence.usableTrackingKeyCount
       }
-    })
+    }
   ];
+
+  return checkDefinitions.map(({ passed, passedMessage, failedMessage, ...check }) =>
+    ReleaseCheckSchema.parse({
+      ...check,
+      result: passed ? "passed" : "failed",
+      message: passed ? passedMessage : failedMessage
+    })
+  );
 }
 
 function hasRollbackEvidence(
