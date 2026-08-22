@@ -379,6 +379,13 @@
       "when": 1787422414567,
       "tag": "0053_fix_agent_run_event_step_key",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787423487707,
+      "tag": "0054_fix_jsonb_text_concatenation_precedence",
+      "breakpoints": true
     }
   ]
 }

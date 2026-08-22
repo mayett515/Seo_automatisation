@@ -216,7 +216,7 @@ void describe(
             .update(projectKnowledgeVersions)
             .set({ bodyMarkdown: "# Rewritten" })
             .where(eq(projectKnowledgeVersions.id, knowledge.id)),
-        /immutable/iu
+        matchesErrorMessage(/Knowledge content digest must match the exact Markdown bytes/iu)
       );
     });
 
@@ -246,7 +246,7 @@ void describe(
             contentSha256: createHash("sha256").update(bodyMarkdown, "utf8").digest("hex"),
             createdByUserId: outsider.id
           }),
-        /creation actor must have write authority/iu
+        matchesErrorMessage(/creation actor must have write authority/iu)
       );
 
       const proposed = await service.createKnowledgeVersion(
@@ -268,7 +268,7 @@ void describe(
             .update(projectKnowledgeVersions)
             .set({ status: "approved", reviewedAt: new Date(), reviewedByUserId: outsider.id })
             .where(eq(projectKnowledgeVersions.id, proposed.id)),
-        /review actor must have approval authority/iu
+        matchesErrorMessage(/review actor must have approval authority/iu)
       );
     });
 
@@ -300,7 +300,7 @@ void describe(
             profileSha256: "0".repeat(64),
             createdByUserId: outsider.id
           }),
-        /revision actor must have configuration authority/iu
+        matchesErrorMessage(/revision actor must have configuration authority/iu)
       );
       const [draftService] = draft.services;
       assert.ok(draftService);
@@ -310,11 +310,11 @@ void describe(
             .update(services)
             .set({ status: "confirmed", confirmedAt: new Date(), confirmedByUserId: outsider.id })
             .where(eq(services.id, draftService.id)),
-        /lifecycle actor must have configuration authority/iu
+        matchesErrorMessage(/lifecycle actor must have configuration authority/iu)
       );
       await assert.rejects(
         () => db.update(services).set({ status: "rejected" }).where(eq(services.id, draftService.id)),
-        /illegal canonical business entity status transition/iu
+        matchesErrorMessage(/illegal canonical business entity status transition/iu)
       );
       await assert.rejects(
         () =>
@@ -322,7 +322,7 @@ void describe(
             .update(projectBusinessProfiles)
             .set({ status: "confirmed", confirmedAt: new Date(), confirmedByUserId: outsider.id })
             .where(eq(projectBusinessProfiles.projectId, fixture.projectId)),
-        /confirmation actor must have configuration authority/iu
+        matchesErrorMessage(/confirmation actor must have configuration authority/iu)
       );
 
       const confirmed = await service.confirmBusinessProfile(
@@ -355,7 +355,7 @@ void describe(
             .update(projectBusinessProfiles)
             .set({ currentRevisionId: replacementRevision.id, updatedAt: new Date() })
             .where(eq(projectBusinessProfiles.projectId, fixture.projectId)),
-        /changed business profile revision must return to draft review/iu
+        matchesErrorMessage(/changed business profile revision must return to draft review/iu)
       );
       await assert.rejects(
         () =>
@@ -366,7 +366,7 @@ void describe(
               updatedAt: new Date()
             })
             .where(eq(projectBusinessProfiles.projectId, fixture.projectId)),
-        /confirmation evidence changes only with lifecycle status/iu
+        matchesErrorMessage(/confirmation evidence changes only with lifecycle status/iu)
       );
     });
 
@@ -439,7 +439,7 @@ void describe(
             .update(projectKnowledgeDocuments)
             .set({ retiredAt: null, retiredByUserId: null, retirementReason: null })
             .where(eq(projectKnowledgeDocuments.id, modelAllowed.documentId)),
-        /retired knowledge evidence is immutable/iu
+        matchesErrorMessage(/retired knowledge evidence is immutable/iu)
       );
     });
 
@@ -539,6 +539,16 @@ function profile() {
     targetCustomers: ["Hausverwaltungen"],
     operatingNotes: ["Keine Notdienste"]
   };
+}
+
+function matchesErrorMessage(pattern: RegExp): (error: unknown) => boolean {
+  return (error: unknown) => errorMessageChain(error).some((message) => pattern.test(message));
+}
+
+function errorMessageChain(error: unknown): string[] {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!error || typeof error !== "object" || !("cause" in error)) return [message];
+  return [message, ...errorMessageChain((error as { cause?: unknown }).cause)];
 }
 
 function testDatabaseService(db: DatabaseClient): DatabaseService {

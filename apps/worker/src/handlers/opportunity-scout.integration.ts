@@ -37,6 +37,7 @@ type IntegrationDatabase = Awaited<ReturnType<typeof createIntegrationTestDataba
 
 type ScoutFixture = {
   projectId: string;
+  userId: string;
   runId: string;
   rowId: string;
   signalId: string;
@@ -558,10 +559,15 @@ void describe(
       const fixture = await createScoutFixture(db);
       await db
         .update(rankingProofs)
+        .set({ status: "reviewed", reviewedAt: new Date(), reviewedByUserId: fixture.userId })
+        .where(eq(rankingProofs.id, fixture.proofId));
+      await db
+        .update(rankingProofs)
         .set({
           status: "invalidated",
           invalidationReason: "Wrong result was recorded.",
-          invalidatedAt: new Date()
+          invalidatedAt: new Date(),
+          invalidatedByUserId: fixture.userId
         })
         .where(eq(rankingProofs.id, fixture.proofId));
       const reasoning = new MockReasoningAdapter({
@@ -594,10 +600,12 @@ void describe(
     });
 
     void it("excludes stale ranking proof from customer-safe proof resolution", async () => {
-      const fixture = await createScoutFixture(db);
+      const fixture = await createScoutFixture(db, {
+        proofCapturedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1_000)
+      });
       await db
         .update(rankingProofs)
-        .set({ capturedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1_000) })
+        .set({ status: "reviewed", reviewedAt: new Date(), reviewedByUserId: fixture.userId })
         .where(eq(rankingProofs.id, fixture.proofId));
       const reasoning = new MockReasoningAdapter({
         ok: true,
@@ -875,7 +883,10 @@ void describe(
   }
 );
 
-async function createScoutFixture(db: DatabaseClient, input: { name?: string } = {}): Promise<ScoutFixture> {
+async function createScoutFixture(
+  db: DatabaseClient,
+  input: { name?: string; proofCapturedAt?: Date } = {}
+): Promise<ScoutFixture> {
   const [user] = await db
     .insert(users)
     .values({ email: `${randomUUID()}@example.test`, name: `${input.name ?? "Scout"} Operator` })
@@ -983,7 +994,7 @@ async function createScoutFixture(db: DatabaseClient, input: { name?: string } =
       query: "entruempelung dachau",
       pageUrl: "https://customer.example/entruempelung-dachau/",
       rank: 4,
-      capturedAt: new Date(),
+      capturedAt: input.proofCapturedAt ?? new Date(),
       searchEngine: "google",
       device: "desktop",
       createdByUserId: user.id,
@@ -994,6 +1005,7 @@ async function createScoutFixture(db: DatabaseClient, input: { name?: string } =
 
   return {
     projectId: project.id,
+    userId: user.id,
     runId: run.id,
     rowId: row.id,
     signalId: signal.id,

@@ -207,6 +207,13 @@ async function createReadyProject(db: DatabaseClient): Promise<{ projectId: stri
     .update(projectBusinessProfiles)
     .set({
       currentRevisionId: revision.id,
+      status: "draft",
+      updatedAt: now
+    })
+    .where(eq(projectBusinessProfiles.projectId, projectId));
+  await db
+    .update(projectBusinessProfiles)
+    .set({
       status: "confirmed",
       confirmedAt: now,
       confirmedByUserId: user.id,

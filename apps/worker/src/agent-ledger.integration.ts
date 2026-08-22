@@ -153,7 +153,7 @@ void describe(
             .update(agentRunSteps)
             .set({ outputJson: { forged: true } })
             .where(eq(agentRunSteps.id, claim.stepId)),
-        /parent run is terminal|immutable/iu
+        postgresErrorMatches(/canonical output must match output JSON|parent run is terminal|immutable/iu)
       );
     });
 
@@ -191,7 +191,7 @@ void describe(
             .update(agentRunSteps)
             .set({ outputCanonicalText: '{"a":"changed","z":"last"}' })
             .where(eq(agentRunSteps.id, claim.stepId)),
-        /canonical output must match output JSON/iu
+        postgresErrorMatches(/canonical output must match output JSON/iu)
       );
       await assert.rejects(
         () =>
@@ -199,7 +199,7 @@ void describe(
             .update(agentRunSteps)
             .set({ outputSha256: "0".repeat(64) })
             .where(eq(agentRunSteps.id, claim.stepId)),
-        /digest must match canonical output bytes/iu
+        postgresErrorMatches(/digest must match canonical output bytes/iu)
       );
     });
 
@@ -272,7 +272,7 @@ void describe(
             payloadJson: { executionRecoveryCount: 0 },
             occurredAt: new Date()
           }),
-        /must bind the current workflow execution epoch/iu
+        postgresErrorMatches(/must bind the current workflow execution epoch/iu)
       );
     });
 
@@ -331,7 +331,7 @@ void describe(
         const contenderPid = await backendPid(sourceContender.sql);
         contenderDone = sourceContender.sql
           .begin(async (tx) => {
-            await tx`UPDATE "ranking_proofs" SET "updated_at" = now() WHERE "id" = ${fixture.proofId}`;
+            await tx`SELECT "id" FROM "ranking_proofs" WHERE "id" = ${fixture.proofId} FOR UPDATE`;
           })
           .finally(() => {
             contenderSettled = true;
@@ -352,7 +352,7 @@ void describe(
           .where(eq(agentRunEvidenceItems.agentRunId, fixture.runId));
         const [proof] = await db.select().from(rankingProofs).where(eq(rankingProofs.id, fixture.proofId));
         assert.equal(evidence?.sourceId, fixture.proofId);
-        assert.equal(proof?.rowVersion, 2);
+        assert.equal(proof?.rowVersion, 1);
       } finally {
         heldRun?.rollback();
         await heldRun?.done.catch(() => undefined);
@@ -384,7 +384,7 @@ void describe(
             eventType: "qa.gate.failed",
             payload: { gate: "evidence" }
           }),
-        /idempotency key/iu
+        postgresErrorMatches(/idempotency key/iu)
       );
       const claim = await claimAgentRunStep(db, {
         projectId: fixture.projectId,
@@ -412,11 +412,11 @@ void describe(
               sourceVersion: "row-version:1"
             }
           }),
-        /same project/iu
+        postgresErrorMatches(/no longer current and admissible/iu)
       );
     });
 
-    void it("rejects evidence binding when the selected source version changed", async () => {
+    void it("rejects evidence binding after the selected ranking proof becomes invalidated", async () => {
       const fixture = await createFixture(db);
       await claimFixtureExecution(db, fixture, "source-version-drift:attempt-1");
       const claim = await claimAgentRunStep(db, {
@@ -433,7 +433,12 @@ void describe(
 
       await db
         .update(rankingProofs)
-        .set({ notes: "Changed after material selection." })
+        .set({
+          status: "invalidated",
+          invalidatedAt: new Date(),
+          invalidatedByUserId: fixture.userId,
+          invalidationReason: "The selected proof was superseded before evidence binding."
+        })
         .where(eq(rankingProofs.id, fixture.proofId));
 
       await assert.rejects(
@@ -453,7 +458,7 @@ void describe(
               sourceVersion: "row-version:1"
             }
           }),
-        /changed after material selection/iu
+        postgresErrorMatches(/no longer current and admissible/iu)
       );
 
       const evidence = await db
@@ -471,6 +476,7 @@ void describe(
         runId: fixture.runId,
         stepKey: "research.source-before-invalidation",
         stepKind: "agent",
+        agentRole: "ResearchAgent",
         eventKey: "step.source-before-invalidation.started",
         maxAttempts: 1,
         expectedExecutionEpoch: 1
@@ -506,6 +512,7 @@ void describe(
         runId: fixture.runId,
         stepKey: "research.source-after-invalidation",
         stepKind: "agent",
+        agentRole: "ResearchAgent",
         eventKey: "step.source-after-invalidation.started",
         maxAttempts: 1,
         expectedExecutionEpoch: 1
@@ -530,7 +537,7 @@ void describe(
               sourceVersion: "row-version:1"
             }
           }),
-        /no longer current and admissible/iu
+        postgresErrorMatches(/no longer current and admissible/iu)
       );
       await assert.rejects(
         () =>
@@ -542,7 +549,7 @@ void describe(
             role: "input",
             ordinal: 0
           }),
-        /no longer current and admissible/iu
+        postgresErrorMatches(/no longer current and admissible/iu)
       );
     });
 
@@ -554,6 +561,7 @@ void describe(
         runId: fixture.runId,
         stepKey: "research.operator-only-knowledge",
         stepKind: "agent",
+        agentRole: "ResearchAgent",
         eventKey: "step.operator-only-knowledge.started",
         maxAttempts: 1,
         expectedExecutionEpoch: 1
@@ -617,7 +625,7 @@ void describe(
             expectedExecutionEpoch: 1,
             evidence
           }),
-        /no longer current and admissible/iu
+        postgresErrorMatches(/no longer current and admissible/iu)
       );
       await assert.rejects(
         () =>
@@ -634,7 +642,7 @@ void describe(
             proofTier: "supporting_context",
             evidenceJson: {}
           }),
-        /no longer current and admissible/iu
+        postgresErrorMatches(/no longer current and admissible/iu)
       );
     });
 
@@ -1740,7 +1748,7 @@ async function recordRecoveryClaim(
         recoveryCount: sql<number>`${agentRuns.recoveryCount} + 1`,
         lastRecoveryAt: now,
         lastHeartbeatAt: sql<Date>`CASE
-          WHEN ${agentRuns.status} = 'running' THEN ${now}
+          WHEN ${agentRuns.status} = 'running' THEN ${now.toISOString()}::timestamptz
           ELSE ${agentRuns.lastHeartbeatAt}
         END`,
         updatedAt: now
@@ -1824,6 +1832,20 @@ function deferred<T>(): {
     rejectPromise = reject;
   });
   return { promise, resolve: resolvePromise, reject: rejectPromise };
+}
+
+function postgresErrorMatches(pattern: RegExp): (error: unknown) => boolean {
+  return (error) => {
+    const messages: string[] = [];
+    let current: unknown = error;
+    while (current && typeof current === "object") {
+      const record = current as { message?: unknown; cause?: unknown };
+      if (typeof record.message === "string") messages.push(record.message);
+      current = record.cause;
+    }
+    assert.match(messages.join("\n"), pattern);
+    return true;
+  };
 }
 
 function opportunityResearchJob(

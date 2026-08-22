@@ -198,7 +198,7 @@ void describe(
             capturedAt: new Date(),
             createdByUserId: outsider.id
           }),
-        /actor must have evidence authority/iu
+        postgresErrorMatches(/actor must have evidence authority/iu)
       );
 
       const service = new OpportunitiesService(testDatabaseService(db));
@@ -220,7 +220,7 @@ void describe(
             .update(rankingProofs)
             .set({ status: "reviewed", reviewedAt: new Date(), reviewedByUserId: outsider.id })
             .where(eq(rankingProofs.id, captured.id)),
-        /actor must have evidence authority/iu
+        postgresErrorMatches(/actor must have evidence authority/iu)
       );
     });
 
