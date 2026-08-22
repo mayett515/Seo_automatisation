@@ -142,7 +142,11 @@ void describe(
 
       assert.equal(result.reEnqueued, 1);
       assert.equal(queues.report.addCalls[0]?.name, "customer_report_html_render");
-      assert.equal(queues.report.addCalls[0]?.options.jobId, fixture.artifactId);
+      assert.deepEqual(queues.report.addCalls[0]?.options, {
+        attempts: 3,
+        jobId: fixture.artifactId,
+        backoff: { type: "exponential", delay: 5000 }
+      });
       assert.equal(queues.report.addCalls[0]?.data.artifactId, fixture.artifactId);
       assert.equal(queues.report.addCalls[0]?.data.reportId, fixture.reportId);
       const [artifact] = await db.select().from(reportArtifacts).where(eq(reportArtifacts.id, fixture.artifactId));

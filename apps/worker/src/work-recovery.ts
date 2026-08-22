@@ -1439,19 +1439,33 @@ function transportJobRunId(job: WorkRecoveryTransportJob): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function recoveryJobSpec(
-  candidate: RecoveryCandidate,
-  jobRunId?: string,
-  expectedRecoveryCount?: number
-): RecoveryJobSpec {
-  if (candidate.kind === "page_proposal") {
-    const attempts = 3;
-    return {
-      queueName: pageProposalQueueName,
-      jobName: "page_generation",
-      jobId: candidate.id,
-      jobType: "page_generation",
-      data: PageProposalJobDataSchema.parse({
+type RecoveryCandidateKind = RecoveryCandidate["kind"];
+type RecoveryCandidateByKind = {
+  [Kind in RecoveryCandidateKind]: Extract<RecoveryCandidate, { kind: Kind }>;
+};
+type RecoveryJobDefinitionInput = {
+  attempts: number;
+  jobRunId: string | undefined;
+  expectedRecoveryCount: number | undefined;
+};
+type RecoveryJobDefinition<Kind extends RecoveryCandidateKind> = {
+  queueName: keyof WorkRecoveryQueues;
+  jobName: string;
+  jobType: string;
+  backoffDelay?: number;
+  buildData(candidate: RecoveryCandidateByKind[Kind], input: RecoveryJobDefinitionInput): Record<string, unknown>;
+};
+type RecoveryJobDefinitionTable = {
+  [Kind in RecoveryCandidateKind]: RecoveryJobDefinition<Kind>;
+};
+
+const recoveryJobDefinitions: RecoveryJobDefinitionTable = {
+  page_proposal: {
+    queueName: pageProposalQueueName,
+    jobName: "page_generation",
+    jobType: "page_generation",
+    buildData: (candidate, { attempts, jobRunId }) =>
+      PageProposalJobDataSchema.parse({
         projectId: candidate.projectId,
         runId: candidate.id,
         opportunityId: candidate.opportunityId,
@@ -1459,23 +1473,14 @@ function recoveryJobSpec(
         ...(jobRunId ? { jobRunId } : {}),
         triggeredByUserId: null,
         triggerSource: "work_recovery"
-      }),
-      options: {
-        attempts,
-        jobId: candidate.id,
-        backoff: { type: "exponential", delay: 5000 }
-      }
-    };
-  }
-
-  if (candidate.kind === "section_copy_suggestion") {
-    const attempts = 3;
-    return {
-      queueName: pageProposalQueueName,
-      jobName: "section_text_generation",
-      jobId: candidate.id,
-      jobType: "page_generation",
-      data: SectionCopySuggestionJobDataSchema.parse({
+      })
+  },
+  section_copy_suggestion: {
+    queueName: pageProposalQueueName,
+    jobName: "section_text_generation",
+    jobType: "page_generation",
+    buildData: (candidate, { attempts, jobRunId }) =>
+      SectionCopySuggestionJobDataSchema.parse({
         projectId: candidate.projectId,
         runId: candidate.id,
         suggestionId: candidate.suggestionId,
@@ -1485,129 +1490,105 @@ function recoveryJobSpec(
         ...(jobRunId ? { jobRunId } : {}),
         triggeredByUserId: null,
         triggerSource: "work_recovery"
-      }),
-      options: {
-        attempts,
-        jobId: candidate.id,
-        backoff: { type: "exponential", delay: 5000 }
-      }
-    };
-  }
-
-  if (candidate.kind === "media_processing") {
-    const attempts = 3;
-    return {
-      queueName: mediaProcessingQueueName,
-      jobName: "media_processing",
-      jobId: candidate.id,
-      jobType: "media_processing",
-      data: MediaProcessingJobDataSchema.parse({
+      })
+  },
+  media_processing: {
+    queueName: mediaProcessingQueueName,
+    jobName: "media_processing",
+    jobType: "media_processing",
+    buildData: (candidate, { attempts, jobRunId }) =>
+      MediaProcessingJobDataSchema.parse({
         projectId: candidate.projectId,
         assetId: candidate.id,
         maxAttempts: attempts,
         ...(jobRunId ? { jobRunId } : {}),
         triggeredByUserId: null,
         triggerSource: "work_recovery"
-      }),
-      options: {
-        attempts,
-        jobId: candidate.id,
-        backoff: { type: "exponential", delay: 5000 }
-      }
-    };
-  }
-
-  if (candidate.kind === "customer_report") {
-    const attempts = 3;
-    return {
-      queueName: reportQueueName,
-      jobName: "customer_report_generation",
-      jobId: candidate.id,
-      jobType: "report",
-      data: CustomerReportGenerationJobDataSchema.parse({
+      })
+  },
+  customer_report: {
+    queueName: reportQueueName,
+    jobName: "customer_report_generation",
+    jobType: "report",
+    buildData: (candidate, { attempts, jobRunId }) =>
+      CustomerReportGenerationJobDataSchema.parse({
         projectId: candidate.projectId,
         runId: candidate.id,
         maxAttempts: attempts,
         ...(jobRunId ? { jobRunId } : {}),
         triggerSource: "work_recovery"
-      }),
-      options: {
-        attempts,
-        jobId: candidate.id,
-        backoff: { type: "exponential", delay: 5000 }
-      }
-    };
-  }
-
-  if (candidate.kind === "customer_report_artifact") {
-    const attempts = 3;
-    return {
-      queueName: reportQueueName,
-      jobName: "customer_report_html_render",
-      jobId: candidate.id,
-      jobType: "report_artifact",
-      data: CustomerReportHtmlRenderJobDataSchema.parse({
+      })
+  },
+  customer_report_artifact: {
+    queueName: reportQueueName,
+    jobName: "customer_report_html_render",
+    jobType: "report_artifact",
+    buildData: (candidate, { attempts, jobRunId }) =>
+      CustomerReportHtmlRenderJobDataSchema.parse({
         projectId: candidate.projectId,
         reportId: candidate.reportId,
         artifactId: candidate.id,
         maxAttempts: attempts,
         ...(jobRunId ? { jobRunId } : {}),
         triggerSource: "work_recovery"
-      }),
-      options: {
-        attempts,
-        jobId: candidate.id,
-        backoff: { type: "exponential", delay: 5000 }
-      }
-    };
-  }
-
-  if (candidate.kind === "opportunity_research") {
-    const attempts = 3;
-    return {
-      queueName: opportunityResearchQueueName,
-      jobName: "opportunity_research",
-      jobId: candidate.id,
-      jobType: "opportunity_research",
-      data:
-        jobRunId && expectedRecoveryCount !== undefined
-          ? OpportunityResearchJobDataSchema.parse({
-              projectId: candidate.projectId,
-              runId: candidate.id,
-              materialDigest: candidate.materialDigest,
-              triggerSource: "work_recovery",
-              jobRunId,
-              expectedRecoveryCount
-            })
-          : {},
-      options: {
-        attempts,
-        jobId: candidate.id,
-        backoff: { type: "exponential", delay: 5000 }
-      }
-    };
-  }
-
-  const attempts = 3;
-  return {
+      })
+  },
+  opportunity_research: {
+    queueName: opportunityResearchQueueName,
+    jobName: "opportunity_research",
+    jobType: "opportunity_research",
+    buildData: (candidate, { jobRunId, expectedRecoveryCount }) =>
+      jobRunId && expectedRecoveryCount !== undefined
+        ? OpportunityResearchJobDataSchema.parse({
+            projectId: candidate.projectId,
+            runId: candidate.id,
+            materialDigest: candidate.materialDigest,
+            triggerSource: "work_recovery",
+            jobRunId,
+            expectedRecoveryCount
+          })
+        : {}
+  },
+  release_verification: {
     queueName: releaseVerificationQueueName,
     jobName: "release_verification",
-    jobId: candidate.id,
     jobType: "release_verification",
-    data: ReleaseVerificationJobDataSchema.parse({
-      projectId: candidate.projectId,
-      releasePlanId: candidate.releasePlanId,
-      deploymentId: candidate.deploymentId,
-      verificationId: candidate.id,
-      maxAttempts: attempts,
-      ...(jobRunId ? { jobRunId } : {}),
-      triggeredByUserId: null,
-      triggerSource: "work_recovery"
+    backoffDelay: 10_000,
+    buildData: (candidate, { attempts, jobRunId }) =>
+      ReleaseVerificationJobDataSchema.parse({
+        projectId: candidate.projectId,
+        releasePlanId: candidate.releasePlanId,
+        deploymentId: candidate.deploymentId,
+        verificationId: candidate.id,
+        maxAttempts: attempts,
+        ...(jobRunId ? { jobRunId } : {}),
+        triggeredByUserId: null,
+        triggerSource: "work_recovery"
+      })
+  }
+};
+
+function recoveryJobSpec<Kind extends RecoveryCandidateKind>(
+  candidate: RecoveryCandidateByKind[Kind],
+  jobRunId?: string,
+  expectedRecoveryCount?: number
+): RecoveryJobSpec {
+  const attempts = 3;
+  const definition = recoveryJobDefinitions[candidate.kind];
+  return {
+    queueName: definition.queueName,
+    jobName: definition.jobName,
+    jobId: candidate.id,
+    jobType: definition.jobType,
+    data: definition.buildData(candidate, {
+      attempts,
+      jobRunId,
+      expectedRecoveryCount
     }),
     options: {
       attempts,
       jobId: candidate.id,
-      backoff: { type: "exponential", delay: 10_000 }
+      backoff: { type: "exponential", delay: definition.backoffDelay ?? 5000 }
     }
   };
 }

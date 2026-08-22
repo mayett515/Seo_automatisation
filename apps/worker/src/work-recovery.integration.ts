@@ -73,7 +73,11 @@ void describe(
 
       assert.equal(result.reEnqueued, 1);
       assert.equal(queues["page-generation"].addCalls.length, 1);
-      assert.equal(queues["page-generation"].addCalls[0]?.options.jobId, fixture.runId);
+      assert.deepEqual(queues["page-generation"].addCalls[0]?.options, {
+        attempts: 3,
+        jobId: fixture.runId,
+        backoff: { type: "exponential", delay: 5000 }
+      });
       assert.equal(queues["page-generation"].addCalls[0]?.data.runId, fixture.runId);
       assert.equal(queues["page-generation"].addCalls[0]?.data.opportunityId, fixture.opportunityId);
       assert.equal(queues["page-generation"].addCalls[0]?.data.triggerSource, "work_recovery");
@@ -98,7 +102,11 @@ void describe(
 
       assert.equal(result.reEnqueued, 1);
       assert.equal(queues["opportunity-research"].addCalls.length, 1);
-      assert.equal(queues["opportunity-research"].addCalls[0]?.options.jobId, fixture.runId);
+      assert.deepEqual(queues["opportunity-research"].addCalls[0]?.options, {
+        attempts: 3,
+        jobId: fixture.runId,
+        backoff: { type: "exponential", delay: 5000 }
+      });
       assert.equal(queues["opportunity-research"].addCalls[0]?.data.runId, fixture.runId);
       assert.equal(queues["opportunity-research"].addCalls[0]?.data.materialDigest, fixture.materialDigest);
       assert.equal(queues["opportunity-research"].addCalls[0]?.data.triggerSource, "work_recovery");
@@ -240,7 +248,11 @@ void describe(
 
       assert.equal(result.reEnqueued, 1);
       assert.equal(queues.report.addCalls.length, 1);
-      assert.equal(queues.report.addCalls[0]?.options.jobId, fixture.runId);
+      assert.deepEqual(queues.report.addCalls[0]?.options, {
+        attempts: 3,
+        jobId: fixture.runId,
+        backoff: { type: "exponential", delay: 5000 }
+      });
       assert.equal(queues.report.addCalls[0]?.data.runId, fixture.runId);
       assert.equal(queues.report.addCalls[0]?.data.triggerSource, "work_recovery");
       const [run] = await db.select().from(reportGenerationRuns).where(eq(reportGenerationRuns.id, fixture.runId));
@@ -303,7 +315,11 @@ void describe(
 
       assert.equal(result.reEnqueued, 1);
       assert.equal(queues["release-verification"].addCalls.length, 1);
-      assert.equal(queues["release-verification"].addCalls[0]?.options.jobId, fixture.verificationId);
+      assert.deepEqual(queues["release-verification"].addCalls[0]?.options, {
+        attempts: 3,
+        jobId: fixture.verificationId,
+        backoff: { type: "exponential", delay: 10_000 }
+      });
       assert.equal(queues["release-verification"].addCalls[0]?.data.releasePlanId, fixture.releasePlanId);
       assert.equal(queues["release-verification"].addCalls[0]?.data.deploymentId, fixture.deploymentId);
 
@@ -324,7 +340,11 @@ void describe(
 
       assert.equal(result.reEnqueued, 1);
       assert.equal(queues["page-generation"].addCalls[0]?.name, "section_text_generation");
-      assert.equal(queues["page-generation"].addCalls[0]?.options.jobId, fixture.runId);
+      assert.deepEqual(queues["page-generation"].addCalls[0]?.options, {
+        attempts: 3,
+        jobId: fixture.runId,
+        backoff: { type: "exponential", delay: 5000 }
+      });
       assert.equal(queues["page-generation"].addCalls[0]?.data.suggestionId, fixture.suggestionId);
       assert.equal(queues["page-generation"].addCalls[0]?.data.pageVersionId, fixture.pageVersionId);
       assert.equal(queues["page-generation"].addCalls[0]?.data.sectionId, "hero-1");
@@ -366,7 +386,11 @@ void describe(
       assert.equal(result.reEnqueued, 1);
       assert.equal(queues["media-processing"].addCalls.length, 1);
       assert.equal(queues["media-processing"].addCalls[0]?.name, "media_processing");
-      assert.equal(queues["media-processing"].addCalls[0]?.options.jobId, fixture.assetId);
+      assert.deepEqual(queues["media-processing"].addCalls[0]?.options, {
+        attempts: 3,
+        jobId: fixture.assetId,
+        backoff: { type: "exponential", delay: 5000 }
+      });
       assert.equal(queues["media-processing"].addCalls[0]?.data.assetId, fixture.assetId);
       assert.equal(queues["media-processing"].addCalls[0]?.data.triggerSource, "work_recovery");
 
