@@ -128,8 +128,8 @@ Future work must not:
 
 - `docs/architecture/agent-first-mvp-roadmap.md`
 - `.ai-project-rules/01-product-source-of-truth.md`
-- `.ai-planning-rules/00-system-index.md`
-- `.ai-planning-rules/01-planner-mode.md`
+- `archive/.ai-planning-rules/00-system-index.md`
+- `archive/.ai-planning-rules/01-planner-mode.md`
 - `docs/progress/2026-07-06.md`
 - `C:/big eater/markdown-context-db-strategy-local-seo-2026-07-06.md`
 - `C:/gebäudeservicefirma/Seo/future-seo-growth-plan`

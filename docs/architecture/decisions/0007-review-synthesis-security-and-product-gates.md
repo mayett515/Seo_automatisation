@@ -67,12 +67,12 @@ Costs:
 
 ## Related Files
 
-- `.ai-nest-rules/04-guards-auth-tenancy.md`
-- `.ai-nest-rules/03-queues-workers-lifecycle.md`
+- `archive/.ai-nest-rules/04-guards-auth-tenancy.md`
+- `archive/.ai-nest-rules/03-queues-workers-lifecycle.md`
 - `.ai-project-rules/04-deployment-agent.md`
 - `.ai-project-rules/07-tracking-privacy-observability.md`
 - `.ai-project-rules/11-reporting-anti-regression.md`
-- `.ai-stack-rules/05-oauth-provider-security.md`
-- `.ai-fastify-rules/06-production-recommendations.md`
+- `archive/.ai-stack-rules/05-oauth-provider-security.md`
+- `archive/.ai-fastify-rules/06-production-recommendations.md`
 - `docs/architecture/decisions/0005-production-auth-and-tenancy-boundary.md`
 - `docs/architecture/decisions/0006-anti-regression-guardrails.md`

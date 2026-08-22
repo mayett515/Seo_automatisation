@@ -11,7 +11,7 @@ New sources, research notes, extracted architecture patterns, and implementation
 - `.ai-stealer-findings/`
 - project planning docs
 - ADRs
-- `.ai-stealer-rules/` when the workflow itself changes
+- `archive/.ai-stealer-rules/` when the workflow itself changes
 
 ## Usage
 

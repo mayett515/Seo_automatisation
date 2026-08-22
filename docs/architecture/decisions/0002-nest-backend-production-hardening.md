@@ -47,7 +47,7 @@ This prepares the GSC dataset for real Search Analytics volume.
 Added a dedicated hidden Nest rule bundle:
 
 ```text
-.ai-nest-rules/
+archive/.ai-nest-rules/
 ```
 
 It covers:

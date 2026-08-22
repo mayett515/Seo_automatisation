@@ -100,9 +100,9 @@ Deferred. Keycloak/Ory-style systems may become useful later, but they are too h
 ## Related Files
 
 - `.ai-stealer-findings/2026-06-25-production-auth-tenancy.md`
-- `.ai-nest-rules/04-guards-auth-tenancy.md`
-- `.ai-nest-rules/SOURCES.md`
-- `.ai-fastify-rules/SOURCES.md`
+- `archive/.ai-nest-rules/04-guards-auth-tenancy.md`
+- `archive/.ai-nest-rules/SOURCES.md`
+- `archive/.ai-fastify-rules/SOURCES.md`
 - `apps/api/src/auth/project-access.guard.ts`
 - `apps/api/src/auth/project-access.guard.test.ts`
 - `docs/architecture/decisions/0002-nest-backend-production-hardening.md`

@@ -13,7 +13,7 @@ Official sources checked:
 - MDN URL constructor: https://developer.mozilla.org/en-US/docs/Web/API/URL/URL
 - Microsoft/Azure API design: https://learn.microsoft.com/en-us/azure/architecture/best-practices/api-design
 
-Promoted into `.ai-stack-rules/`:
+Promoted into `archive/.ai-stack-rules/`:
 
 - Explicit TanStack Query pending/error/success state handling.
 - Encode route params when manually constructing frontend API URLs.

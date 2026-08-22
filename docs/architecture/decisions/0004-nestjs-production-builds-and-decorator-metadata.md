@@ -74,5 +74,5 @@ Do not introduce backend bundling unless the verification plan includes Nest DI,
 - `apps/worker/package.json`
 - `apps/worker/tsconfig.json`
 - `tsconfig.base.json`
-- `.ai-nest-rules/01-providers-composition-root.md`
-- `.ai-nest-rules/03-queues-workers-lifecycle.md`
+- `archive/.ai-nest-rules/01-providers-composition-root.md`
+- `archive/.ai-nest-rules/03-queues-workers-lifecycle.md`

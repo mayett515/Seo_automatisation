@@ -30,6 +30,7 @@ NestJS is the application framework and Fastify is its HTTP adapter. Express idi
 - Google Search Console OAuth is a project-scoped external connection, not application login.
 - Mount Better Auth HTTP routes at the Fastify adapter boundary and feed the same Better Auth instance to Nest guards via DI — never two auth configurations.
 - Use PKCE where supported and least-privilege scopes.
+- Access tokens stay short-lived and in memory; only refresh tokens are persisted, encrypted.
 - Encrypt refresh tokens at rest; never log tokens, authorization headers, or raw provider bodies.
 - Production boot fails when secrets required by exposed routes are missing.
 
@@ -37,3 +38,5 @@ NestJS is the application framework and Fastify is its HTTP adapter. Express idi
 
 - `trustProxy` must match the actual reverse-proxy topology; never enable broad proxy trust for directly exposed services.
 - Public or unauthenticated write endpoints and auth endpoints get route-class-specific rate limits, not only the global API limit; app-level body limits and security headers before exposure.
+- TLS termination, redirects, compression, and multi-domain concerns belong to the reverse proxy/edge, never to the Node process; document per deployment which layer owns TLS, redirects, health checks, scaling, and logs.
+- Before changing timeout, proxy, compression, static-asset, or scaling behavior, check the current official Fastify recommendations first.

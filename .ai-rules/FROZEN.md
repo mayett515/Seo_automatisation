@@ -1,26 +1,29 @@
-# Frozen TypeScript Rules
+# Frozen TypeScript Rules (retired reference)
 
-This folder contains the canonical TypeScript rule schema for this project.
+This folder is a frozen reference copy of the retired Pragmatic TypeScript v3
+bundle. It is not loaded by any runtime and is not canonical. Canonical for
+TypeScript work: the native layer (root and nested `AGENTS.md`,
+`.agents/skills/`, `.cursor/`) and the pack master at
+`C:\claude\claude-workflows\typescript`.
 
 ## Edit Policy
 
-Do not edit these files during normal project work.
+Do not edit these files. Do not add rules of any kind here. New lessons go
+into the native layer or the pack master.
 
-Do not add product, SEO, planning, diagram, repo-catalog, or app-specific rules here.
+Project-specific behavior lives in `.ai-project-rules/` (live) and the native
+layer. Retired sibling bundles live in `archive/`:
 
-Project-specific behavior belongs in separate editable shards:
-
-- `.ai-project-rules/`
-- `.ai-planning-rules/`
-- `.ai-stealer-rules/`
-- `.ai-diagram-rules/`
+- `archive/.ai-planning-rules/`
+- `archive/.ai-stealer-rules/`
+- `archive/.ai-diagram-rules/`
 
 ## Status
 
 ```yaml
 snapshot_date: "2026-06-25"
-status: "frozen_reference"
+retired_date: "2026-08-20"
+status: "frozen_reference_retired"
 edit_policy: "do_not_edit"
-purpose: "Canonical Pragmatic TypeScript v3 schema for this project"
+purpose: "Historical Pragmatic TypeScript v3 schema; superseded by the native layer and the pack master"
 ```
-

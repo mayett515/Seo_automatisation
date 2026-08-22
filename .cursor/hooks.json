@@ -9,10 +9,10 @@
         "failClosed": true
       }
     ],
-    "afterFileEdit": [
+    "postToolUse": [
       {
         "command": "node .cursor/hooks/post-edit-lint.mjs",
-        "matcher": "Write|TabWrite",
+        "matcher": "Write",
         "timeout": 90
       }
     ]

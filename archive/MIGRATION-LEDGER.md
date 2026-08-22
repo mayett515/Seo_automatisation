@@ -89,3 +89,31 @@ native layer and is kept purely as history.
   ledger.
 - `.ai-stealer-catalog/`, `.ai-stealer-findings/`, `.ai-stack-findings/`,
   `.ai-project-references/` — reference data, not rules.
+
+## Amendments (2026-08-20, after the Codex cross-review)
+
+An independent Codex review sampled the coverage claims. Accepted findings,
+fixed the same day:
+
+- stack-05: "access tokens in memory only" was not at a named runtime target;
+  lifted into `apps/api/AGENTS.md`. The blanket "covered" was overclaimed.
+- fastify-06: edge-ownership split (TLS/redirects/compression/multi-domain at
+  the proxy, per-deployment ownership documentation) and "check current
+  Fastify recommendations before timeout/proxy/compression/static/scaling
+  changes" were missing; lifted into `apps/api/AGENTS.md`.
+- stealer-03: the architecture-decision domain scan was claimed as condensed
+  but absent; now an explicit step in the `inspiration-pass` skill, reading
+  the archived domain map on demand.
+- Worker status-honesty wording was over-absolute and contradicted the live
+  admission/reservation invariants (`.ai-project-rules/06`, `15`); reworded
+  to permit durable intent/run/reservation rows before enqueue.
+- Archive protection now covers the whole `archive/` segment (including this
+  ledger) with resolved-path normalization; the shell-command regex is
+  labeled defense-in-depth, not a guarantee. This ledger is maintained
+  deliberately outside Cursor sessions.
+- Root `AGENTS.md` now carries the generic Pragmatic TypeScript layer
+  natively (previously only in the external pack, which does not exist on
+  every machine): the pack remains the authoring master, the repo carries
+  the runtime copy.
+- The Cursor lint hook moved from `afterFileEdit` (documented observe-only)
+  to `postToolUse` with `additional_context` output, per current Cursor docs.

@@ -125,9 +125,9 @@ Rejected. Fastify owns runtime plumbing. Product authorization needs route metad
 
 - `packages/db/src/schema.ts`
 - `packages/db/migrations/0005_sturdy_imperial_guard.sql`
-- `.ai-nest-rules/04-guards-auth-tenancy.md`
-- `.ai-fastify-rules/02-plugins-ecosystem.md`
-- `.ai-fastify-rules/06-production-recommendations.md`
-- `.ai-stack-rules/05-oauth-provider-security.md`
+- `archive/.ai-nest-rules/04-guards-auth-tenancy.md`
+- `archive/.ai-fastify-rules/02-plugins-ecosystem.md`
+- `archive/.ai-fastify-rules/06-production-recommendations.md`
+- `archive/.ai-stack-rules/05-oauth-provider-security.md`
 - `docs/architecture/decisions/0005-production-auth-and-tenancy-boundary.md`
 - `docs/architecture/decisions/0006-anti-regression-guardrails.md`

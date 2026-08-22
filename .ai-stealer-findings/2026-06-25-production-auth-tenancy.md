@@ -24,7 +24,7 @@ This is a required stealer checkpoint because auth and tenancy affect the data m
 - `C:\a good artist steals\repo-catalog\13-backend-frameworks-and-patterns\README.md`
 - `.ai-stealer-catalog/repo-catalog/22-auth-and-identity/README.md`
 - `.ai-stealer-catalog/repo-catalog/13-backend-frameworks-and-patterns/README.md`
-- `.ai-nest-rules/04-guards-auth-tenancy.md`
+- `archive/.ai-nest-rules/04-guards-auth-tenancy.md`
 - `docs/architecture/decisions/0002-nest-backend-production-hardening.md`
 
 Local catalog takeaways:

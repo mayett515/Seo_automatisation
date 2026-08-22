@@ -42,9 +42,12 @@ if (toolName === "Shell") {
   ];
   for (const [pattern, reason] of denied) if (pattern.test(command)) respond("deny", reason);
 
-  const writes = /(>>?\s*\S|\bsed\b[^\n]*\s-i\b|\btee\b|\bmv\b|\bcp\b|\bgit\s+checkout\b[^\n]*--|\brm\b)/i;
+  // Defense-in-depth only: a command regex cannot enumerate every write path.
+  // The guarantees live in the Write/Delete tool checks below.
+  const writes =
+    /(>>?\s*\S|\bsed\b[^\n]*\s-i\b|\btee\b|\bmv\b|\bcp\b|\bgit\s+checkout\b[^\n]*--|\brm\b|\bSet-Content\b|\bAdd-Content\b|\bOut-File\b|\bnode\s+-e\b|\bpython[0-9.]*\s+-c\b)/i;
   const protectedTarget =
-    /(migrations[\\/][^\s"']*\.(sql|ts)|pnpm-lock\.yaml|[\\/]?\.ai-rules[\\/]|[\\/]?archive[\\/]\.ai-|(?:migrations|drizzle)[\\/]meta[\\/])/i;
+    /(migrations[\\/][^\s"']*\.(sql|ts)|pnpm-lock\.yaml|[\\/]?\.ai-rules[\\/]|[\\/]?archive[\\/]|(?:migrations|drizzle)[\\/]meta[\\/])/i;
   if (writes.test(command) && protectedTarget.test(command)) {
     respond(
       "deny",
@@ -58,21 +61,24 @@ if (!/^(Write|Delete)$/.test(toolName)) respond("allow");
 
 const declared = String(toolInput.file_path ?? toolInput.path ?? "");
 if (!declared) respond("allow");
+// Normalize AND resolve so `..` segments cannot dodge the patterns.
 const normalized = declared.replaceAll("\\", "/");
+const resolvedNorm = resolve(input?.cwd ?? process.cwd(), declared).replaceAll("\\", "/");
+const candidates = [normalized, resolvedNorm];
 
 const protectedPaths = [
   [/(^|\/)\.ai-rules\//i, "The retired .ai-rules bundle is frozen reference material."],
-  [/(^|\/)archive\/\.ai-/i, "Archived rule bundles are read-only history; new lessons go into the native layer."],
+  [/(^|\/)archive\//i, "archive/ is read-only history (including the ledger); new lessons go into the native layer."],
   [/(^|\/)(?:migrations|drizzle)\/meta\//i, "Migration metadata is tool-owned."],
   [/\.generated\.[a-z0-9]+$/i, "Generated files change through their source or generator."],
   [/(^|\/)pnpm-lock\.yaml$/i, "The lockfile changes through pnpm."]
 ];
 
 for (const [pattern, reason] of protectedPaths) {
-  if (pattern.test(normalized)) respond("deny", `${declared}: ${reason}`);
+  if (candidates.some((c) => pattern.test(c))) respond("deny", `${declared}: ${reason}`);
 }
 
-if (/(^|\/)migrations\/.+\.(sql|ts)$/i.test(normalized)) {
+if (candidates.some((c) => /(^|\/)migrations\/.+\.(sql|ts)$/i.test(c))) {
   const full = isAbsolute(declared) ? declared : resolve(input?.cwd ?? process.cwd(), declared);
   if (toolName === "Delete" || existsSync(full)) {
     respond("deny", `${declared}: applied migrations are append-only; add a new migration.`);

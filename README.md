@@ -39,7 +39,7 @@ Agents never approve, deploy, roll back, mutate providers, publish sitemaps, or 
 - **Production release spine**: releases require preflight, approval, deploy execution, post-deploy verification, rollback evidence, and exact persisted status.
 - **Worker-first automation**: long-running work goes through BullMQ workers and auditable job/run ledgers instead of blocking HTTP handlers.
 - **Provider isolation**: Netlify, Google Search Console, crawling/import, object storage, tracking, verification, and AI reasoning live behind purpose-named ports/adapters.
-- **AI-development guardrails**: `AGENTS.md`, `.ai-rules/`, `.ai-project-rules/`, `.ai-nest-rules/`, and ADRs keep Codex/agent work aligned with the architecture.
+- **AI-development guardrails**: root and nested `AGENTS.md`, shared `.agents/skills/`, Cursor rules/hooks under `.cursor/`, `.ai-project-rules/`, and ADRs keep agent work aligned with the architecture (retired bundles: `archive/`).
 
 ## Architecture At A Glance
 
@@ -314,18 +314,17 @@ This repo is set up for AI-assisted development with explicit rule routing. `AGE
 
 ```mermaid
 flowchart TD
-  AGENTS["AGENTS.md"] --> TS[".ai-rules/ Pragmatic TypeScript schema"]
+  AGENTS["AGENTS.md (root: generic TypeScript layer + routing)"] --> Nested["nested AGENTS.md per app/package"]
+  AGENTS --> Skills[".agents/skills/ shared workflows"]
+  AGENTS --> CursorL[".cursor/ rules, readonly subagent, hooks"]
   AGENTS --> Product[".ai-project-rules/ Local SEO product rules"]
-  AGENTS --> Nest[".ai-nest-rules/ NestJS + worker rules"]
-  AGENTS --> Fastify[".ai-fastify-rules/ Fastify runtime rules"]
-  AGENTS --> Stack[".ai-stack-rules/ stack docs and implementation guards"]
-  AGENTS --> Diagram[".ai-diagram-rules/ Mermaid architecture diagrams"]
   AGENTS --> ADR["docs/architecture/decisions/ ADRs"]
   AGENTS --> Progress["docs/progress/ chronological progress"]
+  AGENTS -. read on demand .-> Archive["archive/ retired bundles + MIGRATION-LEDGER"]
 
-  TS --> Boundary["Type Strategy -> Functional Core -> Procedural Shell -> Smallest Honest Boundary"]
+  AGENTS --> Boundary["Type Strategy -> Functional Core -> Procedural Shell -> Smallest Honest Boundary"]
   Product --> Control["AI proposes / Humans approve / Workers execute"]
-  Nest --> Jobs["Queue contracts, retries, guards, providers"]
+  Nested --> Jobs["Queue contracts, retries, guards, providers"]
   ADR --> Decisions["Accepted architecture decisions"]
 ```
 

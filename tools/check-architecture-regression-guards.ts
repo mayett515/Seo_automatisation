@@ -121,12 +121,12 @@ requireIncludes(
   "rule 15 must declare its intentional hybrid anti-regression mode"
 );
 
-// These anchors intentionally make the active upstream-authored consumer schema a check dependency.
+// These anchors intentionally make the frozen upstream-authored reference schema a check dependency.
 requireIncludes(
   ".ai-rules/90-schema-generation-spec.md",
   "normal-domain review threshold, not an automatic ceiling",
   "rule-budget-policy",
-  "the active schema must treat 15 rules as a review threshold rather than a hard ceiling"
+  "the frozen reference schema must treat 15 rules as a review threshold rather than a hard ceiling"
 );
 
 requireIncludes(
@@ -154,14 +154,14 @@ requireNotIncludes(
   ".ai-rules/91-template-domain.md",
   "DO NOT exceed the rule ceiling",
   "rule-budget-policy",
-  "the active domain template must not reintroduce a hard rule ceiling"
+  "the frozen reference template must not reintroduce a hard rule ceiling"
 );
 
 requireIncludes(
   ".ai-rules/91-template-domain.md",
   "DO NOT split, delete, or combine rules solely to force the generated file below the default 15-rule review threshold",
   "rule-budget-policy",
-  "the active domain template must preserve the adaptive threshold policy"
+  "the frozen reference template must preserve the adaptive threshold policy"
 );
 
 requireIncludes(
@@ -403,6 +403,62 @@ requireIncludes(
   '"failClosed": true',
   "native-layer",
   "the Cursor pre-tool protection hook must remain fail-closed"
+);
+
+requireIncludes(
+  ".agents/skills/mermaid-diagrams/SKILL.md",
+  "name: mermaid-diagrams",
+  "native-layer",
+  "the mermaid-diagrams skill replaced the archived diagram bundle and must remain"
+);
+
+requireIncludes(
+  ".agents/skills/inspiration-pass/SKILL.md",
+  "name: inspiration-pass",
+  "native-layer",
+  "the inspiration-pass skill replaced the archived stealer bundle and must remain"
+);
+
+requireIncludes(
+  ".agents/skills/inspiration-pass/SKILL.md",
+  "Architecture-decision domain scan",
+  "native-layer",
+  "the inspiration-pass skill must keep the domain scan lifted from the archived bundle"
+);
+
+requireIncludes(
+  "apps/api/AGENTS.md",
+  "Consume state nonces atomically",
+  "native-layer",
+  "the OAuth nonce-atomicity lift must remain in the API invariants"
+);
+
+requireIncludes(
+  "apps/api/AGENTS.md",
+  "Access tokens stay short-lived and in memory",
+  "native-layer",
+  "the in-memory access-token lift must remain in the API invariants"
+);
+
+requireIncludes(
+  "apps/worker/AGENTS.md",
+  "rediss://",
+  "native-layer",
+  "the rediss TLS lift must remain in the worker invariants"
+);
+
+requireIncludes(
+  ".cursor/hooks/pre-tool-policy.mjs",
+  "archive",
+  "native-layer",
+  "the Cursor hook must protect the archive/ segment"
+);
+
+requireIncludes(
+  "archive/MIGRATION-LEDGER.md",
+  "# Migration ledger",
+  "native-layer",
+  "the migration coverage ledger must remain with the archive"
 );
 
 // These are explicit reviewed decisions, not a dynamic rule-count gate.

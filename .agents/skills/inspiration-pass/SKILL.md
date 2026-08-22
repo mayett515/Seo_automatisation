@@ -14,11 +14,12 @@ Run a pass before: a new architecture-significant vertical slice; a new external
 ## Procedure
 
 1. Define the target capability in one sentence.
-2. Search the local catalog first: `.ai-stealer-catalog/repo-catalog/index/module-intent-index.md`, `repo-index.md`, `search-terms.md`. High-value aisles: backend frameworks (13), web extraction (14), UI templates (15), TanStack (16), agentic workflows (17), database/ORM (23), testing (24), CI/CD (25).
-3. Then GitHub/web where useful. Compare at least two references when the decision is architecture-significant; with limited time, local catalog plus one high-confidence external reference.
-4. Extract the solution shape (idea, API shape, data model) — separately from code.
-5. Map the chosen pattern into our stack (NestJS/Fastify, BullMQ, Mastra, React/TanStack, Drizzle/Postgres) and our constraints: nothing that violates preview, approval, deterministic-worker execution, or post-deploy verification.
-6. Record source and adapted decision in `.ai-stealer-findings/`, a planning doc, an ADR, or the owning rule file.
+2. Architecture-decision domain scan: for architecture-significant or production-sensitive work, walk the domain map in `archive/.ai-stealer-rules/03-architecture-decision-domains.md` (read on demand) to surface cross-cutting concerns and unknown-unknowns before the search narrows.
+3. Search the local catalog first: `.ai-stealer-catalog/repo-catalog/index/module-intent-index.md`, `repo-index.md`, `search-terms.md`. High-value aisles: backend frameworks (13), web extraction (14), UI templates (15), TanStack (16), agentic workflows (17), database/ORM (23), testing (24), CI/CD (25).
+4. Then GitHub/web where useful. Compare at least two references when the decision is architecture-significant; with limited time, local catalog plus one high-confidence external reference.
+5. Extract the solution shape (idea, API shape, data model) — separately from code.
+6. Map the chosen pattern into our stack (NestJS/Fastify, BullMQ, Mastra, React/TanStack, Drizzle/Postgres) and our constraints: nothing that violates preview, approval, deterministic-worker execution, or post-deploy verification.
+7. Record source and adapted decision in `.ai-stealer-findings/`, a planning doc, an ADR, or the owning rule file.
 
 ## Hard limits
 

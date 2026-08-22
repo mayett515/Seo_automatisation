@@ -9,7 +9,7 @@ dependencies: ["mcp-filesystem"]
 priority_schema: "critical > strong > guideline"
 ---
 
-# SYSTEM PROMPT & DIRECTORY GUIDE FOR LLM
+# SYSTEM PROMPT & DIRECTORY GUIDE FOR LLM (RETIRED — frozen reference; see FROZEN.md)
 
 <meta-instruction>
 You are operating inside a flat AI rules ecosystem. Read `00-system-index.md` first, then load any directly referenced rule files required by the task. Do not assume nested folders exist.
@@ -17,7 +17,7 @@ You are operating inside a flat AI rules ecosystem. Read `00-system-index.md` fi
 
 ## Bundle shape
 
-All active rule files live directly inside `.ai-rules/`.
+All frozen rule files live directly inside `.ai-rules/`. This bundle is retired; the native `AGENTS.md` layer is canonical.
 
 ```txt
 .ai-rules/

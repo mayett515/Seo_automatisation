@@ -10,6 +10,56 @@ This project uses a native agent layer shared by Cursor and Codex: this root fil
 - Before editing below `apps/` or `packages/`, follow the nearest nested `AGENTS.md` in addition to this file.
 - Skills available: anti-regression, repo-review, smoke-verify, source-of-truth-audit, type-interview, oauth-security-review, deployment-preflight, local-page-quality, mermaid-diagrams, inspiration-pass.
 
+## Pragmatic TypeScript (generic layer)
+
+Use the smallest honest structure that preserves domain meaning.
+
+```text
+Type strategy -> functional core -> procedural shell -> smallest honest boundary
+```
+
+### Ceremony test
+
+Before adding a layer, wrapper, factory, or envelope, identify what it buys:
+an illegal state becomes unrepresentable; a failure moves from runtime to
+compile time; an unowned capability or lifecycle gets an owner; real
+duplication is removed. If none applies, do not add the abstraction.
+Confirming that existing code is already right is a valid outcome.
+
+### Type strategy
+
+- Model mutually exclusive states as discriminated unions, not boolean flags or combinations of optional fields.
+- Give expected failures typed representations with stable string codes. Messages are for humans; code branches on codes.
+- Keep external input `unknown` until parsed at a boundary.
+- Identify the owner before writing a type. Derive from Zod schemas, runtime registries, or generated code instead of mirroring shapes. Use `z.output` for parsed values and `z.input` only when pre-parse input differs.
+- Do not replace an established repository error or contract dialect unless the task requires it.
+
+### Functional core and procedural shell
+
+- Core logic decides and returns values. It performs no IO, logging, timing, randomness, or framework work; pass time, randomness, and external state in explicitly.
+- Expected core failures are return values; programmer errors may throw.
+- Shell code loads state, asks the core for a decision, performs the effect, and normalizes provider failures. Never report success when an effect failed.
+- Do not hide business policy inside controllers, workers, repositories, framework hooks, or anonymous schema refinements.
+
+### Boundaries
+
+Choose the smallest rung that owns the concern: pure function -> injected
+module function -> handler/hook -> service class -> adapter/client ->
+worker/process owner. A class must own a capability, resource, lifecycle,
+framework contract, or collaboration pattern; never wrap pure parsers,
+validators, calculations, or mappers in one. Validate once at ingress and
+pass the parsed type inward. Preserve caught errors with `cause`; log once at
+the owning boundary. Comments explain non-obvious reasons, not syntax. For
+the error-shape taxonomy and branching escalation, read
+`docs/agents/failure-and-escalation.md`.
+
+### Tests, docs, verification
+
+- Test doubles stay in test files; behavioral assertions for queue, authorization, retry, and status changes. Typecheck is not a behavioral test.
+- Update the owning doc in the same change when lifecycle, ownership, public behavior, or verification commands change; documentation describes verified behavior.
+- Run the narrowest relevant lint/typecheck after edits and report failures verbatim; runtime wiring changes need a smoke check (the smoke-verify skill).
+- Plain TypeScript first; pattern matching, Result libraries, or a new FP ecosystem only with real repeated pressure and explicit approval.
+
 ## Routing
 
 - For Local SEO product planning, controlled automation, stack decisions, deployment-agent flow, tracking privacy, or product docs, load `.ai-project-rules/00-system-index.md`.

@@ -5,9 +5,9 @@ coverage/
 .qwen/
 .drizzle-check-tmp-*/
 
-# Frozen/reference rule bundles and copied artifacts
+# Frozen/reference rule bundles, archive, and copied artifacts
 .ai-rules/
-.ai-schema-factory/
+archive/
 .ai-stealer-catalog/
 .ai-project-references/
 local-seo-product-knowledge-pack/

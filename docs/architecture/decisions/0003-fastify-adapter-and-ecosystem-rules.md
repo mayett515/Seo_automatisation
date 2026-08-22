@@ -29,7 +29,7 @@ Fastify matters at the runtime adapter layer:
 Add a dedicated hidden rule bundle:
 
 ```text
-.ai-fastify-rules/
+archive/.ai-fastify-rules/
 ```
 
 This keeps Fastify-specific concerns separate from generic NestJS backend rules.

@@ -26,7 +26,7 @@ You have been routed here because the task touches stack choices, service bounda
 - Wrap Netlify, GSC, analytics, crawler, and storage providers behind adapters.
 - Follow `.ai-project-rules/14-architecture-direction.md` for Clean Architecture dependency direction, Hexagonal ports/adapters, composition-root wiring, and shared contract ownership.
 - Follow `.ai-project-rules/14A-module-cohesion-and-capability-extraction.md` for modular-monolith structure, DDD-lite bounded contexts, and capability extraction inside a module.
-- Use the TypeScript source-of-truth rules from `.ai-rules/02C-type-source-of-truth-checker.md` for non-trivial shared types.
+- Use the type-strategy guidance in the root `AGENTS.md` (generic layer) for non-trivial shared types; frozen detail remains readable in `.ai-rules/02C-type-source-of-truth-checker.md`.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions

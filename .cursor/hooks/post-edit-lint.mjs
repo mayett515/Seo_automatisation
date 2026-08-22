@@ -14,8 +14,8 @@ try {
   process.exit(0);
 }
 
-// Payload tolerance: afterFileEdit delivers file_path at the top level; keep
-// tool_input fallbacks so a payload-shape change degrades to silence, not error.
+// Runs on postToolUse (matcher Write): the documented feedback channel is
+// additional_context on stdout. Payload-tolerant reads, silent degradation.
 const declared = String(input?.file_path ?? input?.tool_input?.file_path ?? input?.tool_input?.path ?? "");
 if (!/\.(ts|tsx|mts|cts|js|jsx)$/.test(declared)) process.exit(0);
 const file = isAbsolute(declared) ? declared : resolve(process.cwd(), declared);
@@ -44,11 +44,9 @@ try {
   if (error.status !== 1) process.exit(0);
   const output = `${error.stdout ?? ""}${error.stderr ?? ""}`.trim().slice(0, 12000);
   if (!output) process.exit(0);
-  // Cursor's documented feedback channel is JSON on stdout; agent_message
-  // reaches the agent. Exit 0: this is feedback on an after-event, not a block.
+  // postToolUse output schema: additional_context is injected into the
+  // conversation after the tool result (per current Cursor hooks docs).
   const message = `ESLint found problems in ${declared} — fix them before continuing:\n${output}`;
-  process.stdout.write(
-    `${JSON.stringify({ agent_message: message, user_message: `ESLint: problems in ${declared}` })}\n`
-  );
+  process.stdout.write(`${JSON.stringify({ additional_context: message })}\n`);
   process.exit(0);
 }

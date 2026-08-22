@@ -85,7 +85,7 @@ THEN verify the `keep_cohesive` or `defer_pending_evidence` rationale and treat 
 ## 4. Domain Anchoring & Examples
 
 <context>
-Generic file-splitting is owned by `.ai-rules/06-modular-architecture.md`, `.ai-rules/01C-readable-code-for-humans-and-ai.md`, and `.ai-rules/09-anti-regression.md`. This shard adds only the project's capability, actor/permission, transaction-root, lifecycle, and lock-order criteria for Nest modules.
+Generic file-splitting guidance lives in the native layer (root `AGENTS.md`, boundaries section); frozen detail remains readable in `.ai-rules/06-modular-architecture.md`, `.ai-rules/01C-readable-code-for-humans-and-ai.md`, and `.ai-rules/09-anti-regression.md`. This shard adds only the project's capability, actor/permission, transaction-root, lifecycle, and lock-order criteria for Nest modules.
 
 Reference shape:
 

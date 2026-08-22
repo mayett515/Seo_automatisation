@@ -22,16 +22,9 @@ const requiredTextFiles: RequiredTextFile[] = [
 
 const failures: string[] = [];
 
-const ruleRoots = [
-  ".ai-rules",
-  ".ai-project-rules",
-  ".ai-planning-rules",
-  ".ai-stealer-rules",
-  ".ai-diagram-rules",
-  ".ai-stack-rules",
-  ".ai-nest-rules",
-  ".ai-fastify-rules"
-] as const;
+// Archived bundles (archive/.ai-*) are deliberately NOT health-checked:
+// they are read-only history. Only live rule roots are validated.
+const ruleRoots = [".ai-rules", ".ai-project-rules"] as const;
 
 for (const file of requiredTextFiles) {
   const buffer = readFileSync(file.path);

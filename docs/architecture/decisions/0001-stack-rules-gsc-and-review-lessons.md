@@ -155,7 +155,7 @@ Those skills are useful as reference/automation tools, but they are not copied i
 Decision:
 
 - installed skills are optional local tools
-- project-owned rules live in `.ai-stack-rules/`
+- project-owned rules live in `archive/.ai-stack-rules/`
 - findings and research notes live in `.ai-stack-findings/`
 - project rules govern installed skills
 - scaffold/add-on commands require explicit approval
@@ -166,7 +166,7 @@ TanStack has official CLI skills and docs, but this project still needs its own 
 
 Decision:
 
-- use `.ai-stack-rules/09-tanstack-ecosystem-schema.md` as the portable project-owned TanStack rule
+- use `archive/.ai-stack-rules/09-tanstack-ecosystem-schema.md` as the portable project-owned TanStack rule
 - use TanStack Query for server state
 - use TanStack Router for routes and params
 - treat Form/Table/Store/Virtual as separate adoption decisions
@@ -182,7 +182,7 @@ The project has React guidance through:
 - official React docs
 - local React Patterns Karteikarten
 - Total TypeScript React modules
-- `.ai-stack-rules/02-react-render-hooks.md`
+- `archive/.ai-stack-rules/02-react-render-hooks.md`
 
 Decision:
 
@@ -232,7 +232,7 @@ When a stack issue appears:
 2. Browse official docs for the relevant stack area.
 3. Check adjacent official guidance, not only the exact bug page.
 4. Record new ideas in `.ai-stack-findings/`.
-5. Promote only stable, project-relevant lessons into `.ai-stack-rules/`.
+5. Promote only stable, project-relevant lessons into `archive/.ai-stack-rules/`.
 6. Validate with lint, typecheck, build, diff check, and smoke checks where relevant.
 
 Examples:
@@ -257,7 +257,7 @@ Installed skills
 .ai-project-rules/
   = Local SEO product truth
 
-.ai-stack-rules/
+archive/.ai-stack-rules/
   = stack implementation rules
 
 .ai-stack-findings/

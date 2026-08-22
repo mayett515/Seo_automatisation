@@ -67,7 +67,7 @@ THEN mark it as project-local and keep the external folder read-only.
 
 <context>
 Target Directory Scope: `C:\localseoproject`
-Canonical TypeScript Rules: `.ai-rules/`
+Frozen TypeScript reference: `.ai-rules/` (canonical: native AGENTS layer plus the pack master)
 Editable Product Rules: `.ai-project-rules/`
 
 <example>
