@@ -445,7 +445,6 @@ void describe(
             lane: "defend_advance",
             policyVersion: "opportunity-portfolio.v1",
             researchMaterialDigest: admitted.materialDigest,
-            candidateKey: "dachreinigung:dachau",
             evidenceJson: {
               workflowVersion: "opportunity-research.v2",
               candidate,
@@ -479,19 +478,38 @@ void describe(
       assert.ok(persistedOpportunityId);
       await assert.rejects(
         () =>
-          db
-            .update(opportunities)
-            .set({ status: "brief_created", updatedAt: new Date() })
-            .where(eq(opportunities.id, persistedOpportunityId)),
-        /requires a durable same-project page proposal/iu
+          db.transaction(async (tx) => {
+            await tx
+              .update(opportunities)
+              .set({ primaryKeyword: "forged after persistence" })
+              .where(eq(opportunities.id, persistedOpportunityId));
+          }),
+        postgresErrorMatches(/strategy and provenance are immutable/iu)
       );
       await assert.rejects(
         () =>
-          db
-            .update(opportunities)
-            .set({ status: "rejected", decidedByUserId: fixture.userId, statusReason: null, updatedAt: new Date() })
-            .where(eq(opportunities.id, persistedOpportunityId)),
-        /require a reason/iu
+          db.transaction(async (tx) => {
+            await tx
+              .update(opportunities)
+              .set({ status: "brief_created", updatedAt: new Date() })
+              .where(eq(opportunities.id, persistedOpportunityId));
+          }),
+        postgresErrorMatches(/requires a durable same-project page proposal/iu)
+      );
+      await assert.rejects(
+        () =>
+          db.transaction(async (tx) => {
+            await tx
+              .update(opportunities)
+              .set({
+                status: "rejected",
+                decidedByUserId: fixture.userId,
+                statusReason: null,
+                updatedAt: new Date()
+              })
+              .where(eq(opportunities.id, persistedOpportunityId));
+          }),
+        postgresErrorMatches(/require a reason/iu)
       );
       const [outsider] = await db
         .insert(users)
@@ -500,23 +518,20 @@ void describe(
       assert.ok(outsider);
       await assert.rejects(
         () =>
-          db
-            .update(opportunities)
-            .set({ status: "held", decidedByUserId: outsider.id, updatedAt: new Date() })
-            .where(eq(opportunities.id, persistedOpportunityId)),
-        /actor must have write authority/iu
+          db.transaction(async (tx) => {
+            await tx
+              .update(opportunities)
+              .set({ status: "held", decidedByUserId: outsider.id, updatedAt: new Date() })
+              .where(eq(opportunities.id, persistedOpportunityId));
+          }),
+        postgresErrorMatches(/actor must have write authority/iu)
       );
       await assert.rejects(
         () =>
-          db
-            .update(opportunities)
-            .set({ primaryKeyword: "forged after persistence" })
-            .where(eq(opportunities.id, persistedOpportunityId)),
-        /strategy and provenance are immutable/iu
-      );
-      await assert.rejects(
-        () => db.delete(opportunities).where(eq(opportunities.id, persistedOpportunityId)),
-        /durable product truth/iu
+          db.transaction(async (tx) => {
+            await tx.delete(opportunities).where(eq(opportunities.id, persistedOpportunityId));
+          }),
+        postgresErrorMatches(/durable product truth/iu)
       );
     });
   }
@@ -569,6 +584,25 @@ async function createReadyFixture(
     },
     user.id
   );
+  const opportunitiesService = new OpportunitiesService(testDatabaseService(db));
+  const capturedProof = await opportunitiesService.createRankingProof(
+    project.id,
+    {
+      query: "dachreinigung dachau",
+      pageUrl: "https://example.test/dachreinigung-dachau/",
+      rank: 4,
+      capturedAt: new Date().toISOString(),
+      searchEngine: "google.de",
+      device: "desktop"
+    },
+    user.id
+  );
+  await opportunitiesService.updateRankingProofStatus(
+    project.id,
+    capturedProof.id,
+    { status: "reviewed", expectedStatus: "captured", expectedRowVersion: capturedProof.rowVersion },
+    user.id
+  );
   return {
     projectId: project.id,
     userId: user.id,
@@ -593,6 +627,20 @@ function testDatabaseService(db: DatabaseClient): DatabaseService {
     ping: () => Promise.resolve("up"),
     onModuleDestroy: () => Promise.resolve()
   } as unknown as DatabaseService;
+}
+
+function postgresErrorMatches(pattern: RegExp): (error: unknown) => boolean {
+  return (error) => {
+    const messages: string[] = [];
+    let current: unknown = error;
+    while (current && typeof current === "object") {
+      const record = current as { message?: unknown; cause?: unknown };
+      if (typeof record.message === "string") messages.push(record.message);
+      current = record.cause;
+    }
+    assert.match(messages.join("\n"), pattern);
+    return true;
+  };
 }
 
 function setOpportunityResearchQueue(service: QueueProducerService, queue: FakeQueue): void {

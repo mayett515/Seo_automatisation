@@ -168,18 +168,20 @@ export class ProjectContextService {
         actorUserId
       });
 
-      const now = new Date();
-      const [updated] = await tx
-        .update(projectBusinessProfiles)
-        .set({ status: "confirmed", confirmedAt: now, confirmedByUserId: actorUserId, updatedAt: now })
-        .where(
-          and(
-            eq(projectBusinessProfiles.projectId, projectId),
-            eq(projectBusinessProfiles.rowVersion, input.expectedRowVersion)
+      if (current.status !== "confirmed") {
+        const now = new Date();
+        const [updated] = await tx
+          .update(projectBusinessProfiles)
+          .set({ status: "confirmed", confirmedAt: now, confirmedByUserId: actorUserId, updatedAt: now })
+          .where(
+            and(
+              eq(projectBusinessProfiles.projectId, projectId),
+              eq(projectBusinessProfiles.rowVersion, input.expectedRowVersion)
+            )
           )
-        )
-        .returning({ projectId: projectBusinessProfiles.projectId });
-      if (!updated) throw new ConflictException("Business profile changed before confirmation.");
+          .returning({ projectId: projectBusinessProfiles.projectId });
+        if (!updated) throw new ConflictException("Business profile changed before confirmation.");
+      }
     });
     return loadBusinessProfileResponse(db, projectId);
   }

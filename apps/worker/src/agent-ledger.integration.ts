@@ -591,6 +591,11 @@ void describe(
         })
         .returning();
       assert.ok(proposed);
+      await db.insert(projectKnowledgeTaskScopes).values({
+        projectId: fixture.projectId,
+        versionId: proposed.id,
+        taskScope: "opportunity_research"
+      });
       const [approved] = await db
         .update(projectKnowledgeVersions)
         .set({ status: "approved", reviewedByUserId: fixture.userId, reviewedAt: new Date() })
@@ -601,12 +606,6 @@ void describe(
         .update(projectKnowledgeDocuments)
         .set({ currentApprovedVersionId: approved.id, updatedAt: new Date() })
         .where(eq(projectKnowledgeDocuments.id, document.id));
-      await db.insert(projectKnowledgeTaskScopes).values({
-        projectId: fixture.projectId,
-        versionId: approved.id,
-        taskScope: "opportunity_research"
-      });
-
       const evidence = {
         evidenceKey: `knowledge_version:${approved.id}`,
         sourceKind: "knowledge_version" as const,
@@ -1216,6 +1215,13 @@ void describe(
       assert.equal(currentCapture.maxResults, 3);
       assert.equal(currentCapture.results[0]?.url, "https://example.test/result");
       assert.equal(providerCalls, 2);
+      const [persistedCapture] = await db
+        .select()
+        .from(publicWebSearchCaptures)
+        .where(eq(publicWebSearchCaptures.id, currentCapture.id));
+      assert.equal(persistedCapture?.executionEpoch, 2);
+      assert.equal(persistedCapture?.requestedRegion, "de-de");
+      assert.equal(persistedCapture?.maxResults, 3);
       const evidenceStep = await claimAgentRunStep(db, {
         projectId: fixture.projectId,
         runId: fixture.runId,
@@ -1247,9 +1253,6 @@ void describe(
         .from(agentRunEvidenceItems)
         .where(eq(agentRunEvidenceItems.sourceId, currentCapture.id));
       assert.equal(captureEvidence?.executionEpoch, 2);
-      assert.equal(captureEvidence?.evidenceJson.executionEpoch, 2);
-      assert.equal(captureEvidence?.evidenceJson.requestedRegion, "de-de");
-      assert.equal(captureEvidence?.evidenceJson.maxResults, 3);
     });
 
     void it("requires lifecycle events and freezes terminal workflow truth", async () => {

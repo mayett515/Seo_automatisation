@@ -67,6 +67,7 @@ import {
   type PageVersionEditResponse,
   type PageVersionListResponse,
   type PageVersionPreviewResponse,
+  type ReviewPageVersionRequest,
   type PageVersionReviewResponse,
   type PageVersionSummary
 } from "@localseo/contracts";
@@ -1038,13 +1039,7 @@ export class PagesService {
     body: unknown,
     decidedByUserId?: string
   ): Promise<PageVersionReviewResponse> {
-    const parsed = ReviewPageVersionRequestSchema.safeParse(body ?? {});
-
-    if (!parsed.success) {
-      throw new BadRequestException("Page version review requires a valid review decision.");
-    }
-
-    const input = parsed.data;
+    const input = parseReviewPageVersionRequest(body);
 
     if (!decidedByUserId) {
       throw new BadRequestException("Page version review requires an authenticated persisted user id.");
@@ -1355,14 +1350,23 @@ class PagesController {
     @Body() body: unknown,
     @Req() request: RequestWithAuth
   ) {
-    const parsed = ReviewPageVersionRequestSchema.safeParse(body ?? {});
-
-    if (!parsed.success) {
-      throw new BadRequestException("Page version review requires a valid review decision.");
-    }
-
-    return this.pages.reviewPageVersion(projectId, pageVersionId, parsed.data, persistedActorUserId(request));
+    return this.pages.reviewPageVersion(
+      projectId,
+      pageVersionId,
+      parseReviewPageVersionRequest(body),
+      persistedActorUserId(request)
+    );
   }
+}
+
+function parseReviewPageVersionRequest(body: unknown): ReviewPageVersionRequest {
+  const parsed = ReviewPageVersionRequestSchema.safeParse(body ?? {});
+  if (parsed.success) return parsed.data;
+
+  const decisionNoteIssue = parsed.error.issues.find(
+    (issue) => issue.path[0] === "decisionNote" && issue.message === "Requesting changes requires a decision note."
+  );
+  throw new BadRequestException(decisionNoteIssue?.message ?? "Page version review requires a valid review decision.");
 }
 
 @Controller("projects/:projectId/pages")

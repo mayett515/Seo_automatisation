@@ -789,7 +789,7 @@ async function loadOpportunityResearchRecoveryCandidates(
         inArray(agentRuns.status, activeAgentRunStatuses),
         inArray(projectOpportunityResearchStates.status, ["queued", "running"]),
         isNotNull(agentRuns.inputSha256),
-        lte(opportunityResearchLivenessAt, staleBefore)
+        lte(opportunityResearchLivenessAt, sql`${staleBefore.toISOString()}::timestamptz`)
       )
     )
     .orderBy(asc(opportunityResearchLivenessAt))
@@ -869,7 +869,7 @@ async function claimRecoveryAttempt(
           recoveryCount: sql<number>`${agentRuns.recoveryCount} + 1`,
           lastRecoveryAt: now,
           lastHeartbeatAt: sql<Date>`CASE
-            WHEN ${agentRuns.status} = 'running' THEN ${now}
+            WHEN ${agentRuns.status} = 'running' THEN ${now.toISOString()}::timestamptz
             ELSE ${agentRuns.lastHeartbeatAt}
           END`,
           updatedAt: now
@@ -881,7 +881,7 @@ async function claimRecoveryAttempt(
             eq(agentRuns.workflowName, "opportunity_research"),
             inArray(agentRuns.status, activeAgentRunStatuses),
             eq(agentRuns.recoveryCount, candidate.recoveryCount),
-            lte(opportunityResearchLivenessAt, staleBefore)
+            lte(opportunityResearchLivenessAt, sql`${staleBefore.toISOString()}::timestamptz`)
           )
         )
         .returning({ recoveryCount: agentRuns.recoveryCount, executionEpoch: agentRuns.executionEpoch });

@@ -7,7 +7,7 @@ import {
   opportunityResearchWorkflowVersion,
   type OpportunityResearchWorkflowOutput
 } from "@localseo/contracts";
-import { prepareOpportunityPortfolio } from "@localseo/domain";
+import { normalizeOpportunityResearchKey, prepareOpportunityPortfolio } from "@localseo/domain";
 import { canonicalAgentLedgerSha256, canonicalAgentLedgerText } from "./agent-ledger.js";
 import type { DatabaseClient } from "./client.js";
 import { loadOpportunityResearchMaterial } from "./opportunity-research-material.js";
@@ -39,7 +39,7 @@ export type PersistedOpportunityResearchCandidate = {
   lane: "defend_advance" | "quick_win" | "build_cluster" | "strategic_market";
   policyVersion: string;
   researchMaterialDigest: string;
-  candidateKey: string;
+  candidateKey?: string;
   evidenceJson: Record<string, unknown>;
 };
 
@@ -319,8 +319,16 @@ export async function persistOpportunityResearchSuccess(
         .map((candidate) => candidate.candidateKey)
         .filter((candidateKey): candidateKey is string => candidateKey !== null)
     );
+    const candidatesWithDerivedKeys = input.candidates.map((candidate) => ({
+      ...candidate,
+      candidateKey: normalizeOpportunityResearchKey({
+        serviceId: candidate.serviceId,
+        areaId: candidate.areaId,
+        primaryKeyword: candidate.primaryKeyword
+      })
+    }));
     const preparedPortfolio = prepareOpportunityPortfolio(
-      input.candidates.map((candidate) => ({
+      candidatesWithDerivedKeys.map((candidate) => ({
         ...candidate,
         stableKey: candidate.candidateKey,
         axes: {
@@ -537,7 +545,7 @@ export async function failOpportunityResearchExecution(
                       THEN COALESCE(${agentRuns.lastHeartbeatAt}, ${agentRuns.updatedAt})
                     ELSE ${agentRuns.updatedAt}
                   END`,
-                  input.staleBefore as Date
+                  sql`${(input.staleBefore as Date).toISOString()}::timestamptz`
                 )
               ]
             : [])

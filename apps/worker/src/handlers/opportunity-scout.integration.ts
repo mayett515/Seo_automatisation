@@ -146,6 +146,10 @@ void describe(
 
     void it("accepts proven wins that cite project-owned ranking proof", async () => {
       const fixture = await createScoutFixture(db);
+      await db
+        .update(rankingProofs)
+        .set({ status: "reviewed", reviewedAt: new Date(), reviewedByUserId: fixture.userId })
+        .where(eq(rankingProofs.id, fixture.proofId));
       const reasoning = new MockReasoningAdapter({
         ok: true,
         provider: "mock",
@@ -668,6 +672,10 @@ void describe(
 
     void it("rejects proven wins when model-claimed rank differs from the proof row", async () => {
       const fixture = await createScoutFixture(db);
+      await db
+        .update(rankingProofs)
+        .set({ status: "reviewed", reviewedAt: new Date(), reviewedByUserId: fixture.userId })
+        .where(eq(rankingProofs.id, fixture.proofId));
 
       await assert.rejects(
         executeOpportunityScout({

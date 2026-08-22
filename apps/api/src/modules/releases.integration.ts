@@ -541,7 +541,10 @@ void describe(
     });
 
     void it("rejects absolute page proposal routes when creating release plans", async () => {
-      const fixture = await createPageVersionFixture(db, { route: "https://attacker.example/dachreinigung/" });
+      const fixture = await createPageVersionFixture(db, {
+        route: "https://attacker.example/dachreinigung/",
+        pageJsonRoute: "/dachreinigung/"
+      });
 
       await assert.rejects(
         () => service.createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId), fixture.userId),
@@ -1308,6 +1311,7 @@ async function createPageVersionFixture(
   input: {
     approvedAt?: Date | null;
     mediaAssetId?: string;
+    pageJsonRoute?: string;
     projectName?: string;
     route?: string;
     rowVersion?: number;
@@ -1350,7 +1354,7 @@ async function createPageVersionFixture(
       rowVersion: input.rowVersion,
       status: input.status ?? "approved",
       approvedAt: input.approvedAt === undefined ? new Date("2026-06-30T10:00:00.000Z") : input.approvedAt,
-      pageJson: pageJson(route, input.mediaAssetId)
+      pageJson: pageJson(input.pageJsonRoute ?? route, input.mediaAssetId)
     })
     .returning();
   assert.ok(pageVersion);
