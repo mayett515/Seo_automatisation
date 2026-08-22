@@ -28,6 +28,7 @@ import {
   ReasoningTaskSchema,
   UpdateOpportunityLifecycleRequestSchema,
   UpdateRankingProofStatusRequestSchema,
+  type AgentRunFailureCode,
   type AgentRunListResponse,
   type CreateRankingProofRequest,
   type OpportunityExplorerOpportunity,
@@ -57,6 +58,7 @@ import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
+import { publicOpportunityResearchFailureMessage } from "./opportunity-research-public-failure-message.js";
 
 @Injectable()
 export class OpportunitiesService {
@@ -627,40 +629,6 @@ function agentRunToResponse(row: typeof agentRuns.$inferSelect, opportunityCount
   });
 }
 
-function publicOpportunityResearchFailureMessage(failureCode: string | undefined): string | undefined {
-  if (!failureCode) return undefined;
-  switch (failureCode) {
-    case "configuration_error":
-    case "provider_not_configured":
-      return "Opportunity Research is not configured.";
-    case "provider_timeout":
-      return "Opportunity Research provider timed out.";
-    case "provider_unavailable":
-      return "Opportunity Research provider is unavailable.";
-    case "provider_response_invalid":
-      return "Opportunity Research provider returned invalid structured output.";
-    case "model_egress_blocked":
-      return "Opportunity Research was stopped because selected material matched the secret-egress policy.";
-    case "material_or_evidence_invalid":
-    case "material_stale":
-      return "Opportunity Research evidence changed or is no longer eligible.";
-    case "qa_rejected":
-      return "Opportunity Research output failed deterministic QA.";
-    case "enqueue_failed":
-    case "queue_enqueue_failed":
-      return "Opportunity Research could not be queued.";
-    case "work_recovery_exhausted":
-      return "Opportunity Research exhausted its bounded recovery attempts.";
-    case "work_transport_inconsistent":
-      return "Opportunity Research transport completed without terminal product truth.";
-    case "lifecycle_conflict":
-    case "workflow_in_progress":
-      return "Opportunity Research lost workflow lifecycle ownership.";
-    default:
-      return "Opportunity Research failed. Review the failure code and timeline.";
-  }
-}
-
 function rankingProofToResponse(row: typeof rankingProofs.$inferSelect): RankingProof {
   return RankingProofSchema.parse({
     id: row.id,
@@ -685,7 +653,7 @@ function rankingProofToResponse(row: typeof rankingProofs.$inferSelect): Ranking
   });
 }
 
-function parseFailureCode(value: string | null): ReturnType<typeof AgentRunFailureCodeSchema.parse> | undefined {
+function parseFailureCode(value: string | null): AgentRunFailureCode | undefined {
   if (!value) {
     return undefined;
   }

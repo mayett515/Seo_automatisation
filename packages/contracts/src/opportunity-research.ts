@@ -101,6 +101,7 @@ export const AgentRunEventTypeSchema = z.enum(agentRunEventTypes);
 export const AgentRunEvidenceSourceKindSchema = z.enum(agentRunEvidenceSourceKinds);
 export const AgentRunEvidenceRoleSchema = z.enum(agentRunEvidenceRoles);
 export const OpportunityResearchFailureCodeSchema = z.enum(opportunityResearchFailureCodes);
+export type OpportunityResearchFailureCode = z.output<typeof OpportunityResearchFailureCodeSchema>;
 
 export const AgentRunWorkflowIdentitySchema = z
   .object({

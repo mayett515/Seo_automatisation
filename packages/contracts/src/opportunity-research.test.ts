@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   CreateProjectKnowledgeVersionRequestSchema,
+  opportunityResearchFailureCodes,
   OpportunityResearchFailureCodeSchema,
   OpportunityResearchEnqueueDataSchema,
   OpportunityResearchJobDataSchema,
@@ -15,16 +16,7 @@ const materialDigest = "a".repeat(64);
 
 void describe("Opportunity Research transport contracts", () => {
   void it("accepts every stable operator-visible Opportunity Research failure code", () => {
-    for (const code of [
-      "model_egress_blocked",
-      "enqueue_failed",
-      "queue_enqueue_failed",
-      "provider_not_configured",
-      "provider_timeout",
-      "qa_rejected",
-      "work_recovery_exhausted",
-      "work_transport_inconsistent"
-    ]) {
+    for (const code of opportunityResearchFailureCodes) {
       assert.equal(OpportunityResearchFailureCodeSchema.parse(code), code);
     }
   });
