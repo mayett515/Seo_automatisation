@@ -456,9 +456,23 @@ requireIncludes(
 
 requireIncludes(
   "archive/MIGRATION-LEDGER.md",
-  "## Amendments",
+  'The blanket "covered" was overclaimed',
   "native-layer",
-  "the ledger must keep its post-review amendments, not only its title"
+  "the ledger must keep the concrete overclaim correction, not only an Amendments heading"
+);
+
+requireNotIncludes(
+  ".ai-project-rules/14-architecture-direction.md",
+  'archive/.ai-stealer-rules',
+  "native-layer",
+  "living rules must not declare archived files as dependencies or scan targets"
+);
+
+requireNotIncludes(
+  ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
+  'archive/.ai-nest-rules',
+  "native-layer",
+  "living rules must not declare archived files as dependencies"
 );
 
 requireIncludes(

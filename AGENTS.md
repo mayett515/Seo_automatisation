@@ -65,7 +65,7 @@ the error-shape taxonomy and branching escalation, read
 - For Local SEO product planning, controlled automation, stack decisions, deployment-agent flow, tracking privacy, or product docs, load `.ai-project-rules/00-system-index.md`.
 - For architecture decisions, production hardening decisions, repeated review findings, or regression guards, read the relevant ADR in `docs/architecture/decisions/`.
 - For chronological project progress, review responses, completed slices, or remaining next steps, update `docs/progress/`.
-- For research, findings, and lessons that are NOT yet rules: collect them host-neutrally in `.ai-stack-findings/` and `.ai-stealer-findings/` (both editable). Promotion is deliberate, never automatic: stable + repeated + mechanically checkable -> lint/hook/CI; otherwise the owning nested `AGENTS.md` or the pack master. Never promote into `archive/`.
+- For research, findings, and lessons that are NOT yet rules: collect them host-neutrally in `.ai-stack-findings/` and `.ai-stealer-findings/` (both editable). Promotion is deliberate, never automatic — the target follows the promotion matrix: mechanically checkable -> lint/hook/CI or guard script; project-wide invariant -> root `AGENTS.md`; location-bound convention -> the owning nested `AGENTS.md`; repeatable procedure -> `.agents/skills/`; architecture decision with rationale -> ADR; stack-generic (true in any repo on this stack) -> the pack master. Never promote into `archive/`.
 
 ## Archive (retired rule bundles)
 

@@ -14,7 +14,7 @@ Installed from `TanStack/cli` into `C:\Users\muell\.codex-personal\skills`:
 
 Use after restarting Codex. Until then, read the installed `SKILL.md` files manually when needed.
 
-These paths are optional personal references. A clone on another machine may not have them; in that case, use official TanStack docs and the project-owned `archive/.ai-stack-rules/09-tanstack-ecosystem-schema.md`.
+These paths are optional personal references. A clone on another machine may not have them; in that case, use official TanStack docs plus the current native rules (root `AGENTS.md` generic layer and `apps/web/AGENTS.md`); the historical origin `archive/.ai-stack-rules/09-tanstack-ecosystem-schema.md` is read-only reference.
 
 Do not run scaffold-mutating commands such as `tanstack create`, `tanstack add`, or add-on workflows without explicit user approval. Ask before running metadata commands if current TanStack CLI output is needed, because `npx @tanstack/cli ...` may download packages and may use telemetry unless disabled.
 
@@ -29,11 +29,11 @@ The provided LobeHub `skill.md` URLs returned `429 Too Many Requests`, so they w
 
 Prefer the official TanStack CLI GitHub skills over marketplace mirrors when they overlap.
 
-## Project-Owned TanStack Schema
+## Project-Owned TanStack Schema (historical origin)
 
-The repo should not depend on personal Codex skill installation for correctness. The portable project rule is:
+The repo should not depend on personal Codex skill installation for correctness. The current portable rules live in the native layer (`apps/web/AGENTS.md` and the pack master); the historical origin of those rules is:
 
-- `archive/.ai-stack-rules/09-tanstack-ecosystem-schema.md`
+- `archive/.ai-stack-rules/09-tanstack-ecosystem-schema.md` (read-only archive)
 
 That file summarizes the official skill-derived workflow and adds project-specific constraints, especially:
 

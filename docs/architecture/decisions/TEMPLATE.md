@@ -38,5 +38,6 @@ Examples:
 ## Related Files
 
 - `path/to/file.ts`
-- `apps/api/AGENTS.md (or the owning nested AGENTS.md)/example.md`
+- `apps/api/AGENTS.md`
+- `.agents/skills/example-skill/SKILL.md`
 - `docs/architecture/app-blueprint.md`

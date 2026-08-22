@@ -11,7 +11,7 @@ New sources, research notes, extracted architecture patterns, and implementation
 - `.ai-stealer-findings/`
 - project planning docs
 - ADRs
-- `the `inspiration-pass` skill (historical bundle: `archive/.ai-stealer-rules/`)` when the workflow itself changes
+- the `inspiration-pass` skill (`.agents/skills/inspiration-pass/SKILL.md`) when the workflow itself changes; the historical bundle `archive/.ai-stealer-rules/` is read-only
 
 ## Usage
 

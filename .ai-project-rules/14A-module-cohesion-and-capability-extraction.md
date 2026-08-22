@@ -10,14 +10,14 @@ dependencies:
   - ".ai-project-rules/14-architecture-direction.md"
   - ".ai-project-rules/15-architecture-regression-guards.md"
   - "AGENTS.md"
-  - "archive/.ai-nest-rules/01-providers-composition-root.md"
+  - "apps/api/AGENTS.md"
 priority_schema: "critical > strong > guideline"
 ---
 
 # Domain Execution Contract: Module Cohesion And Capability Extraction
 
 <meta-instruction>
-You have been routed here because the task decides whether a Local SEO application module should remain cohesive or extract focused capabilities. Apply the project-specific ownership and lifecycle criteria below without duplicating the generic file-splitting rules owned by the frozen TypeScript schema.
+You have been routed here because the task decides whether a Local SEO application module should remain cohesive or extract focused capabilities. Apply the project-specific ownership and lifecycle criteria below without duplicating the generic file-splitting rules owned by the native layer (root `AGENTS.md`, boundaries section).
 </meta-instruction>
 
 ## 1. Focused Best Practices
