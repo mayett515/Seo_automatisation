@@ -364,6 +364,86 @@ void describe(
       assert.equal((await db.select().from(releasePlanItems)).length, 0);
     });
 
+    void it("verifies storage bytes before taking the page-version row lock", async () => {
+      const assetId = randomUUID();
+      const mediaBody = new TextEncoder().encode(`release-lock-order-${randomUUID()}`);
+      const fixture = await createPageVersionFixture(db, {
+        projectName: "Release media lock order",
+        mediaAssetId: assetId
+      });
+      await createReadyMediaAsset(db, fixture, { assetId, body: mediaBody });
+      await db.insert(pageVersionMediaAssets).values({
+        pageVersionId: fixture.pageVersionId,
+        mediaAssetId: assetId
+      });
+      assert.ok(testDatabaseUrl);
+
+      const blockerHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const planningHandle = createIntegrationDatabaseClient(testDatabaseUrl);
+      const readStarted = deferred<void>();
+      const continueRead = deferred<void>();
+      let readCalls = 0;
+      const planningService = new ReleasesService(
+        new QueueProducerService(testDatabaseService(planningHandle.db)),
+        testDatabaseService(planningHandle.db),
+        {
+          async readPrivateObject(input) {
+            assert.equal(input.key, `media/ready/${assetId}/w640.webp`);
+            readCalls += 1;
+            readStarted.resolve(undefined);
+            await continueRead.promise;
+            return mediaBody;
+          }
+        }
+      );
+      let heldLock: HeldPageVersionLock | undefined;
+      let planningSettled = false;
+      let planningOutcome:
+        | Promise<
+            { ok: true; value: Awaited<ReturnType<ReleasesService["createPlan"]>> } | { ok: false; error: unknown }
+          >
+        | undefined;
+
+      try {
+        const planningPid = await backendPid(planningHandle.sql);
+        planningOutcome = planningService
+          .createPlan(fixture.projectId, createReleasePlanRequest(fixture.pageVersionId), fixture.userId)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          )
+          .finally(() => {
+            planningSettled = true;
+          });
+
+        await waitForSignal(readStarted.promise, "Storage verification did not start before the lock-order deadline.");
+        heldLock = await startHeldPageVersionLock(blockerHandle.sql, fixture.pageVersionId, true);
+        continueRead.resolve(undefined);
+
+        await waitForBlockingPid(handle.sql, {
+          blockedPid: planningPid,
+          blockingPid: heldLock.pid,
+          isSettled: () => planningSettled
+        });
+        heldLock.commit();
+
+        const outcome = await planningOutcome;
+        if (!outcome.ok) {
+          assert.fail(errorMessage(outcome.error));
+        }
+        assert.equal(outcome.value.status, "draft");
+        assert.equal(readCalls, 1);
+        await heldLock.done;
+      } finally {
+        continueRead.resolve(undefined);
+        heldLock?.rollback();
+        await heldLock?.done.catch(() => undefined);
+        await planningOutcome?.catch(() => undefined);
+        await planningHandle.close();
+        await blockerHandle.close();
+      }
+    });
+
     void it("rejects release planning when PageJson and the immutable media projection differ", async () => {
       const fixture = await createPageVersionFixture(db, { projectName: "Plan media mismatch" });
       const assetId = await createReadyMediaAsset(db, fixture);
@@ -1227,6 +1307,7 @@ async function createPageVersionFixture(
   db: DatabaseClient,
   input: {
     approvedAt?: Date | null;
+    mediaAssetId?: string;
     projectName?: string;
     route?: string;
     rowVersion?: number;
@@ -1269,7 +1350,7 @@ async function createPageVersionFixture(
       rowVersion: input.rowVersion,
       status: input.status ?? "approved",
       approvedAt: input.approvedAt === undefined ? new Date("2026-06-30T10:00:00.000Z") : input.approvedAt,
-      pageJson: pageJson(route)
+      pageJson: pageJson(route, input.mediaAssetId)
     })
     .returning();
   assert.ok(pageVersion);
@@ -1302,12 +1383,17 @@ async function createTestUser(db: DatabaseClient, email: string): Promise<typeof
   return user;
 }
 
-async function createReadyMediaAsset(db: DatabaseClient, fixture: PageVersionFixture): Promise<string> {
-  const body = new TextEncoder().encode(`release-media-${randomUUID()}`);
+async function createReadyMediaAsset(
+  db: DatabaseClient,
+  fixture: PageVersionFixture,
+  input: { assetId?: string; body?: Uint8Array } = {}
+): Promise<string> {
+  const body = input.body ?? new TextEncoder().encode(`release-media-${randomUUID()}`);
   const checksumSha256 = createHash("sha256").update(body).digest("hex");
   const [asset] = await db
     .insert(mediaAssets)
     .values({
+      ...(input.assetId ? { id: input.assetId } : {}),
       projectId: fixture.projectId,
       status: "pending_upload",
       displayName: "release-proof.webp",
@@ -1575,7 +1661,7 @@ async function createRollbackPoint(
   return rollbackPoint.id;
 }
 
-function pageJson(route: string): PageJson {
+function pageJson(route: string, mediaAssetId?: string): PageJson {
   return {
     schemaVersion: 1,
     route,
@@ -1660,7 +1746,30 @@ function pageJson(route: string): PageJson {
           ctaHref: "/kontakt/"
         },
         evidenceRefs: []
-      }
+      },
+      ...(mediaAssetId
+        ? [
+            {
+              id: "media-1",
+              type: "ImageText" as const,
+              registryKey: "ImageText.default" as const,
+              schemaVersion: 1 as const,
+              zone: "body_main" as const,
+              order: 4,
+              variant: "media_left",
+              props: {
+                heading: "Verified project media",
+                body: "Immutable release media evidence.",
+                media: {
+                  assetId: mediaAssetId,
+                  purpose: "content" as const,
+                  alt: "Verified project media"
+                }
+              },
+              evidenceRefs: []
+            }
+          ]
+        : [])
     ],
     internalLinks: ["/dachreinigung/"],
     evidenceRefs: [],
@@ -1689,13 +1798,21 @@ type HeldPageVersionLock = {
   rollback: () => void;
 };
 
-async function startHeldPageVersionLock(sql: SqlClient, pageVersionId: string): Promise<HeldPageVersionLock> {
+async function startHeldPageVersionLock(
+  sql: SqlClient,
+  pageVersionId: string,
+  noWait = false
+): Promise<HeldPageVersionLock> {
   const locked = deferred<{ pid: number }>();
   const finish = deferred<"commit" | "rollback">();
   const done = sql.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`;
     const pid = await backendPid(tx);
-    await tx`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`;
+    if (noWait) {
+      await tx`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE NOWAIT`;
+    } else {
+      await tx`SELECT "id" FROM "page_versions" WHERE "id" = ${pageVersionId} FOR UPDATE`;
+    }
     locked.resolve({ pid });
 
     if ((await finish.promise) === "rollback") {
@@ -1819,6 +1936,22 @@ async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function waitForSignal<T>(promise: Promise<T>, timeoutMessage: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(timeoutMessage)), 5_000);
+      })
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function errorMessage(error: unknown): string {
