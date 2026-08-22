@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 let raw = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) raw += chunk;
+raw = raw.replace(/^\uFEFF+/, "");
 
 let input;
 try {

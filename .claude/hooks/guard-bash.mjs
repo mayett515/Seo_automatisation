@@ -21,6 +21,7 @@ const WRITE_ROUTES = /(>>?\s*\S|(\bsed\b[^\n]*\s-i\b)|\btee\b|\bmv\b|\bcp\b|\bgi
 let input = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) input += chunk;
+input = input.replace(/^\uFEFF+/, "");
 
 let command;
 try {

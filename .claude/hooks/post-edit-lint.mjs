@@ -20,6 +20,7 @@ const LINTABLE = /\.(ts|tsx|mts|cts|js|jsx)$/;
 let input = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) input += chunk;
+input = input.replace(/^\uFEFF+/, "");
 
 let filePath;
 try {
