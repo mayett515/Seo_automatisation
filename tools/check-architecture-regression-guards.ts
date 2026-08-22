@@ -463,14 +463,14 @@ requireIncludes(
 
 requireNotIncludes(
   ".ai-project-rules/14-architecture-direction.md",
-  'archive/.ai-stealer-rules',
+  "archive/.ai-stealer-rules",
   "native-layer",
   "living rules must not declare archived files as dependencies or scan targets"
 );
 
 requireNotIncludes(
   ".ai-project-rules/14A-module-cohesion-and-capability-extraction.md",
-  'archive/.ai-nest-rules',
+  "archive/.ai-nest-rules",
   "native-layer",
   "living rules must not declare archived files as dependencies"
 );
