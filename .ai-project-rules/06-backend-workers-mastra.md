@@ -10,7 +10,7 @@ dependencies:
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/backend/01-backend-architecture.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/04-worker-architecture.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md"
-  - ".ai-stealer-rules/02-stealer-checkpoints.md"
+  - ".agents/skills/inspiration-pass/SKILL.md"
 priority_schema: "critical > strong > guideline"
 ---
 
@@ -80,7 +80,7 @@ IF work is open-ended analysis or content strategy:
 THEN model it as a Mastra agent whose output is validated before use.
 
 IF work introduces a new agent role, agent tool, workflow graph, memory model, evaluator, or production handoff:
-THEN consult `.ai-stealer-rules/02-stealer-checkpoints.md` and either run or explicitly skip a focused Good Artist Inspiration pass.
+THEN either run or explicitly skip a focused Good Artist Inspiration pass (the `inspiration-pass` skill; archived detail: `archive/.ai-stealer-rules/02-stealer-checkpoints.md`).
 
 IF work introduces live agent tools or specialist workflow steps:
 THEN apply ADR 0022's run-step-event-evidence boundary before treating the workflow as production-ready.

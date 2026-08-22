@@ -10,7 +10,7 @@ dependencies:
   - ".ai-project-rules/01-product-source-of-truth.md"
   - ".ai-project-rules/02-stack-and-boundaries.md"
   - ".ai-project-rules/06-backend-workers-mastra.md"
-  - ".ai-stealer-rules/03-architecture-decision-domains.md"
+  - "archive/.ai-stealer-rules/03-architecture-decision-domains.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/02-stack-decisions.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/03-service-boundaries.md"
   - "C:\\total typescript\\Architecture_Karteikarten"
@@ -36,7 +36,7 @@ You have been routed here because the task touches architecture style, dependenc
 - Keep agent constraints outcome-based: allowed tool categories and denied production outcomes must travel with the run, including subagent delegation.
 - Wire concrete adapters in process composition roots, not inside controllers, domain functions, agents, or random worker handlers.
 - Use System Design guidance for AWS, Postgres, Redis, object storage, observability, security, retries, idempotency, and failure recovery.
-- Before writing an ADR or shaping a new vertical slice, scan `.ai-stealer-rules/03-architecture-decision-domains.md` for cross-cutting concerns and quality attributes the user may not have named.
+- Before writing an ADR or shaping a new vertical slice, scan `archive/.ai-stealer-rules/03-architecture-decision-domains.md` (via the inspiration-pass skill) for cross-cutting concerns and quality attributes the user may not have named.
 </positive-directives>
 
 ## 2. Hard Domain Prohibitions
@@ -77,7 +77,7 @@ IF the work adds or widens an agent capability:
 THEN define or update the agent constraint profile from ADR 0019 before implementation.
 
 IF the task is an ADR, new slice, major refactor, provider integration, production mutation, public endpoint, or tenant-data boundary:
-THEN scan `.ai-stealer-rules/03-architecture-decision-domains.md` before finalizing the design.
+THEN scan `archive/.ai-stealer-rules/03-architecture-decision-domains.md` before finalizing the design.
 </conditional-logic>
 
 ## 4. Domain Anchoring & Examples

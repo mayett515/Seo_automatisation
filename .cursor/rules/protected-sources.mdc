@@ -1,0 +1,11 @@
+---
+description: Protect generated, migration, lockfile, frozen, and archived rule sources.
+globs: "**/migrations/**, **/drizzle/meta/**, **/*.generated.*, pnpm-lock.yaml, .ai-rules/**, archive/**"
+alwaysApply: false
+---
+
+- Applied migrations and tool-owned migration metadata are append-only; create a new migration through the repository workflow.
+- Generated files change through their owning schema, registry, or generator.
+- `pnpm-lock.yaml` changes only through pnpm.
+- `.ai-rules/` is frozen reference material during ordinary project implementation.
+- `archive/` holds retired rule bundles: read on explicit request, never edited; new lessons go into the native layer.

@@ -23,7 +23,7 @@ IF the task touches stack choice, module ownership, service boundaries, data own
 THEN you MUST load and comply with: `.ai-project-rules/02-stack-and-boundaries.md`.
 
 IF the task touches TypeScript static safety, React render/hooks, TanStack Query/Router, NestJS/Fastify runtime DI, OAuth provider security, URL parsing/construction, or smoke verification:
-THEN you MUST load and comply with: `.ai-stack-rules/00-system-index.md`.
+THEN follow the nearest nested `AGENTS.md` plus the root `AGENTS.md`; deep archived detail: `archive/.ai-stack-rules/00-system-index.md`.
 
 IF the task touches architecture style, layering, Clean Architecture dependency direction, Hexagonal ports/adapters, composition roots, agent authority, shared enum/event/payload ownership, source-of-truth placement, or where logic belongs:
 THEN you MUST load and comply with: `.ai-project-rules/14-architecture-direction.md`.
@@ -86,7 +86,7 @@ THEN you MUST load and comply with: `.ai-project-rules/13-seo-opportunity-planni
 - Use `.ai-project-rules/13-seo-opportunity-planning.md` when deciding future markets, page opportunities, keyword tiers, or execution sequence.
 - Use `.ai-project-rules/14-architecture-direction.md` for dependency direction, ports/adapters, and provider isolation, and `.ai-project-rules/14A-module-cohesion-and-capability-extraction.md` for module cohesion and capability extraction.
 - Use `.ai-project-rules/15-architecture-regression-guards.md` when touching a seam that previous reviews identified, especially PageJson safety, persisted JSON, project-scoped media assets, page-version approval, approval-blocker serialization, Page Proposal lifecycle, release-plan actor evidence, customer-report publication and typed Next Actions, agent execution/evidence truth, Opportunity Research recovery/promotion, project-knowledge model use/retirement, provider mutation ownership, release live truth, deploy artifact approval, and roadmap drift.
-- Use `.ai-stack-rules/00-system-index.md` for stack-specific implementation guardrails; it complements but does not override `.ai-rules/` or project product rules.
+- Stack-specific implementation guardrails live in the nested `AGENTS.md` files and the reusable pack; archived detail remains readable in `archive/.ai-stack-rules/`.
 </positive-directives>
 
 <absolute-constraints>
@@ -132,7 +132,7 @@ C:\total typescript\System_Design_101_Karteikarten as read-only system design an
 Stack implementation guardrails:
 
 ```text
-.ai-stack-rules/00-system-index.md
+archive/.ai-stack-rules/00-system-index.md (archived reference)
 ```
 
 </context>

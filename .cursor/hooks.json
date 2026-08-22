@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "node .cursor/hooks/pre-tool-policy.mjs",
+        "matcher": "Shell|Write|Delete",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "node .cursor/hooks/post-edit-lint.mjs",
+        "matcher": "Write|TabWrite",
+        "timeout": 90
+      }
+    ]
+  }
+}

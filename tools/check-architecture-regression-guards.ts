@@ -358,47 +358,62 @@ requireNotIncludes(
 
 requireIncludes(
   "AGENTS.md",
-  "Generic TypeScript rule authoring is owned upstream by",
+  "Generic TypeScript rule authoring is owned upstream by the pack master",
   "rule-authority",
-  "the thin project adapter must distinguish upstream authoring authority from the active consumer copy"
+  "the root adapter must name the pack repository as the upstream authoring authority"
 );
 
 requireIncludes(
   "AGENTS.md",
-  "`.ai-rules/` is the active canonical TypeScript consumer copy for this project.",
+  "`.ai-rules/` is a frozen reference copy of the retired TypeScript rule bundle",
   "rule-authority",
-  "the thin adapter must identify the project schema as the active consumer copy"
+  "the root adapter must identify the retired bundle as frozen reference, not active canon"
 );
 
 requireIncludes(
   "AGENTS.md",
-  "update that authority first and resync `.ai-rules/`",
+  "update the pack first, then sync the host layers",
   "rule-authority",
-  "generic TypeScript policy changes must originate upstream before project resync"
+  "generic TypeScript policy changes must originate in the pack before host-layer sync"
 );
 
 requireIncludes(
-  ".ai-planning-rules/00-system-index.md",
-  "Treat `C:\\Scheme\\pragmatic_typescript_v3_ai_rules_bundle_complete\\pragmatic_typescript_v3_ai_rules_bundle_flat\\.ai-rules\\` as generic TypeScript authoring authority and the project `.ai-rules/` folder as its active consumer copy.",
-  "rule-authority",
-  "the routed planning policy must preserve upstream authoring authority"
+  "AGENTS.md",
+  "## Shared native layer",
+  "native-layer",
+  "the root adapter must document the shared Cursor/Codex native layer"
+);
+
+requireIncludes(
+  "AGENTS.md",
+  "## Archive (retired rule bundles)",
+  "native-layer",
+  "the root adapter must document how archived bundles are accessed on demand"
+);
+
+requireIncludes(
+  ".agents/skills/anti-regression/SKILL.md",
+  "name: anti-regression",
+  "native-layer",
+  "the shared skill layer must remain present at the repository root"
+);
+
+requireIncludes(
+  ".cursor/hooks.json",
+  '"failClosed": true',
+  "native-layer",
+  "the Cursor pre-tool protection hook must remain fail-closed"
 );
 
 // These are explicit reviewed decisions, not a dynamic rule-count gate.
 for (const [path, budget] of [
   [".ai-rules/02E-functional-library-selection.md", "cohesion-retained"],
-  [".ai-fastify-rules/06-production-recommendations.md", "cohesion-retained"],
-  [".ai-nest-rules/03-queues-workers-lifecycle.md", "cohesion-retained"],
-  [".ai-nest-rules/04-guards-auth-tenancy.md", "guard-exception"],
   [".ai-project-rules/04-deployment-agent.md", "cohesion-retained"],
   [".ai-project-rules/06-backend-workers-mastra.md", "cohesion-retained"],
   [".ai-project-rules/07-tracking-privacy-observability.md", "cohesion-retained"],
   [".ai-project-rules/10-seo-verification-gsc.md", "cohesion-retained"],
   [".ai-project-rules/12-local-seo-page-quality-gate.md", "guard-exception"],
-  [".ai-project-rules/13-seo-opportunity-planning.md", "cohesion-retained"],
-  [".ai-stack-rules/02-react-render-hooks.md", "guard-exception"],
-  [".ai-stack-rules/03-tanstack-query-router.md", "guard-exception"],
-  [".ai-stack-rules/09-tanstack-ecosystem-schema.md", "cohesion-retained"]
+  [".ai-project-rules/13-seo-opportunity-planning.md", "cohesion-retained"]
 ] as const) {
   requireIncludes(
     path,
@@ -410,8 +425,6 @@ for (const [path, budget] of [
 
 for (const [path, rationale] of [
   [".ai-rules/02E-functional-library-selection.md", "the alternatives must be compared in one adoption decision"],
-  [".ai-fastify-rules/06-production-recommendations.md", "form one HTTP-exposure review"],
-  [".ai-nest-rules/03-queues-workers-lifecycle.md", "are one end-to-end queue lifecycle"],
   [".ai-project-rules/04-deployment-agent.md", "are one release state machine"],
   [".ai-project-rules/06-backend-workers-mastra.md", "form one authority handoff"],
   [".ai-project-rules/07-tracking-privacy-observability.md", "are one event-data lifecycle"],
@@ -421,8 +434,7 @@ for (const [path, rationale] of [
   [
     ".ai-project-rules/14-architecture-direction.md",
     "shared type and payload truth must stay beside its source-of-truth trigger gate"
-  ],
-  [".ai-stack-rules/09-tanstack-ecosystem-schema.md", "form one ecosystem adoption decision"]
+  ]
 ] as const) {
   requireIncludes(
     path,

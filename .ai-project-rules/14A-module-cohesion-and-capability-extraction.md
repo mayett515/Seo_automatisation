@@ -12,7 +12,7 @@ dependencies:
   - ".ai-rules/06-modular-architecture.md"
   - ".ai-rules/01C-readable-code-for-humans-and-ai.md"
   - ".ai-rules/09-anti-regression.md"
-  - ".ai-nest-rules/01-providers-composition-root.md"
+  - "archive/.ai-nest-rules/01-providers-composition-root.md"
 priority_schema: "critical > strong > guideline"
 ---
 

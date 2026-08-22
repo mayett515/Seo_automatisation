@@ -1,0 +1,11 @@
+---
+description: Verification requirements for TypeScript implementation and refactoring.
+globs: "**/*.ts, **/*.tsx, **/*.mts, **/*.cts"
+alwaysApply: false
+---
+
+- Follow the root `AGENTS.md` and the nearest nested `AGENTS.md` for every target file.
+- Run the narrowest relevant lint and typecheck after edits.
+- Changed behavior needs a focused behavioral test; typecheck alone is not evidence.
+- Runtime wiring changes need a smoke check for routes, dependency injection, plugin order, or worker startup.
+- Report verification failures and unverified gaps honestly.
