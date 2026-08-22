@@ -2,23 +2,18 @@ import { ReleaseCheckSchema, type PageJson, type ReleaseCheck, type ReleaseItemA
 import {
   derivePageRegistrySeoFacts,
   resolveRenderedRobots,
-  validatePageJsonAgainstRegistry
+  validatePageJsonAgainstRegistry,
+  type PageRegistrySeoFacts
 } from "@localseo/page-registry";
 
-export type LocalPageQaInput = {
-  invalidPageJson?: boolean;
-  title?: string;
-  metaDescription?: string;
-  h1?: string;
-  canonical?: string;
-  hasJsonLd: boolean;
-  hasAreaServed: boolean;
-  hasInternalLinks: boolean;
-  hasLocalFaq: boolean;
-  hasVisibleCta: boolean;
-  sitemapReady: boolean;
-  uniquenessRationale?: string;
-};
+export type LocalPageQaInput =
+  | { kind: "invalid_page_json" }
+  | {
+      kind: "page_facts";
+      facts: PageRegistrySeoFacts;
+      releaseSitemapReady: boolean;
+      releaseUniquenessRationale: string | null;
+    };
 
 export type LocalPageQaResult = {
   passed: boolean;
@@ -27,21 +22,24 @@ export type LocalPageQaResult = {
 };
 
 export function evaluateLocalPageQa(input: LocalPageQaInput): LocalPageQaResult {
+  const parsed = input.kind === "page_facts" ? input : undefined;
   const blockers: string[] = [];
   const warnings: string[] = [];
 
-  if (input.invalidPageJson) blockers.push("invalid_page_json");
-  if (!input.title) blockers.push("missing_title");
-  if (!input.metaDescription) blockers.push("missing_meta_description");
-  if (!input.h1) blockers.push("missing_h1");
-  if (!input.canonical) blockers.push("missing_canonical");
-  if (!input.hasJsonLd) blockers.push("missing_json_ld");
-  if (!input.hasAreaServed) blockers.push("missing_area_served");
-  if (!input.hasInternalLinks) blockers.push("missing_internal_links");
-  if (!input.uniquenessRationale) blockers.push("missing_uniqueness_rationale");
-  if (!input.hasLocalFaq) warnings.push("missing_local_faq");
-  if (!input.hasVisibleCta) warnings.push("missing_visible_cta");
-  if (!input.sitemapReady) warnings.push("not_sitemap_ready");
+  if (!parsed) blockers.push("invalid_page_json");
+  if (!parsed?.facts.title) blockers.push("missing_title");
+  if (!parsed?.facts.metaDescription) blockers.push("missing_meta_description");
+  if (!parsed?.facts.h1) blockers.push("missing_h1");
+  if (!parsed?.facts.canonicalPath) blockers.push("missing_canonical");
+  if (!parsed?.facts.hasJsonLd) blockers.push("missing_json_ld");
+  if (!parsed?.facts.hasAreaServed) blockers.push("missing_area_served");
+  if (!parsed?.facts.hasInternalLinks) blockers.push("missing_internal_links");
+  if (!(parsed?.releaseUniquenessRationale ?? parsed?.facts.uniquenessRationale)) {
+    blockers.push("missing_uniqueness_rationale");
+  }
+  if (!parsed?.facts.hasLocalFaq) warnings.push("missing_local_faq");
+  if (!parsed?.facts.hasVisibleCta) warnings.push("missing_visible_cta");
+  if (!(parsed?.releaseSitemapReady || parsed?.facts.sitemapReady)) warnings.push("not_sitemap_ready");
 
   return {
     passed: blockers.length === 0,
@@ -253,31 +251,14 @@ function toLocalPageQaInput(page: ReleasePreflightPageEvidence): LocalPageQaInpu
   const pageJson = parsePageJson(page.pageJson);
 
   if (!pageJson) {
-    return {
-      invalidPageJson: true,
-      hasJsonLd: false,
-      hasAreaServed: false,
-      hasInternalLinks: false,
-      hasLocalFaq: false,
-      hasVisibleCta: false,
-      sitemapReady: false
-    };
+    return { kind: "invalid_page_json" };
   }
 
-  const facts = derivePageRegistrySeoFacts(pageJson);
-
   return {
-    title: facts.title,
-    metaDescription: facts.metaDescription,
-    h1: facts.h1,
-    canonical: facts.canonicalPath,
-    hasJsonLd: facts.hasJsonLd,
-    hasAreaServed: facts.hasAreaServed,
-    hasInternalLinks: facts.hasInternalLinks,
-    hasLocalFaq: facts.hasLocalFaq,
-    hasVisibleCta: facts.hasVisibleCta,
-    sitemapReady: page.sitemapReady || facts.sitemapReady,
-    uniquenessRationale: page.uniquenessRationale ?? facts.uniquenessRationale
+    kind: "page_facts",
+    facts: derivePageRegistrySeoFacts(pageJson),
+    releaseSitemapReady: page.sitemapReady,
+    releaseUniquenessRationale: page.uniquenessRationale
   };
 }
 

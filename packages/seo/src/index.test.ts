@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PageJson } from "@localseo/contracts";
+import { derivePageRegistrySeoFacts } from "@localseo/page-registry";
 import {
   assertCustomerReportPayloadSafe,
   buildReleasePreflightChecks,
+  evaluateLocalPageQa,
   type ReleasePreflightEvidence
 } from "./index.js";
 
@@ -159,6 +161,43 @@ void describe("buildReleasePreflightChecks", () => {
 
     assert.equal(media?.severity, "blocker");
     assert.equal(media?.result, "failed");
+  });
+});
+
+void describe("evaluateLocalPageQa", () => {
+  void it("reports every unmet page requirement when the page JSON never parsed", () => {
+    const result = evaluateLocalPageQa({ kind: "invalid_page_json" });
+
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.blockers, [
+      "invalid_page_json",
+      "missing_title",
+      "missing_meta_description",
+      "missing_h1",
+      "missing_canonical",
+      "missing_json_ld",
+      "missing_area_served",
+      "missing_internal_links",
+      "missing_uniqueness_rationale"
+    ]);
+    assert.deepEqual(result.warnings, ["missing_local_faq", "missing_visible_cta", "not_sitemap_ready"]);
+  });
+
+  void it("accepts sitemap readiness and uniqueness rationale recorded on the release item", () => {
+    const result = evaluateLocalPageQa({
+      kind: "page_facts",
+      facts: {
+        ...derivePageRegistrySeoFacts(pageJson()),
+        sitemapReady: false,
+        uniquenessRationale: undefined
+      },
+      releaseSitemapReady: true,
+      releaseUniquenessRationale: "Dedicated local proof for Dachau."
+    });
+
+    assert.equal(result.passed, true);
+    assert.deepEqual(result.blockers, []);
+    assert.deepEqual(result.warnings, []);
   });
 });
 
