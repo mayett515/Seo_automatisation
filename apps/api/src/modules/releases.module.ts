@@ -1076,9 +1076,10 @@ async function assertReleasePagesMediaAvailable(
     const manifests = await loadPreviewMediaManifests(db, projectId, parsedPages);
     await verifyPreviewMediaManifestsBytes(storage, manifests.values());
     return new Map([...manifests.entries()].map(([pageVersionId, manifest]) => [pageVersionId, manifest.sha256]));
-  } catch {
+  } catch (error) {
     throw new BadRequestException(
-      "Release page media references are unavailable or do not match the immutable project manifest."
+      "Release page media references are unavailable or do not match the immutable project manifest.",
+      { cause: error }
     );
   }
 }
@@ -1113,9 +1114,10 @@ async function assertReleasePagesMediaManifestUnchanged(
   let manifests: Map<string, PreviewMediaManifest>;
   try {
     manifests = await loadPreviewMediaManifests(db, projectId, parsedPages);
-  } catch {
+  } catch (error) {
     throw new BadRequestException(
-      "Release page media references are unavailable or do not match the immutable project manifest."
+      "Release page media references are unavailable or do not match the immutable project manifest.",
+      { cause: error }
     );
   }
 

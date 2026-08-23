@@ -1057,9 +1057,10 @@ export class PagesService {
       try {
         const manifest = await loadPreviewMediaManifest(this.database.requireDb(), projectId, row.id, pageJson);
         await verifyPreviewMediaManifestBytes(this.mediaStorage, manifest);
-      } catch {
+      } catch (error) {
         throw new UnprocessableEntityException(
-          "Page version media references are not fully available from the immutable project manifest."
+          "Page version media references are not fully available from the immutable project manifest.",
+          { cause: error }
         );
       }
     }
@@ -1177,17 +1178,18 @@ export class PagesService {
           mediaVariants: previewMediaManifestToRenderVariants(manifest)
         })
       };
-    } catch {
-      throw new UnprocessableEntityException("Page version cannot be rendered as a preview.");
+    } catch (error) {
+      throw new UnprocessableEntityException("Page version cannot be rendered as a preview.", { cause: error });
     }
   }
 
   private async assertPreviewMediaBytes(manifest: Awaited<ReturnType<typeof loadPreviewMediaManifest>>): Promise<void> {
     try {
       await verifyPreviewMediaManifestBytes(this.mediaStorage, manifest);
-    } catch {
+    } catch (error) {
       throw new UnprocessableEntityException(
-        "Page version media bytes are unavailable or do not match the immutable manifest."
+        "Page version media bytes are unavailable or do not match the immutable manifest.",
+        { cause: error }
       );
     }
   }

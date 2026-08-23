@@ -573,8 +573,8 @@ export async function validateStoredReport(
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(report.snapshotCanonicalText);
-  } catch {
-    throw new UnprocessableEntityException("Stored customer report snapshot is not valid JSON.");
+  } catch (error) {
+    throw new UnprocessableEntityException("Stored customer report snapshot is not valid JSON.", { cause: error });
   }
   const prepared = prepareSnapshot(parsedJson);
   if (
@@ -955,8 +955,8 @@ export function assertSnapshotMatchesEvidencePacket(
   let packetInput: unknown;
   try {
     packetInput = JSON.parse(run.evidencePacketCanonicalText);
-  } catch {
-    throw new UnprocessableEntityException("Stored report evidence packet is not canonical JSON.");
+  } catch (error) {
+    throw new UnprocessableEntityException("Stored report evidence packet is not canonical JSON.", { cause: error });
   }
   const packet = CustomerReportEvidencePacketSchema.parse(packetInput);
   if (
@@ -1200,8 +1200,8 @@ export function parseStoredReportSnapshot(report: ReportRow): CustomerReportSnap
   let parsed: unknown;
   try {
     parsed = JSON.parse(report.snapshotCanonicalText);
-  } catch {
-    throw new UnprocessableEntityException("Stored customer report snapshot is not valid JSON.");
+  } catch (error) {
+    throw new UnprocessableEntityException("Stored customer report snapshot is not valid JSON.", { cause: error });
   }
   const prepared = prepareSnapshot(parsed);
   if (

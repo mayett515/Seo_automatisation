@@ -4894,6 +4894,34 @@ for (const reviewPath of [".claude/skills/repo-review/SKILL.md", ".agents/skills
   );
 }
 
+requireNotIncludes(
+  "apps/api/src/modules/pages.module.ts",
+  "} catch {",
+  "api-error-cause",
+  "a bare catch here drops the cause of a media or render failure"
+);
+
+requireNotIncludes(
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
+  "} catch {",
+  "api-error-cause",
+  "a bare catch here drops the cause of a stored snapshot or evidence-packet parse failure"
+);
+
+requireRegex(
+  "apps/api/src/modules/releases.module.ts",
+  /await verifyPreviewMediaManifestsBytes[\s\S]{0,450}cause: error/u,
+  "api-error-cause",
+  "release media verification failures must carry their cause"
+);
+
+requireRegex(
+  "apps/api/src/modules/releases.module.ts",
+  /let manifests: Map<string, PreviewMediaManifest>[\s\S]{0,400}cause: error/u,
+  "api-error-cause",
+  "release media re-read failures must carry their cause"
+);
+
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
   for (const warning of warnings) {
