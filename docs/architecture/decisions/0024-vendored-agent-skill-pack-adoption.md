@@ -152,4 +152,7 @@ authoritative.
 - `.claude/skills/` and `.agents/skills/`
 - `.claude/agents/diff-reviewer.md`
 - `.cursor/agents/diff-reviewer.md`
+- `docs/agents/domain.md`
+- `tools/check-architecture-regression-guards.ts` (the vendored-skill-pack category enforces this ADR's Regression Guard section)
+- `docs/progress/2026-08-23.md`
 - `docs/architecture/decisions/README.md`
