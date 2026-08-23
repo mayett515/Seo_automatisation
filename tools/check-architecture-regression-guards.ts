@@ -426,6 +426,20 @@ requireIncludes(
   "the page-version tenant guard must keep its single named owner in packages/db"
 );
 
+requireIncludes(
+  "packages/contracts/src/index.ts",
+  "queueJobNames",
+  "job-name-vocabulary",
+  "the queue job-name vocabulary must keep its single owner in contracts"
+);
+
+requireNotIncludes(
+  "apps/worker/src/handlers.ts",
+  'job.name === "',
+  "job-name-vocabulary",
+  "routeJob must derive job names from queueJobNames, never compare raw literals"
+);
+
 for (const scopedFile of [
   "apps/api/src/modules/pages.module.ts",
   "apps/api/src/modules/releases.module.ts",
