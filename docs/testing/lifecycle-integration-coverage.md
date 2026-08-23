@@ -21,29 +21,22 @@ Safety guard:
 - If a different disposable database name is intentional, set `LOCALSEO_ALLOW_TEST_DB_RESET=true`.
 - If `TEST_DATABASE_URL` is not set, the integration suite skips instead of failing the normal unit-test gate.
 
-On this workstation, PostgreSQL is installed as a user-space runtime under `%USERPROFILE%\.localseo-tools` instead of as a Windows service. This avoids Docker Desktop/WSL overhead and avoids requiring an elevated shell.
-
-Useful local commands:
+The portable local default is a disposable container, matching what CI runs
+(`.github/workflows/ci.yml` uses a `postgres:17` service). The harness in
+`packages/db/test-support/integration-database.ts` only needs a disposable
+URL; it does not care how PostgreSQL is hosted.
 
 ```powershell
-$bin = Join-Path $env:USERPROFILE ".localseo-tools\postgresql-17.10\pgsql\bin"
-$data = Join-Path $env:USERPROFILE ".localseo-tools\pgdata-17"
-
-# Start the local test server after reboot.
-& (Join-Path $bin "pg_ctl.exe") -D $data -l (Join-Path $data "postgres.log") -o "-p 5432" start
-
-# Check readiness.
-& (Join-Path $bin "pg_isready.exe") -h localhost -p 5432 -U postgres
-
-# Stop it when not needed.
-& (Join-Path $bin "pg_ctl.exe") -D $data stop
+docker run -d --rm --name seo-it-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=local_seo_test -p 55432:5432 postgres:17
+$env:TEST_DATABASE_URL = "postgres://postgres:postgres@localhost:55432/local_seo_test"
+corepack pnpm test:integration
+docker stop seo-it-pg   # --rm removes the container and its data volume
 ```
 
-Local environment recommendation:
-
-- CI should use containerized PostgreSQL and Redis services for reproducibility.
-- This workstation has limited RAM and disk headroom, so native PostgreSQL is the better local default than Docker Desktop.
-- Docker Desktop should be installed only if the machine can comfortably spare the WSL2 memory and disk overhead.
+Machine-specific alternative (only where Docker Desktop/WSL2 is unavailable):
+a user-space PostgreSQL runtime under `%USERPROFILE%\.localseo-tools`,
+started via `pg_ctl.exe -D <data> -o "-p 5432" start` and stopped with
+`pg_ctl.exe -D <data> stop`. CI always uses the containerized services.
 
 ## Current Coverage
 
