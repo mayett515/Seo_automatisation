@@ -2483,7 +2483,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   "CreateSectionCopySuggestionRequestSchema.parse",
   "page-studio-section-copy",
   "Page Studio must parse copy requests and queue through the API"
@@ -2630,14 +2630,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   "EditPageVersionRequestSchema.parse",
   "page-studio-ui",
   "Page Studio UI must parse explicit edit requests through the shared contract"
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   "PageVersionEditResponseSchema",
   "page-studio-ui",
   "Page Studio UI must parse created-version responses through the shared contract"
@@ -2714,14 +2714,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   "ReviewPageVersionRequestSchema",
   "page-version-approval",
   "Page preview UI must parse page version review requests through the shared contract"
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   "}/review",
   "page-version-approval",
   "Page preview UI must post review decisions through the API review endpoint"
@@ -2764,7 +2764,7 @@ requireOrderedIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   "rowVersion: version.data.rowVersion",
   "release-plan-target-cas",
   "Page preview must submit the displayed durable page-version revision"
@@ -3004,7 +3004,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   "CreateReleasePlanRequestSchema",
   "page-release-planning",
   "Page preview UI must parse release-plan creation requests through the shared contract"
@@ -3018,7 +3018,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/pages.tsx",
+  "apps/web/src/screens/page-preview-data.ts",
   '"/releases/plan"',
   "page-release-planning",
   "Page preview UI must create release plans through the durable release planning API"
