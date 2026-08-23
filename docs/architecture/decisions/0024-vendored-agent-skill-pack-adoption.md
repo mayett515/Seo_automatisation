@@ -95,17 +95,19 @@ repository did not have, reachable from all three agent hosts through one
 vendored copy.
 
 Accepted costs: three vendored files carry a local frontmatter override that a
-pack update silently reverts. The vendored engineering skills read
-`docs/agents/issue-tracker.md`, which does not exist until
-`/setup-matt-pocock-skills` is run, so they will ask for it until then.
-`ask-matt` and `wayfinder` still mention the removed `wizard` in prose, which
-is a dangling pointer with no runtime effect.
+pack update silently reverts. `ask-matt` and `wayfinder` still mention the
+removed `wizard` in prose, which is a dangling pointer with no runtime effect.
 
-Follow-up work: run `/setup-matt-pocock-skills` once and answer the docs
-question with `docs/architecture/decisions/`. Decide separately whether this
-repository wants a `CONTEXT.md` glossary, which it currently lacks; the pack's
-`grill-with-docs` is the intended way to start one against a real topic rather
-than fabricating it.
+Follow-up completed: `/setup-matt-pocock-skills` recorded GitHub Issues in
+`docs/agents/issue-tracker.md`, the five canonical triage labels in
+`docs/agents/triage-labels.md`, and the host-neutral `## Agent skills` pointer
+in root `AGENTS.md` (not `CLAUDE.md`, which Claude-only hosts would see). The
+four missing GitHub labels (`needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`) were created so `/to-spec` can apply `ready-for-agent`
+without `gh` aborting. Decide separately whether this repository wants a
+`CONTEXT.md` glossary, which it currently lacks; the pack's `grill-with-docs`
+is the intended way to start one against a real topic rather than fabricating
+it.
 
 ## Alternatives Considered
 

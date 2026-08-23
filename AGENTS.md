@@ -24,6 +24,20 @@ This project uses a native agent layer shared by Cursor, Codex, and Claude Code:
 - Run `/setup-matt-pocock-skills` once per clone before using the vendored engineering flow. It records the issue tracker, the triage labels, and the docs location that the other pack skills read.
 - Vendored third-party pack: the `mattpocock/skills` set (23 of 25 skills, see ADR 0024) is installed with `npx skills add mattpocock/skills` as ordinary copies in both `.claude/skills/` (Claude Code) and `.agents/skills/` (Codex, Cursor), with `skills-lock.json` at the repo root recording the source hashes. Refresh it with `npx skills update`, not by hand-editing the copies: a hand edit forks the pack and the next update overwrites it. The only sanctioned exception is the `disable-model-invocation` override on the three skills listed above, recorded in ADR 0024. The pack ships a `code-review` skill whose name also exists as a Claude Code built-in, so say which one you mean when it matters.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical role names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context. Glossary at `CONTEXT.md` when it exists; decision log at `docs/architecture/decisions/`. See `docs/agents/domain.md`.
+
 ## Pragmatic TypeScript (generic layer)
 
 Use the smallest honest structure that preserves domain meaning.
