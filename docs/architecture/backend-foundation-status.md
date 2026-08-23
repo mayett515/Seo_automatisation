@@ -179,7 +179,7 @@ High-value items:
 - Keep verifier execution failure separate from observed live-page verification failure; `execution_failed` is infrastructure truth, not page-health truth.
 - Keep absolute/protocol-relative release target URLs rejected before verification can fetch outside the deployment host, and keep HTTP verifier redirects same-origin per hop.
 - ADR 0021 keeps coarse `releasePlans.status` unchanged for V1; report evidence must read deployments, verifications, checks, rollback, and recovery detail directly and may not derive customer claims from the coarse status.
-- Keep the deploy state-machine idea incremental; extract decision helpers and tests before any structural migration.
+- Deploy provider-action handling is extracted into the pure `decideProviderDeployAction` helper in `apps/worker/src/handlers/deploy.ts` (guard-anchored in `tools/check-architecture-regression-guards.ts`), keeping manual reconciliation prioritized over recorded provider deploy IDs without a big-bang state-machine rewrite.
 
 Reference: [Lifecycle Truth Hardening Backlog](lifecycle-truth-hardening-backlog.md).
 

@@ -125,7 +125,6 @@ Costs accepted:
 - `apps/api/src/modules/releases.module.ts`
 - `apps/worker/src/handlers/rollback.ts`
 - `apps/worker/src/handlers/gsc-sync.ts`
-- `apps/worker/src/handlers/handlers.ts`
 - `docs/architecture/backend-foundation-status.md`
 - `docs/architecture/lifecycle-truth-hardening-backlog.md`
 - `docs/architecture/decisions/0009-deploy-provider-reconciliation-and-operation-state.md`

@@ -66,7 +66,7 @@ THEN mark it as project-local and keep the external folder read-only.
 ## 4. Domain Anchoring & Examples
 
 <context>
-Target Directory Scope: `C:\localseoproject`
+Target Directory Scope: the repository root this file lives in
 Frozen TypeScript reference: `.ai-rules/` (canonical: native AGENTS layer plus the pack master)
 Editable Product Rules: `.ai-project-rules/`
 

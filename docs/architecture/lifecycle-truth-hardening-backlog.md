@@ -115,6 +115,12 @@ The repository now has a Playwright browser-smoke command and CI job. It starts 
 
 Why: route/auth regressions are runtime-sensitive and should not rely on TypeScript compilation alone.
 
+### Deploy Worker Guard Extraction Uses Pure Decision Helper
+
+`executeDeploy` now routes provider-deploy handling through `decideProviderDeployAction` (`apps/worker/src/handlers/deploy.ts`), anchored by architecture regression guards in `tools/check-architecture-regression-guards.ts`. It decides no-op replay, provider reconciliation, manual reconciliation, or new deploy action as a pure function instead of scattering guard logic across call sites, while avoiding a speculative state-machine rewrite.
+
+Why: `executeDeploy` has been hardened through several subtle retry, resume, and manual-reconciliation bugs. Extracting `decideProviderDeployAction` isolates decision rules cleanly and keeps manual reconciliation prioritized over recorded provider deploy IDs.
+
 ## Accepted For Future Hardening
 
 ### Report Must Not Depend On Coarse Release Plan Status
@@ -249,12 +255,6 @@ Follow-up direction:
 Why: the state remains truthful, but audit rows should not imply a failed rollback job when another worker already completed the same operation.
 
 ## Deferred Or Rejected
-
-### Deploy State Machine Rewrite
-
-The deploy worker does contain repeated guard patterns and could benefit from extracting decision helpers. A big-bang state-machine rewrite is deferred.
-
-Why: `executeDeploy` has been hardened through several subtle retry, resume, and manual-reconciliation bugs. Any structural migration must first encode those fixes as transition tests and proceed incrementally.
 
 ### Queue Audit Rewrite
 

@@ -47,22 +47,22 @@ Local environment recommendation:
 
 ## Current Coverage
 
-The current integration command discovers 309 real-PostgreSQL cases across 26 suites: 156 API cases in 10 files and 153 worker cases in 16 files. They skip when `TEST_DATABASE_URL` is absent; the GitHub Actions `integration` job supplies PostgreSQL 17 and runs the complete command. Historical local result snippets below are retained only as dated evidence for the slices they originally accompanied and are not current totals.
+The current integration command discovers 312 real-PostgreSQL cases across 26 suites: 159 API cases in 10 files and 153 worker cases in 16 files. They skip when `TEST_DATABASE_URL` is absent; the GitHub Actions `integration` job supplies PostgreSQL 17 and runs the complete command. Historical local result snippets below are retained only as dated evidence for the slices they originally accompanied and are not current totals.
 
 ### Customer Report Contract, Domain, And Aggregate Foundation
 
 Files:
 
-- [report.test.ts](/C:/localseoproject/packages/contracts/src/report.test.ts)
-- [report.test.ts](/C:/localseoproject/packages/domain/src/report.test.ts)
-- [permission.guard.test.ts](/C:/localseoproject/apps/api/src/auth/permissions/permission.guard.test.ts)
-- [reports.integration.ts](/C:/localseoproject/apps/api/src/modules/reports.integration.ts)
-- [customer-report.integration.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report.integration.ts)
-- [customer-report-html.test.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report-html.test.ts)
-- [customer-report-html.integration.ts](/C:/localseoproject/apps/worker/src/handlers/customer-report-html.integration.ts)
-- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
-- [reports-state.test.ts](/C:/localseoproject/apps/web/src/screens/reports-state.test.ts)
-- [customer-report.spec.ts](/C:/localseoproject/apps/web/e2e/customer-report.spec.ts)
+- [report.test.ts](../../packages/contracts/src/report.test.ts)
+- [report.test.ts](../../packages/domain/src/report.test.ts)
+- [permission.guard.test.ts](../../apps/api/src/auth/permissions/permission.guard.test.ts)
+- [reports.integration.ts](../../apps/api/src/modules/reports.integration.ts)
+- [customer-report.integration.ts](../../apps/worker/src/handlers/customer-report.integration.ts)
+- [customer-report-html.test.ts](../../apps/worker/src/handlers/customer-report-html.test.ts)
+- [customer-report-html.integration.ts](../../apps/worker/src/handlers/customer-report-html.integration.ts)
+- [work-recovery.integration.ts](../../apps/worker/src/work-recovery.integration.ts)
+- [reports-state.test.ts](../../apps/web/src/screens/reports-state.test.ts)
+- [customer-report.spec.ts](../../apps/web/e2e/customer-report.spec.ts)
 
 Implemented unit tests prove:
 
@@ -97,7 +97,7 @@ Slice 5 adds strict bounded workspace/candidate response coverage, project-scope
 
 File:
 
-- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+- [releases.integration.ts](../../apps/api/src/modules/releases.integration.ts)
 
 Implemented tests:
 
@@ -115,7 +115,7 @@ The deploy worker also counts only provider-backed rollback points as usable rol
 
 File:
 
-- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+- [releases.integration.ts](../../apps/api/src/modules/releases.integration.ts)
 
 Implemented tests:
 
@@ -130,7 +130,7 @@ Implemented tests:
 
 File:
 
-- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+- [releases.integration.ts](../../apps/api/src/modules/releases.integration.ts)
 
 Implemented coverage:
 
@@ -152,11 +152,11 @@ These tests prove release planning is a durable planning action only: it selects
 
 File:
 
-- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+- [releases.integration.ts](../../apps/api/src/modules/releases.integration.ts)
 
 Harness:
 
-- [integration-database.ts](/C:/localseoproject/packages/db/test-support/integration-database.ts)
+- [integration-database.ts](../../packages/db/test-support/integration-database.ts)
 
 Implemented API tests:
 
@@ -188,7 +188,7 @@ The focused release API file currently runs 38 cases, the focused verification-w
 
 File:
 
-- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
+- [releases.integration.ts](../../apps/api/src/modules/releases.integration.ts)
 
 Implemented tests:
 
@@ -215,7 +215,7 @@ These tests intentionally use a fake verification port. HTML parsing, canonical 
 
 File:
 
-- [deploy.integration.ts](/C:/localseoproject/apps/worker/src/handlers/deploy.integration.ts)
+- [deploy.integration.ts](../../apps/worker/src/handlers/deploy.integration.ts)
 
 Implemented tests:
 
@@ -238,7 +238,7 @@ This file contributes 16 deploy-worker tests to the worker integration command.
 
 File:
 
-- [rollback.integration.ts](/C:/localseoproject/apps/worker/src/handlers/rollback.integration.ts)
+- [rollback.integration.ts](../../apps/worker/src/handlers/rollback.integration.ts)
 
 Implemented tests:
 
@@ -265,7 +265,7 @@ This file contributes 16 rollback-worker tests to the worker integration command
 
 File:
 
-- [gsc-sync.integration.ts](/C:/localseoproject/apps/worker/src/handlers/gsc-sync.integration.ts)
+- [gsc-sync.integration.ts](../../apps/worker/src/handlers/gsc-sync.integration.ts)
 
 Implemented tests:
 
@@ -291,7 +291,7 @@ tests 31 | pass 31 | fail 0 (historical snapshot; not the current suite count)
 
 File:
 
-- [queue-producer.integration.ts](/C:/localseoproject/apps/api/src/queue-producer.integration.ts)
+- [queue-producer.integration.ts](../../apps/api/src/queue-producer.integration.ts)
 
 Implemented tests:
 
@@ -306,12 +306,12 @@ These tests use a stateful fake BullMQ queue with a real database because the DB
 
 Files:
 
-- [project-context.integration.ts](/C:/localseoproject/apps/api/src/modules/project-context.integration.ts)
-- [opportunity-research.integration.ts](/C:/localseoproject/apps/api/src/modules/opportunity-research.integration.ts)
-- [agent-ledger.integration.ts](/C:/localseoproject/apps/worker/src/agent-ledger.integration.ts)
-- [opportunity-research-scheduler.integration.ts](/C:/localseoproject/apps/worker/src/opportunity-research-scheduler.integration.ts)
-- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
-- [opportunity-research.spec.ts](/C:/localseoproject/apps/web/e2e/opportunity-research.spec.ts)
+- [project-context.integration.ts](../../apps/api/src/modules/project-context.integration.ts)
+- [opportunity-research.integration.ts](../../apps/api/src/modules/opportunity-research.integration.ts)
+- [agent-ledger.integration.ts](../../apps/worker/src/agent-ledger.integration.ts)
+- [opportunity-research-scheduler.integration.ts](../../apps/worker/src/opportunity-research-scheduler.integration.ts)
+- [work-recovery.integration.ts](../../apps/worker/src/work-recovery.integration.ts)
+- [opportunity-research.spec.ts](../../apps/web/e2e/opportunity-research.spec.ts)
 
 Implemented tests prove:
 
@@ -333,9 +333,9 @@ Live DeepSeek and public-internet DuckDuckGo calls remain credentialed/manual sm
 
 Files:
 
-- [opportunity.test.ts](/C:/localseoproject/packages/contracts/src/opportunity.test.ts)
-- [index.test.ts](/C:/localseoproject/packages/domain/src/index.test.ts)
-- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
+- [opportunity.test.ts](../../packages/contracts/src/opportunity.test.ts)
+- [index.test.ts](../../packages/domain/src/index.test.ts)
+- [pages.integration.ts](../../apps/api/src/modules/pages.integration.ts)
 
 Implemented tests:
 
@@ -353,9 +353,9 @@ Implemented tests:
 
 Files:
 
-- [page-proposal-example.test.ts](/C:/localseoproject/apps/worker/src/page-proposal-example.test.ts)
-- [page-proposal.integration.ts](/C:/localseoproject/apps/worker/src/handlers/page-proposal.integration.ts)
-- [page-proposal-smoke.md](/C:/localseoproject/docs/testing/page-proposal-smoke.md)
+- [page-proposal-example.test.ts](../../apps/worker/src/page-proposal-example.test.ts)
+- [page-proposal.integration.ts](../../apps/worker/src/handlers/page-proposal.integration.ts)
+- [page-proposal-smoke.md](../../docs/testing/page-proposal-smoke.md)
 
 Implemented DB-free compatibility test:
 
@@ -372,7 +372,7 @@ The credentialed provider run is an explicit operational smoke, not a CI secret-
 
 File:
 
-- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
+- [work-recovery.integration.ts](../../apps/worker/src/work-recovery.integration.ts)
 
 Implemented tests:
 
@@ -401,7 +401,7 @@ The scanner tests use real Postgres migrations and a stateful fake queue. This p
 
 File:
 
-- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
+- [pages.integration.ts](../../apps/api/src/modules/pages.integration.ts)
 
 Implemented tests:
 
@@ -427,9 +427,9 @@ The Playwright replacement test runs the visual workspace at 390px and proves ta
 
 Files:
 
-- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
-- [section-copy-suggestion.integration.ts](/C:/localseoproject/apps/worker/src/handlers/section-copy-suggestion.integration.ts)
-- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
+- [pages.integration.ts](../../apps/api/src/modules/pages.integration.ts)
+- [section-copy-suggestion.integration.ts](../../apps/worker/src/handlers/section-copy-suggestion.integration.ts)
+- [work-recovery.integration.ts](../../apps/worker/src/work-recovery.integration.ts)
 
 Implemented tests prove:
 
@@ -447,9 +447,9 @@ DB-free contract, AI, registry, domain, adapter, and web-state tests additionall
 
 Files:
 
-- [media.integration.ts](/C:/localseoproject/apps/api/src/modules/media.integration.ts)
-- [media-processing.integration.ts](/C:/localseoproject/apps/worker/src/handlers/media-processing.integration.ts)
-- [work-recovery.integration.ts](/C:/localseoproject/apps/worker/src/work-recovery.integration.ts)
+- [media.integration.ts](../../apps/api/src/modules/media.integration.ts)
+- [media-processing.integration.ts](../../apps/worker/src/handlers/media-processing.integration.ts)
+- [work-recovery.integration.ts](../../apps/worker/src/work-recovery.integration.ts)
 
 Implemented tests prove:
 
@@ -466,13 +466,13 @@ DB-free contracts, filesystem-storage, worker, permission, and routing tests add
 
 Files:
 
-- [page-json.test.ts](/C:/localseoproject/packages/contracts/src/page-json.test.ts)
-- [netlify-site-hosting.test.ts](/C:/localseoproject/packages/adapters/src/netlify-site-hosting.test.ts)
-- [preview-capability.test.ts](/C:/localseoproject/apps/api/src/preview-capability.test.ts)
-- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
-- [media.integration.ts](/C:/localseoproject/apps/api/src/modules/media.integration.ts)
-- [deploy.integration.ts](/C:/localseoproject/apps/worker/src/handlers/deploy.integration.ts)
-- [page-studio-replacement.spec.ts](/C:/localseoproject/apps/web/e2e/page-studio-replacement.spec.ts)
+- [page-json.test.ts](../../packages/contracts/src/page-json.test.ts)
+- [netlify-site-hosting.test.ts](../../packages/adapters/src/netlify-site-hosting.test.ts)
+- [preview-capability.test.ts](../../apps/api/src/preview-capability.test.ts)
+- [pages.integration.ts](../../apps/api/src/modules/pages.integration.ts)
+- [media.integration.ts](../../apps/api/src/modules/media.integration.ts)
+- [deploy.integration.ts](../../apps/worker/src/handlers/deploy.integration.ts)
+- [page-studio-replacement.spec.ts](../../apps/web/e2e/page-studio-replacement.spec.ts)
 
 Implemented tests prove:
 
@@ -489,11 +489,11 @@ Implemented tests prove:
 
 Primary executable evidence:
 
-- [pages.integration.ts](/C:/localseoproject/apps/api/src/modules/pages.integration.ts)
-- [releases.integration.ts](/C:/localseoproject/apps/api/src/modules/releases.integration.ts)
-- [deploy.integration.ts](/C:/localseoproject/apps/worker/src/handlers/deploy.integration.ts)
-- [index.test.ts](/C:/localseoproject/packages/page-registry/src/index.test.ts)
-- [page-studio-replacement.spec.ts](/C:/localseoproject/apps/web/e2e/page-studio-replacement.spec.ts)
+- [pages.integration.ts](../../apps/api/src/modules/pages.integration.ts)
+- [releases.integration.ts](../../apps/api/src/modules/releases.integration.ts)
+- [deploy.integration.ts](../../apps/worker/src/handlers/deploy.integration.ts)
+- [index.test.ts](../../packages/page-registry/src/index.test.ts)
+- [page-studio-replacement.spec.ts](../../apps/web/e2e/page-studio-replacement.spec.ts)
 
 Covered behavior:
 
@@ -508,10 +508,10 @@ Covered behavior:
 
 Primary executable evidence:
 
-- [media-storage-cleanup.integration.ts](/C:/localseoproject/apps/worker/src/media-storage-cleanup.integration.ts)
-- [media-storage-cleanup.test.ts](/C:/localseoproject/packages/domain/src/media-storage-cleanup.test.ts)
-- [file-system-media-storage.test.ts](/C:/localseoproject/packages/adapters/src/file-system-media-storage.test.ts)
-- [s3-media-storage.test.ts](/C:/localseoproject/packages/adapters/src/s3-media-storage.test.ts)
+- [media-storage-cleanup.integration.ts](../../apps/worker/src/media-storage-cleanup.integration.ts)
+- [media-storage-cleanup.test.ts](../../packages/domain/src/media-storage-cleanup.test.ts)
+- [file-system-media-storage.test.ts](../../packages/adapters/src/file-system-media-storage.test.ts)
+- [s3-media-storage.test.ts](../../packages/adapters/src/s3-media-storage.test.ts)
 
 Covered behavior:
 
@@ -527,7 +527,7 @@ Richer media section families, remote import, stock search, and AI image generat
 
 File:
 
-- [tracking.integration.ts](/C:/localseoproject/apps/api/src/modules/tracking.integration.ts)
+- [tracking.integration.ts](../../apps/api/src/modules/tracking.integration.ts)
 
 Implemented tests:
 
