@@ -10,6 +10,7 @@ This project uses a native agent layer shared by Cursor, Codex, and Claude Code:
 - `.agents/rules/` carries the same 17 path-scoped rules as a verbatim mirror of `.claude/rules/` for hosts that read that location (Antigravity/agy; Codex ignores it - it only reads `.agents/skills/`). Sync it from `.claude/rules/` when the pack updates, never by ad-hoc edits.
 - Skill ownership: `.agents/skills/` is canonical for the ten project skills listed below. `.claude/skills/` mirrors the pack master's five generic skills for Claude-native discovery; where a name exists in both trees, the pack lineage owns `.claude/` and the shared lineage owns `.agents/` — sync deliberately through pack updates, never by ad-hoc edits.
 - Before editing below `apps/` or `packages/`, follow the nearest nested `AGENTS.md` in addition to this file.
+- Precedence when layers overlap: the more specific layer wins — nested `AGENTS.md` and `.ai-project-rules/` over this root file, and this root file over the generic pack rules (`.claude/rules/`, `.agents/rules/`). The layers restate one doctrine at different zoom levels; on genuine conflict, the most specific statement is authoritative.
 - Skills available: anti-regression, repo-review, smoke-verify, source-of-truth-audit, type-interview, oauth-security-review, deployment-preflight, local-page-quality, mermaid-diagrams, inspiration-pass.
 
 ## Pragmatic TypeScript (generic layer)
