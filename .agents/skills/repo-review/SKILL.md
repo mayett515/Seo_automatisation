@@ -8,6 +8,7 @@ description: Review a TypeScript repository or subsystem for architecture, bound
 Review evidence in the codebase, not a generic impression. Every finding must cite a file actually inspected.
 
 1. Inventory the relevant tree, entry points, package boundaries, and largest source files.
+   Then read `git log --oneline` and note which paths keep reappearing. Where file size and change frequency disagree, review the churning path first: a finding there pays back on the next change, a finding in a large file nobody touches pays back never.
 2. Sample type strategy, functional core, procedural shell, adapters, validation, errors, and tests in each relevant area.
 3. Read [references/casebook.md](references/casebook.md) before judging ceremony or restraint.
 4. For recurring abstractions, ask which ceremony-test benefit they buy: illegal state removed, failure moved to compile time, capability/lifecycle ownership, or real deduplication. Count occurrences before calling one choice a pattern.

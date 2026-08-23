@@ -20,6 +20,13 @@ Work in passes. Do not attempt the whole repo in one look.
 **Pass 1 — inventory.** Glob the tree. Count source lines per package,
 identify the largest files and the entry points.
 
+Then read the recent commit history (`git log --oneline`) and note which
+paths keep reappearing. Size tells you where the code is; change frequency
+tells you where the cost is, and the two rarely agree. Where they disagree,
+review the churning path first: a finding there pays back on the next change,
+a finding in a large file nobody touches pays back never. If the user named a
+subsystem, take that and skip the inference.
+
 **Pass 2 — per-area.** For each of type strategy, functional core,
 procedural shell, boundaries, and tests: read a representative sample and
 record findings with paths.
