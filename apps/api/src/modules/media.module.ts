@@ -31,6 +31,7 @@ import {
   MediaProcessingJobDataSchema,
   MediaUploadCompletionResponseSchema,
   MediaUploadIntentResponseSchema,
+  queueJobNames,
   type CreateMediaUploadIntentRequest,
   type MediaAssetListResponse,
   type MediaAssetSummary,
@@ -256,7 +257,7 @@ export class MediaService {
     if (transitioned.enqueue) {
       const enqueued = await this.queues.enqueue({
         queueName: "media-processing",
-        jobName: "media_processing",
+        jobName: queueJobNames["media-processing"],
         jobId: assetId,
         data: MediaProcessingJobDataSchema.parse({
           projectId,

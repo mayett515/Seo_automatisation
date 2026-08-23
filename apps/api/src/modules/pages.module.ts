@@ -49,6 +49,8 @@ import {
   PageVersionSummarySchema,
   ReviewPageVersionRequestSchema,
   decodedStaticSiteFileByteLength,
+  queueJobNames,
+  secondaryJobNames,
   type CreatePageProposalRunRequest,
   type CreatePageSectionNoteRequest,
   type CreateSectionCopySuggestionRequest,
@@ -211,7 +213,7 @@ export class PagesService {
 
       await this.queues.enqueue({
         queueName: "page-generation",
-        jobName: "page_generation",
+        jobName: queueJobNames["page-generation"],
         jobId,
         data: jobData,
         audit: {
@@ -289,7 +291,7 @@ export class PagesService {
     try {
       enqueued = await this.queues.enqueue({
         queueName: "page-generation",
-        jobName: "page_generation",
+        jobName: queueJobNames["page-generation"],
         jobId: runId,
         data: PageProposalJobDataSchema.parse({
           projectId,
@@ -384,7 +386,7 @@ export class PagesService {
       const jobId = randomUUID();
       await this.queues.enqueue({
         queueName: "page-generation",
-        jobName: "section_text_generation",
+        jobName: secondaryJobNames.pageGeneration,
         jobId,
         data: SectionCopySuggestionJobDataSchema.parse({
           projectId,
@@ -517,7 +519,7 @@ export class PagesService {
     try {
       enqueued = await this.queues.enqueue({
         queueName: "page-generation",
-        jobName: "section_text_generation",
+        jobName: secondaryJobNames.pageGeneration,
         jobId: suggestion.agentRunId,
         data: SectionCopySuggestionJobDataSchema.parse({
           projectId,

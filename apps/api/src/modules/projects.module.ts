@@ -30,6 +30,7 @@ import {
   WebsiteImportJobDataSchema,
   WebsiteImportRunSchema,
   WebsiteImportQueueResponseSchema,
+  queueJobNames,
   type CreateOpportunityScoutRunRequest,
   type CreateSerpScoutRunRequest,
   type CreateTechnicalAuditRunRequest,
@@ -118,7 +119,7 @@ export class ProjectsService {
       const jobId = randomUUID();
       await this.queues.enqueue({
         queueName: "website-import",
-        jobName: "website_import",
+        jobName: queueJobNames["website-import"],
         jobId,
         // Not parsed through WebsiteImportJobDataSchema: this dry-run branch records
         // intent only (no importRunId exists yet) and never reaches the worker parser.
@@ -164,7 +165,7 @@ export class ProjectsService {
     try {
       enqueued = await this.queues.enqueue({
         queueName: "website-import",
-        jobName: "website_import",
+        jobName: queueJobNames["website-import"],
         jobId,
         data: WebsiteImportJobDataSchema.parse({
           projectId,
@@ -247,7 +248,7 @@ export class ProjectsService {
 
       await this.queues.enqueue({
         queueName: "opportunity-scout",
-        jobName: "opportunity_scout",
+        jobName: queueJobNames["opportunity-scout"],
         jobId,
         data: jobData,
         audit: {
@@ -306,7 +307,7 @@ export class ProjectsService {
     try {
       enqueued = await this.queues.enqueue({
         queueName: "opportunity-scout",
-        jobName: "opportunity_scout",
+        jobName: queueJobNames["opportunity-scout"],
         jobId,
         data: OpportunityScoutJobDataSchema.parse({
           projectId,
@@ -397,7 +398,7 @@ export class ProjectsService {
 
     const enqueued = await this.queues.enqueue({
       queueName: "serp-scout",
-      jobName: "serp_scout",
+      jobName: queueJobNames["serp-scout"],
       jobId,
       data: jobData,
       options: {
@@ -469,7 +470,7 @@ export class ProjectsService {
     if (!this.queues.isQueueConfigured("technical-audit")) {
       await this.queues.enqueue({
         queueName: "technical-audit",
-        jobName: "technical_audit",
+        jobName: queueJobNames["technical-audit"],
         jobId,
         data: jobData,
         audit: {
@@ -508,7 +509,7 @@ export class ProjectsService {
     try {
       enqueued = await this.queues.enqueue({
         queueName: "technical-audit",
-        jobName: "technical_audit",
+        jobName: queueJobNames["technical-audit"],
         jobId,
         data: jobData,
         options: {

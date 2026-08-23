@@ -65,6 +65,42 @@ export const queueNames = [
   "notifications"
 ] as const;
 
+// Canonical job name for each queue. The worker routes a job when its queue
+// name OR its job name matches a lane, so each queue maps to one canonical job
+// name (mirroring the exact literals already used at enqueue sites today).
+// Queues without a current enqueue site use the kebab->snake canonical form.
+export const queueJobNames = {
+  "pre-audit": "pre_audit",
+  "website-import": "website_import",
+  "opportunity-scout": "opportunity_scout",
+  "opportunity-research": "opportunity_research",
+  "serp-scout": "serp_scout",
+  "technical-audit": "technical_audit",
+  "local-analysis": "local_analysis",
+  "page-generation": "page_generation",
+  "media-processing": "media_processing",
+  "seo-qa": "seo_qa",
+  deploy: "deploy",
+  rollback: "rollback",
+  "release-verification": "release_verification",
+  "gsc-sync": "gsc_sync",
+  analytics: "analytics",
+  report: "customer_report_generation",
+  notifications: "notifications"
+} as const satisfies Record<QueueName, string>;
+
+// Job names that share a queue with a canonical job but are routed by job name
+// alone in the worker (no queue-based lane). Kept as constants so callers never
+// retype the literal.
+export const secondaryJobNames = {
+  pageGeneration: "section_text_generation",
+  customerReportHtmlRender: "customer_report_html_render"
+} as const;
+
+// The full set of valid job-name literals: every canonical queue job plus the
+// secondary jobs. Used to type enqueue `jobName` fields.
+export type JobName = (typeof queueJobNames)[QueueName] | (typeof secondaryJobNames)[keyof typeof secondaryJobNames];
+
 export const trackingEventNames = [
   "page_view",
   "scroll_25",

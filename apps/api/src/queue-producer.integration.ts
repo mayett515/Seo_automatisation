@@ -5,6 +5,7 @@ import { customers, jobRuns, projects, type DatabaseClient } from "@localseo/db"
 import { eq } from "@localseo/db/query";
 import { QueueProducerService } from "./queue-producer.js";
 import { DatabaseService } from "./database/database.service.js";
+import { queueJobNames } from "@localseo/contracts";
 import {
   createIntegrationTestDatabase,
   truncateIntegrationTables
@@ -182,7 +183,7 @@ async function createQueueFixture(
 function queueInput(fixture: { projectId: string; releasePlanId: string; jobId: string }) {
   return {
     queueName: "deploy" as const,
-    jobName: "execute_release",
+    jobName: queueJobNames.deploy,
     jobId: fixture.jobId,
     data: {
       projectId: fixture.projectId,

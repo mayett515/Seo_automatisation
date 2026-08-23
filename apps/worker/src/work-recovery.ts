@@ -7,6 +7,8 @@ import {
   OpportunityResearchJobDataSchema,
   ReleaseVerificationJobDataSchema,
   SectionCopySuggestionJobDataSchema,
+  queueJobNames,
+  secondaryJobNames,
   type AgentRunStatus
 } from "@localseo/contracts";
 import {
@@ -1462,7 +1464,7 @@ type RecoveryJobDefinitionTable = {
 const recoveryJobDefinitions: RecoveryJobDefinitionTable = {
   page_proposal: {
     queueName: pageProposalQueueName,
-    jobName: "page_generation",
+    jobName: queueJobNames["page-generation"],
     jobType: "page_generation",
     buildData: (candidate, { attempts, jobRunId }) =>
       PageProposalJobDataSchema.parse({
@@ -1477,7 +1479,7 @@ const recoveryJobDefinitions: RecoveryJobDefinitionTable = {
   },
   section_copy_suggestion: {
     queueName: pageProposalQueueName,
-    jobName: "section_text_generation",
+    jobName: secondaryJobNames.pageGeneration,
     jobType: "page_generation",
     buildData: (candidate, { attempts, jobRunId }) =>
       SectionCopySuggestionJobDataSchema.parse({
@@ -1494,7 +1496,7 @@ const recoveryJobDefinitions: RecoveryJobDefinitionTable = {
   },
   media_processing: {
     queueName: mediaProcessingQueueName,
-    jobName: "media_processing",
+    jobName: queueJobNames["media-processing"],
     jobType: "media_processing",
     buildData: (candidate, { attempts, jobRunId }) =>
       MediaProcessingJobDataSchema.parse({
@@ -1508,7 +1510,7 @@ const recoveryJobDefinitions: RecoveryJobDefinitionTable = {
   },
   customer_report: {
     queueName: reportQueueName,
-    jobName: "customer_report_generation",
+    jobName: queueJobNames.report,
     jobType: "report",
     buildData: (candidate, { attempts, jobRunId }) =>
       CustomerReportGenerationJobDataSchema.parse({
@@ -1535,7 +1537,7 @@ const recoveryJobDefinitions: RecoveryJobDefinitionTable = {
   },
   opportunity_research: {
     queueName: opportunityResearchQueueName,
-    jobName: "opportunity_research",
+    jobName: queueJobNames["opportunity-research"],
     jobType: "opportunity_research",
     buildData: (candidate, { jobRunId, expectedRecoveryCount }) =>
       jobRunId && expectedRecoveryCount !== undefined
@@ -1551,7 +1553,7 @@ const recoveryJobDefinitions: RecoveryJobDefinitionTable = {
   },
   release_verification: {
     queueName: releaseVerificationQueueName,
-    jobName: "release_verification",
+    jobName: queueJobNames["release-verification"],
     jobType: "release_verification",
     backoffDelay: 10_000,
     buildData: (candidate, { attempts, jobRunId }) =>

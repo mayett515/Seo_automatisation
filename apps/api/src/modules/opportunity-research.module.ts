@@ -25,6 +25,7 @@ import {
   UpdateOpportunityResearchPauseRequestSchema,
   opportunityResearchConstraintProfileVersion,
   opportunityResearchWorkflowVersion,
+  queueJobNames,
   type AgentRunTimelineResponse,
   type OpportunityResearchQueueResponse,
   type OpportunityResearchState,
@@ -268,7 +269,7 @@ export class OpportunityResearchService {
     try {
       const enqueued = await this.queues.enqueue({
         queueName: "opportunity-research",
-        jobName: "opportunity_research",
+        jobName: queueJobNames["opportunity-research"],
         jobId: runId,
         data: OpportunityResearchEnqueueDataSchema.parse({
           projectId,

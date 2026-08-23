@@ -31,6 +31,7 @@ import {
   RollbackPointSchema,
   PageJsonSchema,
   VerifyReleaseRequestSchema,
+  queueJobNames,
   type DeploymentStatus,
   type PageJson,
   type ReleasePlan,
@@ -587,7 +588,7 @@ export class ReleasesService {
 
     const enqueued = await this.queues.enqueue({
       queueName: "deploy",
-      jobName: "deploy",
+      jobName: queueJobNames.deploy,
       jobId,
       data: DeployJobDataSchema.parse({
         projectId,
@@ -685,7 +686,7 @@ export class ReleasesService {
 
     const enqueued = await this.queues.enqueue({
       queueName: "rollback",
-      jobName: "rollback",
+      jobName: queueJobNames.rollback,
       jobId,
       data: RollbackJobDataSchema.parse({
         projectId,
@@ -816,7 +817,7 @@ export class ReleasesService {
     try {
       enqueued = await this.queues.enqueue({
         queueName: "release-verification",
-        jobName: "release_verification",
+        jobName: queueJobNames["release-verification"],
         jobId,
         data: ReleaseVerificationJobDataSchema.parse({
           projectId,

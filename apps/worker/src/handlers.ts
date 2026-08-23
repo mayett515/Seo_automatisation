@@ -37,6 +37,7 @@ import {
 } from "@localseo/ai";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { createDatabaseClient } from "@localseo/db";
+import { secondaryJobNames, queueJobNames } from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
 import {
   handleMediaProcessingJob,
@@ -267,59 +268,59 @@ export async function cleanMediaStorage(): Promise<MediaStorageCleanupResult> {
 }
 
 export async function routeJob(job: Job): Promise<Record<string, unknown>> {
-  if (job.queueName === "deploy" || job.name === "deploy") {
+  if (job.queueName === "deploy" || job.name === queueJobNames.deploy) {
     return handleDeployJob(job, sharedDbHandle, sharedSiteHosting, sharedObjectStorage);
   }
 
-  if (job.queueName === "rollback" || job.name === "rollback") {
+  if (job.queueName === "rollback" || job.name === queueJobNames.rollback) {
     return handleRollbackJob(job, sharedDbHandle, sharedSiteHosting);
   }
 
-  if (job.queueName === "website-import" || job.name === "website_import") {
+  if (job.queueName === "website-import" || job.name === queueJobNames["website-import"]) {
     return handleWebsiteImportJob(job, sharedDbHandle, sharedCrawler);
   }
 
-  if (job.queueName === "opportunity-research" || job.name === "opportunity_research") {
+  if (job.queueName === "opportunity-research" || job.name === queueJobNames["opportunity-research"]) {
     return handleOpportunityResearchJob(job, sharedDbHandle, sharedOpportunityResearch, {
       heartbeatIntervalMs: env.OPPORTUNITY_RESEARCH_HEARTBEAT_MS
     });
   }
 
-  if (job.queueName === "opportunity-scout" || job.name === "opportunity_scout") {
+  if (job.queueName === "opportunity-scout" || job.name === queueJobNames["opportunity-scout"]) {
     return handleOpportunityScoutJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
       reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
     });
   }
 
-  if (job.name === "section_text_generation") {
+  if (job.name === secondaryJobNames.pageGeneration) {
     return handleSectionCopySuggestionJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
       reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
     });
   }
 
-  if (job.queueName === "page-generation" || job.name === "page_generation") {
+  if (job.queueName === "page-generation" || job.name === queueJobNames["page-generation"]) {
     return handlePageProposalJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
       reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
     });
   }
 
-  if (job.queueName === "media-processing" || job.name === "media_processing") {
+  if (job.queueName === "media-processing" || job.name === queueJobNames["media-processing"]) {
     return handleMediaProcessingJob(job, sharedDbHandle, sharedObjectStorage);
   }
 
-  if (job.queueName === "serp-scout" || job.name === "serp_scout") {
+  if (job.queueName === "serp-scout" || job.name === queueJobNames["serp-scout"]) {
     return handleSerpScoutJob(job, sharedDbHandle, sharedSerpScout);
   }
 
-  if (job.queueName === "technical-audit" || job.name === "technical_audit") {
+  if (job.queueName === "technical-audit" || job.name === queueJobNames["technical-audit"]) {
     return handleTechnicalAuditJob(job, sharedDbHandle, sharedCrawler);
   }
 
-  if (job.queueName === "gsc-sync" || job.name === "gsc_sync") {
+  if (job.queueName === "gsc-sync" || job.name === queueJobNames["gsc-sync"]) {
     return handleGscSyncJob(job, sharedDbHandle, env);
   }
 
-  if (job.queueName === "release-verification" || job.name === "release_verification") {
+  if (job.queueName === "release-verification" || job.name === queueJobNames["release-verification"]) {
     return handleReleaseVerificationJob(job, sharedDbHandle, {
       verification: sharedReleaseVerification,
       searchConsole: sharedSearchConsole,
@@ -327,11 +328,11 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
     });
   }
 
-  if (job.name === "customer_report_html_render") {
+  if (job.name === secondaryJobNames.customerReportHtmlRender) {
     return handleCustomerReportHtmlRenderJob(job, sharedDbHandle, sharedObjectStorage);
   }
 
-  if (job.queueName === "report" || job.name === "customer_report_generation") {
+  if (job.queueName === "report" || job.name === queueJobNames.report) {
     return handleCustomerReportGenerationJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
       reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
     });

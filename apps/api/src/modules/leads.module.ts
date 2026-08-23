@@ -5,6 +5,7 @@ import {
   LeadSchema,
   PotentialReportSchema,
   QueueJobSchema,
+  queueJobNames,
   type CreateLeadInput,
   type Lead,
   type PotentialReport,
@@ -29,7 +30,7 @@ class LeadsService {
     const jobId = randomUUID();
     const enqueued = await this.queues.enqueue({
       queueName: "pre-audit",
-      jobName: "pre_audit",
+      jobName: queueJobNames["pre-audit"],
       jobId,
       data: { leadId }
     });

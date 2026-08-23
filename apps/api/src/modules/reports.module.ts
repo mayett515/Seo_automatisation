@@ -25,7 +25,8 @@ import {
   CustomerReportPublicationCommandSchema,
   CustomerReportPublicationResponseSchema,
   CustomerReportReviewCommandSchema,
-  CustomerReportReviewResponseSchema
+  CustomerReportReviewResponseSchema,
+  queueJobNames
 } from "@localseo/contracts";
 import { parseAppEnv } from "@localseo/config";
 import type { FastifyReply } from "fastify";
@@ -263,7 +264,7 @@ class ReportsController {
       if (isUuid(projectId)) {
         await this.queues.enqueue({
           queueName: "report",
-          jobName: "customer_report_generation",
+          jobName: queueJobNames.report,
           jobId: randomUUID(),
           data: { kind: "customer_report_generation_dry_run", period: parsed.data.period },
           audit: {
@@ -303,7 +304,7 @@ class ReportsController {
       try {
         enqueuedByRequest = await this.queues.enqueue({
           queueName: "report",
-          jobName: "customer_report_generation",
+          jobName: queueJobNames.report,
           jobId: admission.runId,
           data: CustomerReportGenerationJobDataSchema.parse({ projectId, runId: admission.runId }),
           options: { attempts: 3, backoff: { type: "exponential", delay: 5_000 } },
