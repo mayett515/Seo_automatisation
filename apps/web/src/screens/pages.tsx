@@ -1,47 +1,32 @@
-import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import {
   PageProposalListResponseSchema,
   PageSectionNoteListResponseSchema,
   PageSectionNoteSchema,
-  SectionCopySuggestionListResponseSchema,
-  SectionCopySuggestionQueueResponseSchema,
-  SectionCopySuggestionSchema,
-  PageVersionDetailSchema,
   PageVersionListResponseSchema,
-  PageVersionPreviewResponseSchema,
-  PageVersionReviewResponseSchema,
-  ReleasePlanSchema,
-  ReviewPageVersionRequestSchema,
   CreatePageSectionNoteRequestSchema,
-  CreateSectionCopySuggestionRequestSchema,
-  CreateReleasePlanRequestSchema,
-  EditPageVersionRequestSchema,
-  MediaAssetListResponseSchema,
-  PageVersionEditResponseSchema,
   pageSectionNoteInstructionTypes,
   type PageProposalSummary,
   type PageSectionNote,
   type PageSectionNoteInstructionType,
-  type PageStudioEditCommand,
-  type EditPageVersionRequest,
-  type SectionCopySuggestion,
   type PageVersionDetail,
   type PageVersionReviewDecision,
-  type PageVersionReviewResponse,
-  type PageVersionSummary,
-  type ReleasePlan
+  type PageVersionSummary
 } from "@localseo/contracts";
-import { apiResourceUrl, getJson, patchJson, postJson } from "../lib/api";
+import { getJson, patchJson, postJson, apiResourceUrl } from "../lib/api";
 import { projectApiPath } from "../lib/api-path";
 import { errorMessage } from "../lib/error-message";
 import { PageStudioEditor } from "../features/page-studio/page-studio-editor";
-import { uploadProjectMediaAsset } from "../features/page-studio/media-upload";
-import { latestVersionForProposal, pageVersionAncestors } from "../features/page-studio/page-studio-state";
 import { ReleaseLifecyclePanel } from "./release-detail";
+import {
+  pageSectionNotesQueryKey,
+  normalizedText,
+  usePageStudioData,
+  type PagePreviewActionResult
+} from "./page-preview-data";
 
 export function PagesScreen(props: { projectId: string }) {
   const projectId = props.projectId;
@@ -119,176 +104,22 @@ export function PagesScreen(props: { projectId: string }) {
 export function PagePreviewScreen(props: { projectId: string; pageVersionId: string }) {
   const projectId = props.projectId;
   const pageVersionId = props.pageVersionId;
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [decisionNote, setDecisionNote] = useState("");
-  const [latestReview, setLatestReview] = useState<PageVersionReviewResponse | undefined>();
-  const [latestReleasePlan, setLatestReleasePlan] = useState<ReleasePlan | undefined>();
-  const version = useQuery({
-    queryKey: ["page-version-detail", projectId, pageVersionId],
-    queryFn: () =>
-      getJson(projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}`), PageVersionDetailSchema),
-    retry: false,
-    enabled: pageVersionId.length > 0
-  });
-  const preview = useQuery({
-    queryKey: ["page-version-preview", projectId, pageVersionId],
-    queryFn: () =>
-      getJson(
-        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/preview`),
-        PageVersionPreviewResponseSchema
-      ),
-    retry: false,
-    enabled: pageVersionId.length > 0
-  });
-  const versions = useQuery({
-    queryKey: ["page-versions", projectId],
-    queryFn: () => getJson(projectApiPath(projectId, "/pages"), PageVersionListResponseSchema),
-    retry: false
-  });
-  const copySuggestionsQueryKey = ["page-section-copy-suggestions", projectId, pageVersionId] as const;
-  const mediaAssetsQueryKey = ["media-assets", projectId] as const;
-  const copySuggestions = useQuery({
-    queryKey: copySuggestionsQueryKey,
-    queryFn: () =>
-      getJson(
-        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/copy-suggestions`),
-        SectionCopySuggestionListResponseSchema
-      ),
-    retry: false,
-    enabled: pageVersionId.length > 0,
-    refetchInterval: (query) =>
-      query.state.data?.suggestions.some(
-        (suggestion) => suggestion.status === "queued" || suggestion.status === "generating"
-      )
-        ? 3000
-        : false
-  });
-  const mediaAssets = useQuery({
-    queryKey: mediaAssetsQueryKey,
-    queryFn: () => getJson(projectApiPath(projectId, "/media/assets"), MediaAssetListResponseSchema),
-    retry: false,
-    refetchInterval: (query) =>
-      query.state.data?.assets.some((asset) => asset.status === "pending_upload" || asset.status === "processing")
-        ? 3000
-        : false
-  });
-  const latestVersion =
-    version.data && versions.data ? latestVersionForProposal(version.data, versions.data.pageVersions) : undefined;
-  const ancestorVersions =
-    version.data && versions.data ? pageVersionAncestors(version.data, versions.data.pageVersions).slice(0, 20) : [];
-  const notesQueryKey = pageSectionNotesQueryKey(projectId, pageVersionId);
-  const editVersion = useMutation({
-    mutationFn: (input: EditPageVersionRequest) => {
-      const body = EditPageVersionRequestSchema.parse(input);
-      return postJson(
-        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/edits`),
-        body,
-        PageVersionEditResponseSchema
-      );
-    },
-    onSuccess: async (response) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
-        queryClient.invalidateQueries({ queryKey: copySuggestionsQueryKey })
-      ]);
-      await navigate({
-        to: "/projects/$projectId/pages/$pageId/preview",
-        params: { projectId, pageId: response.pageVersion.id }
-      });
-    },
-    onError: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] });
-    }
-  });
-  const requestCopySuggestion = useMutation({
-    mutationFn: (input: { sectionId: string; instruction?: string }) => {
-      const body = CreateSectionCopySuggestionRequestSchema.parse(input);
-      return postJson(
-        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/copy-suggestions`),
-        body,
-        SectionCopySuggestionQueueResponseSchema
-      );
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: copySuggestionsQueryKey });
-    }
-  });
-  const dismissCopySuggestion = useMutation({
-    mutationFn: (suggestionId: string) =>
-      patchJson(
-        projectApiPath(
-          projectId,
-          `/pages/${encodeURIComponent(pageVersionId)}/copy-suggestions/${encodeURIComponent(suggestionId)}/dismiss`
-        ),
-        {},
-        SectionCopySuggestionSchema
-      ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: copySuggestionsQueryKey });
-    }
-  });
-  const uploadMedia = useMutation({
-    mutationFn: (file: File) => uploadProjectMediaAsset(projectId, file),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: mediaAssetsQueryKey });
-    }
-  });
+  const data = usePageStudioData(projectId, pageVersionId);
 
-  const reviewVersion = useMutation({
-    mutationFn: (decision: PageVersionReviewDecision) => {
-      const body = ReviewPageVersionRequestSchema.parse({
-        decision,
-        decisionNote: normalizedText(decisionNote)
-      });
-
-      return postJson(
-        projectApiPath(projectId, `/pages/${encodeURIComponent(pageVersionId)}/review`),
-        body,
-        PageVersionReviewResponseSchema
-      );
-    },
-    onSuccess: async (response) => {
-      setLatestReview(response);
-      setDecisionNote("");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["page-version-detail", projectId, pageVersionId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-version-preview", projectId, pageVersionId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
-        queryClient.invalidateQueries({ queryKey: notesQueryKey })
-      ]);
-    }
-  });
-  const createReleasePlan = useMutation({
-    mutationFn: () => {
-      if (!version.data) {
-        throw new Error("Page version details are required to prepare a release plan.");
-      }
-
-      const body = CreateReleasePlanRequestSchema.parse({
-        pageVersions: [
-          {
-            pageVersionId,
-            expected: { status: version.data.status, rowVersion: version.data.rowVersion }
-          }
-        ]
-      });
-
-      return postJson(projectApiPath(projectId, "/releases/plan"), body, ReleasePlanSchema);
-    },
-    onSuccess: (response) => {
-      setLatestReleasePlan(response);
-    },
-    onError: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["page-version-detail", projectId, pageVersionId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] })
-      ]);
-    }
-  });
+  const version = data.version;
+  const preview = data.preview;
+  const versionStatusPill =
+    version.status === "success"
+      ? pageVersionTone(version.data.status)
+      : preview.status === "error"
+        ? "danger"
+        : "neutral";
+  const versionStatusLabel =
+    version.status === "success"
+      ? version.data.status.replaceAll("_", " ")
+      : preview.status === "error"
+        ? "error"
+        : "loading";
 
   return (
     <section className="screen-grid">
@@ -297,49 +128,25 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
           <h1>Preview</h1>
           <p>{pageVersionId || "No page selected"}</p>
         </div>
-        <StatusPill tone={version.data ? pageVersionTone(version.data.status) : preview.isError ? "danger" : "neutral"}>
-          {version.data?.status.replaceAll("_", " ") ?? (preview.isError ? "error" : "loading")}
-        </StatusPill>
+        <StatusPill tone={versionStatusPill}>{versionStatusLabel}</StatusPill>
       </header>
 
       <Link className="button-link" to="/projects/$projectId/pages" params={{ projectId }}>
         Back to pages
       </Link>
 
-      {preview.isPending ? <div className="notice notice--neutral">Rendering preview</div> : null}
-      {preview.isError ? <div className="notice notice--danger">Preview could not be rendered.</div> : null}
-      {version.isPending ? <div className="notice notice--neutral">Loading page version</div> : null}
-      {version.isError ? <div className="notice notice--danger">Page version could not be loaded.</div> : null}
-      {versions.isError ? <div className="notice notice--danger">Page version history could not be loaded.</div> : null}
-      {latestReview ? (
-        <div className="notice notice--neutral">
-          Page version review saved: {latestReview.approval.status}
-          {latestReview.approval.decisionNote ? ` (${latestReview.approval.decisionNote})` : ""}
-        </div>
+      {preview.status === "pending" ? <div className="notice notice--neutral">Rendering preview</div> : null}
+      {preview.status === "error" ? <div className="notice notice--danger">Preview could not be rendered.</div> : null}
+      {version.status === "pending" ? <div className="notice notice--neutral">Loading page version</div> : null}
+      {version.status === "error" ? (
+        <div className="notice notice--danger">Page version could not be loaded.</div>
       ) : null}
-      {reviewVersion.isError ? (
-        <div className="notice notice--danger">
-          {errorMessage(reviewVersion.error, "Page version review could not be saved.")}
-        </div>
+      {data.versionHistory.state.status === "error" ? (
+        <div className="notice notice--danger">Page version history could not be loaded.</div>
       ) : null}
-      {createReleasePlan.isError ? (
-        <div className="notice notice--danger">
-          {errorMessage(createReleasePlan.error, "Release plan could not be created.")}
-        </div>
-      ) : null}
-      {latestReleasePlan ? (
-        <div className="notice notice--neutral">
-          Release plan created:{" "}
-          <Link
-            to="/projects/$projectId/releases/$releasePlanId"
-            params={{ projectId, releasePlanId: latestReleasePlan.releasePlanId }}
-          >
-            Open release plan
-          </Link>
-        </div>
-      ) : null}
+      <PagePreviewActionNotice result={data.latestAction} projectId={projectId} />
 
-      {preview.data && version.data ? (
+      {preview.status === "success" && version.status === "success" ? (
         <section className="preview-layout">
           <article className="detail-panel">
             <div className="panel-heading">
@@ -359,39 +166,17 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
 
           <section className="page-studio-workspace">
             <PageStudioEditor
-              copyActionError={requestCopySuggestion.error ?? dismissCopySuggestion.error}
-              copySuggestions={copySuggestions.data?.suggestions ?? []}
-              isCopyActionPending={requestCopySuggestion.isPending || dismissCopySuggestion.isPending}
-              isCopySuggestionsError={copySuggestions.isError}
-              isCopySuggestionsPending={copySuggestions.isPending}
-              isMediaLibraryError={mediaAssets.isError}
-              isMediaLibraryPending={mediaAssets.isPending}
-              isMediaUploadPending={uploadMedia.isPending}
-              error={editVersion.error}
-              isSaving={editVersion.isPending}
-              isVersionListError={versions.isError}
-              isVersionListPending={versions.isPending}
-              latestVersion={latestVersion}
-              mediaAssets={mediaAssets.data?.assets ?? []}
-              mediaUploadError={uploadMedia.error}
+              copySuggestions={data.copySuggestions}
+              mediaLibrary={data.mediaLibrary}
               pageVersion={version.data}
               projectId={projectId}
-              onApplyCopySuggestion={(suggestion: SectionCopySuggestion, sectionProps: Record<string, unknown>) =>
-                editVersion.mutate({
-                  suggestionId: suggestion.id,
-                  command: {
-                    type: "update_section_props",
-                    sectionId: suggestion.sectionId,
-                    props: sectionProps
-                  }
-                })
-              }
-              onCommand={(command: PageStudioEditCommand) => editVersion.mutate({ command })}
-              onDismissCopySuggestion={(suggestionId) => dismissCopySuggestion.mutate(suggestionId)}
-              onRequestCopySuggestion={(sectionId, instruction) =>
-                requestCopySuggestion.mutate({ sectionId, instruction: normalizedText(instruction) })
-              }
-              onUploadMedia={(file) => uploadMedia.mutate(file)}
+              save={data.save}
+              versionHistory={data.versionHistory}
+              onApplyCopySuggestion={data.onApplyCopySuggestion}
+              onCommand={data.onCommand}
+              onDismissCopySuggestion={data.onDismissCopySuggestion}
+              onRequestCopySuggestion={data.onRequestCopySuggestion}
+              onUploadMedia={data.onUploadMedia}
             />
             <div className="page-studio-preview-pane">
               <div className="page-studio-preview-heading">
@@ -408,26 +193,26 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
           </section>
 
           <PageVersionReviewPanel
-            ancestorVersions={ancestorVersions}
-            decisionNote={decisionNote}
-            isLatest={latestVersion?.id === version.data.id}
-            isLatestStateReady={versions.isSuccess}
-            isPending={reviewVersion.isPending}
+            ancestorVersions={data.versionHistory.ancestorVersions}
+            decisionNote={data.review.decisionNote}
+            isLatest={data.versionHistory.latestVersion?.id === version.data.id}
+            isLatestStateReady={data.versionHistory.state.status === "success"}
+            isPending={data.review.isPending}
             pageVersion={version.data}
             projectId={projectId}
-            onDecisionNoteChange={setDecisionNote}
-            onReview={(decision) => reviewVersion.mutate(decision)}
+            onDecisionNoteChange={data.review.onDecisionNoteChange}
+            onReview={data.review.onReview}
           />
           <PageVersionReleasePlanPanel
-            isPending={createReleasePlan.isPending}
+            isPending={data.releasePlan.isPending}
             pageVersion={version.data}
-            onCreate={() => createReleasePlan.mutate()}
+            onCreate={data.releasePlan.onCreate}
           />
-          {latestReleasePlan ? (
+          {data.releasePlan.plan ? (
             <ReleaseLifecyclePanel
-              initialPlan={latestReleasePlan}
+              initialPlan={data.releasePlan.plan}
               projectId={projectId}
-              releasePlanId={latestReleasePlan.releasePlanId}
+              releasePlanId={data.releasePlan.plan.releasePlanId}
             />
           ) : null}
 
@@ -436,6 +221,46 @@ export function PagePreviewScreen(props: { projectId: string; pageVersionId: str
       ) : null}
     </section>
   );
+}
+
+function PagePreviewActionNotice(props: { result: PagePreviewActionResult | undefined; projectId: string }) {
+  if (!props.result) {
+    return null;
+  }
+
+  switch (props.result.kind) {
+    case "review_saved":
+      return (
+        <div className="notice notice--neutral">
+          Page version review saved: {props.result.review.approval.status}
+          {props.result.review.approval.decisionNote ? ` (${props.result.review.approval.decisionNote})` : ""}
+        </div>
+      );
+    case "release_plan_created":
+      return (
+        <div className="notice notice--neutral">
+          Release plan created:{" "}
+          <Link
+            to="/projects/$projectId/releases/$releasePlanId"
+            params={{ projectId: props.projectId, releasePlanId: props.result.plan.releasePlanId }}
+          >
+            Open release plan
+          </Link>
+        </div>
+      );
+    case "review_failed":
+      return (
+        <div className="notice notice--danger">
+          {errorMessage(props.result.error, "Page version review could not be saved.")}
+        </div>
+      );
+    case "release_plan_failed":
+      return (
+        <div className="notice notice--danger">
+          {errorMessage(props.result.error, "Release plan could not be created.")}
+        </div>
+      );
+  }
 }
 
 function PageVersionReviewPanel(props: {
@@ -860,13 +685,4 @@ function pageVersionTone(status: PageVersionSummary["status"]): "neutral" | "suc
   }
 
   return "neutral";
-}
-
-function pageSectionNotesQueryKey(projectId: string, pageVersionId: string) {
-  return ["page-section-notes", projectId, pageVersionId] as const;
-}
-
-function normalizedText(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }

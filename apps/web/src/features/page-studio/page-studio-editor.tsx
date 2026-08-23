@@ -7,9 +7,14 @@ import type {
   PageSectionInstance,
   PageStudioEditCommand,
   SectionCopySuggestion,
-  PageVersionDetail,
-  PageVersionSummary
+  PageVersionDetail
 } from "@localseo/contracts";
+import type {
+  PageStudioAction,
+  PageStudioCopySuggestionsState,
+  PageStudioMediaLibraryState,
+  PageStudioVersionHistoryState
+} from "./page-studio-types.js";
 import { PageMediaReferenceSchema } from "@localseo/contracts";
 import { decideMovePageSection, getPageStudioSectionCapabilities } from "@localseo/domain";
 import {
@@ -44,23 +49,12 @@ type PageStudioMediaLibrary = {
 };
 
 export function PageStudioEditor(props: {
-  copyActionError: Error | null;
-  copySuggestions: readonly SectionCopySuggestion[];
-  error: Error | null;
-  isCopyActionPending: boolean;
-  isCopySuggestionsError: boolean;
-  isCopySuggestionsPending: boolean;
-  isMediaLibraryError: boolean;
-  isMediaLibraryPending: boolean;
-  isMediaUploadPending: boolean;
-  isSaving: boolean;
-  isVersionListError: boolean;
-  isVersionListPending: boolean;
-  latestVersion?: PageVersionSummary;
-  mediaAssets: readonly MediaAssetSummary[];
-  mediaUploadError: Error | null;
+  copySuggestions: PageStudioCopySuggestionsState;
+  mediaLibrary: PageStudioMediaLibraryState;
   pageVersion: PageVersionDetail;
   projectId: string;
+  versionHistory: PageStudioVersionHistoryState;
+  save: PageStudioAction;
   onApplyCopySuggestion: (suggestion: SectionCopySuggestion, props: Record<string, unknown>) => void;
   onCommand: (command: PageStudioEditCommand) => void;
   onDismissCopySuggestion: (suggestionId: string) => void;
@@ -70,6 +64,7 @@ export function PageStudioEditor(props: {
   const sections = orderedPageSections(props.pageVersion);
   const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.id ?? "");
   const [panelMode, setPanelMode] = useState<PageStudioPanelMode>("properties");
+  const versionHistory = props.versionHistory.state;
   const selectedSection = sections.find((section) => section.id === selectedSectionId) ?? sections[0];
   const replacementEntries = selectedSection
     ? legalReplacementEntries(props.pageVersion.pageJson, selectedSection.id, pageRegistrySummary)
@@ -81,22 +76,24 @@ export function PageStudioEditor(props: {
       : panelMode === "copy" && copyFieldKeys.length === 0
         ? "properties"
         : panelMode;
-  const isLatest = props.latestVersion?.id === props.pageVersion.id;
-  const canEdit = isLatest && props.pageVersion.status !== "superseded" && !props.isVersionListPending;
-  const editorState = props.isVersionListPending
-    ? "checking"
-    : props.isVersionListError
-      ? "unavailable"
-      : canEdit
-        ? `next v${props.pageVersion.versionNumber + 1}`
-        : isLatest
-          ? "locked"
-          : "stale";
+  const isLatest = props.versionHistory.latestVersion?.id === props.pageVersion.id;
+  const canEdit = isLatest && props.pageVersion.status !== "superseded" && versionHistory.status === "success";
+  const isSaving = props.save.status === "pending";
+  const editorState =
+    versionHistory.status === "pending"
+      ? "checking"
+      : versionHistory.status === "error"
+        ? "unavailable"
+        : canEdit
+          ? `next v${props.pageVersion.versionNumber + 1}`
+          : isLatest
+            ? "locked"
+            : "stale";
   const mediaLibrary: PageStudioMediaLibrary = {
-    assets: props.mediaAssets,
-    error: props.mediaUploadError,
-    isLoading: props.isMediaLibraryPending,
-    isUploading: props.isMediaUploadPending,
+    assets: props.mediaLibrary.assets.status === "success" ? props.mediaLibrary.assets.data : [],
+    error: props.mediaLibrary.upload.status === "error" ? props.mediaLibrary.upload.error : null,
+    isLoading: props.mediaLibrary.assets.status === "pending",
+    isUploading: props.mediaLibrary.upload.status === "pending",
     projectId: props.projectId,
     onUpload: props.onUploadMedia
   };
@@ -111,25 +108,29 @@ export function PageStudioEditor(props: {
         <StatusPill tone={canEdit ? "success" : isLatest ? "warning" : "neutral"}>{editorState}</StatusPill>
       </div>
 
-      {props.isVersionListPending ? <div className="notice notice--neutral">Checking latest version</div> : null}
-      {props.isVersionListError ? (
+      {versionHistory.status === "pending" ? (
+        <div className="notice notice--neutral">Checking latest version</div>
+      ) : null}
+      {versionHistory.status === "error" ? (
         <div className="notice notice--danger">Latest-version state could not be loaded.</div>
       ) : null}
-      {!isLatest && props.latestVersion ? (
+      {!isLatest && props.versionHistory.latestVersion ? (
         <div className="notice notice--neutral page-studio-stale-notice">
-          <span>{`Version ${props.latestVersion.versionNumber} is now current.`}</span>
+          <span>{`Version ${props.versionHistory.latestVersion.versionNumber} is now current.`}</span>
           <Link
             className="button-link"
             to="/projects/$projectId/pages/$pageId/preview"
-            params={{ projectId: props.projectId, pageId: props.latestVersion.id }}
+            params={{ projectId: props.projectId, pageId: props.versionHistory.latestVersion.id }}
           >
             Open latest
           </Link>
         </div>
       ) : null}
-      {props.error ? <div className="notice notice--danger">{props.error.message}</div> : null}
-      {props.copyActionError ? <div className="notice notice--danger">{props.copyActionError.message}</div> : null}
-      {props.isMediaLibraryError ? (
+      {props.save.status === "error" ? <div className="notice notice--danger">{props.save.error.message}</div> : null}
+      {props.copySuggestions.action.status === "error" ? (
+        <div className="notice notice--danger">{props.copySuggestions.action.error.message}</div>
+      ) : null}
+      {props.mediaLibrary.assets.status === "error" ? (
         <div className="notice notice--danger">Project media library could not be loaded.</div>
       ) : null}
 
@@ -137,7 +138,7 @@ export function PageStudioEditor(props: {
         {sections.map((section) => (
           <PageStudioSectionRow
             canEdit={canEdit}
-            isSaving={props.isSaving}
+            isSaving={isSaving}
             isSelected={section.id === selectedSection?.id}
             key={section.id}
             pageVersion={props.pageVersion}
@@ -162,7 +163,7 @@ export function PageStudioEditor(props: {
           {activePanelMode === "properties" ? (
             <SectionPropsForm
               canEdit={canEdit}
-              isSaving={props.isSaving}
+              isSaving={isSaving}
               key={`${props.pageVersion.id}:${selectedSection.id}:properties`}
               mediaLibrary={mediaLibrary}
               section={selectedSection}
@@ -174,7 +175,7 @@ export function PageStudioEditor(props: {
             <SectionReplacementForm
               canEdit={canEdit}
               entries={replacementEntries}
-              isSaving={props.isSaving}
+              isSaving={isSaving}
               key={`${props.pageVersion.id}:${selectedSection.id}:replacement`}
               mediaLibrary={mediaLibrary}
               section={selectedSection}
@@ -191,13 +192,15 @@ export function PageStudioEditor(props: {
           ) : (
             <SectionCopySuggestionPanel
               canEdit={canEdit}
-              isActionPending={props.isCopyActionPending || props.isSaving}
-              isSuggestionsError={props.isCopySuggestionsError}
-              isSuggestionsPending={props.isCopySuggestionsPending}
+              isActionPending={props.copySuggestions.action.status === "pending" || isSaving}
+              isSuggestionsError={props.copySuggestions.suggestions.status === "error"}
+              isSuggestionsPending={props.copySuggestions.suggestions.status === "pending"}
               key={`${props.pageVersion.id}:${selectedSection.id}:copy`}
               mediaLibrary={mediaLibrary}
               section={selectedSection}
-              suggestions={props.copySuggestions}
+              suggestions={
+                props.copySuggestions.suggestions.status === "success" ? props.copySuggestions.suggestions.data : []
+              }
               onApply={props.onApplyCopySuggestion}
               onDismiss={props.onDismissCopySuggestion}
               onRequest={props.onRequestCopySuggestion}
