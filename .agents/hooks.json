@@ -1,0 +1,17 @@
+{
+  "post-edit-lint": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/hooks/post-edit-lint-agy.mjs",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}
