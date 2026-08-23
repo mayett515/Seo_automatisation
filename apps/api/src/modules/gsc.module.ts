@@ -468,18 +468,20 @@ class GscService implements OnModuleDestroy {
     let signals: (typeof gscOpportunitySignals.$inferSelect)[] = [];
 
     if (latestSync) {
-      rows = await db
-        .select()
-        .from(gscSearchAnalyticsRows)
-        .where(eq(gscSearchAnalyticsRows.syncRunId, latestSync.id))
-        .orderBy(desc(gscSearchAnalyticsRows.impressions))
-        .limit(25);
-      signals = await db
-        .select()
-        .from(gscOpportunitySignals)
-        .where(eq(gscOpportunitySignals.syncRunId, latestSync.id))
-        .orderBy(desc(gscOpportunitySignals.createdAt))
-        .limit(25);
+      [rows, signals] = await Promise.all([
+        db
+          .select()
+          .from(gscSearchAnalyticsRows)
+          .where(eq(gscSearchAnalyticsRows.syncRunId, latestSync.id))
+          .orderBy(desc(gscSearchAnalyticsRows.impressions))
+          .limit(25),
+        db
+          .select()
+          .from(gscOpportunitySignals)
+          .where(eq(gscOpportunitySignals.syncRunId, latestSync.id))
+          .orderBy(desc(gscOpportunitySignals.createdAt))
+          .limit(25)
+      ]);
     }
 
     return GscPerformanceSummarySchema.parse({

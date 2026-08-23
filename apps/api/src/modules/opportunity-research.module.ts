@@ -309,24 +309,26 @@ export class OpportunityResearchService {
       )
       .limit(1);
     if (!run) throw new NotFoundException("Opportunity Research run was not found for this project.");
-    const steps = await db
-      .select()
-      .from(agentRunSteps)
-      .where(and(eq(agentRunSteps.agentRunId, runId), eq(agentRunSteps.projectId, projectId)))
-      .orderBy(asc(agentRunSteps.createdAt))
-      .limit(100);
-    const events = await db
-      .select()
-      .from(agentRunEvents)
-      .where(and(eq(agentRunEvents.agentRunId, runId), eq(agentRunEvents.projectId, projectId)))
-      .orderBy(asc(agentRunEvents.sequence))
-      .limit(500);
-    const evidence = await db
-      .select()
-      .from(agentRunEvidenceItems)
-      .where(and(eq(agentRunEvidenceItems.agentRunId, runId), eq(agentRunEvidenceItems.projectId, projectId)))
-      .orderBy(asc(agentRunEvidenceItems.createdAt))
-      .limit(500);
+    const [steps, events, evidence] = await Promise.all([
+      db
+        .select()
+        .from(agentRunSteps)
+        .where(and(eq(agentRunSteps.agentRunId, runId), eq(agentRunSteps.projectId, projectId)))
+        .orderBy(asc(agentRunSteps.createdAt))
+        .limit(100),
+      db
+        .select()
+        .from(agentRunEvents)
+        .where(and(eq(agentRunEvents.agentRunId, runId), eq(agentRunEvents.projectId, projectId)))
+        .orderBy(asc(agentRunEvents.sequence))
+        .limit(500),
+      db
+        .select()
+        .from(agentRunEvidenceItems)
+        .where(and(eq(agentRunEvidenceItems.agentRunId, runId), eq(agentRunEvidenceItems.projectId, projectId)))
+        .orderBy(asc(agentRunEvidenceItems.createdAt))
+        .limit(500)
+    ]);
     return AgentRunTimelineResponseSchema.parse({
       projectId,
       runId,

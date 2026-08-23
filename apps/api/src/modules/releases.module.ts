@@ -32,6 +32,7 @@ import {
   PageJsonSchema,
   VerifyReleaseRequestSchema,
   type DeploymentStatus,
+  type PageJson,
   type ReleasePlan,
   type ReleaseCheck,
   type ReleaseNote,
@@ -73,7 +74,11 @@ import { ProjectAccessGuard } from "../auth/project-access.guard.js";
 import type { RequestWithAuth } from "../auth/types/authenticated-request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { MEDIA_ASSET_STORAGE } from "../media-storage.module.js";
-import { loadPreviewMediaManifest, verifyPreviewMediaManifestBytes } from "../preview-media.js";
+import {
+  loadPreviewMediaManifests,
+  verifyPreviewMediaManifestsBytes,
+  type PreviewMediaManifest
+} from "../preview-media.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -201,13 +206,12 @@ export class ReleasesService {
       throw new BadRequestException("Every release page version must belong to this project.");
     }
 
-    const verifiedManifestSha256ByPageVersionId = new Map<string, string>();
-    for (const row of preVerificationRows) {
-      verifiedManifestSha256ByPageVersionId.set(
-        row.pageVersionId,
-        await assertReleasePageMediaAvailable(db, this.mediaStorage, projectId, row.pageVersionId, row.pageJson)
-      );
-    }
+    const verifiedManifestSha256ByPageVersionId = await assertReleasePagesMediaAvailable(
+      db,
+      this.mediaStorage,
+      projectId,
+      preVerificationRows
+    );
 
     const insertedPlan = await db.transaction(async (tx) => {
       for (const pageVersionId of requestedPageVersionIds) {
@@ -277,15 +281,12 @@ export class ReleasesService {
         targetUrl: normalizeRelativeReleaseTargetRoute(row.targetUrl)
       }));
 
-      for (const row of validatedPageVersionRows) {
-        await assertReleasePageMediaManifestUnchanged(
-          tx,
-          projectId,
-          row.pageVersionId,
-          row.pageJson,
-          verifiedManifestSha256ByPageVersionId.get(row.pageVersionId)
-        );
-      }
+      await assertReleasePagesMediaManifestUnchanged(
+        tx,
+        projectId,
+        validatedPageVersionRows,
+        verifiedManifestSha256ByPageVersionId
+      );
 
       const activePlanRows = await tx
         .select({
@@ -1062,22 +1063,18 @@ class ReleasesController {
 })
 export class ReleasesModule {}
 
-async function assertReleasePageMediaAvailable(
+async function assertReleasePagesMediaAvailable(
   db: Pick<DatabaseClient, "select">,
   storage: Pick<MediaAssetStoragePort, "readPrivateObject">,
   projectId: string,
-  pageVersionId: string,
-  pageJsonInput: unknown
-): Promise<string> {
-  const pageJson = PageJsonSchema.safeParse(pageJsonInput);
-  if (!pageJson.success) {
-    throw new BadRequestException("Release page version does not contain valid PageJson.");
-  }
+  pages: readonly { pageVersionId: string; pageJson: unknown }[]
+): Promise<Map<string, string>> {
+  const parsedPages = parseReleasePageJsons(pages);
 
   try {
-    const manifest = await loadPreviewMediaManifest(db, projectId, pageVersionId, pageJson.data);
-    await verifyPreviewMediaManifestBytes(storage, manifest);
-    return manifest.sha256;
+    const manifests = await loadPreviewMediaManifests(db, projectId, parsedPages);
+    await verifyPreviewMediaManifestsBytes(storage, manifests.values());
+    return new Map([...manifests.entries()].map(([pageVersionId, manifest]) => [pageVersionId, manifest.sha256]));
   } catch {
     throw new BadRequestException(
       "Release page media references are unavailable or do not match the immutable project manifest."
@@ -1085,32 +1082,63 @@ async function assertReleasePageMediaAvailable(
   }
 }
 
-async function assertReleasePageMediaManifestUnchanged(
+async function assertReleasePageMediaAvailable(
   db: Pick<DatabaseClient, "select">,
+  storage: Pick<MediaAssetStoragePort, "readPrivateObject">,
   projectId: string,
   pageVersionId: string,
-  pageJsonInput: unknown,
-  verifiedManifestSha256: string | undefined
-): Promise<void> {
-  const pageJson = PageJsonSchema.safeParse(pageJsonInput);
-  if (!pageJson.success) {
-    throw new BadRequestException("Release page version does not contain valid PageJson.");
+  pageJsonInput: unknown
+): Promise<string> {
+  const hashes = await assertReleasePagesMediaAvailable(db, storage, projectId, [
+    { pageVersionId, pageJson: pageJsonInput }
+  ]);
+  const sha256 = hashes.get(pageVersionId);
+  if (!sha256) {
+    throw new BadRequestException(
+      "Release page media references are unavailable or do not match the immutable project manifest."
+    );
   }
+  return sha256;
+}
 
-  let currentManifestSha256: string;
+async function assertReleasePagesMediaManifestUnchanged(
+  db: Pick<DatabaseClient, "select">,
+  projectId: string,
+  pages: readonly { pageVersionId: string; pageJson: unknown }[],
+  verifiedManifestSha256ByPageVersionId: ReadonlyMap<string, string>
+): Promise<void> {
+  const parsedPages = parseReleasePageJsons(pages);
+
+  let manifests: Map<string, PreviewMediaManifest>;
   try {
-    currentManifestSha256 = (await loadPreviewMediaManifest(db, projectId, pageVersionId, pageJson.data)).sha256;
+    manifests = await loadPreviewMediaManifests(db, projectId, parsedPages);
   } catch {
     throw new BadRequestException(
       "Release page media references are unavailable or do not match the immutable project manifest."
     );
   }
 
-  if (!verifiedManifestSha256 || currentManifestSha256 !== verifiedManifestSha256) {
-    throw new BadRequestException(
-      "Release page media references are unavailable or do not match the immutable project manifest."
-    );
+  for (const page of parsedPages) {
+    const currentManifestSha256 = manifests.get(page.pageVersionId)?.sha256;
+    const verifiedManifestSha256 = verifiedManifestSha256ByPageVersionId.get(page.pageVersionId);
+    if (!verifiedManifestSha256 || currentManifestSha256 !== verifiedManifestSha256) {
+      throw new BadRequestException(
+        "Release page media references are unavailable or do not match the immutable project manifest."
+      );
+    }
   }
+}
+
+function parseReleasePageJsons(
+  pages: readonly { pageVersionId: string; pageJson: unknown }[]
+): { pageVersionId: string; pageJson: PageJson }[] {
+  return pages.map((page) => {
+    const pageJson = PageJsonSchema.safeParse(page.pageJson);
+    if (!pageJson.success) {
+      throw new BadRequestException("Release page version does not contain valid PageJson.");
+    }
+    return { pageVersionId: page.pageVersionId, pageJson: pageJson.data };
+  });
 }
 
 async function persistReleasePreflight(

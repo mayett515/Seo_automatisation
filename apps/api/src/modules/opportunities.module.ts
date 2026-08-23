@@ -419,13 +419,17 @@ async function countOpportunitiesByRun(
   }
 
   const rows = await db
-    .select({ agentRunId: opportunities.agentRunId })
+    .select({
+      agentRunId: opportunities.agentRunId,
+      opportunityCount: sql<number>`count(*)::int`
+    })
     .from(opportunities)
-    .where(and(eq(opportunities.projectId, projectId), inArray(opportunities.agentRunId, runIds)));
+    .where(and(eq(opportunities.projectId, projectId), inArray(opportunities.agentRunId, runIds)))
+    .groupBy(opportunities.agentRunId);
 
   for (const row of rows) {
     if (row.agentRunId) {
-      counts.set(row.agentRunId, (counts.get(row.agentRunId) ?? 0) + 1);
+      counts.set(row.agentRunId, row.opportunityCount);
     }
   }
 

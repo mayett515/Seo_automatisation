@@ -7,7 +7,8 @@ import {
   loadResolvedPageVersionMediaVariants,
   pageVersionProjectScope,
   pageProposals,
-  pageVersions
+  pageVersions,
+  type ResolvedPageVersionMediaVariantRecord
 } from "@localseo/db";
 import type { SelectablePageMediaVariantRecord } from "@localseo/db";
 import {
@@ -37,10 +38,45 @@ export async function loadPreviewMediaManifest(
   pageJson?: PageJson
 ): Promise<PreviewMediaManifest> {
   const storedPageJson = pageJson ?? (await loadStoredPageJson(db, projectId, pageVersionId));
+  const manifests = await loadPreviewMediaManifests(db, projectId, [{ pageVersionId, pageJson: storedPageJson }]);
+  const manifest = manifests.get(pageVersionId);
+  if (!manifest) {
+    throw new MediaManifestInvariantError("Page version media manifest was not resolved.");
+  }
+  return manifest;
+}
+
+export async function loadPreviewMediaManifests(
+  db: PreviewMediaReader,
+  projectId: string,
+  pages: readonly { pageVersionId: string; pageJson: PageJson }[]
+): Promise<Map<string, PreviewMediaManifest>> {
   const records = await loadResolvedPageVersionMediaVariants(db, {
     projectId,
-    pageVersions: [{ pageVersionId, assetIds: collectPageMediaAssetIds(storedPageJson) }]
+    pageVersions: pages.map((page) => ({
+      pageVersionId: page.pageVersionId,
+      assetIds: collectPageMediaAssetIds(page.pageJson)
+    }))
   });
+  const recordsByPageVersionId = new Map<string, ResolvedPageVersionMediaVariantRecord[]>();
+  for (const page of pages) {
+    recordsByPageVersionId.set(page.pageVersionId, []);
+  }
+  for (const record of records) {
+    const pageRecords = recordsByPageVersionId.get(record.pageVersionId);
+    if (pageRecords) {
+      pageRecords.push(record);
+    }
+  }
+
+  const manifests = new Map<string, PreviewMediaManifest>();
+  for (const page of pages) {
+    manifests.set(page.pageVersionId, previewManifestFromRecords(recordsByPageVersionId.get(page.pageVersionId) ?? []));
+  }
+  return manifests;
+}
+
+function previewManifestFromRecords(records: readonly ResolvedPageVersionMediaVariantRecord[]): PreviewMediaManifest {
   const entries = records.map((record) => ({
     assetId: record.assetId,
     variantKey: record.variantKey,
@@ -101,7 +137,15 @@ export async function verifyPreviewMediaManifestBytes(
   storage: Pick<MediaAssetStoragePort, "readPrivateObject">,
   manifest: PreviewMediaManifest
 ): Promise<void> {
-  await mapWithConcurrency(manifest.entries, maxConcurrentManifestByteReads, async (entry) => {
+  await verifyPreviewMediaManifestsBytes(storage, [manifest]);
+}
+
+export async function verifyPreviewMediaManifestsBytes(
+  storage: Pick<MediaAssetStoragePort, "readPrivateObject">,
+  manifests: Iterable<PreviewMediaManifest>
+): Promise<void> {
+  const entries = [...manifests].flatMap((manifest) => manifest.entries);
+  await mapWithConcurrency(entries, maxConcurrentManifestByteReads, async (entry) => {
     const body = await storage.readPrivateObject({ key: entry.storageKey, maxBytes: entry.bytes });
     if (body.byteLength !== entry.bytes || sha256Hex(body) !== entry.sha256) {
       throw new Error(`Media bytes do not match immutable manifest path '${entry.path}'.`);

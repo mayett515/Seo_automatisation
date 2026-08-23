@@ -163,8 +163,10 @@ export class PagesService {
 
   async listPageProposals(projectId: string): Promise<PageProposalListResponse> {
     const db = this.database.requireDb();
-    const proposalRows = await selectPageProposalRows(db, projectId);
-    const versionCounts = await selectPageVersionCountsByProposal(db, projectId);
+    const [proposalRows, versionCounts] = await Promise.all([
+      selectPageProposalRows(db, projectId),
+      selectPageVersionCountsByProposal(db, projectId)
+    ]);
 
     return PageProposalListResponseSchema.parse({
       projectId,

@@ -518,8 +518,11 @@ export class ProjectContextService {
       .groupBy(projectKnowledgeVersions.id, projectKnowledgeVersions.createdAt)
       .orderBy(desc(projectKnowledgeVersions.createdAt))
       .limit(input.limit);
-    const records: ProjectKnowledgeVersion[] = [];
-    for (const row of rows) records.push(await loadKnowledgeVersion(db, projectId, row.id));
+    const records = await loadKnowledgeVersions(
+      db,
+      projectId,
+      rows.map((row) => row.id)
+    );
     return ProjectKnowledgeSearchResponseSchema.parse({ projectId, records });
   }
 }
@@ -868,7 +871,18 @@ async function loadKnowledgeVersion(
   projectId: string,
   versionId: string
 ): Promise<ProjectKnowledgeVersion> {
-  const [row] = await db
+  const [record] = await loadKnowledgeVersions(db, projectId, [versionId]);
+  if (!record) throw new NotFoundException("Knowledge version was not found for this project.");
+  return record;
+}
+
+async function loadKnowledgeVersions(
+  db: DatabaseClient,
+  projectId: string,
+  versionIds: string[]
+): Promise<ProjectKnowledgeVersion[]> {
+  if (versionIds.length === 0) return [];
+  const versionRows = await db
     .select({
       version: projectKnowledgeVersions,
       documentKey: projectKnowledgeDocuments.documentKey,
@@ -877,41 +891,66 @@ async function loadKnowledgeVersion(
     })
     .from(projectKnowledgeVersions)
     .innerJoin(projectKnowledgeDocuments, eq(projectKnowledgeDocuments.id, projectKnowledgeVersions.documentId))
-    .where(and(eq(projectKnowledgeVersions.id, versionId), eq(projectKnowledgeVersions.projectId, projectId)))
-    .limit(1);
-  if (!row) throw new NotFoundException("Knowledge version was not found for this project.");
-  const scopes = await db
-    .select({ taskScope: projectKnowledgeTaskScopes.taskScope })
+    .where(and(inArray(projectKnowledgeVersions.id, versionIds), eq(projectKnowledgeVersions.projectId, projectId)));
+  if (versionRows.length !== versionIds.length) {
+    throw new NotFoundException("Knowledge version was not found for this project.");
+  }
+  const versionById = new Map(versionRows.map((row) => [row.version.id, row]));
+  const scopeRows = await db
+    .select({ versionId: projectKnowledgeTaskScopes.versionId, taskScope: projectKnowledgeTaskScopes.taskScope })
     .from(projectKnowledgeTaskScopes)
-    .where(eq(projectKnowledgeTaskScopes.versionId, versionId))
-    .orderBy(asc(projectKnowledgeTaskScopes.taskScope));
-  const links = await db
-    .select({ toVersionId: projectKnowledgeLinks.toVersionId, kind: projectKnowledgeLinks.kind })
+    .where(inArray(projectKnowledgeTaskScopes.versionId, versionIds))
+    .orderBy(asc(projectKnowledgeTaskScopes.versionId), asc(projectKnowledgeTaskScopes.taskScope));
+  const scopesByVersionId = new Map<string, Array<(typeof scopeRows)[number]["taskScope"]>>();
+  for (const scope of scopeRows) {
+    scopesByVersionId.set(scope.versionId, [...(scopesByVersionId.get(scope.versionId) ?? []), scope.taskScope]);
+  }
+  const linkRows = await db
+    .select({
+      fromVersionId: projectKnowledgeLinks.fromVersionId,
+      toVersionId: projectKnowledgeLinks.toVersionId,
+      kind: projectKnowledgeLinks.kind
+    })
     .from(projectKnowledgeLinks)
-    .where(eq(projectKnowledgeLinks.fromVersionId, versionId))
-    .orderBy(asc(projectKnowledgeLinks.kind), asc(projectKnowledgeLinks.toVersionId));
-  return ProjectKnowledgeVersionSchema.parse({
-    id: row.version.id,
-    documentId: row.version.documentId,
-    projectId: row.version.projectId,
-    documentKey: row.documentKey,
-    version: row.version.version,
-    title: row.version.title,
-    bodyMarkdown: row.version.bodyMarkdown,
-    status: row.version.status,
-    sourceKind: row.version.sourceKind,
-    sourceId: row.version.sourceId ?? undefined,
-    modelUsePolicy: row.version.modelUsePolicy,
-    isCurrent: row.currentApprovedVersionId === row.version.id,
-    documentRetiredAt: row.documentRetiredAt?.toISOString(),
-    contentSha256: row.version.contentSha256,
-    taskScopes: scopes.map((scope) => scope.taskScope),
-    links,
-    createdByUserId: row.version.createdByUserId ?? undefined,
-    reviewedByUserId: row.version.reviewedByUserId ?? undefined,
-    reviewedAt: row.version.reviewedAt?.toISOString(),
-    rejectionReason: row.version.rejectionReason ?? undefined,
-    createdAt: row.version.createdAt.toISOString()
+    .where(inArray(projectKnowledgeLinks.fromVersionId, versionIds))
+    .orderBy(
+      asc(projectKnowledgeLinks.fromVersionId),
+      asc(projectKnowledgeLinks.kind),
+      asc(projectKnowledgeLinks.toVersionId)
+    );
+  const linksByVersionId = new Map<string, Array<{ toVersionId: string; kind: (typeof linkRows)[number]["kind"] }>>();
+  for (const link of linkRows) {
+    linksByVersionId.set(link.fromVersionId, [
+      ...(linksByVersionId.get(link.fromVersionId) ?? []),
+      { toVersionId: link.toVersionId, kind: link.kind }
+    ]);
+  }
+  return versionIds.map((versionId) => {
+    const row = versionById.get(versionId);
+    if (!row) throw new NotFoundException("Knowledge version was not found for this project.");
+    return ProjectKnowledgeVersionSchema.parse({
+      id: row.version.id,
+      documentId: row.version.documentId,
+      projectId: row.version.projectId,
+      documentKey: row.documentKey,
+      version: row.version.version,
+      title: row.version.title,
+      bodyMarkdown: row.version.bodyMarkdown,
+      status: row.version.status,
+      sourceKind: row.version.sourceKind,
+      sourceId: row.version.sourceId ?? undefined,
+      modelUsePolicy: row.version.modelUsePolicy,
+      isCurrent: row.currentApprovedVersionId === row.version.id,
+      documentRetiredAt: row.documentRetiredAt?.toISOString(),
+      contentSha256: row.version.contentSha256,
+      taskScopes: scopesByVersionId.get(versionId) ?? [],
+      links: linksByVersionId.get(versionId) ?? [],
+      createdByUserId: row.version.createdByUserId ?? undefined,
+      reviewedByUserId: row.version.reviewedByUserId ?? undefined,
+      reviewedAt: row.version.reviewedAt?.toISOString(),
+      rejectionReason: row.version.rejectionReason ?? undefined,
+      createdAt: row.version.createdAt.toISOString()
+    });
   });
 }
 
