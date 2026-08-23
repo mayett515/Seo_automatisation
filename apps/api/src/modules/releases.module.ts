@@ -64,7 +64,7 @@ import {
   rollbackPoints,
   type DatabaseClient
 } from "@localseo/db";
-import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "@localseo/db/query";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, not, sql } from "@localseo/db/query";
 import { QueueProducerService } from "../queue-producer.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -1384,6 +1384,9 @@ async function loadRollbackSourceDeployment(
         eq(deployments.projectId, projectId),
         ne(deployments.releasePlanId, releasePlanId),
         isNotNull(deployments.providerDeployId),
+        // ADR 0009: manual reconciliation outranks a recorded providerDeployId,
+        // so a stranded deployment is never a rollback source.
+        not(eq(deployments.providerOperationStatus, "manual_reconciliation_required")),
         inArray(deployments.status, statuses)
       )
     )
@@ -1443,6 +1446,14 @@ async function loadDeploymentForRollbackExecution(
 
   if (!deployment) {
     throw new BadRequestException("No rollback-eligible deployment is available for this release plan.");
+  }
+
+  // ADR 0009: manual reconciliation is a terminal stop sign for automation.
+  // The worker would fail this rollback closed; refuse it upfront instead.
+  if (deployment.providerOperationStatus === "manual_reconciliation_required") {
+    throw new ConflictException(
+      "Deployment provider state requires manual reconciliation before rollback can be executed."
+    );
   }
 
   return deployment;

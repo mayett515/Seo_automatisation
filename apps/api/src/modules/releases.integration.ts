@@ -1,10 +1,12 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { ConflictException } from "@nestjs/common";
 import {
   type DeploymentStatus,
   type PageJson,
   type PageVersionStatus,
+  type ProviderOperationStatus,
   type ReleasePlanStatus,
   type ReleaseVerificationStatus
 } from "@localseo/contracts";
@@ -694,6 +696,34 @@ void describe(
       assert.equal(queue.addCalls.length, 0);
     });
 
+    void it("rejects rollback execution when the deployment requires manual provider reconciliation", async () => {
+      const fixture = await createReleaseFixture(db, {
+        projectName: "Manual Reconciliation Project",
+        releasePlanStatus: "failed",
+        deploymentStatus: "rollback_recommended",
+        verificationStatus: "rollback_recommended",
+        providerOperationStatus: "manual_reconciliation_required"
+      });
+      const rollbackPointId = await createRollbackPoint(db, fixture);
+      const queueService = new QueueProducerService(testDatabaseService(db));
+      const queue = new FakeQueue();
+      setRollbackQueue(queueService, queue);
+      service = new ReleasesService(queueService, testDatabaseService(db));
+
+      await assert.rejects(
+        () => service.executeRollback(fixture.projectId, fixture.releasePlanId, undefined, { rollbackPointId }),
+        (error: unknown) => {
+          assert.ok(error instanceof ConflictException);
+          assert.match(error.message, /requires manual reconciliation before rollback can be executed/u);
+          return true;
+        }
+      );
+
+      assert.equal(queue.addCalls.length, 0);
+      const rows = await db.select().from(jobRuns).where(eq(jobRuns.queueName, "rollback"));
+      assert.equal(rows.length, 0);
+    });
+
     void it("preflight prepares a provider-backed rollback point from the latest verified-good source", async () => {
       const fixture = await createPreflightRollbackFixture(db);
 
@@ -840,6 +870,51 @@ void describe(
       assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
       assert.deepEqual(rows[0]?.evidenceJson?.sourceDeploymentStatus, "live_healthy");
       assert.deepEqual(rows[0]?.evidenceJson?.sourceVerificationStatus, "live_healthy");
+    });
+
+    void it("preflight does not prepare a rollback point from a manually stranded deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousProviderOperationStatus: "manual_reconciliation_required"
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 0);
+    });
+
+    void it("preflight prefers an older verified-good rollback source over a newer manually stranded deployment", async () => {
+      const fixture = await createPreflightRollbackFixture(db, {
+        previousDeploymentUpdatedAt: new Date("2026-06-30T09:00:00.000Z")
+      });
+      const strandedDeploymentId = await createPriorRollbackSourceCandidate(db, {
+        projectId: fixture.projectId,
+        status: "live_healthy",
+        verificationStatus: "live_healthy",
+        providerDeployId: "stranded-provider-deploy",
+        providerOperationStatus: "manual_reconciliation_required",
+        updatedAt: new Date("2026-06-30T11:00:00.000Z")
+      });
+
+      await service.preflight(fixture.projectId, fixture.releasePlanId);
+
+      const rows = await db
+        .select()
+        .from(rollbackPoints)
+        .where(
+          and(eq(rollbackPoints.projectId, fixture.projectId), eq(rollbackPoints.releasePlanId, fixture.releasePlanId))
+        );
+
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.deploymentId, fixture.previousDeploymentId);
+      assert.notEqual(rows[0]?.deploymentId, strandedDeploymentId);
+      assert.equal(rows[0]?.providerDeployId, "previous-provider-deploy");
     });
 
     void it("preflight falls back to provider-succeeded rollback sources when no verified-good source exists", async () => {
@@ -1240,6 +1315,7 @@ async function createReleaseFixture(
     deploymentStatus?: DeploymentStatus;
     verificationStatus?: ReleaseVerificationStatus;
     providerDeployId?: string | null;
+    providerOperationStatus?: ProviderOperationStatus;
     targetUrl?: string;
   } = {}
 ): Promise<ReleaseFixture> {
@@ -1286,7 +1362,7 @@ async function createReleaseFixture(
       deploymentKey: `release_plan:${releasePlan.id}`,
       provider: "netlify",
       providerDeployId: input.providerDeployId === undefined ? `deploy-${releasePlan.id}` : input.providerDeployId,
-      providerOperationStatus: "recorded",
+      providerOperationStatus: input.providerOperationStatus ?? "recorded",
       liveUrl: "https://deploy-1--customer.netlify.app/",
       status: input.deploymentStatus ?? "provider_succeeded",
       verificationStatus: input.verificationStatus ?? "not_started",
@@ -1443,6 +1519,7 @@ async function createPreflightRollbackFixture(
     previousProviderDeployId?: string | null;
     previousDeploymentStatus?: DeploymentStatus;
     previousVerificationStatus?: ReleaseVerificationStatus;
+    previousProviderOperationStatus?: ProviderOperationStatus;
     previousDeploymentUpdatedAt?: Date;
   } = {}
 ): Promise<PreflightRollbackFixture> {
@@ -1480,7 +1557,7 @@ async function createPreflightRollbackFixture(
       provider: "netlify",
       providerDeployId:
         input.previousProviderDeployId === undefined ? "previous-provider-deploy" : input.previousProviderDeployId,
-      providerOperationStatus: "recorded",
+      providerOperationStatus: input.previousProviderOperationStatus ?? "recorded",
       liveUrl: "https://customer.example/",
       status: input.previousDeploymentStatus ?? "live_healthy",
       verificationStatus: input.previousVerificationStatus ?? "live_healthy",
@@ -1562,6 +1639,7 @@ async function createPriorRollbackSourceCandidate(
     status: DeploymentStatus;
     verificationStatus: ReleaseVerificationStatus;
     providerDeployId: string | null;
+    providerOperationStatus?: ProviderOperationStatus;
     updatedAt: Date;
   }
 ): Promise<string> {
@@ -1586,7 +1664,7 @@ async function createPriorRollbackSourceCandidate(
       deploymentKey: `release_plan:${releasePlan.id}`,
       provider: "netlify",
       providerDeployId: input.providerDeployId,
-      providerOperationStatus: "recorded",
+      providerOperationStatus: input.providerOperationStatus ?? "recorded",
       liveUrl: "https://customer.example/",
       status: input.status,
       verificationStatus: input.verificationStatus,

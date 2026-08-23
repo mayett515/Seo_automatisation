@@ -3145,6 +3145,27 @@ requireIncludes(
 );
 
 requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  'not(eq(deployments.providerOperationStatus, "manual_reconciliation_required"))',
+  "deploy-provider-operation-state",
+  "ADR 0009 manual reconciliation must exclude stranded deployments from API rollback source selection"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.module.ts",
+  "requires manual reconciliation before rollback can be executed",
+  "deploy-provider-operation-state",
+  "API rollback execution must refuse a manually stranded deployment upfront instead of failing closed in the worker"
+);
+
+requireIncludes(
+  "apps/api/src/modules/releases.integration.ts",
+  "rejects rollback execution when the deployment requires manual provider reconciliation",
+  "deploy-provider-operation-state",
+  "Release integration must pin the upfront manual-reconciliation rollback refusal"
+);
+
+requireIncludes(
   "apps/worker/src/handlers/release-verification.ts",
   "verificationProjectableDeploymentStatuses",
   "release-transition-cas",

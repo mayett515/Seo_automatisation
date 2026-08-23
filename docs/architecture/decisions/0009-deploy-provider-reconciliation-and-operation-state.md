@@ -81,6 +81,7 @@ Rejected. The worker must not delete or cancel provider resources automatically 
 - Do not expose Netlify digest protocol details as domain or contract-level fields.
 - Do not use provider-neutral `deploying` alone to skip upload resume; require local upload-complete evidence.
 - Do not implement retry loops around provider create unless the retry has an idempotency key or a duplicate guard.
+- Do not select a `manual_reconciliation_required` deployment as a rollback source, and do not accept one as a rollback execution target at the API boundary — the API refuses upfront instead of letting the worker fail closed.
 
 ## Related Files
 
@@ -90,5 +91,6 @@ Rejected. The worker must not delete or cancel provider resources automatically 
 - `packages/adapters/src/index.ts`
 - `packages/adapters/src/netlify-site-hosting.ts`
 - `apps/worker/src/handlers/deploy.ts`
+- `apps/api/src/modules/releases.module.ts`
 - `.ai-project-rules/04-deployment-agent.md`
 - `.ai-rules/04C-async-failure-cancellation-resilience.md`
