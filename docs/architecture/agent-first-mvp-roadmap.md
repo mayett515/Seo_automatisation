@@ -2,7 +2,7 @@
 
 Status: Accepted roadmap correction, refined after opportunity boundary review
 
-This document corrects the MVP roadmap after reviewing the local product pack and the `C:\big eater` Mastra/frontend findings. The product is not a deterministic "service-area gap finder" with AI added later. The product value is an AI-assisted local SEO workflow where agents scout, compare, reason, draft, and explain, while the platform validates, previews, approves, deploys, verifies, and reports through deterministic boundaries.
+This document corrects the MVP roadmap after reviewing the local product pack and the `../big-eater` Mastra/frontend findings. The product is not a deterministic "service-area gap finder" with AI added later. The product value is an AI-assisted local SEO workflow where agents scout, compare, reason, draft, and explain, while the platform validates, previews, approves, deploys, verifies, and reports through deterministic boundaries.
 
 ## Core Loop
 
@@ -632,15 +632,15 @@ Implement the minimal customer-site component registry needed by page proposals 
 
 Architecture decision: [ADR 0017 - Page Registry And PageJson Source Of Truth](decisions/0017-page-registry-and-page-json-source-of-truth.md).
 
-Source finding: `C:/big eater/page-registry-page-studio-stealer-findings-2026-07-06.md`.
+Source finding: `../big-eater/page-registry-page-studio-stealer-findings-2026-07-06.md`.
 
 Additional Page Studio and CSS/theme findings:
 
 ```text
-C:/big eater/page-studio/business-site-pattern-mining-findings-2026-07-07.md
-C:/big eater/page-studio/internal-css-theme-decision-2026-07-07.md
-C:/big eater/page-studio/business-site-deep-mining-pattern-cards-2026-07-07.md
-C:/big eater/css-system-pattern-mining/css-system-stealer-findings-2026-07-07.md
+../big-eater/page-studio/business-site-pattern-mining-findings-2026-07-07.md
+../big-eater/page-studio/internal-css-theme-decision-2026-07-07.md
+../big-eater/page-studio/business-site-deep-mining-pattern-cards-2026-07-07.md
+../big-eater/css-system-pattern-mining/css-system-stealer-findings-2026-07-07.md
 ```
 
 The implemented MVP registry starts with a small deployable Local SEO service-area skeleton:
@@ -1078,13 +1078,13 @@ agent_run_events streaming UI
 This roadmap is grounded in:
 
 ```text
-C:\big eater\mastra-agent-flow-ideas.md
-C:\big eater\frontend-ui-component-registry-stealer-findings-2026-07-01.md
-C:\big eater\ai-reasoning-opportunity-scout-stealer-findings-2026-07-02.md
-C:\big eater\mastra-docs-for-local-seo-project-2026-07-02.md
-C:\big eater\rag-stealer-findings-2026-07-02.md
-C:\big eater\agentic-evidence-web-ui-stealer-findings-2026-07-02.md
-C:\big eater\markdown-context-db-strategy-local-seo-2026-07-06.md
+../big-eater/mastra-agent-flow-ideas.md
+../big-eater/frontend-ui-component-registry-stealer-findings-2026-07-01.md
+../big-eater/ai-reasoning-opportunity-scout-stealer-findings-2026-07-02.md
+../big-eater/mastra-docs-for-local-seo-project-2026-07-02.md
+../big-eater/rag-stealer-findings-2026-07-02.md
+../big-eater/agentic-evidence-web-ui-stealer-findings-2026-07-02.md
+../big-eater/markdown-context-db-strategy-local-seo-2026-07-06.md
 ../martines-dach-gebaeudeservice/Seo\future-seo-growth-plan
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/05-template-component-preview-system.md
