@@ -1085,7 +1085,7 @@ C:\big eater\mastra-docs-for-local-seo-project-2026-07-02.md
 C:\big eater\rag-stealer-findings-2026-07-02.md
 C:\big eater\agentic-evidence-web-ui-stealer-findings-2026-07-02.md
 C:\big eater\markdown-context-db-strategy-local-seo-2026-07-06.md
-C:\gebäudeservicefirma\Seo\future-seo-growth-plan
+../martines-dach-gebaeudeservice/Seo\future-seo-growth-plan
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/05-template-component-preview-system.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/07-subdomains-local-pages.md

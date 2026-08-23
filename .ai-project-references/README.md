@@ -18,6 +18,12 @@ Do not treat it as product source of truth.
 field-evidence/kundenreport_seo_martines_v4.pdf
 ```
 
+The full Martines field corpus (report series v1-v4 with HTML sources,
+keyword analyses v1-v8, ungenutzte_potentiale, growth-plan bundle, raw GSC
+performance exports) lives as a read-only sibling repository at
+`../martines-dach-gebaeudeservice/Seo/`. This folder keeps only the frozen
+v4 report copy; consult the sibling for everything else.
+
 Use this as field evidence for report structure, ranking proof, SEO outcome framing, regional cluster presentation, ROI language, and customer-facing narrative.
 
 Do not treat customer-specific details as reusable product defaults without adapting them.
