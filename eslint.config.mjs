@@ -33,6 +33,16 @@ export default tseslint.config(
     }
   },
   {
+    files: ["**/*.{js,mjs,cjs}"],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly"
+      }
+    }
+  },
+  {
     files: ["apps/web/src/**/*.{ts,tsx}", "packages/ui/src/**/*.{ts,tsx}"],
     ...reactHooks.configs.flat.recommended
   },
