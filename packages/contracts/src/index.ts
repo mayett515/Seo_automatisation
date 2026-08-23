@@ -676,105 +676,71 @@ export const QueueJobSchema = z.object({
   createdAt: z.string().datetime()
 });
 
-export const DeployJobDataSchema = z.object({
-  projectId: ProjectIdSchema,
-  releasePlanId: z.string().min(1),
-  deploymentKey: z.string().min(1),
+/** Shared optional audit/retry fields on queue job payloads. Not `.strict()`: callers opt in. */
+const JobDataEnvelopeSchema = z.object({
   maxAttempts: z.number().int().positive().optional(),
   jobRunId: z.string().min(1).optional(),
   triggeredByUserId: z.string().min(1).nullable().optional(),
   triggerSource: z.string().min(1).optional()
 });
 
-export const RollbackJobDataSchema = z.object({
+export const DeployJobDataSchema = JobDataEnvelopeSchema.extend({
+  projectId: ProjectIdSchema,
+  releasePlanId: z.string().min(1),
+  deploymentKey: z.string().min(1)
+});
+
+export const RollbackJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
   releasePlanId: z.string().min(1),
   deploymentId: z.string().min(1),
-  rollbackPointId: z.string().min(1),
-  maxAttempts: z.number().int().positive().optional(),
-  jobRunId: z.string().min(1).optional(),
-  triggeredByUserId: z.string().min(1).nullable().optional(),
-  triggerSource: z.string().min(1).optional()
+  rollbackPointId: z.string().min(1)
 });
 
-export const ReleaseVerificationJobDataSchema = z
-  .object({
-    projectId: ProjectIdSchema,
-    releasePlanId: z.string().min(1),
-    deploymentId: z.string().min(1),
-    verificationId: z.string().min(1),
-    maxAttempts: z.number().int().positive().optional(),
-    jobRunId: z.string().min(1).optional(),
-    triggeredByUserId: z.string().min(1).nullable().optional(),
-    triggerSource: z.string().min(1).optional()
-  })
-  .strict();
+export const ReleaseVerificationJobDataSchema = JobDataEnvelopeSchema.extend({
+  projectId: ProjectIdSchema,
+  releasePlanId: z.string().min(1),
+  deploymentId: z.string().min(1),
+  verificationId: z.string().min(1)
+}).strict();
 
-export const WebsiteImportJobDataSchema = z.object({
+export const WebsiteImportJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
   importRunId: z.string().min(1),
-  sourceUrl: WebsiteImportSourceUrlSchema,
-  maxAttempts: z.number().int().positive().optional(),
-  jobRunId: z.string().min(1).optional(),
-  triggeredByUserId: z.string().min(1).nullable().optional(),
-  triggerSource: z.string().min(1).optional()
+  sourceUrl: WebsiteImportSourceUrlSchema
 });
 
-export const OpportunityScoutJobDataSchema = z.object({
+export const OpportunityScoutJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
   runId: z.string().min(1),
-  maxBriefs: z.number().int().positive().max(12).optional(),
-  maxAttempts: z.number().int().positive().optional(),
-  jobRunId: z.string().min(1).optional(),
-  triggeredByUserId: z.string().min(1).nullable().optional(),
-  triggerSource: z.string().min(1).optional()
+  maxBriefs: z.number().int().positive().max(12).optional()
 });
 
-export const PageProposalJobDataSchema = z
-  .object({
-    projectId: ProjectIdSchema,
-    runId: z.string().min(1),
-    opportunityId: z.string().min(1),
-    maxAttempts: z.number().int().positive().optional(),
-    jobRunId: z.string().min(1).optional(),
-    triggeredByUserId: z.string().min(1).nullable().optional(),
-    triggerSource: z.string().min(1).optional()
-  })
-  .strict();
+export const PageProposalJobDataSchema = JobDataEnvelopeSchema.extend({
+  projectId: ProjectIdSchema,
+  runId: z.string().min(1),
+  opportunityId: z.string().min(1)
+}).strict();
 
-export const SectionCopySuggestionJobDataSchema = z
-  .object({
-    projectId: ProjectIdSchema,
-    runId: z.string().min(1),
-    suggestionId: z.string().min(1),
-    pageVersionId: z.string().min(1),
-    sectionId: z.string().trim().min(1).max(120),
-    maxAttempts: z.number().int().positive().optional(),
-    jobRunId: z.string().min(1).optional(),
-    triggeredByUserId: z.string().min(1).nullable().optional(),
-    triggerSource: z.string().min(1).optional()
-  })
-  .strict();
+export const SectionCopySuggestionJobDataSchema = JobDataEnvelopeSchema.extend({
+  projectId: ProjectIdSchema,
+  runId: z.string().min(1),
+  suggestionId: z.string().min(1),
+  pageVersionId: z.string().min(1),
+  sectionId: z.string().trim().min(1).max(120)
+}).strict();
 
-export const MediaProcessingJobDataSchema = z
-  .object({
-    projectId: ProjectIdSchema,
-    assetId: z.string().uuid(),
-    maxAttempts: z.number().int().positive().optional(),
-    jobRunId: z.string().min(1).optional(),
-    triggeredByUserId: z.string().min(1).nullable().optional(),
-    triggerSource: z.string().min(1).optional()
-  })
-  .strict();
+export const MediaProcessingJobDataSchema = JobDataEnvelopeSchema.extend({
+  projectId: ProjectIdSchema,
+  assetId: z.string().uuid()
+}).strict();
 
 export const SerpScoutJobDataSchema = SerpScoutRequestSchema.extend({
   snapshotId: z.string().min(1),
-  agentRunId: z.string().min(1).optional(),
-  maxAttempts: z.number().int().positive().optional(),
-  jobRunId: z.string().min(1).optional(),
-  triggeredByUserId: z.string().min(1).nullable().optional(),
-  triggerSource: z.string().min(1).optional()
-}).strict();
+  agentRunId: z.string().min(1).optional()
+})
+  .merge(JobDataEnvelopeSchema)
+  .strict();
 
 export const CreateSerpScoutRunRequestSchema = SerpScoutRequestSchema.omit({ projectId: true }).strict();
 
@@ -784,17 +750,11 @@ export const CreateTechnicalAuditRunRequestSchema = z
   })
   .strict();
 
-export const TechnicalAuditJobDataSchema = z
-  .object({
-    projectId: ProjectIdSchema,
-    auditRunId: z.string().min(1),
-    sourceUrl: WebsiteImportSourceUrlSchema,
-    maxAttempts: z.number().int().positive().optional(),
-    jobRunId: z.string().min(1).optional(),
-    triggeredByUserId: z.string().min(1).nullable().optional(),
-    triggerSource: z.string().min(1).optional()
-  })
-  .strict();
+export const TechnicalAuditJobDataSchema = JobDataEnvelopeSchema.extend({
+  projectId: ProjectIdSchema,
+  auditRunId: z.string().min(1),
+  sourceUrl: WebsiteImportSourceUrlSchema
+}).strict();
 
 export const PagePathSchema = z
   .string()
