@@ -463,6 +463,8 @@ export function createReasoningAdapter(
 }
 
 function createSerpScoutAdapter(): SerpScoutPort {
+  // ADR 0015: paid SERP APIs are rejected for MVP. Fabricated snapshots stay
+  // labeled provider "mock" and cannot satisfy customer-safe ranking proof.
   return new MockSerpScoutAdapter();
 }
 

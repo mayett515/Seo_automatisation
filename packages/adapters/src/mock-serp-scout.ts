@@ -7,6 +7,7 @@ export type MockSerpScoutAdapterResolver =
       input: SerpScoutRequest & { snapshotId?: string; timeoutMs: number; agentRunId?: string }
     ) => SerpScoutResult | Promise<SerpScoutResult>);
 
+/** Fabricated SERP evidence (ADR 0015). Snapshots are provider "mock", never customer-safe proof. */
 export class MockSerpScoutAdapter implements SerpScoutPort {
   readonly calls: Array<SerpScoutRequest & { snapshotId?: string; timeoutMs: number; agentRunId?: string }> = [];
 
