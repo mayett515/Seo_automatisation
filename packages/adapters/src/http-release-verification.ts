@@ -6,6 +6,8 @@ export type HttpReleaseVerificationAdapterOptions = {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   userAgent?: string;
+  maxHtmlBytes?: number;
+  maxSitemapBytes?: number;
   maxConcurrentPageFetches?: number;
   maxConcurrentBrowserChecks?: number;
   browserCheckTimeoutMs?: number;
@@ -61,6 +63,8 @@ type PageFetchResult =
 
 const defaultTimeoutMs = 10_000;
 const defaultUserAgent = "localseo-verifier/0.1";
+const defaultMaxHtmlBytes = 512_000;
+const defaultMaxSitemapBytes = 512_000;
 const defaultMaxConcurrentPageFetches = 5;
 const defaultMaxConcurrentBrowserChecks = 2;
 const defaultBrowserCheckTimeoutMs = 15_000;
@@ -78,10 +82,19 @@ class VerificationRedirectError extends Error {
   }
 }
 
+class VerificationBodyLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VerificationBodyLimitError";
+  }
+}
+
 export class HttpReleaseVerificationAdapter implements VerificationPort {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly userAgent: string;
+  private readonly maxHtmlBytes: number;
+  private readonly maxSitemapBytes: number;
   private readonly maxConcurrentPageFetches: number;
   private readonly maxConcurrentBrowserChecks: number;
   private readonly browserCheckTimeoutMs: number;
@@ -91,6 +104,8 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
     this.userAgent = options.userAgent ?? defaultUserAgent;
+    this.maxHtmlBytes = options.maxHtmlBytes ?? defaultMaxHtmlBytes;
+    this.maxSitemapBytes = options.maxSitemapBytes ?? defaultMaxSitemapBytes;
     this.maxConcurrentPageFetches = Math.max(1, options.maxConcurrentPageFetches ?? defaultMaxConcurrentPageFetches);
     this.maxConcurrentBrowserChecks = Math.max(
       1,
@@ -207,7 +222,11 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
         };
       }
 
-      const html = await response.text();
+      const html = await readBoundedText(
+        response,
+        this.maxHtmlBytes,
+        "Live route body exceeded the verification byte limit."
+      );
 
       return {
         status: "ok",
@@ -265,7 +284,9 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
         headers: { "user-agent": this.userAgent },
         signal: abort.signal
       });
-      const body = response.ok ? await response.text() : "";
+      const body = response.ok
+        ? await readBoundedText(response, this.maxSitemapBytes, "Sitemap body exceeded the verification byte limit.")
+        : "";
       const expectedUrls = liveUrls.map((liveUrl) => safeNormalizeCanonicalUrl(liveUrl) ?? liveUrl);
       const sitemapUrls = sitemapLocations(body);
       const missingUrls = expectedUrls.filter((liveUrl) => !sitemapUrls.has(liveUrl));
@@ -291,7 +312,10 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
         scope: "sitemap",
         severity: "warning",
         result: "failed",
-        message: "Sitemap could not be fetched during verification.",
+        message:
+          error instanceof VerificationBodyLimitError
+            ? error.message
+            : "Sitemap could not be fetched during verification.",
         evidence: {
           targetUrl: sitemapUrl,
           observed: {
@@ -304,6 +328,49 @@ export class HttpReleaseVerificationAdapter implements VerificationPort {
       clearTimeout(timeout);
     }
   }
+}
+
+async function readBoundedText(response: Response, maxBytes: number, exceededMessage: string): Promise<string> {
+  const declared = Number(response.headers.get("content-length") ?? Number.NaN);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new VerificationBodyLimitError(exceededMessage);
+  }
+
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes) {
+      throw new VerificationBodyLimitError(exceededMessage);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  while (true) {
+    const next = await reader.read();
+    if (next.done) {
+      break;
+    }
+
+    total += next.value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new VerificationBodyLimitError(exceededMessage);
+    }
+
+    chunks.push(next.value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
 async function fetchSameOriginWithRedirects(

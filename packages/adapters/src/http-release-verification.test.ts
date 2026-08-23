@@ -402,6 +402,49 @@ void describe("HttpReleaseVerificationAdapter", () => {
     assert.equal(result.verificationStatus, "live_with_warnings");
     assert.equal(result.checks.find((check) => check.checkKey === "sitemap_readiness_check")?.result, "failed");
   });
+
+  void it("fails live-route verification when the HTML body exceeds the byte bound", async () => {
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch({
+        "https://example.test/dachreinigung-muenchen/": htmlResponse("x".repeat(64)),
+        "https://example.test/sitemap.xml": textResponse(
+          "<urlset><url><loc>https://example.test/dachreinigung-muenchen/</loc></url></urlset>"
+        )
+      }),
+      maxHtmlBytes: 16
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung-muenchen/"]
+    });
+
+    const statusCheck = result.checks.find((check) => check.checkKey === "http_status_check");
+    assert.equal(statusCheck?.result, "failed");
+    assert.equal(statusCheck?.message, "Live route body exceeded the verification byte limit.");
+    assert.equal(result.verificationStatus, "rollback_recommended");
+  });
+
+  void it("fails sitemap verification when the sitemap body exceeds the byte bound", async () => {
+    const adapter = new HttpReleaseVerificationAdapter({
+      fetchImpl: createFetch({
+        "https://example.test/dachreinigung-muenchen/": htmlResponse(
+          healthyPageHtml("https://example.test/dachreinigung-muenchen/")
+        ),
+        "https://example.test/sitemap.xml": textResponse("x".repeat(64))
+      }),
+      maxSitemapBytes: 16
+    });
+
+    const result = await adapter.verifyRelease({
+      releasePlanId: "release-1",
+      liveUrls: ["https://example.test/dachreinigung-muenchen/"]
+    });
+
+    const sitemapCheck = result.checks.find((check) => check.checkKey === "sitemap_readiness_check");
+    assert.equal(sitemapCheck?.result, "failed");
+    assert.equal(sitemapCheck?.message, "Sitemap body exceeded the verification byte limit.");
+  });
 });
 
 function createFetch(responses: Record<string, Response>, requestedUrls: string[] = []): typeof fetch {
