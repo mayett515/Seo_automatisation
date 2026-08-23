@@ -3144,6 +3144,35 @@ requireIncludes(
   "Deploy tests must pin that a manual row with a provider deploy id never reconciles against the provider"
 );
 
+requireOrderedIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  'return { kind: "manual_reconciliation" };',
+  'return { kind: "replay" };',
+  "deploy-provider-operation-state",
+  "ADR 0009 manual reconciliation must outrank replay in the deploy decision"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.test.ts",
+  "stops instead of replaying a verified healthy deployment that requires manual reconciliation",
+  "deploy-provider-operation-state",
+  "Deploy tests must pin that a replayable manual-reconciliation row stops instead of reporting already_deployed"
+);
+
+requireRegex(
+  "apps/worker/src/handlers/deploy.ts",
+  /async markReleaseLive\(data\) \{[\s\S]*?"manual_reconciliation_required"[\s\S]*?async markFailed/u,
+  "deploy-provider-operation-state",
+  "markReleaseLive must suppress live projection while the deployment requires manual reconciliation"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.integration.ts",
+  "does not project a release live through markReleaseLive during manual reconciliation",
+  "deploy-provider-operation-state",
+  "Deploy integration must prove the markReleaseLive database guard suppresses manual-reconciliation projection"
+);
+
 requireIncludes(
   "apps/api/src/modules/releases.module.ts",
   'not(eq(deployments.providerOperationStatus, "manual_reconciliation_required"))',

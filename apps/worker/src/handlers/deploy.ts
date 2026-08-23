@@ -47,7 +47,7 @@ import {
 } from "@localseo/db";
 import type { ResolvedPageVersionMediaVariantRecord } from "@localseo/db";
 import type { Job } from "bullmq";
-import { and, eq, inArray, isNotNull, not, or, sql } from "@localseo/db/query";
+import { and, eq, inArray, isNotNull, not, notExists, or, sql } from "@localseo/db/query";
 import { isFinalJobAttempt, type WorkerDb, type WorkerDbHandle } from "../job-run.js";
 
 export type DeploymentRow = typeof deployments.$inferSelect;
@@ -1005,6 +1005,9 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
     },
 
     async markReleaseLive(data) {
+      // ADR 0009: manual reconciliation suppresses lifecycle projection at the database layer
+      // too, so a regressed worker path can never assert release-live truth over an uncertain
+      // provider operation.
       await db
         .update(releasePlans)
         .set({
@@ -1016,7 +1019,18 @@ export function createDrizzleDeployRepository(db: WorkerDb): DeployRepository {
           and(
             eq(releasePlans.id, data.releasePlanId),
             eq(releasePlans.projectId, data.projectId),
-            inArray(releasePlans.status, releaseLiveProjectionPlanStatuses)
+            inArray(releasePlans.status, releaseLiveProjectionPlanStatuses),
+            notExists(
+              db
+                .select({ id: deployments.id })
+                .from(deployments)
+                .where(
+                  and(
+                    eq(deployments.deploymentKey, data.deploymentKey),
+                    eq(deployments.providerOperationStatus, "manual_reconciliation_required")
+                  )
+                )
+            )
           )
         )
         .returning({ id: releasePlans.id });
@@ -1481,16 +1495,19 @@ async function replayProviderDeployment(
 
 /**
  * Ordering is load-bearing, not stylistic: ADR 0009 makes
- * `manual_reconciliation_required` a terminal stop sign for automation, so it outranks a recorded
- * providerDeployId. A row carrying both must stop, never reconcile against the provider.
+ * `manual_reconciliation_required` a terminal stop sign for automation, so it outranks every
+ * automated branch below it. It outranks replay because replay projects the release plan live,
+ * which is a lifecycle assertion the system must not make while provider truth is uncertain, and
+ * it outranks a recorded providerDeployId because a row carrying both must stop, never reconcile
+ * against the provider.
  */
 function decideProviderDeployAction(deployment: DeploymentRow): ProviderDeployAction {
-  if (isReplayableProviderDeployment(deployment)) {
-    return { kind: "replay" };
-  }
-
   if (requiresManualReconciliation(deployment)) {
     return { kind: "manual_reconciliation" };
+  }
+
+  if (isReplayableProviderDeployment(deployment)) {
+    return { kind: "replay" };
   }
 
   if (deployment.providerDeployId) {

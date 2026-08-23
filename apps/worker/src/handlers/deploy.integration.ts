@@ -251,6 +251,51 @@ void describe(
       assert.equal(releasePlan?.status, "rolled_back");
     });
 
+    void it("stops instead of replaying a healthy deployment that requires manual reconciliation", async () => {
+      const fixture = await createDeployFixture(db);
+      await db.update(releasePlans).set({ status: "deploying" }).where(eq(releasePlans.id, fixture.releasePlanId));
+      await insertDeployment(db, fixture, {
+        providerDeployId: "provider-deploy-1",
+        providerOperationStatus: "manual_reconciliation_required",
+        status: "live_healthy",
+        verificationStatus: "live_healthy"
+      });
+      const hosting = new StatefulSiteHosting();
+
+      await assert.rejects(
+        executeDeploy({
+          data: fixture.data,
+          jobId: fixture.deploymentKey,
+          objectStorage: new MemoryObjectStorage(),
+          repository: createDrizzleDeployRepository(db),
+          siteHosting: hosting
+        }),
+        ManualReconciliationRequiredError
+      );
+
+      assert.equal(hosting.beginCalls.length, 0);
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "deploying");
+    });
+
+    void it("does not project a release live through markReleaseLive during manual reconciliation", async () => {
+      const fixture = await createDeployFixture(db);
+      await db.update(releasePlans).set({ status: "deploying" }).where(eq(releasePlans.id, fixture.releasePlanId));
+      await insertDeployment(db, fixture, {
+        providerDeployId: "provider-deploy-1",
+        providerOperationStatus: "manual_reconciliation_required",
+        status: "live_healthy",
+        verificationStatus: "live_healthy"
+      });
+
+      await createDrizzleDeployRepository(db).markReleaseLive(fixture.data);
+
+      const [releasePlan] = await db.select().from(releasePlans).where(eq(releasePlans.id, fixture.releasePlanId));
+      assert.equal(releasePlan?.status, "deploying");
+      assert.equal(releasePlan?.deployedAt, null);
+    });
+
     void it("allows deploys without rollback evidence when prior deployments are unsafe rollback sources", async () => {
       const fixture = await createDeployFixture(db);
       await insertPriorDeployment(db, fixture, {

@@ -23,6 +23,8 @@ manual_reconciliation_required
 
 The deploy worker now treats `manual_reconciliation_required` as a terminal stop sign for automation. A retry must not overwrite it back to `in_flight` and must not create another provider deploy.
 
+The stop sign outranks every automated deploy action, not only provider creates. In precedence order: manual reconciliation stops the job first, then a replayable deployment status replays, then a recorded `providerDeployId` reconciles. A deployment whose status is replayable (for example `live_healthy` after a later operation stranded) but whose provider operation requires manual reconciliation must fail with the manual-reconciliation error instead of reporting `already_deployed`, because replay projects `releasePlans.status = live` and lifecycle projection is a truth claim automation must not make while provider state is uncertain. The same suppression exists at the database layer: `markReleaseLive` refuses the live projection while any deployment row for the deployment key carries `manual_reconciliation_required`, matching the guard release verification already applies to its lifecycle projection.
+
 Split provider deploy execution into phases:
 
 ```text
@@ -76,6 +78,8 @@ Rejected. The worker must not delete or cancel provider resources automatically 
 ## Regression Guard
 
 - Do not call provider create when `provider_operation_status = manual_reconciliation_required`.
+- Do not replay or report `already_deployed` for a deployment whose provider operation requires manual reconciliation; manual reconciliation outranks replay in the deploy decision.
+- Do not project `releasePlans.status = "live"` while any deployment row for the deployment key carries `manual_reconciliation_required`; `markReleaseLive` enforces this in its WHERE clause.
 - Do not overwrite manual reconciliation evidence through `startDeployment`, `markProviderMutationInFlight`, or failure handling.
 - Do not mark provider `accepted`, `upload_required`, `uploading`, `building`, or `queued` as live health.
 - Do not expose Netlify digest protocol details as domain or contract-level fields.
