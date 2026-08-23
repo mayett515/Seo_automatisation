@@ -4,10 +4,7 @@ import { errorMessage } from "./error-message.js";
 
 void describe("errorMessage", () => {
   void it("combines fallback and error message when error is an Error with non-empty message", () => {
-    assert.equal(
-      errorMessage(new Error("Network failed"), "Operation failed."),
-      "Operation failed. Network failed"
-    );
+    assert.equal(errorMessage(new Error("Network failed"), "Operation failed."), "Operation failed. Network failed");
   });
 
   void it("returns fallback when error is an Error with empty or whitespace message", () => {

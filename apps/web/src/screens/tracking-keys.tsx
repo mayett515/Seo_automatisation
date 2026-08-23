@@ -147,4 +147,3 @@ function useProjectId(): string {
   const params = useParams({ strict: false });
   return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }
-

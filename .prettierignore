@@ -5,6 +5,16 @@ coverage/
 .qwen/
 .drizzle-check-tmp-*/
 
+# Agent-layer verbatim mirrors: formatting them would break byte-parity
+# with the pack masters and host packs. Sync source is the pack, not Prettier.
+.claude/
+.agents/rules/
+.agents/skills/
+.agents/hooks/
+.agents/hooks.json
+.cursor/
+.codex/
+
 # Frozen/reference rule bundles, archive, and copied artifacts
 .ai-rules/
 archive/

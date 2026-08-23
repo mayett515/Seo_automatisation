@@ -4,8 +4,7 @@ import {
   type OpportunityResearchFailureCode
 } from "@localseo/contracts";
 
-const genericOpportunityResearchFailureMessage =
-  "Opportunity Research failed. Review the failure code and timeline.";
+const genericOpportunityResearchFailureMessage = "Opportunity Research failed. Review the failure code and timeline.";
 
 const opportunityResearchPublicFailureMessages = {
   configuration_error: "Opportunity Research is not configured.",
@@ -13,8 +12,7 @@ const opportunityResearchPublicFailureMessages = {
   provider_timeout: "Opportunity Research provider timed out.",
   provider_unavailable: "Opportunity Research provider is unavailable.",
   provider_response_invalid: "Opportunity Research provider returned invalid structured output.",
-  model_egress_blocked:
-    "Opportunity Research was stopped because selected material matched the secret-egress policy.",
+  model_egress_blocked: "Opportunity Research was stopped because selected material matched the secret-egress policy.",
   material_or_evidence_invalid: "Opportunity Research evidence changed or is no longer eligible.",
   material_stale: "Opportunity Research evidence changed or is no longer eligible.",
   qa_rejected: "Opportunity Research output failed deterministic QA.",
