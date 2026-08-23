@@ -135,8 +135,12 @@ function parseErrorMessage(body: unknown): string | undefined {
   return undefined;
 }
 
+type ViteApiEnv = {
+  VITE_API_URL?: unknown;
+};
+
 function getApiUrl(): string {
-  const env = import.meta.env;
+  const env = import.meta.env as ViteApiEnv | undefined;
   const configuredUrl = env ? env.VITE_API_URL : undefined;
   return typeof configuredUrl === "string" ? configuredUrl.replace(/\/$/u, "") : "/api";
 }
