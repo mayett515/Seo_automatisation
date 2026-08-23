@@ -63,14 +63,33 @@ export async function patchJson<T>(path: string, body: unknown, schema: JsonSche
   return schema.parse(await response.json());
 }
 
-async function createApiError(response: Response): Promise<Error> {
-  const detail = await readErrorDetail(response);
-  return new Error(
-    detail ? `API request failed: ${response.status}. ${detail}` : `API request failed: ${response.status}`
-  );
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string | undefined;
+
+  constructor(status: number, message: string, code: string | undefined) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
 }
 
-async function readErrorDetail(response: Response): Promise<string | undefined> {
+export async function createApiError(response: Response): Promise<ApiError> {
+  const { detail, code } = await readErrorBody(response);
+  const message = detail
+    ? `API request failed: ${response.status}. ${detail}`
+    : `API request failed: ${response.status}`;
+
+  return new ApiError(response.status, message, code);
+}
+
+type ErrorBody = {
+  detail: string | undefined;
+  code: string | undefined;
+};
+
+async function readErrorBody(response: Response): Promise<ErrorBody> {
   const contentType = response.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
@@ -78,15 +97,20 @@ async function readErrorDetail(response: Response): Promise<string | undefined> 
       .clone()
       .json()
       .catch(() => undefined);
-    const message = parseErrorMessage(body);
-    return message?.slice(0, 500);
+    if (!body || typeof body !== "object") {
+      return { detail: undefined, code: undefined };
+    }
+    const code = "code" in body && typeof body.code === "string" ? body.code : undefined;
+    const detail = parseErrorMessage(body)?.slice(0, 500);
+    return { detail, code };
   }
 
   const text = await response
     .clone()
     .text()
     .catch(() => "");
-  return text.trim().slice(0, 500) || undefined;
+  const detail = text.trim().slice(0, 500) || undefined;
+  return { detail, code: undefined };
 }
 
 function parseErrorMessage(body: unknown): string | undefined {
@@ -112,6 +136,7 @@ function parseErrorMessage(body: unknown): string | undefined {
 }
 
 function getApiUrl(): string {
-  const configuredUrl: unknown = import.meta.env.VITE_API_URL;
+  const env = import.meta.env;
+  const configuredUrl = env ? env.VITE_API_URL : undefined;
   return typeof configuredUrl === "string" ? configuredUrl.replace(/\/$/u, "") : "/api";
 }
