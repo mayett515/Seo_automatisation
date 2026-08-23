@@ -324,6 +324,12 @@ void describe("customer-safe report eligibility", () => {
     assert.equal(rankingMilestoneForRank(11), undefined);
   });
 
+  void it("never yields a milestone for a non-positive or non-integer rank", () => {
+    for (const rank of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(rankingMilestoneForRank(rank), undefined);
+    }
+  });
+
   void it("rejects stale, cross-project, and mismatched ranking evidence", () => {
     const decision = decideCustomerReportClaimEligibility({
       claim: { ...rankingClaim(), milestone: "top_10" },

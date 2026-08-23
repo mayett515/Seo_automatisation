@@ -189,22 +189,6 @@ export function chooseLocalRouteStrategy(input: {
   return "local_page";
 }
 
-export type RankingProofTier = "customer_proof" | "internal_roadmap" | "internal_radar";
-
-// An unparsed or out-of-range rank must never become customer-facing proof, so anything
-// outside the proven 1..10 window stays internal.
-export function classifyRankingProof(rank: number): RankingProofTier {
-  if (!Number.isSafeInteger(rank) || rank < 1) {
-    return "internal_radar";
-  }
-
-  if (rank <= 10) {
-    return "customer_proof";
-  }
-
-  return "internal_radar";
-}
-
 export type WebsiteImportFacts = NonNullable<WebsiteImportRun["facts"]>;
 
 export type WebsiteImportEvidencePageInput = {
