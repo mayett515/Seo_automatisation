@@ -12,7 +12,7 @@ one-off audit.
 ## Procedure
 
 1. Run the bundled scanner first (path is from the project root):
-   `node .claude/skills/source-of-truth-audit/scripts/find-drift.mjs [rootDir]`.
+   `node .agents/skills/source-of-truth-audit/scripts/find-drift.mjs [rootDir]`.
    It flags exported interfaces/types declared adjacent to a same-named Zod
    schema without `z.infer`/`z.output` derivation, and same-named exported
    type declarations in multiple packages. Treat its output as candidates,
