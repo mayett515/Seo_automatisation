@@ -116,6 +116,13 @@ export type DeployRepository = {
   markFailed(data: DeployJobData, error: unknown): Promise<void>;
 };
 
+type ProviderDeployAction =
+  | { kind: "replay" }
+  | { kind: "manual_reconciliation" }
+  | { kind: "reconcile_provider_deploy" }
+  | { kind: "escalate_in_flight_without_provider_deploy_id" }
+  | { kind: "start_provider_deploy" };
+
 export type PendingDeploymentReconcileResult = {
   checked: number;
   succeeded: number;
@@ -215,37 +222,33 @@ export async function executeDeploy(input: {
 
     const existingDeployment = context.existingDeployment;
 
-    if (existingDeployment && isReplayableProviderDeployment(existingDeployment)) {
-      return replayProviderDeployment(input, existingDeployment);
-    }
+    if (existingDeployment) {
+      const decision = decideProviderDeployAction(existingDeployment);
 
-    if (existingDeployment && requiresManualReconciliation(existingDeployment)) {
-      throw new ManualReconciliationRequiredError("Provider operation requires manual reconciliation");
-    }
-
-    if (existingDeployment?.providerDeployId) {
-      hasProviderDeployEvidence = true;
-      return await reconcileExistingProviderDeploy({
-        data: input.data,
-        deployment: existingDeployment,
-        jobId: input.jobId,
-        repository: input.repository,
-        siteHosting: input.siteHosting
-      });
-    }
-
-    if (existingDeployment && hasInFlightProviderOperation(existingDeployment)) {
-      await input.repository.markManualReconciliationRequired({
-        data: input.data,
-        message: "Provider mutation was in flight without a recorded providerDeployId",
-        evidence: {
-          source: "deploy_worker_existing_in_flight_guard",
-          deploymentId: existingDeployment.id
-        }
-      });
-      throw new ManualReconciliationRequiredError(
-        "Provider mutation was in flight without a recorded providerDeployId; manual reconciliation is required"
-      );
+      switch (decision.kind) {
+        case "replay":
+          return replayProviderDeployment(input, existingDeployment);
+        case "manual_reconciliation":
+          throw new ManualReconciliationRequiredError("Provider operation requires manual reconciliation");
+        case "reconcile_provider_deploy":
+          hasProviderDeployEvidence = true;
+          return await reconcileExistingProviderDeploy({
+            data: input.data,
+            deployment: existingDeployment,
+            jobId: input.jobId,
+            repository: input.repository,
+            siteHosting: input.siteHosting
+          });
+        case "escalate_in_flight_without_provider_deploy_id":
+          return await escalateProviderMutationInFlight({
+            data: input.data,
+            deployment: existingDeployment,
+            repository: input.repository,
+            source: "deploy_worker_existing_in_flight_guard"
+          });
+        case "start_provider_deploy":
+          break;
+      }
     }
 
     const deployablePlan = toDeployablePlan(context.plan);
@@ -294,37 +297,31 @@ export async function executeDeploy(input: {
       evidence
     });
 
-    if (isReplayableProviderDeployment(deployment)) {
-      return replayProviderDeployment(input, deployment);
-    }
+    const startedDecision = decideProviderDeployAction(deployment);
 
-    if (deployment.providerDeployId) {
-      hasProviderDeployEvidence = true;
-      return await reconcileExistingProviderDeploy({
-        data: input.data,
-        deployment,
-        jobId: input.jobId,
-        repository: input.repository,
-        siteHosting: input.siteHosting
-      });
-    }
-
-    if (requiresManualReconciliation(deployment)) {
-      throw new ManualReconciliationRequiredError("Provider operation requires manual reconciliation");
-    }
-
-    if (hasInFlightProviderOperation(deployment)) {
-      await input.repository.markManualReconciliationRequired({
-        data: input.data,
-        message: "Provider mutation was in flight without a recorded providerDeployId",
-        evidence: {
-          source: "deploy_worker_started_in_flight_guard",
-          deploymentId: deployment.id
-        }
-      });
-      throw new ManualReconciliationRequiredError(
-        "Provider mutation was in flight without a recorded providerDeployId; manual reconciliation is required"
-      );
+    switch (startedDecision.kind) {
+      case "replay":
+        return replayProviderDeployment(input, deployment);
+      case "manual_reconciliation":
+        throw new ManualReconciliationRequiredError("Provider operation requires manual reconciliation");
+      case "reconcile_provider_deploy":
+        hasProviderDeployEvidence = true;
+        return await reconcileExistingProviderDeploy({
+          data: input.data,
+          deployment,
+          jobId: input.jobId,
+          repository: input.repository,
+          siteHosting: input.siteHosting
+        });
+      case "escalate_in_flight_without_provider_deploy_id":
+        return await escalateProviderMutationInFlight({
+          data: input.data,
+          deployment,
+          repository: input.repository,
+          source: "deploy_worker_started_in_flight_guard"
+        });
+      case "start_provider_deploy":
+        break;
     }
 
     await input.repository.markProviderMutationInFlight({
@@ -1480,6 +1477,51 @@ async function replayProviderDeployment(
     providerDeployId: deployment.providerDeployId ?? undefined,
     status: "already_deployed"
   };
+}
+
+/**
+ * Ordering is load-bearing, not stylistic: ADR 0009 makes
+ * `manual_reconciliation_required` a terminal stop sign for automation, so it outranks a recorded
+ * providerDeployId. A row carrying both must stop, never reconcile against the provider.
+ */
+function decideProviderDeployAction(deployment: DeploymentRow): ProviderDeployAction {
+  if (isReplayableProviderDeployment(deployment)) {
+    return { kind: "replay" };
+  }
+
+  if (requiresManualReconciliation(deployment)) {
+    return { kind: "manual_reconciliation" };
+  }
+
+  if (deployment.providerDeployId) {
+    return { kind: "reconcile_provider_deploy" };
+  }
+
+  if (hasInFlightProviderOperation(deployment)) {
+    return { kind: "escalate_in_flight_without_provider_deploy_id" };
+  }
+
+  return { kind: "start_provider_deploy" };
+}
+
+async function escalateProviderMutationInFlight(input: {
+  data: DeployJobData;
+  deployment: DeploymentRow;
+  repository: DeployRepository;
+  source: "deploy_worker_existing_in_flight_guard" | "deploy_worker_started_in_flight_guard";
+}): Promise<never> {
+  await input.repository.markManualReconciliationRequired({
+    data: input.data,
+    message: "Provider mutation was in flight without a recorded providerDeployId",
+    evidence: {
+      source: input.source,
+      deploymentId: input.deployment.id
+    }
+  });
+
+  throw new ManualReconciliationRequiredError(
+    "Provider mutation was in flight without a recorded providerDeployId; manual reconciliation is required"
+  );
 }
 
 function isReplayableProviderDeployment(deployment: DeploymentRow): boolean {

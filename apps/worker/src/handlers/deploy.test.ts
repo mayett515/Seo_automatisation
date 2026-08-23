@@ -998,6 +998,67 @@ void describe("executeDeploy", () => {
     assert.equal(repository.failed.length, 0);
   });
 
+  void it("stops on manual reconciliation rows that already carry a provider deploy id", async () => {
+    const data = deployJobData();
+    const repository = createRepository(
+      deployContext({
+        existingDeployment: deploymentRow({
+          status: "deploying",
+          providerOperationStatus: "manual_reconciliation_required",
+          providerDeployId: "provider-deploy-1"
+        })
+      })
+    );
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not be called"), undefined, {
+          getDeployError: new Error("provider should not be called")
+        })
+      }),
+      /manual reconciliation/u
+    );
+
+    assert.equal(repository.started.length, 0);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.providerUploadCompleted.length, 0);
+    assert.equal(repository.failed.length, 0);
+  });
+
+  void it("stops when start returns a manual reconciliation row that already carries a provider deploy id", async () => {
+    const data = deployJobData();
+    const repository = createRepository(deployContext(), {
+      startDeploymentResult: deploymentRow({
+        status: "deploying",
+        providerOperationStatus: "manual_reconciliation_required",
+        providerDeployId: "provider-deploy-1"
+      })
+    });
+
+    await assert.rejects(
+      executeDeploy({
+        data,
+        jobId: data.deploymentKey,
+        objectStorage: createObjectStorage(),
+        repository,
+        siteHosting: createSiteHosting(new Error("provider should not be called"), undefined, {
+          getDeployError: new Error("provider should not be called")
+        })
+      }),
+      /manual reconciliation/u
+    );
+
+    assert.equal(repository.started.length, 1);
+    assert.equal(repository.providerInFlight.length, 0);
+    assert.equal(repository.providerSucceeded.length, 0);
+    assert.equal(repository.providerUploadCompleted.length, 0);
+    assert.equal(repository.failed.length, 0);
+  });
+
   void it("records provider deploy ids before upload failures are retried", async () => {
     const data = deployJobData();
     const repository = createRepository();
