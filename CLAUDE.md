@@ -4,7 +4,8 @@ Claude-native successor to the Pragmatic TypeScript v3 rule scheme.
 This file holds only what is true in every session. Standards that apply to a
 class of files live in `.claude/rules/` and load on path match. Workflows with
 a start and an end live in `.claude/skills/`. Deterministic checks live in
-lint, tsc, and hooks — pack documentation: `.claude/PACK.md`.
+lint, tsc, and hooks — pack documentation: the pack repository README
+(`claude-workflows/typescript/README.md`).
 
 ## Core formula
 
@@ -55,9 +56,7 @@ valid outcome. Never refactor to prove a rule applies.
 
 ## Host repo commands
 
-<!-- Adjust these when adopting in a host repository. Keep only commands
-     Claude cannot guess from package.json. -->
-
-- `pnpm lint` / `pnpm typecheck` — fast gates, run after every change set
-- `pnpm test` — unit tests
-- `pnpm check` — full gate (format, guards, lint, typecheck, db, build, test)
+- `corepack pnpm lint` / `corepack pnpm typecheck` — fast gates, run after every change set
+- `corepack pnpm test` — unit tests
+- `corepack pnpm check` — full gate (format, guards, lint, typecheck, db, build, test)
+- `corepack pnpm exec tsx tools/check-architecture-regression-guards.ts` — architecture anchors, run before every commit

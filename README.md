@@ -39,7 +39,7 @@ Agents never approve, deploy, roll back, mutate providers, publish sitemaps, or 
 - **Production release spine**: releases require preflight, approval, deploy execution, post-deploy verification, rollback evidence, and exact persisted status.
 - **Worker-first automation**: long-running work goes through BullMQ workers and auditable job/run ledgers instead of blocking HTTP handlers.
 - **Provider isolation**: Netlify, Google Search Console, crawling/import, object storage, tracking, verification, and AI reasoning live behind purpose-named ports/adapters.
-- **AI-development guardrails**: root and nested `AGENTS.md`, shared `.agents/skills/`, Cursor rules/hooks under `.cursor/`, `.ai-project-rules/`, and ADRs keep agent work aligned with the architecture (retired bundles: `archive/`).
+- **AI-development guardrails**: root and nested `AGENTS.md`, shared `.agents/skills/`, Cursor rules/hooks under `.cursor/`, the Claude-native layer (`CLAUDE.md` + `.claude/` with path-scoped rules, hooks, and skills), `.ai-project-rules/`, and ADRs keep agent work aligned with the architecture (retired bundles: `archive/`).
 
 ## Architecture At A Glance
 
@@ -317,6 +317,7 @@ flowchart TD
   AGENTS["AGENTS.md (root: generic TypeScript layer + routing)"] --> Nested["nested AGENTS.md per app/package"]
   AGENTS --> Skills[".agents/skills/ shared workflows"]
   AGENTS --> CursorL[".cursor/ rules, readonly subagent, hooks"]
+  AGENTS --> ClaudeL["CLAUDE.md + .claude/ path-scoped rules, hooks, skills"]
   AGENTS --> Product[".ai-project-rules/ Local SEO product rules"]
   AGENTS --> ADR["docs/architecture/decisions/ ADRs"]
   AGENTS --> Progress["docs/progress/ chronological progress"]
