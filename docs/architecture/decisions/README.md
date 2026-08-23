@@ -65,3 +65,4 @@ Start from [TEMPLATE.md](TEMPLATE.md).
 - [0021 - Digest-Bound Customer Report Publication And Typed Next Action Boundary](0021-digest-bound-customer-report-publication.md)
 - [0022 - Agentic Runtime And Evidence Ledger](0022-agentic-runtime-and-evidence-ledger.md)
 - [0023 - PostgreSQL Markdown Project Knowledge](0023-postgresql-markdown-project-knowledge.md)
+- [0024 - Vendored Agent Skill Pack Adoption](0024-vendored-agent-skill-pack-adoption.md)
