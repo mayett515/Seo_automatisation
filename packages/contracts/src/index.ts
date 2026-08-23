@@ -688,14 +688,14 @@ export const DeployJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
   releasePlanId: z.string().min(1),
   deploymentKey: z.string().min(1)
-});
+}).strict();
 
 export const RollbackJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
   releasePlanId: z.string().min(1),
   deploymentId: z.string().min(1),
   rollbackPointId: z.string().min(1)
-});
+}).strict();
 
 export const ReleaseVerificationJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
@@ -708,13 +708,13 @@ export const WebsiteImportJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
   importRunId: z.string().min(1),
   sourceUrl: WebsiteImportSourceUrlSchema
-});
+}).strict();
 
 export const OpportunityScoutJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,
   runId: z.string().min(1),
   maxBriefs: z.number().int().positive().max(12).optional()
-});
+}).strict();
 
 export const PageProposalJobDataSchema = JobDataEnvelopeSchema.extend({
   projectId: ProjectIdSchema,

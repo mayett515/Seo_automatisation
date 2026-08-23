@@ -27,6 +27,7 @@ import {
   SerpScoutQueueResponseSchema,
   TechnicalAuditJobDataSchema,
   TechnicalAuditQueueResponseSchema,
+  WebsiteImportJobDataSchema,
   WebsiteImportRunSchema,
   WebsiteImportQueueResponseSchema,
   type CreateOpportunityScoutRunRequest,
@@ -119,6 +120,8 @@ export class ProjectsService {
         queueName: "website-import",
         jobName: "website_import",
         jobId,
+        // Not parsed through WebsiteImportJobDataSchema: this dry-run branch records
+        // intent only (no importRunId exists yet) and never reaches the worker parser.
         data: { projectId, sourceUrl, triggeredByUserId: userId ?? null, triggerSource: "user_action" },
         audit: {
           projectId,
@@ -163,13 +166,13 @@ export class ProjectsService {
         queueName: "website-import",
         jobName: "website_import",
         jobId,
-        data: {
+        data: WebsiteImportJobDataSchema.parse({
           projectId,
           importRunId,
           sourceUrl,
           triggeredByUserId: userId ?? null,
           triggerSource: "user_action"
-        },
+        }),
         options: {
           attempts: 3,
           backoff: {
