@@ -1,9 +1,12 @@
 # Stealer Findings
 
-> Provenance note (2026-08-23): `Source:` lines referencing `C:ig eater\...`
-> point to machine-local snapshot files from an earlier workstation that no
-> longer exist on this machine. The findings below are self-contained
-> syntheses; the original snapshots are historical provenance only.
+> Provenance note (2026-08-23): the original big-eater snapshots are
+> preserved as a sibling repository at `../big-eater` (cloned from the
+> earlier workstation, frozen at commit 508ab73, 31 research and
+> pattern-mining entries). `Source:` lines below that reference
+> `C:ig eater\...` map to the same-named files there. Treat the clone
+> as read-only reference; new lessons still go through this findings
+> folder and the promotion matrix.
 
 
 This folder is editable.
