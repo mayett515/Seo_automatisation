@@ -15,6 +15,8 @@ export type HttpWebsiteCrawlerOptions = {
   maxDepth?: number;
   requestTimeoutMs?: number;
   maxHtmlBytes?: number;
+  maxFetchAttempts?: number;
+  retryDelayMs?: number;
   userAgent?: string;
 };
 
@@ -27,6 +29,8 @@ const defaultMaxPages = 8;
 const defaultMaxDepth = 1;
 const defaultRequestTimeoutMs = 10_000;
 const defaultMaxHtmlBytes = 512_000;
+const defaultMaxFetchAttempts = 2;
+const defaultRetryDelayMs = 100;
 const defaultUserAgent = "LocalSEO-WebsiteImporter/0.1";
 
 export class HttpWebsiteCrawlerAdapter implements CrawlerPort {
@@ -35,6 +39,8 @@ export class HttpWebsiteCrawlerAdapter implements CrawlerPort {
   private readonly maxDepth: number;
   private readonly requestTimeoutMs: number;
   private readonly maxHtmlBytes: number;
+  private readonly maxFetchAttempts: number;
+  private readonly retryDelayMs: number;
   private readonly userAgent: string;
 
   constructor(
@@ -46,6 +52,8 @@ export class HttpWebsiteCrawlerAdapter implements CrawlerPort {
     this.maxDepth = options.maxDepth ?? defaultMaxDepth;
     this.requestTimeoutMs = options.requestTimeoutMs ?? defaultRequestTimeoutMs;
     this.maxHtmlBytes = options.maxHtmlBytes ?? defaultMaxHtmlBytes;
+    this.maxFetchAttempts = Math.max(1, options.maxFetchAttempts ?? defaultMaxFetchAttempts);
+    this.retryDelayMs = Math.max(0, options.retryDelayMs ?? defaultRetryDelayMs);
     this.userAgent = options.userAgent ?? defaultUserAgent;
   }
 
@@ -81,7 +89,18 @@ export class HttpWebsiteCrawlerAdapter implements CrawlerPort {
         continue;
       }
 
-      const fetched = await this.fetchPage(next.url);
+      let fetched: { status: number; html?: string; finalUrl: URL };
+
+      try {
+        fetched = await this.fetchPageWithRetry(next.url);
+      } catch (error) {
+        skippedUrls.push({
+          url: normalizedUrl,
+          reason: skippedReasonForFetchFailure(error)
+        });
+        continue;
+      }
+
       const pageUrl = fetched.finalUrl;
       const normalizedPageUrl = normalizeUrlForVisit(pageUrl);
       seen.add(normalizedPageUrl);
@@ -140,6 +159,30 @@ export class HttpWebsiteCrawlerAdapter implements CrawlerPort {
     return snapshot;
   }
 
+  private async fetchPageWithRetry(url: URL): Promise<{ status: number; html?: string; finalUrl: URL }> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= this.maxFetchAttempts; attempt++) {
+      try {
+        return await this.fetchPage(url);
+      } catch (error) {
+        lastError = error;
+
+        if (attempt >= this.maxFetchAttempts) {
+          break;
+        }
+
+        await delay(this.retryDelayMs * attempt);
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+
+    throw new Error("Website import fetch failed.", { cause: lastError });
+  }
+
   private async fetchPage(url: URL, redirectCount = 0): Promise<{ status: number; html?: string; finalUrl: URL }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
@@ -193,6 +236,32 @@ export class HttpWebsiteCrawlerAdapter implements CrawlerPort {
       clearTimeout(timeout);
     }
   }
+}
+
+function skippedReasonForFetchFailure(error: unknown): "timeout" | "fetch_failed" {
+  if (!(error instanceof Error)) {
+    return "fetch_failed";
+  }
+
+  if (
+    error.name === "AbortError" ||
+    error.message.startsWith("Website import request timed out:") ||
+    (error.cause instanceof Error && error.cause.name === "AbortError")
+  ) {
+    return "timeout";
+  }
+
+  return "fetch_failed";
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function normalizeHttpUrl(value: string): URL {

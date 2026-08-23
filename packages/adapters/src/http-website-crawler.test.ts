@@ -7,12 +7,75 @@ import type { ObjectStoragePort } from "./index.js";
 void describe("HttpWebsiteCrawlerAdapter", () => {
   let server: Server;
   let baseUrl: string;
+  let flakyAttempts = 0;
 
   void before(async () => {
     server = createServer((request, response) => {
       if (request.url === "/redirect") {
         response.writeHead(302, { location: "https://external.test/ignore" });
         response.end();
+        return;
+      }
+
+      if (request.url === "/hang") {
+        request.on("close", () => undefined);
+        return;
+      }
+
+      if (request.url === "/drop") {
+        response.destroy();
+        return;
+      }
+
+      if (request.url === "/flaky") {
+        flakyAttempts += 1;
+        if (flakyAttempts === 1) {
+          response.destroy();
+          return;
+        }
+
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        response.end(`<!doctype html>
+<html>
+<head><title>Flaky Recovered</title></head>
+<body><h1>Recovered</h1></body>
+</html>`);
+        return;
+      }
+
+      if (request.url === "/ok") {
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        response.end(`<!doctype html>
+<html>
+<head><title>Ok Page</title></head>
+<body><h1>Ok</h1></body>
+</html>`);
+        return;
+      }
+
+      if (request.url === "/timeout-frontier") {
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        response.end(`<!doctype html>
+<html>
+<head><title>Timeout Frontier</title></head>
+<body>
+  <a href="/hang">Hang</a>
+  <a href="/ok">Ok</a>
+</body>
+</html>`);
+        return;
+      }
+
+      if (request.url === "/fetch-fail-frontier") {
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        response.end(`<!doctype html>
+<html>
+<head><title>Fetch Fail Frontier</title></head>
+<body>
+  <a href="/drop">Drop</a>
+  <a href="/ok">Ok</a>
+</body>
+</html>`);
         return;
       }
 
@@ -54,6 +117,7 @@ void describe("HttpWebsiteCrawlerAdapter", () => {
   });
 
   void after(async () => {
+    server.closeAllConnections();
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
@@ -103,6 +167,71 @@ void describe("HttpWebsiteCrawlerAdapter", () => {
     assert.deepEqual(snapshot.discoveredRoutes, ["/redirect"]);
     assert.equal(snapshot.pages[0]?.status, 302);
     assert.equal(snapshot.pages[0]?.url, `${baseUrl}/redirect`);
+  });
+
+  void it("skips a timed-out page after bounded retries and continues the crawl", async () => {
+    const storage = new MemoryObjectStorage();
+    const crawler = new HttpWebsiteCrawlerAdapter(storage, {
+      maxPages: 3,
+      maxDepth: 1,
+      requestTimeoutMs: 40,
+      retryDelayMs: 0
+    });
+
+    const snapshot = await crawler.crawlWebsite({
+      projectId: "project-1",
+      importRunId: "import-timeout",
+      sourceUrl: `${baseUrl}/timeout-frontier`
+    });
+
+    const hangSkip = snapshot.skippedUrls.find((skipped) => skipped.url === `${baseUrl}/hang`);
+    assert.equal(hangSkip?.reason, "timeout");
+    assert.equal(
+      snapshot.pages.some((page) => page.url === `${baseUrl}/ok`),
+      true
+    );
+  });
+
+  void it("skips a fetch failure after bounded retries and continues the crawl", async () => {
+    const storage = new MemoryObjectStorage();
+    const crawler = new HttpWebsiteCrawlerAdapter(storage, {
+      maxPages: 3,
+      maxDepth: 1,
+      retryDelayMs: 0
+    });
+
+    const snapshot = await crawler.crawlWebsite({
+      projectId: "project-1",
+      importRunId: "import-fetch-failed",
+      sourceUrl: `${baseUrl}/fetch-fail-frontier`
+    });
+
+    const failedSkip = snapshot.skippedUrls.find((skipped) => skipped.url === `${baseUrl}/drop`);
+    assert.equal(failedSkip?.reason, "fetch_failed");
+    assert.equal(
+      snapshot.pages.some((page) => page.url === `${baseUrl}/ok`),
+      true
+    );
+  });
+
+  void it("retries a transient fetch failure and records the recovered page", async () => {
+    flakyAttempts = 0;
+    const storage = new MemoryObjectStorage();
+    const crawler = new HttpWebsiteCrawlerAdapter(storage, {
+      maxPages: 2,
+      maxDepth: 0,
+      retryDelayMs: 0
+    });
+
+    const snapshot = await crawler.crawlWebsite({
+      projectId: "project-1",
+      importRunId: "import-flaky",
+      sourceUrl: `${baseUrl}/flaky`
+    });
+
+    assert.equal(snapshot.pages[0]?.status, 200);
+    assert.equal(snapshot.pages[0]?.title, "Flaky Recovered");
+    assert.equal(snapshot.skippedUrls.length, 0);
   });
 });
 
