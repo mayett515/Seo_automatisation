@@ -1,39 +1,39 @@
 #!/usr/bin/env node
+/**
+ * find-drift.mjs — heuristic scanner for duplicate/mirrored type definitions.
+ *
+ * Flags, as CANDIDATES for the source-of-truth audit (not verdicts):
+ *  1. A package that declares `const XSchema = z....` AND exports a
+ *     non-derived `interface X` / `type X = ...` in the SAME package —
+ *     a likely hand-written mirror. (Name match is case-insensitive.)
+ *  2. The same exported type name declared in more than one package —
+ *     possible duplicate truth across package boundaries. Generic names
+ *     (Props, Config, ...) are stop-worded; .d.ts files are skipped.
+ *
+ * A clean run means the scanner found nothing — it does not prove nothing
+ * exists. Grep-based classification (step 2 of the skill) still applies.
+ *
+ * Usage: node find-drift.mjs [rootDir]   (default: cwd)
+ * Exit code: 0 always — reporting tool, not a CI gate. Promote confirmed
+ * classes of drift into the host repo's guard script instead.
+ */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 const root = process.argv[2] ?? process.cwd();
-const ignored = new Set([
-  "node_modules",
-  "dist",
-  "coverage",
-  ".git",
-  "build",
-  ".next",
-  ".turbo",
-  "out",
-  ".cache",
-  "tmp"
+const IGNORED = new Set([
+  "node_modules", "dist", "coverage", ".git", "build", ".next", ".turbo", "out", ".cache", "tmp",
 ]);
-const stopwords = new Set([
-  "Props",
-  "Options",
-  "Config",
-  "Params",
-  "Result",
-  "Handler",
-  "Context",
-  "State",
-  "Input",
-  "Output"
+const STOPWORDS = new Set([
+  "Props", "Options", "Config", "Params", "Result", "Handler", "Context", "State", "Input", "Output",
 ]);
 
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {
-    if (ignored.has(entry)) continue;
+    if (IGNORED.has(entry)) continue;
     const full = join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) yield* walk(full);
+    const st = statSync(full);
+    if (st.isDirectory()) yield* walk(full);
     else if (
       /\.(ts|tsx|mts|cts)$/.test(entry) &&
       !entry.endsWith(".d.ts") &&
@@ -43,60 +43,67 @@ function* walk(dir) {
   }
 }
 
-function packageOf(path) {
-  const parts = path.split(sep);
-  for (const parent of ["packages", "apps"]) {
-    const index = parts.indexOf(parent);
-    if (index >= 0 && parts[index + 1]) return `${parent}/${parts[index + 1]}`;
-  }
+function pkgOf(rel) {
+  const parts = rel.split(sep);
+  const i = parts.indexOf("packages");
+  if (i >= 0 && parts[i + 1]) return `packages/${parts[i + 1]}`;
+  const j = parts.indexOf("apps");
+  if (j >= 0 && parts[j + 1]) return `apps/${parts[j + 1]}`;
   return parts[0] ?? ".";
 }
 
-const schemas = [];
-const declarations = new Map();
+const schemas = []; // { base, file, pkg }
+const typeDecls = new Map(); // typeName -> [{file, pkg, derived}]
 
 for (const file of walk(root)) {
-  const source = readFileSync(file, "utf8");
+  const src = readFileSync(file, "utf8");
   const rel = relative(root, file);
-  const pkg = packageOf(rel);
+  const pkg = pkgOf(rel);
 
-  for (const match of source.matchAll(/const\s+(\w+?)Schema\s*(?::[^=\n]+)?=\s*z[.(]/g)) {
-    schemas.push({ base: match[1], file: rel, pkg });
+  // matches: const XSchema = z...., const XSchema: z.ZodType<X> = z....
+  for (const m of src.matchAll(/const\s+(\w+?)Schema\s*(?::[^=\n]+)?=\s*z[.(]/g)) {
+    schemas.push({ base: m[1], file: rel, pkg });
   }
-
-  for (const match of source.matchAll(/export\s+(?:interface\s+(\w+)|type\s+(\w+)\s*(?:<[^>\n]*>)?\s*=)/g)) {
-    const name = match[1] ?? match[2];
-    const tail = source.slice(match.index, match.index + 400);
+  // matches: export interface X ... | export type X = / export type X<T> =
+  for (const m of src.matchAll(/export\s+(?:interface\s+(\w+)|type\s+(\w+)\s*(?:<[^>\n]*>)?\s*=)/g)) {
+    const name = m[1] ?? m[2];
+    // derivation window: from the declaration to the next export (or 400 chars)
+    const tail = src.slice(m.index, m.index + 400);
     const nextExport = tail.indexOf("\nexport ", 1);
-    const declaration = nextExport > 0 ? tail.slice(0, nextExport) : tail;
+    const windowText = nextExport > 0 ? tail.slice(0, nextExport) : tail;
     const derived =
-      /z\.(infer|input|output)\s*</.test(declaration) ||
-      /keyof typeof|typeof \w+\[|ReturnType\s*<|Parameters\s*</.test(declaration);
-    declarations.set(name, [...(declarations.get(name) ?? []), { file: rel, pkg, derived }]);
+      /z\.(infer|input|output)\s*</.test(windowText) ||
+      /keyof typeof|typeof \w+\[|ReturnType\s*<|Parameters\s*</.test(windowText);
+    const list = typeDecls.get(name) ?? [];
+    list.push({ file: rel, pkg, derived });
+    typeDecls.set(name, list);
   }
 }
 
 let findings = 0;
-console.log("== Schema and non-derived same-name type in one package ==");
-for (const schema of schemas) {
-  for (const [name, sites] of declarations) {
-    if (name.toLowerCase() !== schema.base.toLowerCase()) continue;
-    for (const site of sites) {
-      if (site.pkg === schema.pkg && !site.derived) {
-        findings += 1;
-        console.log(`  ${name}: schema in ${schema.file} | hand-written type in ${site.file}`);
-      }
+
+console.log("== Candidate mirrors (schema + non-derived same-name type in the SAME package) ==");
+for (const { base, file, pkg } of schemas) {
+  for (const [name, decls] of typeDecls) {
+    if (name.toLowerCase() !== base.toLowerCase()) continue;
+    for (const d of decls) {
+      if (d.pkg !== pkg || d.derived) continue;
+      findings++;
+      console.log(`  ${name}: schema in ${file} | hand-written type in ${d.file}`);
     }
   }
 }
 
-console.log("\n== Same exported type name in multiple packages ==");
-for (const [name, sites] of declarations) {
-  if (stopwords.has(name)) continue;
-  if (new Set(sites.map((site) => site.pkg)).size > 1) {
-    findings += 1;
-    console.log(`  ${name}: ${sites.map((site) => site.file).join(" | ")}`);
+console.log("\n== Same exported type name in multiple packages (stop-worded) ==");
+for (const [name, decls] of typeDecls) {
+  if (STOPWORDS.has(name)) continue;
+  const pkgs = new Set(decls.map((d) => d.pkg));
+  if (pkgs.size > 1) {
+    findings++;
+    console.log(`  ${name}: ${decls.map((d) => d.file).join(" | ")}`);
   }
 }
 
-console.log(`\n${findings} candidate(s). Classify each as source, derivation, mirror, or deliberate DTO boundary.`);
+console.log(
+  `\n${findings} candidate(s). Each needs manual classification: source, derivation, mirror, or deliberate DTO boundary. A clean run is not proof — continue with the grep pass.`,
+);
