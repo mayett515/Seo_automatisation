@@ -4851,6 +4851,20 @@ if (existsSync("docs/adr")) {
 }
 
 requireIncludes(
+  "AGENTS.md",
+  "never reconstruct one from the diff",
+  "vendored-skill-pack",
+  "the host-neutral spec-fidelity review question must stay in the root AGENTS.md (ADR 0024)"
+);
+
+requireIncludes(
+  "AGENTS.md",
+  "churn tells you where findings pay back",
+  "vendored-skill-pack",
+  "the host-neutral change-frequency review question must stay in the root AGENTS.md (ADR 0024)"
+);
+
+requireIncludes(
   "docs/agents/domain.md",
   "docs/architecture/decisions/",
   "vendored-skill-pack",
