@@ -4,5 +4,6 @@ export * from "./errors.js";
 export * from "./media-manifest.js";
 export * from "./opportunity-research-material.js";
 export * from "./opportunity-research-execution.js";
+export * from "./page-version-project-scope.js";
 export * from "./release-lifecycle.js";
 export * from "./schema.js";

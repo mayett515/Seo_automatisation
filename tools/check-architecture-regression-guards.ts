@@ -420,6 +420,31 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/db/src/page-version-project-scope.ts",
+  "export function pageVersionProjectScope",
+  "tenancy-scope",
+  "the page-version tenant guard must keep its single named owner in packages/db"
+);
+
+for (const scopedFile of [
+  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/reports/report-aggregate-store.ts",
+  "apps/api/src/preview-media.ts",
+  "apps/worker/src/handlers/customer-report.ts",
+  "apps/worker/src/handlers/release-verification.ts",
+  "apps/worker/src/handlers/section-copy-suggestion.ts",
+  "packages/db/src/media-manifest.ts"
+]) {
+  requireNotIncludes(
+    scopedFile,
+    "innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))",
+    "tenancy-scope",
+    "page-version project scoping must go through pageVersionProjectScope, not a hand-written join"
+  );
+}
+
+requireIncludes(
   ".agents/skills/mermaid-diagrams/SKILL.md",
   "name: mermaid-diagrams",
   "native-layer",
@@ -3095,6 +3120,28 @@ requireIncludes(
   "does not let verified deploy replay revive a rolled-back release plan",
   "release-transition-cas",
   "Deploy integration must prove verified replay cannot revive rolled-back plan truth"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  "decideProviderDeployAction",
+  "deploy-provider-operation-state",
+  "Deploy worker must decide provider-deploy handling in one pure owner, not per call site"
+);
+
+requireOrderedIncludes(
+  "apps/worker/src/handlers/deploy.ts",
+  'return { kind: "manual_reconciliation" };',
+  'return { kind: "reconcile_provider_deploy" };',
+  "deploy-provider-operation-state",
+  "ADR 0009 manual reconciliation must outrank a recorded providerDeployId in the deploy decision"
+);
+
+requireIncludes(
+  "apps/worker/src/handlers/deploy.test.ts",
+  "stops when start returns a manual reconciliation row that already carries a provider deploy id",
+  "deploy-provider-operation-state",
+  "Deploy tests must pin that a manual row with a provider deploy id never reconciles against the provider"
 );
 
 requireIncludes(

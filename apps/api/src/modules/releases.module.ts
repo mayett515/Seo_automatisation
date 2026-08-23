@@ -52,6 +52,7 @@ import {
   deployments,
   demoteReleaseCandidatePageVersionsForPlan,
   isDatabaseUniqueViolation,
+  pageVersionProjectScope,
   pageProposals,
   pageVersions,
   projectTrackingKeys,
@@ -189,11 +190,12 @@ export class ReleasesService {
     // Media bytes are verified against storage before any row locks are taken so the
     // transaction never spans network calls. The remaining window is closed by the
     // DB-only manifest hash re-check inside the transaction below.
+    const projectScope = pageVersionProjectScope(projectId);
     const preVerificationRows = await db
       .select({ pageVersionId: pageVersions.id, pageJson: pageVersions.pageJson })
       .from(pageVersions)
-      .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-      .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, requestedPageVersionIds)));
+      .innerJoin(pageProposals, projectScope.joinCondition)
+      .where(and(projectScope.projectCondition, inArray(pageVersions.id, requestedPageVersionIds)));
 
     if (preVerificationRows.length !== requestedPageVersionIds.length) {
       throw new BadRequestException("Every release page version must belong to this project.");
@@ -229,8 +231,8 @@ export class ReleasesService {
           targetUrl: pageProposals.route
         })
         .from(pageVersions)
-        .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-        .where(and(eq(pageProposals.projectId, projectId), inArray(pageVersions.id, requestedPageVersionIds)));
+        .innerJoin(pageProposals, projectScope.joinCondition)
+        .where(and(projectScope.projectCondition, inArray(pageVersions.id, requestedPageVersionIds)));
 
       if (pageVersionRows.length !== requestedPageVersionIds.length) {
         throw new BadRequestException("Every release page version must belong to this project.");

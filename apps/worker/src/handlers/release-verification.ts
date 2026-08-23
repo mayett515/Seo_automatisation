@@ -21,6 +21,7 @@ import {
   demoteReleaseCandidatePageVersionsForPlan,
   deployments,
   gscConnections,
+  pageVersionProjectScope,
   pageProposals,
   pageVersions,
   projectTrackingKeys,
@@ -802,6 +803,7 @@ async function persistReleaseVerificationResult(
       }
 
       if (nextReleasePlanStatus === "live") {
+        const projectScope = pageVersionProjectScope(projectId);
         const releasedItemRows = await tx
           .select({
             pageVersionId: pageVersions.id,
@@ -809,10 +811,8 @@ async function persistReleaseVerificationResult(
           })
           .from(releasePlanItems)
           .innerJoin(pageVersions, eq(releasePlanItems.pageVersionId, pageVersions.id))
-          .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-          .where(
-            and(eq(releasePlanItems.releasePlanId, verification.releasePlanId), eq(pageProposals.projectId, projectId))
-          );
+          .innerJoin(pageProposals, projectScope.joinCondition)
+          .where(and(eq(releasePlanItems.releasePlanId, verification.releasePlanId), projectScope.projectCondition));
         const releasedPageVersionIds = releasedItemRows.map((row) => row.pageVersionId);
         const releasedPageProposalIds = [...new Set(releasedItemRows.map((row) => row.pageProposalId))];
 

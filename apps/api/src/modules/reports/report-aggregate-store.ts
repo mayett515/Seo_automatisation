@@ -40,6 +40,7 @@ import {
 import {
   deployments,
   opportunities,
+  pageVersionProjectScope,
   pageProposals,
   pageVersions,
   rankingProofs,
@@ -741,13 +742,14 @@ async function assertPageVersionSources(
     (item): item is Extract<ReportEvidenceItem, { sourceKind: "page_version" }> => item.sourceKind === "page_version"
   );
   if (items.length === 0) return;
+  const projectScope = pageVersionProjectScope(projectId);
   const rows = await tx
     .select({ version: pageVersions, proposal: pageProposals })
     .from(pageVersions)
-    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+    .innerJoin(pageProposals, projectScope.joinCondition)
     .where(
       and(
-        eq(pageProposals.projectId, projectId),
+        projectScope.projectCondition,
         inArray(
           pageVersions.id,
           items.map((item) => item.pageVersionId)

@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DatabaseClient } from "./client.js";
+import { pageVersionProjectScope } from "./page-version-project-scope.js";
 import { mediaAssets, mediaAssetVariants, pageProposals, pageVersionMediaAssets, pageVersions } from "./schema.js";
 
 export type ResolvedPageVersionMediaVariantRecord = {
@@ -141,6 +142,7 @@ export async function loadResolvedPageVersionMediaVariants(
   db: MediaManifestReader,
   input: { projectId: string; pageVersions: readonly PageVersionMediaReferenceSet[] }
 ): Promise<ResolvedPageVersionMediaVariantRecord[]> {
+  const projectScope = pageVersionProjectScope(input.projectId);
   const referenceSets = new Map(
     input.pageVersions.map((pageVersion) => [pageVersion.pageVersionId, [...new Set(pageVersion.assetIds)].sort()])
   );
@@ -159,11 +161,9 @@ export async function loadResolvedPageVersionMediaVariants(
     })
     .from(pageVersionMediaAssets)
     .innerJoin(pageVersions, eq(pageVersions.id, pageVersionMediaAssets.pageVersionId))
-    .innerJoin(pageProposals, eq(pageProposals.id, pageVersions.pageProposalId))
+    .innerJoin(pageProposals, projectScope.joinCondition)
     .innerJoin(mediaAssets, eq(mediaAssets.id, pageVersionMediaAssets.mediaAssetId))
-    .where(
-      and(inArray(pageVersionMediaAssets.pageVersionId, pageVersionIds), eq(pageProposals.projectId, input.projectId))
-    )
+    .where(and(inArray(pageVersionMediaAssets.pageVersionId, pageVersionIds), projectScope.projectCondition))
     .orderBy(asc(pageVersionMediaAssets.pageVersionId), asc(mediaAssets.id));
 
   const projectedIdsByVersion = new Map<string, string[]>();

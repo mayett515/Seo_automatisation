@@ -25,6 +25,7 @@ import {
   agentRuns,
   deployments,
   opportunities,
+  pageVersionProjectScope,
   pageProposals,
   pageVersions,
   rankingProofs,
@@ -305,16 +306,17 @@ async function loadCustomerReportEvidencePacket(
     .limit(reportEvidenceLimits.rankingProofs);
   evidence.push(...rankingRows.map((row) => rankingEvidence(row, cutoff)));
 
+  const projectScope = pageVersionProjectScope(run.projectId);
   const latestPageVersionIds = db
     .selectDistinctOn([pageVersions.pageProposalId], {
       id: pageVersions.id,
       pageProposalId: pageVersions.pageProposalId
     })
     .from(pageVersions)
-    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+    .innerJoin(pageProposals, projectScope.joinCondition)
     .where(
       and(
-        eq(pageProposals.projectId, run.projectId),
+        projectScope.projectCondition,
         inArray(pageVersions.status, ["approved", "release_candidate", "released", "superseded"]),
         isNotNull(pageVersions.approvedAt),
         gte(pageVersions.approvedAt, periodWindow.startsAt),
@@ -329,7 +331,7 @@ async function loadCustomerReportEvidencePacket(
     .select({ version: pageVersions, proposal: pageProposals })
     .from(latestPageVersionIds)
     .innerJoin(pageVersions, eq(latestPageVersionIds.id, pageVersions.id))
-    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+    .innerJoin(pageProposals, projectScope.joinCondition)
     .orderBy(desc(pageVersions.approvedAt), asc(pageVersions.id))
     .limit(reportEvidenceLimits.pageVersions);
   evidence.push(...pageRows.map((row) => pageVersionEvidence(row.version, row.proposal.route, run.projectId, cutoff)));

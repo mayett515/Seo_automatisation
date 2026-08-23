@@ -84,6 +84,7 @@ import {
   loadSelectablePageMediaVariants,
   MediaAssetSelectionError,
   opportunities,
+  pageVersionProjectScope,
   pageProposals,
   pageSectionCopySuggestions,
   pageSectionNotes,
@@ -1637,14 +1638,15 @@ async function selectPageProposalRows(db: Db, projectId: string, pageProposalId?
 }
 
 async function selectPageVersionCountsByProposal(db: Db, projectId: string): Promise<Map<string, number>> {
+  const projectScope = pageVersionProjectScope(projectId);
   const rows = await db
     .select({
       pageProposalId: pageVersions.pageProposalId,
       versionCount: sql<number>`count(*)::int`
     })
     .from(pageVersions)
-    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-    .where(eq(pageProposals.projectId, projectId))
+    .innerJoin(pageProposals, projectScope.joinCondition)
+    .where(projectScope.projectCondition)
     .groupBy(pageVersions.pageProposalId);
 
   return new Map(rows.map((row) => [row.pageProposalId, row.versionCount]));
@@ -1761,6 +1763,7 @@ async function selectPageVersionRows(
   projectId: string,
   filter: { pageVersionId?: string; pageProposalId?: string } = {}
 ) {
+  const projectScope = pageVersionProjectScope(projectId);
   return db
     .select({
       id: pageVersions.id,
@@ -1783,13 +1786,13 @@ async function selectPageVersionRows(
       updatedAt: pageVersions.updatedAt
     })
     .from(pageVersions)
-    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+    .innerJoin(pageProposals, projectScope.joinCondition)
     .where(
       filter.pageVersionId
-        ? and(eq(pageProposals.projectId, projectId), eq(pageVersions.id, filter.pageVersionId))
+        ? and(projectScope.projectCondition, eq(pageVersions.id, filter.pageVersionId))
         : filter.pageProposalId
-          ? and(eq(pageProposals.projectId, projectId), eq(pageVersions.pageProposalId, filter.pageProposalId))
-          : eq(pageProposals.projectId, projectId)
+          ? and(projectScope.projectCondition, eq(pageVersions.pageProposalId, filter.pageProposalId))
+          : projectScope.projectCondition
     )
     .orderBy(desc(pageVersions.updatedAt), desc(pageVersions.versionNumber))
     .limit(filter.pageVersionId ? 1 : 100);

@@ -20,6 +20,7 @@ import {
   agentRuns,
   isDatabaseUniqueViolation,
   loadResolvedPageVersionMediaVariants,
+  pageVersionProjectScope,
   pageProposals,
   pageSectionCopySuggestions,
   pageVersions
@@ -537,6 +538,7 @@ async function loadSectionCopySuggestionEvidence(
   db: WorkerDb,
   data: SectionCopySuggestionJobData
 ): Promise<SectionCopySuggestionEvidence> {
+  const projectScope = pageVersionProjectScope(data.projectId);
   const [row] = await db
     .select({
       suggestionId: pageSectionCopySuggestions.id,
@@ -552,7 +554,7 @@ async function loadSectionCopySuggestionEvidence(
     })
     .from(pageSectionCopySuggestions)
     .innerJoin(pageVersions, eq(pageSectionCopySuggestions.pageVersionId, pageVersions.id))
-    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
+    .innerJoin(pageProposals, projectScope.joinCondition)
     .where(
       and(
         eq(pageSectionCopySuggestions.id, data.suggestionId),
@@ -560,7 +562,7 @@ async function loadSectionCopySuggestionEvidence(
         eq(pageSectionCopySuggestions.pageVersionId, data.pageVersionId),
         eq(pageSectionCopySuggestions.sectionId, data.sectionId),
         eq(pageSectionCopySuggestions.agentRunId, data.runId),
-        eq(pageProposals.projectId, data.projectId)
+        projectScope.projectCondition
       )
     )
     .limit(1);

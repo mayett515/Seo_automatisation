@@ -5,6 +5,7 @@ import type { DatabaseClient } from "@localseo/db";
 import {
   MediaManifestInvariantError,
   loadResolvedPageVersionMediaVariants,
+  pageVersionProjectScope,
   pageProposals,
   pageVersions
 } from "@localseo/db";
@@ -134,11 +135,12 @@ function sha256Hex(value: Uint8Array): string {
 }
 
 async function loadStoredPageJson(db: PreviewMediaReader, projectId: string, pageVersionId: string): Promise<PageJson> {
+  const projectScope = pageVersionProjectScope(projectId);
   const [row] = await db
     .select({ pageJson: pageVersions.pageJson })
     .from(pageVersions)
-    .innerJoin(pageProposals, eq(pageVersions.pageProposalId, pageProposals.id))
-    .where(and(eq(pageVersions.id, pageVersionId), eq(pageProposals.projectId, projectId)))
+    .innerJoin(pageProposals, projectScope.joinCondition)
+    .where(and(eq(pageVersions.id, pageVersionId), projectScope.projectCondition))
     .limit(1);
   const parsed = PageJsonSchema.safeParse(row?.pageJson);
   if (!parsed.success) {
