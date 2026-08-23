@@ -8,6 +8,7 @@ import {
   type GscSyncQueueResponse
 } from "@localseo/contracts";
 import { getJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
 
 export function GscConnectScreen() {
   const projectId = useProjectId();
@@ -76,10 +77,6 @@ function Notice(props: { text: string; tone?: "neutral" | "danger" }) {
 function useProjectId(): string {
   const params = useParams({ strict: false });
   return typeof params.projectId === "string" ? params.projectId : "demo-project";
-}
-
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }
 
 function syncResponseMessage(response: GscSyncQueueResponse): string {

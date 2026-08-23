@@ -23,6 +23,8 @@ import {
   type ReviewProjectKnowledgeVersionRequest
 } from "@localseo/contracts";
 import { getJson, patchJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
+import { errorMessage } from "../lib/error-message";
 
 type KnowledgeReviewCommand = {
   versionId: string;
@@ -882,10 +884,6 @@ function isActiveRun(run: AgentRunSummary): boolean {
   return run.status === "queued" || run.status === "running";
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message.trim().length > 0 ? `${fallback} ${error.message}` : fallback;
-}
-
 function safeUrlLabel(url: string): string {
   try {
     const parsed = new URL(url);
@@ -901,8 +899,4 @@ function shortId(value: string): string {
 
 function label(value: string | number): string {
   return String(value).replaceAll("_", " ").replaceAll(".", " ");
-}
-
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }

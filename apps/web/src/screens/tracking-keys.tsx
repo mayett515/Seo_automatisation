@@ -9,6 +9,7 @@ import {
   type TrackingKeySummary
 } from "@localseo/contracts";
 import { getJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
 
 type TrackingKeyListResponse = {
   projectId: string;
@@ -147,6 +148,3 @@ function useProjectId(): string {
   return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }
 
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
-}

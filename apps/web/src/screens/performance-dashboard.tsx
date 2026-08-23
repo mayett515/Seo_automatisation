@@ -3,6 +3,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import { GscPerformanceSummarySchema, type GscPerformanceSummary } from "@localseo/contracts";
 import { getJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
 
 export function PerformanceDashboardScreen() {
   const projectId = useProjectId();
@@ -105,10 +106,6 @@ function signalsForRow(summary: GscPerformanceSummary, query: string, pageUrl: s
 function useProjectId(): string {
   const params = useParams({ strict: false });
   return typeof params.projectId === "string" ? params.projectId : "demo-project";
-}
-
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }
 
 function safePathname(pageUrl: string): string {

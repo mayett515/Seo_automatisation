@@ -24,6 +24,8 @@ import {
   type CustomerReportWorkspaceIssue
 } from "@localseo/contracts";
 import { apiResourceUrl, getJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
+import { errorMessage } from "../lib/error-message";
 import {
   customerReportPublicationCommand,
   defaultCustomerReportGeneration,
@@ -212,7 +214,9 @@ function ReportGenerationPanel(props: { projectId: string; onCreated: () => Prom
           {"Report generation " + mutation.data.status.replaceAll("_", " ") + "."}
         </div>
       ) : null}
-      {mutation.isError ? <div className="notice notice--danger">{errorMessage(mutation.error)}</div> : null}
+      {mutation.isError ? (
+        <div className="notice notice--danger">{errorMessage(mutation.error, "Report operation failed.")}</div>
+      ) : null}
     </section>
   );
 }
@@ -426,9 +430,15 @@ export function ReportCandidateScreen(props: { projectId: string; reportId: stri
             reportId={props.reportId}
           />
         ) : null}
-        {submit.isError ? <div className="notice notice--danger">{errorMessage(submit.error)}</div> : null}
-        {retry.isError ? <div className="notice notice--danger">{errorMessage(retry.error)}</div> : null}
-        {publish.isError ? <div className="notice notice--danger">{errorMessage(publish.error)}</div> : null}
+        {submit.isError ? (
+          <div className="notice notice--danger">{errorMessage(submit.error, "Report operation failed.")}</div>
+        ) : null}
+        {retry.isError ? (
+          <div className="notice notice--danger">{errorMessage(retry.error, "Report operation failed.")}</div>
+        ) : null}
+        {publish.isError ? (
+          <div className="notice notice--danger">{errorMessage(publish.error, "Report operation failed.")}</div>
+        ) : null}
       </section>
 
       {currentArtifact?.status === "staged" ? (
@@ -542,7 +552,7 @@ function ReviewedCandidateControls(props: {
         </form.Subscribe>
       </form>
       {requestChanges.isError ? (
-        <div className="notice notice--danger">{errorMessage(requestChanges.error)}</div>
+        <div className="notice notice--danger">{errorMessage(requestChanges.error, "Report operation failed.")}</div>
       ) : null}
     </div>
   );
@@ -821,10 +831,6 @@ function claimSummary(claim: CustomerReportClaim): string {
   }
 }
 
-function projectApiPath(projectId: string, suffix: string): string {
-  return "/projects/" + encodeURIComponent(projectId) + suffix;
-}
-
 function requiredCandidate(value: ReturnType<typeof CustomerReportCandidateDetailSchema.parse> | undefined) {
   if (!value) throw new Error("Report candidate is not loaded.");
   return value;
@@ -861,8 +867,4 @@ function artifactTone(status: string | undefined): "neutral" | "success" | "warn
   if (status === "failed" || status === "expired") return "danger";
   if (status === "pending" || status === "running") return "warning";
   return "neutral";
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Report operation failed.";
 }

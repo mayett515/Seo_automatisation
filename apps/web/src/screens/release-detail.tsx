@@ -13,6 +13,8 @@ import {
   type ReleasePreflightResponse
 } from "@localseo/contracts";
 import { getJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
+import { errorMessage } from "../lib/error-message";
 
 export function ReleaseDetailScreen(props: { projectId: string; releasePlanId: string }) {
   return (
@@ -311,16 +313,4 @@ function isCancellableReleasePlanStatus(status: ReleasePlan["status"] | undefine
 
 function releasePlanDetailQueryKey(projectId: string, releasePlanId: string) {
   return ["release-plan", projectId, releasePlanId] as const;
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return `${fallback} ${error.message}`;
-  }
-
-  return fallback;
-}
-
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }

@@ -8,6 +8,7 @@ import {
   type WebsiteImportRun
 } from "@localseo/contracts";
 import { getJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
 
 export function ProjectDashboardScreen() {
   const projectId = useProjectId();
@@ -168,8 +169,4 @@ function importRunTone(run: WebsiteImportRun | undefined): "neutral" | "success"
 function useProjectId(): string {
   const params = useParams({ strict: false });
   return typeof params.projectId === "string" ? params.projectId : "demo-project";
-}
-
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }

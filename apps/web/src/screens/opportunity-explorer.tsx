@@ -25,6 +25,8 @@ import {
   type RankingProof
 } from "@localseo/contracts";
 import { getJson, patchJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
+import { errorMessage } from "../lib/error-message";
 import { OpportunityResearchPanel } from "./opportunity-research-panel";
 
 type RankingProofFormState = {
@@ -1280,14 +1282,6 @@ function numberFromForm(value: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return `${fallback} ${error.message}`;
-  }
-
-  return fallback;
-}
-
 function safeUrlLabel(url: string): string {
   try {
     const parsed = new URL(url);
@@ -1295,8 +1289,4 @@ function safeUrlLabel(url: string): string {
   } catch {
     return url;
   }
-}
-
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }

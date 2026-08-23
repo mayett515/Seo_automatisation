@@ -36,6 +36,8 @@ import {
   type ReleasePlan
 } from "@localseo/contracts";
 import { apiResourceUrl, getJson, patchJson, postJson } from "../lib/api";
+import { projectApiPath } from "../lib/api-path";
+import { errorMessage } from "../lib/error-message";
 import { PageStudioEditor } from "../features/page-studio/page-studio-editor";
 import { uploadProjectMediaAsset } from "../features/page-studio/media-upload";
 import { latestVersionForProposal, pageVersionAncestors } from "../features/page-studio/page-studio-state";
@@ -867,16 +869,4 @@ function pageSectionNotesQueryKey(projectId: string, pageVersionId: string) {
 function normalizedText(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return `${fallback} ${error.message}`;
-  }
-
-  return fallback;
-}
-
-function projectApiPath(projectId: string, suffix: string): string {
-  return `/projects/${encodeURIComponent(projectId)}${suffix}`;
 }
