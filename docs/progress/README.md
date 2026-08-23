@@ -2,7 +2,7 @@
 
 This folder records chronological project progress.
 
-Latest: [2026-08-09 - ADR 0022 Slices 1-7 Opportunity Research vertical](2026-08-09.md).
+Latest: [2026-08-22/23 - Integration campaign, schema-guided refactor rounds, agent-layer adoption](2026-08-23.md).
 
 Use this for "what changed when" and link to commits, reviews, and follow-up work. Use ADRs for "why we chose this direction."
 

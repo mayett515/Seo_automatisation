@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 type GuardResult = {
   category: string;
@@ -4817,6 +4817,68 @@ requireNotIncludes(
   "opportunity-page-handoff",
   "Page Proposal handoff must not invent an opportunity-approval state that the product does not persist"
 );
+
+// Vendored agent skill pack (ADR 0024). A pack refresh with `npx skills update` rewrites the
+// vendored copies from upstream, which silently reverts the local explicit-invocation overrides
+// and can drop the two grafts copied back from the pack master. These anchors turn that from a
+// thing someone has to notice into a red gate.
+const vendoredExplicitInvocationOnly = ["code-review", "research", "prototype"];
+
+for (const skill of vendoredExplicitInvocationOnly) {
+  for (const tree of [".claude/skills", ".agents/skills"]) {
+    const skillPath = `${tree}/${skill}/SKILL.md`;
+    if (!existsSync(skillPath)) {
+      failures.push({
+        category: "vendored-skill-pack",
+        message: `${skillPath}: ADR 0024 keeps this skill installed with an explicit-invocation override, but the file is gone`
+      });
+      continue;
+    }
+    requireIncludes(
+      skillPath,
+      "disable-model-invocation: true",
+      "vendored-skill-pack",
+      "a pack refresh dropped the explicit-invocation override; re-apply it (ADR 0024)"
+    );
+  }
+}
+
+if (existsSync("docs/adr")) {
+  failures.push({
+    category: "vendored-skill-pack",
+    message: "docs/adr: decision records live only in docs/architecture/decisions/ (ADR 0024)"
+  });
+}
+
+requireIncludes(
+  "docs/agents/domain.md",
+  "docs/architecture/decisions/",
+  "vendored-skill-pack",
+  "the domain-doc configuration must point pack skills at the existing decision log"
+);
+
+requireIncludes(
+  ".claude/agents/diff-reviewer.md",
+  "## Spec fidelity",
+  "vendored-skill-pack",
+  "the spec-fidelity axis grafted from the pack must survive a pack-master re-copy"
+);
+
+requireIncludes(
+  ".cursor/agents/diff-reviewer.md",
+  "does the diff do what was actually asked for?",
+  "vendored-skill-pack",
+  "the shared-lineage reviewer must keep asking the spec question, not only the soundness questions"
+);
+
+for (const reviewPath of [".claude/skills/repo-review/SKILL.md", ".agents/skills/repo-review/SKILL.md"]) {
+  requireIncludes(
+    reviewPath,
+    "change frequency",
+    "vendored-skill-pack",
+    "repo-review must keep scoping by commit-history hot spots, not only by file size"
+  );
+}
 
 if (warnings.length > 0) {
   console.warn("Architecture regression guard warnings:");
