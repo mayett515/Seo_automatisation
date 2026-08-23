@@ -1,5 +1,11 @@
 # Stealer Findings
 
+> Provenance note (2026-08-23): `Source:` lines referencing `C:ig eater\...`
+> point to machine-local snapshot files from an earlier workstation that no
+> longer exist on this machine. The findings below are self-contained
+> syntheses; the original snapshots are historical provenance only.
+
+
 This folder is editable.
 
 Use it to record new sources found during GitHub/web research, extracted architecture patterns, source links, license notes, and decisions about what to adapt into the Local SEO app.
