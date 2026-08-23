@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -15,6 +15,7 @@ import {
   RankingProofSchema,
   UpdateOpportunityLifecycleRequestSchema,
   UpdateRankingProofStatusRequestSchema,
+  type AgentRunListResponse,
   type AgentRunSummary,
   type EvidenceRef,
   type OpportunityBrief,
@@ -43,6 +44,16 @@ type OpportunityDecisionFormState = {
   reason: string;
 };
 
+type OpportunityExplorerActionResult =
+  | { kind: "scout_queued"; response: OpportunityScoutQueueResponse }
+  | { kind: "scout_failed"; error: unknown }
+  | { kind: "proof_recorded"; proof: RankingProof }
+  | { kind: "proof_failed"; error: unknown }
+  | { kind: "decision_saved"; opportunity: OpportunityExplorerOpportunity }
+  | { kind: "decision_failed"; error: unknown }
+  | { kind: "page_proposal_queued"; response: PageProposalQueueResponse }
+  | { kind: "page_proposal_failed"; error: unknown };
+
 const opportunityColumn = createColumnHelper<OpportunityExplorerOpportunity>();
 const opportunityDecisionStatuses = [
   "monitoring",
@@ -54,8 +65,6 @@ const opportunityDecisionStatuses = [
 export function OpportunityExplorerScreen(props: { projectId: string }) {
   const projectId = props.projectId;
   const queryClient = useQueryClient();
-  const previousActiveRun = useRef(false);
-  const previousActivePageProposalRun = useRef(false);
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | undefined>();
   const [maxBriefs, setMaxBriefs] = useState("8");
   const [proofForm, setProofForm] = useState<RankingProofFormState>({
@@ -64,10 +73,7 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
     rank: "",
     notes: ""
   });
-  const [latestScoutResponse, setLatestScoutResponse] = useState<OpportunityScoutQueueResponse | undefined>();
-  const [latestPageProposalResponse, setLatestPageProposalResponse] = useState<PageProposalQueueResponse | undefined>();
-  const [latestProof, setLatestProof] = useState<RankingProof | undefined>();
-  const [latestDecision, setLatestDecision] = useState<OpportunityExplorerOpportunity | undefined>();
+  const [latestAction, setLatestAction] = useState<OpportunityExplorerActionResult | undefined>();
 
   const opportunities = useQuery({
     queryKey: ["opportunities", projectId],
@@ -76,7 +82,20 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
   });
   const runs = useQuery({
     queryKey: ["agent-runs", projectId, "opportunity_scout"],
-    queryFn: () => getJson(projectApiPath(projectId, "/agent-runs?task=opportunity_scout"), AgentRunListResponseSchema),
+    queryFn: async ({ client, queryKey }) => {
+      const previous = client.getQueryData<AgentRunListResponse>(queryKey);
+      const data = await getJson(
+        projectApiPath(projectId, "/agent-runs?task=opportunity_scout"),
+        AgentRunListResponseSchema
+      );
+      if (runListJustBecameIdle(previous?.runs, data.runs)) {
+        void Promise.all([
+          client.invalidateQueries({ queryKey: ["opportunities", projectId] }),
+          client.invalidateQueries({ queryKey: ["ranking-proofs", projectId] })
+        ]);
+      }
+      return data;
+    },
     retry: false,
     refetchInterval: (query) => {
       const active = query.state.data?.runs.some((run) => run.status === "queued" || run.status === "running");
@@ -85,7 +104,22 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
   });
   const pageProposalRuns = useQuery({
     queryKey: ["agent-runs", projectId, "page_brief_draft"],
-    queryFn: () => getJson(projectApiPath(projectId, "/agent-runs?task=page_brief_draft"), AgentRunListResponseSchema),
+    queryFn: async ({ client, queryKey }) => {
+      const previous = client.getQueryData<AgentRunListResponse>(queryKey);
+      const data = await getJson(
+        projectApiPath(projectId, "/agent-runs?task=page_brief_draft"),
+        AgentRunListResponseSchema
+      );
+      if (runListJustBecameIdle(previous?.runs, data.runs)) {
+        void Promise.all([
+          client.invalidateQueries({ queryKey: ["agent-runs", projectId, "page_brief_draft"] }),
+          client.invalidateQueries({ queryKey: ["opportunities", projectId] }),
+          client.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
+          client.invalidateQueries({ queryKey: ["page-versions", projectId] })
+        ]);
+      }
+      return data;
+    },
     retry: false,
     refetchInterval: (query) => {
       const active = query.state.data?.runs.some(isActiveRun);
@@ -106,11 +140,14 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
         OpportunityScoutQueueResponseSchema
       ),
     onSuccess: async (response) => {
-      setLatestScoutResponse(response);
+      setLatestAction({ kind: "scout_queued", response });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["agent-runs", projectId, "opportunity_scout"] }),
         queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] })
       ]);
+    },
+    onError: (error) => {
+      setLatestAction({ kind: "scout_failed", error });
     }
   });
   const createProof = useMutation({
@@ -126,9 +163,12 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
         RankingProofSchema
       ),
     onSuccess: async (proof) => {
-      setLatestProof(proof);
+      setLatestAction({ kind: "proof_recorded", proof });
       setProofForm({ query: "", pageUrl: "", rank: "", notes: "" });
       await queryClient.invalidateQueries({ queryKey: ["ranking-proofs", projectId] });
+    },
+    onError: (error) => {
+      setLatestAction({ kind: "proof_failed", error });
     }
   });
   const updateOpportunityDecision = useMutation({
@@ -147,14 +187,15 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
       );
     },
     onSuccess: async (opportunity) => {
-      setLatestDecision(opportunity);
+      setLatestAction({ kind: "decision_saved", opportunity });
       setSelectedOpportunityId(opportunity.id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["agent-runs", projectId, "opportunity_scout"] })
       ]);
     },
-    onError: async () => {
+    onError: async (error) => {
+      setLatestAction({ kind: "decision_failed", error });
       await queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] });
     }
   });
@@ -206,7 +247,7 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
       return postJson(projectApiPath(projectId, "/pages/proposals/runs"), body, PageProposalQueueResponseSchema);
     },
     onSuccess: async (response) => {
-      setLatestPageProposalResponse(response);
+      setLatestAction({ kind: "page_proposal_queued", response });
       if (response.opportunityId) {
         setSelectedOpportunityId(response.opportunityId);
       }
@@ -217,7 +258,8 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
         queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] })
       ]);
     },
-    onError: async () => {
+    onError: async (error) => {
+      setLatestAction({ kind: "page_proposal_failed", error });
       await queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] });
     }
   });
@@ -237,30 +279,6 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
   const opportunityResearchRuns = (runs.data?.runs ?? []).filter((run) => run.workflowName === "opportunity_research");
   const legacyScoutRuns = (runs.data?.runs ?? []).filter((run) => run.workflowName !== "opportunity_research");
   const table = useOpportunityTable(opportunityRows);
-
-  useEffect(() => {
-    if (previousActiveRun.current && !hasActiveRun) {
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["ranking-proofs", projectId] })
-      ]);
-    }
-
-    previousActiveRun.current = hasActiveRun;
-  }, [hasActiveRun, projectId, queryClient]);
-
-  useEffect(() => {
-    if (previousActivePageProposalRun.current && !hasActivePageProposalRun) {
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["agent-runs", projectId, "page_brief_draft"] }),
-        queryClient.invalidateQueries({ queryKey: ["opportunities", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-proposals", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["page-versions", projectId] })
-      ]);
-    }
-
-    previousActivePageProposalRun.current = hasActivePageProposalRun;
-  }, [hasActivePageProposalRun, projectId, queryClient]);
 
   return (
     <section className="screen-grid">
@@ -305,49 +323,7 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
         />
       </section>
 
-      {latestScoutResponse ? (
-        <div className="notice notice--neutral">
-          Scout response: {latestScoutResponse.status.replaceAll("_", " ")}
-          {latestScoutResponse.runId ? ` (${latestScoutResponse.runId})` : ""}
-        </div>
-      ) : null}
-      {latestProof ? (
-        <div className="notice notice--neutral">
-          Ranking proof recorded: {latestProof.query}, rank {latestProof.rank}
-        </div>
-      ) : null}
-      {latestDecision ? (
-        <div className="notice notice--neutral">
-          Opportunity decision saved: {label(latestDecision.status)}
-          {latestDecision.statusReason ? ` (${latestDecision.statusReason})` : ""}
-        </div>
-      ) : null}
-      {latestPageProposalResponse ? (
-        <div className="notice notice--neutral">
-          Page proposal response: {latestPageProposalResponse.status.replaceAll("_", " ")}
-          {latestPageProposalResponse.runId ? ` (${latestPageProposalResponse.runId})` : ""}
-        </div>
-      ) : null}
-      {runScout.isError ? (
-        <div className="notice notice--danger">
-          {errorMessage(runScout.error, "Opportunity scout could not be queued.")}
-        </div>
-      ) : null}
-      {createProof.isError ? (
-        <div className="notice notice--danger">
-          {errorMessage(createProof.error, "Ranking proof could not be recorded.")}
-        </div>
-      ) : null}
-      {updateOpportunityDecision.isError ? (
-        <div className="notice notice--danger">
-          {errorMessage(updateOpportunityDecision.error, "Opportunity decision could not be saved.")}
-        </div>
-      ) : null}
-      {queuePageProposal.isError ? (
-        <div className="notice notice--danger">
-          {errorMessage(queuePageProposal.error, "Page proposal could not be queued.")}
-        </div>
-      ) : null}
+      <OpportunityExplorerActionNotice result={latestAction} />
 
       <section className="explorer-layout">
         <OpportunityTable
@@ -401,6 +377,66 @@ export function OpportunityExplorerScreen(props: { projectId: string }) {
       ) : null}
     </section>
   );
+}
+
+function OpportunityExplorerActionNotice(props: { result: OpportunityExplorerActionResult | undefined }) {
+  if (!props.result) {
+    return null;
+  }
+
+  switch (props.result.kind) {
+    case "scout_queued":
+      return (
+        <div className="notice notice--neutral">
+          Scout response: {props.result.response.status.replaceAll("_", " ")}
+          {props.result.response.runId ? ` (${props.result.response.runId})` : ""}
+        </div>
+      );
+    case "proof_recorded":
+      return (
+        <div className="notice notice--neutral">
+          Ranking proof recorded: {props.result.proof.query}, rank {props.result.proof.rank}
+        </div>
+      );
+    case "decision_saved":
+      return (
+        <div className="notice notice--neutral">
+          Opportunity decision saved: {label(props.result.opportunity.status)}
+          {props.result.opportunity.statusReason ? ` (${props.result.opportunity.statusReason})` : ""}
+        </div>
+      );
+    case "page_proposal_queued":
+      return (
+        <div className="notice notice--neutral">
+          Page proposal response: {props.result.response.status.replaceAll("_", " ")}
+          {props.result.response.runId ? ` (${props.result.response.runId})` : ""}
+        </div>
+      );
+    case "scout_failed":
+      return (
+        <div className="notice notice--danger">
+          {errorMessage(props.result.error, "Opportunity scout could not be queued.")}
+        </div>
+      );
+    case "proof_failed":
+      return (
+        <div className="notice notice--danger">
+          {errorMessage(props.result.error, "Ranking proof could not be recorded.")}
+        </div>
+      );
+    case "decision_failed":
+      return (
+        <div className="notice notice--danger">
+          {errorMessage(props.result.error, "Opportunity decision could not be saved.")}
+        </div>
+      );
+    case "page_proposal_failed":
+      return (
+        <div className="notice notice--danger">
+          {errorMessage(props.result.error, "Page proposal could not be queued.")}
+        </div>
+      );
+  }
 }
 
 function useOpportunityTable(rows: OpportunityExplorerOpportunity[]) {
@@ -1178,6 +1214,13 @@ function latestRunBySubject(runs: AgentRunSummary[]): Map<string, AgentRunSummar
 
 function isActiveRun(run: AgentRunSummary): boolean {
   return run.status === "queued" || run.status === "running";
+}
+
+function runListJustBecameIdle(
+  previousRuns: readonly AgentRunSummary[] | undefined,
+  nextRuns: readonly AgentRunSummary[]
+): boolean {
+  return (previousRuns?.some(isActiveRun) ?? false) && !nextRuns.some(isActiveRun);
 }
 
 function agentRunDescription(run: AgentRunSummary): string {
