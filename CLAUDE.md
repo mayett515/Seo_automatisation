@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # Pragmatic TypeScript
 
 Claude-native successor to the Pragmatic TypeScript v3 rule scheme.

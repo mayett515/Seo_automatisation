@@ -522,6 +522,13 @@ requireIncludes(
 );
 
 requireIncludes(
+  "CLAUDE.md",
+  "@AGENTS.md",
+  "native-layer",
+  "CLAUDE.md must import the root AGENTS.md so Claude Code shares the routing layer"
+);
+
+requireIncludes(
   "archive/MIGRATION-LEDGER.md",
   'The blanket "covered" was overclaimed',
   "native-layer",
