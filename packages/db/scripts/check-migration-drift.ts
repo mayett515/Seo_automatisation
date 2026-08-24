@@ -26,7 +26,7 @@ try {
       'import { defineConfig } from "drizzle-kit";',
       "",
       "export default defineConfig({",
-      '  schema: "./src/schema.ts",',
+      '  schema: "./src/schema/index.ts",',
       `  out: "./${tempDirName}/migrations",`,
       '  dialect: "postgresql",',
       '  dbCredentials: { url: "postgres://postgres:postgres@localhost:5432/local_seo" }',

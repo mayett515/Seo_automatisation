@@ -10,6 +10,66 @@
       "production": "./dist/index.js",
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./common": {
+      "production": "./dist/common.js",
+      "types": "./dist/common.d.ts",
+      "default": "./src/common.ts"
+    },
+    "./identity": {
+      "production": "./dist/identity.js",
+      "types": "./dist/identity.d.ts",
+      "default": "./src/identity.ts"
+    },
+    "./gsc": {
+      "production": "./dist/gsc.js",
+      "types": "./dist/gsc.d.ts",
+      "default": "./src/gsc.ts"
+    },
+    "./website-import": {
+      "production": "./dist/website-import.js",
+      "types": "./dist/website-import.d.ts",
+      "default": "./src/website-import.ts"
+    },
+    "./tracking": {
+      "production": "./dist/tracking.js",
+      "types": "./dist/tracking.d.ts",
+      "default": "./src/tracking.ts"
+    },
+    "./jobs": {
+      "production": "./dist/jobs.js",
+      "types": "./dist/jobs.d.ts",
+      "default": "./src/jobs.ts"
+    },
+    "./pages": {
+      "production": "./dist/pages.js",
+      "types": "./dist/pages.d.ts",
+      "default": "./src/pages.ts"
+    },
+    "./media": {
+      "production": "./dist/media.js",
+      "types": "./dist/media.d.ts",
+      "default": "./src/media.ts"
+    },
+    "./releases": {
+      "production": "./dist/releases.js",
+      "types": "./dist/releases.d.ts",
+      "default": "./src/releases.ts"
+    },
+    "./opportunities": {
+      "production": "./dist/opportunities.js",
+      "types": "./dist/opportunities.d.ts",
+      "default": "./src/opportunities.ts"
+    },
+    "./report": {
+      "production": "./dist/report.js",
+      "types": "./dist/report.d.ts",
+      "default": "./src/report.ts"
+    },
+    "./opportunity-research": {
+      "production": "./dist/opportunity-research.js",
+      "types": "./dist/opportunity-research.d.ts",
+      "default": "./src/opportunity-research.ts"
     }
   },
   "scripts": {

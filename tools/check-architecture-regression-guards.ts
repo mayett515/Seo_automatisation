@@ -427,7 +427,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/jobs.ts",
   "queueJobNames",
   "job-name-vocabulary",
   "the queue job-name vocabulary must keep its single owner in contracts"
@@ -441,7 +441,7 @@ requireNotIncludes(
 );
 
 for (const scopedFile of [
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-aggregate-store.ts",
   "apps/api/src/modules/releases.module.ts",
   "apps/api/src/modules/reports/report-aggregate-store.ts",
   "apps/api/src/preview-media.ts",
@@ -722,7 +722,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/releases.ts",
   "release_verifications_active_deployment_idx",
   "worker-owned-release-verification",
   "release verification must keep a Postgres one-active-run guard per deployment"
@@ -785,7 +785,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   '"class"',
   "page-json-safety-boundary",
   "PageJson safety scan must reject literal class keys, not only className"
@@ -1207,7 +1207,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/opportunities.ts",
   'executionEpoch: integer("execution_epoch").notNull().default(0)',
   "agentic-runtime-evidence-ledger",
   "workflow events and evidence must retain durable execution ownership fields"
@@ -1235,7 +1235,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/opportunities.ts",
   'expectedStatus: z.literal("captured")',
   "ranking-proof-authority",
   "ranking proof review must remain expected-state and revision bound"
@@ -1512,7 +1512,7 @@ requireOrderedIncludes(
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/opportunities.ts",
   'outputCanonicalText: text("output_canonical_text")',
   "agentic-runtime-evidence-ledger",
   "succeeded checkpoints must retain their exact canonical output bytes"
@@ -1533,14 +1533,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/opportunities.ts",
   'executionRecoveryCount: integer("execution_recovery_count").default(0).notNull()',
   "opportunity-research-recovery",
   "workflow execution ownership must retain its exact recovery generation"
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/opportunities.ts",
   'lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true })',
   "opportunity-research-recovery",
   "running Opportunity Research executions must retain durable heartbeat truth"
@@ -1929,14 +1929,14 @@ requireIncludes(
 );
 
 requireNotRegex(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/opportunities.ts",
   /export const RankingProofSchema = z\.object\(\{[\s\S]*?screenshotArtifactKey/u,
   "ranking-proof-disclosure",
   "ranking-proof responses must not disclose private screenshot artifact keys"
 );
 
 requireNotRegex(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/opportunities.ts",
   /export const CreateRankingProofRequestSchema = z[\s\S]*?screenshotArtifactKey/u,
   "ranking-proof-disclosure",
   "ranking-proof commands must not accept caller-selected private screenshot locators"
@@ -1964,7 +1964,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/opportunity-explorer.tsx",
+  "apps/web/src/features/opportunity-explorer/opportunity-explorer-detail.tsx",
   "key={`${opportunity.id}:${opportunity.rowVersion}`}",
   "opportunity-research-operator-ui",
   "opportunity decision forms must reset when durable target truth advances"
@@ -2069,28 +2069,28 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-proposal.capability.ts",
   "jobId: runId",
   "page-proposal-worker",
   "Page Proposal enqueue path must use the durable agent run id as the BullMQ job id"
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-proposal.capability.ts",
   'queueName: "page-generation"',
   "page-proposal-worker",
   "Page Proposal enqueue path must route through the page-generation queue"
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-aggregate-store.ts",
   "eq(agentRuns.subjectId, opportunityId)",
   "page-proposal-worker",
   "Page Proposal active-run guard must be scoped to the opportunity subject"
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "expectedOpportunity: OpportunityTargetRevisionSchema",
   "page-proposal-target-cas",
   "Page Proposal requests must carry one strict expected opportunity revision"
@@ -2111,14 +2111,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-proposal.capability.ts",
   "await lockAndLoadPageProposalTarget(tx, projectId, input.opportunityId);",
   "page-proposal-target-cas",
   "Page Proposal admission must lock the target before checking its expected state"
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-proposal.capability.ts",
   "assertPageProposalTargetAdmission(input.expectedOpportunity, opportunity);",
   "page-proposal-target-cas",
   "Page Proposal admission must compare the current target with the client-frozen expectation"
@@ -2132,7 +2132,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/opportunity-explorer.tsx",
+  "apps/web/src/screens/opportunity-explorer-data.ts",
   "rowVersion: opportunity.rowVersion",
   "page-proposal-target-cas",
   "The Explorer must submit the displayed durable opportunity revision"
@@ -2168,21 +2168,21 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-aggregate-store.ts",
   "const exhaustiveReason: never = decision.reason;",
   "page-proposal-target-cas",
   "Page Proposal target denial reasons must remain exhaustively mapped"
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/opportunities.ts",
   "agent_runs_active_per_project_task_subject_idx",
   "page-proposal-worker",
   "Page Proposal active-run DB guard must support subject-scoped agent runs"
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/pages.ts",
   "page_proposals_project_route_idx",
   "page-proposal-worker",
   "Page Proposal routes must stay DB-unique per project"
@@ -2273,21 +2273,21 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/web/src/screens/opportunity-explorer.tsx",
+  "apps/web/src/screens/opportunity-explorer-data.ts",
   "PageProposalQueueResponseSchema",
   "page-proposal-ui",
   "Page Proposal UI must parse queue responses through the shared contract"
 );
 
 requireIncludes(
-  "apps/web/src/screens/opportunity-explorer.tsx",
+  "apps/web/src/screens/opportunity-explorer-data.ts",
   '"/pages/proposals/runs"',
   "page-proposal-ui",
   "Page Proposal UI must trigger durable API queue work instead of calling worker/model code directly"
 );
 
 requireIncludes(
-  "apps/web/src/screens/opportunity-explorer.tsx",
+  "apps/web/src/screens/opportunity-explorer-data.ts",
   "agent-runs?task=page_brief_draft",
   "page-proposal-ui",
   "Page Proposal UI must read status from the subject-scoped page_brief_draft run list"
@@ -2301,14 +2301,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "PageStudioEditCommandSchema",
   "page-studio-versioning",
   "Page Studio editing must accept only named structured edit commands"
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   'type: z.literal("replace_section")',
   "page-studio-section-replacement",
   "section replacement must remain a named strict Page Studio command"
@@ -2385,14 +2385,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "SectionCopyRevisionOutputSchema",
   "page-studio-section-copy",
   "section copy output must remain a strict bounded contract"
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   'value.suggestionId && value.command.type !== "update_section_props"',
   "page-studio-section-copy",
   "AI suggestion application must reuse the structured props command only"
@@ -2434,7 +2434,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-version.capability.ts",
   "decideSectionCopySuggestionAttribution",
   "page-studio-section-copy",
   "suggestion provenance must be decided inside the existing edit transaction"
@@ -2462,7 +2462,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-copy-suggestions.capability.ts",
   'suggestionId: "dry-run"',
   "page-studio-section-copy",
   "section-copy dry-run audit data must not pretend to reference a durable suggestion"
@@ -2504,14 +2504,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/opportunities.ts",
   'z.literal("operator_cancelled")',
   "page-studio-section-copy",
   "operator cancellation must remain visible in durable run failure truth"
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-copy-suggestions.capability.ts",
   "lockAgentRunForSectionCopyCancellation",
   "page-studio-section-copy",
   "section-copy cancellation must preserve worker-compatible run-before-suggestion lock ordering"
@@ -2567,21 +2567,21 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-version.capability.ts",
   "lockPageProposalForVersioning",
   "page-studio-versioning",
   "Page Studio edit and review paths must serialize on the page proposal"
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-version.capability.ts",
   "Page Studio edits must use the latest page version as their base.",
   "page-studio-versioning",
   "Page Studio edits must reject stale base versions"
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-version.capability.ts",
   "Only the latest page version can be reviewed.",
   "page-studio-versioning",
   "page review must reject stale page versions after a newer edit exists"
@@ -2672,14 +2672,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-version.capability.ts",
   "countOpenApprovalBlockers",
   "page-version-approval",
   "Page version approval must check unresolved approval_blocker notes before approving"
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-aggregate-store.ts",
   "FOR UPDATE",
   "page-version-approval",
   "Page version approval must lock the page version row before counting approval_blocker notes"
@@ -2700,7 +2700,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-version.capability.ts",
   ".insert(approvals)",
   "page-version-approval",
   "Page version review must persist a durable approval audit row"
@@ -2735,14 +2735,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "pageVersions: z.array(ReleasePlanPageVersionTargetSchema).min(1).max(50)",
   "release-plan-target-cas",
   "Release-plan creation requests must carry a bounded set of strict page-version targets"
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "expected: PageVersionTargetRevisionSchema",
   "release-plan-target-cas",
   "Every release-plan target must carry its displayed page-version revision"
@@ -2843,14 +2843,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "normalizePotentiallyDangerousUrl",
   "page-json-safety",
   "PageJson safety scans must normalize control characters before checking dangerous URL schemes"
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "Page paths must not be protocol-relative URLs.",
   "page-json-safety",
   "Page paths must not allow protocol-relative off-site URLs"
@@ -3377,14 +3377,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/media.ts",
   "CreateMediaUploadIntentRequestSchema",
   "media-asset-boundary",
   "Media upload intent must stay behind the strict shared contract"
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "PageMediaReferenceSchema",
   "media-asset-boundary",
   "Future PageJson media placement must use the opaque contracts-owned reference shape"
@@ -3601,14 +3601,14 @@ requireNotIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   'z.discriminatedUnion("encoding"',
   "media-renderer-parity",
   "Static site files must use an explicit UTF-8/base64 encoding discriminator"
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/pages.ts",
   "STATIC_SITE_ARTIFACT_MAX_DECODED_BYTES = 50 * 1024 * 1024",
   "media-renderer-parity",
   "Static artifacts must enforce the accepted decoded-byte budget"
@@ -3650,7 +3650,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-preview.capability.ts",
   "loadPreviewMediaManifest",
   "media-renderer-parity",
   "Preview must resolve the immutable media projection through the shared manifest boundary"
@@ -3699,7 +3699,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/pages.service.ts",
   "previewPageVersionDocument",
   "media-preview-capability",
   "Preview HTML must be served through the capability-authorized document boundary"
@@ -3790,7 +3790,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/pages.module.ts",
+  "apps/api/src/modules/pages/page-version.capability.ts",
   "await persistPageVersionMediaAssetProjection(tx",
   "page-studio-media-placement",
   "Page Studio edits must persist media projection evidence in the N+1 transaction"
@@ -4007,14 +4007,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/reports.ts",
   'uniqueIndex("report_generation_runs_active_issue_idx")',
   "customer-report-aggregate",
   "Postgres must own one active generation per stable report issue"
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/reports.ts",
   'uniqueIndex("reports_open_candidate_issue_idx")',
   "customer-report-aggregate",
   "Postgres must own one open draft or ready candidate per report issue"
@@ -4126,7 +4126,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/reports.ts",
   '"report_evidence_items_proof_tier_check"',
   "customer-report-aggregate",
   "Customer report proof tiers must remain bounded at the database boundary"
@@ -4315,7 +4315,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/db/src/schema.ts",
+  "packages/db/src/schema/reports.ts",
   'index("report_generation_runs_recovery_scan_idx")',
   "customer-report-generation",
   "Active report generation must remain discoverable by the bounded recovery scanner"
@@ -4511,7 +4511,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/contracts/src/index.ts",
+  "packages/contracts/src/jobs.ts",
   '"report_artifact",',
   "customer-report-html-artifact",
   "Report artifact audit rows must use the declared shared job-type vocabulary"

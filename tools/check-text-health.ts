@@ -16,7 +16,8 @@ const requiredTextFiles: RequiredTextFile[] = [
   { path: ".github/workflows/ci.yml", minLines: 20 },
   { path: "apps/api/src/main.ts", minLines: 15 },
   { path: "apps/api/src/modules/gsc.module.ts", minLines: 100 },
-  { path: "packages/db/src/schema.ts", minLines: 100 },
+  { path: "packages/db/src/schema/opportunities.ts", minLines: 400 },
+  { path: "packages/db/src/schema/pages.ts", minLines: 150 },
   { path: "docs/progress/2026-06-25.md", minLines: 20 }
 ];
 
