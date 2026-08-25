@@ -308,6 +308,35 @@ for (const leaf of leaves) {
   }
 }
 
+// 12. every address a leaf or parent cites must still resolve. An address is
+// the whole point of this layer: it is what separates a rule from a wish. A
+// path that moved, or a line number that drifted, turns the address back into
+// prose without anything failing.
+const citing = [
+  ...readdirSync(HANDLERS_DIR)
+    .filter((name) => name.endsWith(".lane.md"))
+    .map((name) => `${HANDLERS_DIR}/${name}`),
+  ...readdirSync(LANES_DIR)
+    .filter((name) => name.endsWith(".md") && name !== "generated-map.md")
+    .map((name) => `${LANES_DIR}/${name}`)
+];
+for (const file of citing) {
+  const source = read(file);
+  for (const cite of source.matchAll(
+    /\b((?:apps|packages|docs|tools)\/[A-Za-z0-9_./-]+\.(?:ts|md|mmd))(?::(\d+))?/gu
+  )) {
+    const path = cite[1];
+    if (path === undefined || !existsSync(path)) {
+      fail("12-address", `${file}: cites "${cite[0]}" which does not exist`);
+      continue;
+    }
+    const line = cite[2] === undefined ? undefined : Number(cite[2]);
+    if (line !== undefined && read(path).split(/\r?\n/u).length < line) {
+      fail("12-address", `${file}: cites "${cite[0]}" but that file has fewer lines`);
+    }
+  }
+}
+
 // 7 and 8. invariants and their enforcement must match in both directions
 const globalInvariants = readInvariants(`${LANES_DIR}/ROOT.md`);
 const globalOutside = readOutsideEnforced(`${LANES_DIR}/ROOT.md`);
