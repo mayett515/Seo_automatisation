@@ -5,6 +5,10 @@ export function allowsLocalScaffoldUi(): boolean {
   return import.meta.env.DEV && import.meta.env.VITE_LOCAL_SCAFFOLD_AUTH === "true";
 }
 
+export function localScaffoldProjectIdWhenEnabled(): string | undefined {
+  return allowsLocalScaffoldUi() ? localScaffoldProjectId : undefined;
+}
+
 export function applyLocalScaffoldHeaders(headers: Headers): void {
   if (!allowsLocalScaffoldUi()) {
     return;

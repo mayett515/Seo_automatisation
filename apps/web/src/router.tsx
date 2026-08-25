@@ -11,6 +11,7 @@ import {
 import { ShellLayout, StatusPill } from "@localseo/ui";
 import { authClient } from "./lib/auth-client";
 import { allowsLocalScaffoldUi } from "./lib/local-scaffold";
+import { useProjectId } from "./lib/project-route";
 import { GscConnectScreen } from "./screens/gsc-connect";
 import { LoginScreen } from "./screens/login";
 import { MissionControlPage } from "./screens/mission-control";
@@ -79,6 +80,17 @@ function SessionProtectedShell(props: { redirectTo: string }) {
 }
 
 function AuthenticatedShell(props: { userEmail: string; onSignOut?: () => Promise<void> }) {
+  const projectId = useProjectId();
+  const projectLinks = [
+    { to: "/projects/$projectId" as const, label: "Project" },
+    { to: "/projects/$projectId/opportunities" as const, label: "Opportunities" },
+    { to: "/projects/$projectId/pages" as const, label: "Pages" },
+    { to: "/projects/$projectId/releases" as const, label: "Releases" },
+    { to: "/projects/$projectId/reports" as const, label: "Reports" },
+    { to: "/projects/$projectId/gsc/connect" as const, label: "GSC" },
+    { to: "/projects/$projectId/tracking-keys" as const, label: "Tracking" }
+  ];
+
   return (
     <ShellLayout
       title="Local SEO Mission Control"
@@ -86,27 +98,13 @@ function AuthenticatedShell(props: { userEmail: string; onSignOut?: () => Promis
         <nav className="nav-list">
           <Link to="/">Mission Control</Link>
           <Link to="/audit">Audit</Link>
-          <Link to="/projects/$projectId" params={{ projectId: "demo-project" }}>
-            Project
-          </Link>
-          <Link to="/projects/$projectId/opportunities" params={{ projectId: "demo-project" }}>
-            Opportunities
-          </Link>
-          <Link to="/projects/$projectId/pages" params={{ projectId: "demo-project" }}>
-            Pages
-          </Link>
-          <Link to="/projects/$projectId/releases" params={{ projectId: "demo-project" }}>
-            Releases
-          </Link>
-          <Link to="/projects/$projectId/reports" params={{ projectId: "demo-project" }}>
-            Reports
-          </Link>
-          <Link to="/projects/$projectId/gsc/connect" params={{ projectId: "demo-project" }}>
-            GSC
-          </Link>
-          <Link to="/projects/$projectId/tracking-keys" params={{ projectId: "demo-project" }}>
-            Tracking
-          </Link>
+          {projectId
+            ? projectLinks.map((item) => (
+                <Link key={item.label} to={item.to} params={{ projectId }}>
+                  {item.label}
+                </Link>
+              ))
+            : null}
         </nav>
       }
       rightPanel={

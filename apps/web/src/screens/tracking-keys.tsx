@@ -1,39 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import {
   CreateTrackingKeyResponseSchema,
+  TrackingKeyListResponseSchema,
   TrackingKeySummarySchema,
-  type CreateTrackingKeyResponse,
-  type TrackingKeySummary
+  type CreateTrackingKeyResponse
 } from "@localseo/contracts";
 import { getJson, postJson } from "../lib/api";
 import { projectApiPath } from "../lib/api-path";
-
-type TrackingKeyListResponse = {
-  projectId: string;
-  keys: TrackingKeySummary[];
-};
-
-const TrackingKeyListResponseSchema = {
-  parse(input: unknown): TrackingKeyListResponse {
-    if (!input || typeof input !== "object") {
-      throw new Error("Invalid tracking key list response");
-    }
-
-    const record = input as Record<string, unknown>;
-
-    if (typeof record.projectId !== "string" || !Array.isArray(record.keys)) {
-      throw new Error("Invalid tracking key list response");
-    }
-
-    return {
-      projectId: record.projectId,
-      keys: record.keys.map((key) => TrackingKeySummarySchema.parse(key))
-    };
-  }
-};
+import { requireProjectId, useProjectId } from "../lib/project-route";
 
 export function TrackingKeysScreen() {
   const projectId = useProjectId();
@@ -42,13 +18,15 @@ export function TrackingKeysScreen() {
   const [createdKey, setCreatedKey] = useState<CreateTrackingKeyResponse | undefined>();
   const keys = useQuery({
     queryKey: ["tracking-keys", projectId],
-    queryFn: () => getJson(projectApiPath(projectId, "/tracking-keys"), TrackingKeyListResponseSchema),
+    queryFn: () =>
+      getJson(projectApiPath(requireProjectId(projectId), "/tracking-keys"), TrackingKeyListResponseSchema),
+    enabled: Boolean(projectId),
     retry: false
   });
   const createKey = useMutation({
     mutationFn: () =>
       postJson(
-        projectApiPath(projectId, "/tracking-keys"),
+        projectApiPath(requireProjectId(projectId), "/tracking-keys"),
         { allowedOrigins: [allowedOrigin] },
         CreateTrackingKeyResponseSchema
       ),
@@ -61,7 +39,7 @@ export function TrackingKeysScreen() {
   const revokeKey = useMutation({
     mutationFn: (keyId: string) =>
       postJson(
-        projectApiPath(projectId, `/tracking-keys/${encodeURIComponent(keyId)}/revoke`),
+        projectApiPath(requireProjectId(projectId), `/tracking-keys/${encodeURIComponent(keyId)}/revoke`),
         {},
         TrackingKeySummarySchema
       ),
@@ -70,6 +48,14 @@ export function TrackingKeysScreen() {
     }
   });
   const activeCount = keys.data?.keys.filter((key) => key.status === "active").length ?? 0;
+
+  if (!projectId) {
+    return (
+      <section className="screen-grid">
+        <p>Select a project to continue.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="screen-grid">
@@ -141,9 +127,4 @@ export function TrackingKeysScreen() {
       </section>
     </section>
   );
-}
-
-function useProjectId(): string {
-  const params = useParams({ strict: false });
-  return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }

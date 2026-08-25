@@ -1,18 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import { GscPerformanceSummarySchema, type GscPerformanceSummary } from "@localseo/contracts";
 import { getJson } from "../lib/api";
 import { projectApiPath } from "../lib/api-path";
+import { requireProjectId, useProjectId } from "../lib/project-route";
 
 export function PerformanceDashboardScreen() {
   const projectId = useProjectId();
   const performance = useQuery({
     queryKey: ["gsc-performance", projectId],
-    queryFn: () => getJson(projectApiPath(projectId, "/gsc/performance"), GscPerformanceSummarySchema),
+    queryFn: () =>
+      getJson(projectApiPath(requireProjectId(projectId), "/gsc/performance"), GscPerformanceSummarySchema),
+    enabled: Boolean(projectId),
     retry: false
   });
   const data = performance.data;
+
+  if (!projectId) {
+    return (
+      <section className="screen-grid">
+        <p>Select a project to continue.</p>
+      </section>
+    );
+  }
 
   if (performance.isPending) {
     return <section className="screen-grid">Loading performance data</section>;
@@ -101,11 +112,6 @@ function signalsForRow(summary: GscPerformanceSummary, query: string, pageUrl: s
   return summary.opportunitySignals
     .filter((signal) => signal.query === query && signal.pageUrl === pageUrl)
     .map((signal) => signal.signalType.replaceAll("_", " "));
-}
-
-function useProjectId(): string {
-  const params = useParams({ strict: false });
-  return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }
 
 function safePathname(pageUrl: string): string {

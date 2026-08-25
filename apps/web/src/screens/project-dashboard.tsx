@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import {
   LatestWebsiteImportResponseSchema,
@@ -9,6 +8,7 @@ import {
 } from "@localseo/contracts";
 import { getJson, postJson } from "../lib/api";
 import { projectApiPath } from "../lib/api-path";
+import { requireProjectId, useProjectId } from "../lib/project-route";
 
 export function ProjectDashboardScreen() {
   const projectId = useProjectId();
@@ -16,7 +16,9 @@ export function ProjectDashboardScreen() {
   const [sourceUrl, setSourceUrl] = useState("");
   const importQuery = useQuery({
     queryKey: ["website-import-latest", projectId],
-    queryFn: () => getJson(projectApiPath(projectId, "/import-website/latest"), LatestWebsiteImportResponseSchema),
+    queryFn: () =>
+      getJson(projectApiPath(requireProjectId(projectId), "/import-website/latest"), LatestWebsiteImportResponseSchema),
+    enabled: Boolean(projectId),
     retry: false,
     refetchInterval: (query) => {
       const data = query.state.data;
@@ -27,7 +29,7 @@ export function ProjectDashboardScreen() {
   const importWebsite = useMutation({
     mutationFn: () =>
       postJson(
-        projectApiPath(projectId, "/import-website"),
+        projectApiPath(requireProjectId(projectId), "/import-website"),
         {
           sourceUrl
         },
@@ -39,6 +41,14 @@ export function ProjectDashboardScreen() {
     }
   });
   const importRun = importQuery.data?.importRun;
+
+  if (!projectId) {
+    return (
+      <section className="screen-grid">
+        <p>Select a project to continue.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="screen-grid">
@@ -164,9 +174,4 @@ function importRunTone(run: WebsiteImportRun | undefined): "neutral" | "success"
   }
 
   return "warning";
-}
-
-function useProjectId(): string {
-  const params = useParams({ strict: false });
-  return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }

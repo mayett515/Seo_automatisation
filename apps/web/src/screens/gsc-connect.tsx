@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { StatusPill } from "@localseo/ui";
 import {
   GscConnectionSchema,
@@ -9,17 +9,19 @@ import {
 } from "@localseo/contracts";
 import { getJson, postJson } from "../lib/api";
 import { projectApiPath } from "../lib/api-path";
+import { requireProjectId, useProjectId } from "../lib/project-route";
 
 export function GscConnectScreen() {
   const projectId = useProjectId();
   const queryClient = useQueryClient();
   const connection = useQuery({
     queryKey: ["gsc-connection", projectId],
-    queryFn: () => getJson(projectApiPath(projectId, "/gsc/connection"), GscConnectionSchema),
+    queryFn: () => getJson(projectApiPath(requireProjectId(projectId), "/gsc/connection"), GscConnectionSchema),
+    enabled: Boolean(projectId),
     retry: false
   });
   const connect = useMutation({
-    mutationFn: () => postJson(projectApiPath(projectId, "/gsc/connect"), {}, GscOAuthIntentSchema),
+    mutationFn: () => postJson(projectApiPath(requireProjectId(projectId), "/gsc/connect"), {}, GscOAuthIntentSchema),
     onSuccess: (intent) => {
       if (intent.authUrl) {
         window.location.href = intent.authUrl;
@@ -27,7 +29,8 @@ export function GscConnectScreen() {
     }
   });
   const sync = useMutation({
-    mutationFn: () => postJson(projectApiPath(projectId, "/gsc/sync"), {}, GscSyncQueueResponseSchema),
+    mutationFn: () =>
+      postJson(projectApiPath(requireProjectId(projectId), "/gsc/sync"), {}, GscSyncQueueResponseSchema),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["gsc-connection", projectId] });
       await queryClient.invalidateQueries({ queryKey: ["gsc-performance", projectId] });
@@ -35,6 +38,14 @@ export function GscConnectScreen() {
   });
   const status = connection.data?.status ?? "connection_required";
   const tone = status === "connected" ? "success" : status === "error" || status === "revoked" ? "danger" : "warning";
+
+  if (!projectId) {
+    return (
+      <section className="screen-grid">
+        <p>Select a project to continue.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="screen-grid">
@@ -72,11 +83,6 @@ export function GscConnectScreen() {
 
 function Notice(props: { text: string; tone?: "neutral" | "danger" }) {
   return <div className={`notice notice--${props.tone ?? "neutral"}`}>{props.text}</div>;
-}
-
-function useProjectId(): string {
-  const params = useParams({ strict: false });
-  return typeof params.projectId === "string" ? params.projectId : "demo-project";
 }
 
 function syncResponseMessage(response: GscSyncQueueResponse): string {
