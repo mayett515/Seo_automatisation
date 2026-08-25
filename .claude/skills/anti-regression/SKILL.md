@@ -19,10 +19,15 @@ worked before still works.
 4. Check boundary contracts. If a schema changed, ask whether stored data
    written under the old schema still parses, and whether queued jobs written
    under the old payload shape still process.
-5. Run the checks the repo provides (lint, typecheck, tests, guard scripts;
+5. Audit removed branches before believing they were dead. A branch that
+   looks unreachable often does double duty - the classic case is a guard
+   whose `if` also narrows an optional handle. Prove reachability from an
+   actual caller before deleting, and check whether the compiler was relying
+   on it.
+6. Run the checks the repo provides (lint, typecheck, tests, guard scripts;
    `pnpm check` if available). Report failures verbatim with paths. Never
    report a clean result without having run them.
-6. State explicitly what you could not verify. Silence is not coverage, and a
+7. State explicitly what you could not verify. Silence is not coverage, and a
    passing suite proves nothing about changed code that has no test.
 
 ## Recording new incidents

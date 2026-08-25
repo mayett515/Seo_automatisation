@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 type GuardResult = {
   category: string;
@@ -4874,23 +4874,53 @@ requireIncludes(
 requireIncludes(
   "AGENTS.md",
   "Match the proof to the change",
-  "vendored-skill-pack",
-  "the host-neutral proof matrix must stay in the root AGENTS.md: a green typecheck is not evidence for a database, route, or wiring change (ADR 0024)"
+  "agent-rule-layer",
+  "the host-neutral proof matrix must stay in the root AGENTS.md: a green typecheck is not evidence for a database, route, or wiring change"
 );
 
 requireIncludes(
   "apps/api/AGENTS.md",
   "returns the narrowed handle",
-  "vendored-skill-pack",
+  "agent-rule-layer",
   "the guard-returns-the-handle rule must stay in apps/api/AGENTS.md: it exists because deleting the second database branch broke the typecheck at five call sites"
 );
 
 requireIncludes(
   "packages/contracts/AGENTS.md",
   "silently strips them",
-  "vendored-skill-pack",
+  "agent-rule-layer",
   "the unknown-key policy must stay in packages/contracts/AGENTS.md: z.object() strips silently, so the decision has to be written down"
 );
+
+// Text anchors cannot see a mirror drifting: the reachability lesson landed in
+// .agents/skills and stayed out of .claude/skills while every anchor was green.
+// These two checks compare the copies themselves.
+for (const rule of readdirSync(".claude/rules")) {
+  const claudeRule = `.claude/rules/${rule}`;
+  const agentsRule = `.agents/rules/${rule}`;
+  if (!existsSync(agentsRule)) {
+    failures.push({
+      category: "agent-rule-layer",
+      message: `${agentsRule}: every .claude/rules file needs its .agents/rules mirror, or agy and Codex read a different rule set`
+    });
+    continue;
+  }
+  if (read(claudeRule) !== read(agentsRule)) {
+    failures.push({
+      category: "agent-rule-layer",
+      message: `${agentsRule}: mirror drifted from ${claudeRule}; the two rule copies are byte-identical by design`
+    });
+  }
+}
+
+for (const skill of [".claude/skills/anti-regression/SKILL.md", ".agents/skills/anti-regression/SKILL.md"]) {
+  requireIncludes(
+    skill,
+    "double duty",
+    "agent-rule-layer",
+    "both anti-regression copies must carry the reachability step; a branch that looks dead may be narrowing an optional handle"
+  );
+}
 
 requireIncludes(
   "docs/agents/domain.md",

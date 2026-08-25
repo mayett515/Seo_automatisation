@@ -24,7 +24,7 @@ queue payloads.
   set will grow. Never `.passthrough()` on untrusted input.
 
 ```ts
-export const SeoTaskSchema = z.object({
+export const SeoTaskSchema = z.strictObject({
   url: z.string().url(),
   targetKeyword: z.string().min(1),
   maxDepth: z.number().int().default(2),
