@@ -4895,22 +4895,43 @@ requireIncludes(
 // Text anchors cannot see a mirror drifting: the reachability lesson landed in
 // .agents/skills and stayed out of .claude/skills while every anchor was green.
 // These two checks compare the copies themselves.
-for (const rule of readdirSync(".claude/rules")) {
-  const claudeRule = `.claude/rules/${rule}`;
-  const agentsRule = `.agents/rules/${rule}`;
-  if (!existsSync(agentsRule)) {
+const claudeRuleNames = readdirSync(".claude/rules").sort();
+const agentsRuleNames = readdirSync(".agents/rules").sort();
+
+// Iterating one side only would miss a file that exists solely in the other,
+// and a deletion from both trees would leave the check green with nothing to
+// compare. Compare the sets, then the bytes, and hold a floor on the count.
+for (const missing of claudeRuleNames.filter((name) => !agentsRuleNames.includes(name))) {
+  failures.push({
+    category: "agent-rule-layer",
+    message: `.agents/rules/${missing}: missing mirror of .claude/rules/${missing}; agy and Codex would read a smaller rule set than Claude`
+  });
+}
+
+for (const extra of agentsRuleNames.filter((name) => !claudeRuleNames.includes(name))) {
+  failures.push({
+    category: "agent-rule-layer",
+    message: `.claude/rules/${extra}: missing mirror of .agents/rules/${extra}; Claude would read a smaller rule set than agy and Codex`
+  });
+}
+
+for (const rule of claudeRuleNames.filter((name) => agentsRuleNames.includes(name))) {
+  if (read(`.claude/rules/${rule}`) !== read(`.agents/rules/${rule}`)) {
     failures.push({
       category: "agent-rule-layer",
-      message: `${agentsRule}: every .claude/rules file needs its .agents/rules mirror, or agy and Codex read a different rule set`
-    });
-    continue;
-  }
-  if (read(claudeRule) !== read(agentsRule)) {
-    failures.push({
-      category: "agent-rule-layer",
-      message: `${agentsRule}: mirror drifted from ${claudeRule}; the two rule copies are byte-identical by design`
+      message: `.agents/rules/${rule}: mirror drifted from .claude/rules/${rule}; the two rule copies are byte-identical by design`
     });
   }
+}
+
+// Raise this floor when the rule set grows; lowering it means rules were
+// dropped, which is a decision that belongs in a diff, not in a silent delete.
+const expectedRuleCount = 17;
+if (claudeRuleNames.length < expectedRuleCount) {
+  failures.push({
+    category: "agent-rule-layer",
+    message: `.claude/rules: ${claudeRuleNames.length} rules present, at least ${expectedRuleCount} expected; set parity stays green when files vanish from both trees`
+  });
 }
 
 for (const skill of [".claude/skills/anti-regression/SKILL.md", ".agents/skills/anti-regression/SKILL.md"]) {

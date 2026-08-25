@@ -38,9 +38,26 @@ follows is therefore narrower than "types cannot do this":
 > competing transitions atomically in the database as well - a refined type
 > proves what was read, never that no one else is writing.
 
-The runtime checks at those two lines are the correct design, not a shortcut,
-because they are also the concurrency guard. A typestate chain spanning the two
-requests would add compile-time ceremony around a guarantee it cannot provide.
+A typestate chain spanning the two requests would add compile-time ceremony
+around a guarantee it cannot provide. But the two runtime checks are not
+themselves the concurrency guard, and an earlier version of this file said they
+were. Only the preflight path locks and updates transactionally.
+`release-execution.capability.ts:47-51` reads plan, checks, and approval as
+three separate statements and enqueues afterwards, so the admission decision is
+not atomic. What prevents a double deploy sits elsewhere and is worth naming,
+because it is the pattern this repository actually uses:
+
+- The deploy job id is derived from the release plan id, and
+  `apps/api/src/queue-producer.ts:104-126` serializes enqueues per
+  `(queueName, jobId)` in process and across instances through a PostgreSQL
+  advisory lock, so concurrent deploys of one plan coalesce into one job.
+- `apps/worker/src/handlers/deploy.ts:714` gates the deploy again on the same
+  status list with a conditional update, so a plan that changed after admission
+  does not deploy.
+
+The conditional status update in the API runs after the enqueue, which is why
+its `BadRequestException` can be raised while a job is already queued. The
+worker gate is what keeps that honest, not the ordering in the API.
 
 The idea transfers only within a single call path, where the earlier step can
 return the type the later step requires. That case is already owned by the
@@ -62,11 +79,13 @@ grep -rEl "[a-zA-Z]*[Ii]d: string, *[a-zA-Z]*[Ii]d: string" packages apps --incl
 grep -rn "\.brand<\|__brand" packages apps --include=*.ts | wc -l   # 0
 ```
 
-That is 54 adjacent id pairs across 27 non-test files, against zero branded
-types. An earlier count of 118 in this file's first version was wrong: it
-counted lines ending in `projectId: string,`, which includes multi-line
-parameter lists whose next parameter is not an id at all. Swapping two ids in
-any of the 54 compiles cleanly:
+That is 54 adjacent id pairs across 31 files, of which 50 pairs in 27 files are
+production code, against zero branded types. Two earlier numbers in this file
+were wrong and are corrected here: 118 counted lines ending in
+`projectId: string,`, which includes multi-line parameter lists whose next
+parameter is not an id at all; and "54 across 27 non-test files" mixed the
+all-files hit count with the non-test file count. Swapping two ids in any of
+the 50 production pairs compiles cleanly:
 
 ```ts
 async deploy(projectId: string, releasePlanId: string, userId?: string)
@@ -77,8 +96,8 @@ at the ingress parse this repository already performs, so no new library and
 specifically no Effect adoption is required.
 
 Not promoted, for two reasons. No id swap has produced a defect here, so the
-rule would rest on plausibility rather than evidence. And 54 call sites is a
-migration, not a rule line: writing the rule before the migration would leave
+rule would rest on plausibility rather than evidence. And 50 production call
+sites are a migration, not a rule line: writing the rule before the migration would leave
 an always-on claim the code does not honor, which the documentation rules
 forbid.
 
