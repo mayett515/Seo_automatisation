@@ -41,4 +41,11 @@ NestJS is the application framework and Fastify is its HTTP adapter. Express idi
 - TLS termination, redirects, compression, and multi-domain concerns belong to the reverse proxy/edge, never to the Node process; document per deployment which layer owns TLS, redirects, health checks, scaling, and logs.
 - Before changing timeout, proxy, compression, static-asset, or scaling behavior, check the current official Fastify recommendations first.
 
+## Database handles
+
 - A guard that proves the database or another required resource is available returns the narrowed handle, never `void`. Callers must not re-read `database.db` afterwards and add a second fallback: that branch is unreachable and claims a policy the guard already replaced.
+
+## Release admission and deploy
+
+- Deploy admission is not atomic. `ReleaseExecutionCapability.deploy` reads the plan, its checks, and the approval as separate statements and enqueues afterwards, and its conditional status update runs after the enqueue, so its `BadRequestException` can be raised while a job is already queued. Do not describe these reads as a concurrency guard.
+- What prevents a double deploy is the deterministic job id derived from the release plan id plus `QueueProducerService.enqueue`, which serializes per `(queueName, jobId)` in process and across instances through a PostgreSQL advisory lock, and the worker gating the deploy again on `deployStartingReleasePlanStatuses` with its own conditional update. Change either side only together with the other.
