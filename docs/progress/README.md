@@ -2,7 +2,7 @@
 
 This folder records chronological project progress.
 
-Latest: [2026-08-22/23 - Integration campaign, schema-guided refactor rounds, agent-layer adoption](2026-08-23.md).
+Latest: [2026-08-25 - Codex finding fixes](2026-08-25-finding-fixes.md).
 
 Use this for "what changed when" and link to commits, reviews, and follow-up work. Use ADRs for "why we chose this direction."
 
@@ -59,3 +59,7 @@ Do not log every tiny edit. Commit history already covers that.
 - [2026-08-04.md](2026-08-04.md)
 - [2026-08-08.md](2026-08-08.md)
 - [2026-08-09.md](2026-08-09.md)
+- [2026-08-23.md](2026-08-23.md)
+- [2026-08-24.md](2026-08-24.md)
+- [2026-08-25.md](2026-08-25.md)
+- [2026-08-25-finding-fixes.md](2026-08-25-finding-fixes.md)
