@@ -2,7 +2,7 @@
 
 This folder records chronological project progress.
 
-Latest: [2026-08-25 - Codex finding fixes](2026-08-25-finding-fixes.md).
+Latest: [2026-08-25 - Rule-layer promotion, mirror parity, and one deploy owner](2026-08-25-rule-layer-and-mirrors.md).
 
 Use this for "what changed when" and link to commits, reviews, and follow-up work. Use ADRs for "why we chose this direction."
 
