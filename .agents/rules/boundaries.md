@@ -64,6 +64,19 @@ const paymentStrategies: Record<PaymentMethod, (amount: Money) => Promise<void>>
 };
 ```
 
+## Guards that prove a resource
+
+A guard that proves a required resource is available returns the narrowed
+resource, never `void`. A caller that re-reads the original optional handle
+afterwards writes a second branch for a case the guard already decided, and
+that branch answers differently the day someone moves the guard — silently,
+because it is unreachable and nothing fails.
+
+```ts
+const db = await requireDatabase();   // throws when absent, returns the handle
+return repository.read(db, id);       // no second "is it there" branch
+```
+
 ## Files follow the same restraint
 
 Extract concepts before extracting files. No `types.ts` + `errors.ts` +

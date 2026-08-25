@@ -40,3 +40,5 @@ NestJS is the application framework and Fastify is its HTTP adapter. Express idi
 - Public or unauthenticated write endpoints and auth endpoints get route-class-specific rate limits, not only the global API limit; app-level body limits and security headers before exposure.
 - TLS termination, redirects, compression, and multi-domain concerns belong to the reverse proxy/edge, never to the Node process; document per deployment which layer owns TLS, redirects, health checks, scaling, and logs.
 - Before changing timeout, proxy, compression, static-asset, or scaling behavior, check the current official Fastify recommendations first.
+
+- A guard that proves the database or another required resource is available returns the narrowed handle, never `void`. Callers must not re-read `database.db` afterwards and add a second fallback: that branch is unreachable and claims a policy the guard already replaced.

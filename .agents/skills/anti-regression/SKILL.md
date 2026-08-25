@@ -11,8 +11,9 @@ Determine whether behavior that worked before still works after the current chan
 2. For every changed export or signature, find and inspect its callers.
 3. If a discriminated union changed, locate every switch or decision map over it.
 4. If a schema changed, check compatibility with stored data, queued payloads, API clients, and generated artifacts written under the previous shape.
-5. Run the repository's relevant lint, typecheck, tests, guard scripts, and full gate when proportionate. Report failures verbatim with paths.
-6. State what could not be verified. A passing suite is not evidence for changed behavior that lacks coverage.
+5. Audit removed branches before believing they were dead. A branch that looks unreachable often does double duty - the classic case is a guard whose `if` also narrows an optional handle. Prove reachability from an actual caller before deleting, and check whether the compiler was relying on it.
+6. Run the repository's relevant lint, typecheck, tests, guard scripts, and full gate when proportionate. Report failures verbatim with paths. Match the proof to the change; when the fitting proof cannot run, name the missing one instead of substituting a cheaper green check.
+7. State what could not be verified. A passing suite is not evidence for changed behavior that lacks coverage.
 
 ## Findings
 

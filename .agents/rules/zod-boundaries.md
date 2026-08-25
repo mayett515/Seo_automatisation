@@ -53,3 +53,16 @@ A schema guarantees shape, never meaning. A parsed object can still put the
 tax ID in the vendor field or report a total that contradicts its line items.
 Semantic invariants are checked in the core, after parsing, as named gate
 functions that return a failure code.
+
+## Unknown keys are a decision
+
+Every object schema at a boundary decides explicitly what happens to unknown
+properties. `z.object()` accepts and silently strips them; that is a policy,
+not a default to inherit by accident. Internal API, queue, and persistence
+contracts are strict. Strip, passthrough, or catchall need a written
+compatibility reason.
+
+The rule binds when writing a schema and when touching one. Existing schemas
+migrate deliberately, one contract at a time: tightening changes parse
+behavior for producers already in flight, so it needs the same producer audit
+as any other contract change.

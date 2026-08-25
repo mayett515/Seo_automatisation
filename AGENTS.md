@@ -73,6 +73,7 @@ the error-shape taxonomy and branching escalation, read
 - Test doubles stay in test files; behavioral assertions for queue, authorization, retry, and status changes. Typecheck is not a behavioral test.
 - Update the owning doc in the same change when lifecycle, ownership, public behavior, or verification commands change; documentation describes verified behavior.
 - Run the narrowest relevant lint/typecheck after edits and report failures verbatim; runtime wiring changes need a smoke check (the smoke-verify skill).
+- Match the proof to the change, not to convenience: pure decisions and mappers -> unit test; database queries and row mapping -> integration test against a real database; route, navigation, empty state -> browser check; framework wiring -> a started process serving a real request or job. When the fitting proof cannot run, name the missing one and why - a cheaper green check never stands in for it.
 - Every review asks, besides soundness: does this diff implement what was actually asked? Find the originating requirement (issue, spec, ADR, or the user's words); never reconstruct one from the diff and grade the diff against it. Sound-but-wrong-thing and right-intent-built-badly are separate verdicts.
 - When reviewing a repository or subsystem, read change frequency alongside size: churn tells you where findings pay back; a large file nobody touches pays back never.
 - Plain TypeScript first; pattern matching, Result libraries, or a new FP ecosystem only with real repeated pressure and explicit approval.

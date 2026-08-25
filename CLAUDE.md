@@ -55,6 +55,13 @@ valid outcome. Never refactor to prove a rule applies.
   check instead of prose about it.
 - After a series of edits, run lint and typecheck and report failures
   verbatim. Never suppress an error to make a check pass.
+- Match the proof to the change, not to convenience: pure decisions and
+  mappers -> unit test; database queries and row mapping -> integration test
+  against a real database; route, navigation, empty state -> browser check;
+  framework wiring -> a started process serving a real request or job.
+  Typecheck is not a behavioral test.
+- When the fitting proof cannot run, name the missing one and why. A cheaper
+  green check never stands in for it.
 
 ## Host repo commands
 

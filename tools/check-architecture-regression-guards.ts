@@ -4872,6 +4872,27 @@ requireIncludes(
 );
 
 requireIncludes(
+  "AGENTS.md",
+  "Match the proof to the change",
+  "vendored-skill-pack",
+  "the host-neutral proof matrix must stay in the root AGENTS.md: a green typecheck is not evidence for a database, route, or wiring change (ADR 0024)"
+);
+
+requireIncludes(
+  "apps/api/AGENTS.md",
+  "returns the narrowed handle",
+  "vendored-skill-pack",
+  "the guard-returns-the-handle rule must stay in apps/api/AGENTS.md: it exists because deleting the second database branch broke the typecheck at five call sites"
+);
+
+requireIncludes(
+  "packages/contracts/AGENTS.md",
+  "silently strips them",
+  "vendored-skill-pack",
+  "the unknown-key policy must stay in packages/contracts/AGENTS.md: z.object() strips silently, so the decision has to be written down"
+);
+
+requireIncludes(
   "docs/agents/domain.md",
   "docs/architecture/decisions/",
   "vendored-skill-pack",
