@@ -25,7 +25,11 @@ import {
   type ReleasePlan,
   type StaticSiteFile
 } from "@localseo/contracts";
-import { buildReleaseDeploymentKey, canDeployRelease } from "@localseo/domain";
+import {
+  buildReleaseDeploymentKey,
+  canDeployRelease,
+  deployStartingReleasePlanStatuses
+} from "@localseo/domain";
 import {
   buildPageMediaVariantPath,
   collectPageMediaAssetIds,
@@ -135,10 +139,6 @@ const rollbackSourceDeploymentStatusValues = [
   "live_healthy",
   "live_with_warnings"
 ] as const satisfies DeploymentStatus[];
-const deployStartingReleasePlanStatuses = [
-  "approved_for_deploy",
-  "deploying"
-] as const satisfies ReleasePlan["status"][];
 const releaseLiveProjectionPlanStatuses = ["deploying", "live"] as const satisfies ReleasePlan["status"][];
 const releaseLiveProjectableDeploymentStatusValues = [
   "live_healthy",

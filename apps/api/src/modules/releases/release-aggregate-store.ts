@@ -49,10 +49,6 @@ export const preflightableReleasePlanStatuses = [
   "approved_for_deploy"
 ] as const satisfies ReleasePlan["status"][];
 export const preflightableReleasePlanStatusSet = new Set<ReleasePlan["status"]>(preflightableReleasePlanStatuses);
-export const deployStartingReleasePlanStatuses = [
-  "approved_for_deploy",
-  "deploying"
-] as const satisfies ReleasePlan["status"][];
 export const cancellableReleasePlanStatuses = [
   "draft",
   "ready",

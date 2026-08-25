@@ -93,6 +93,16 @@ export function canDeployRelease(plan: ReleasePlan, checks: ReleaseCheck[]): boo
   return plan.status === "approved_for_deploy" && readiness.kind !== "blocked";
 }
 
+// Statuses a release plan may hold when the deploy-start transition writes `deploying`. The API
+// applies it when the deploy job is enqueued and the worker re-applies it when the deployment
+// ledger row starts; both compare-and-set against this one list, so a plan that concurrently
+// left the set loses the race on whichever side runs second. `deploying` is a member because
+// the worker start is idempotent across job retries.
+export const deployStartingReleasePlanStatuses = [
+  "approved_for_deploy",
+  "deploying"
+] as const satisfies ReleasePlan["status"][];
+
 export function buildReleaseDeploymentKey(releasePlanId: string): string {
   return `release_plan:${releasePlanId}`;
 }

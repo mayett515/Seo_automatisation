@@ -3123,6 +3123,34 @@ requireIncludes(
 );
 
 requireIncludes(
+  "packages/domain/src/index.ts",
+  "export const deployStartingReleasePlanStatuses = [",
+  "release-transition-cas",
+  "The deploy-start admission set is owned by the domain core, not by an app module"
+);
+
+requireNotRegex(
+  "apps/api/src/modules/releases/release-aggregate-store.ts",
+  /const deployStartingReleasePlanStatuses\s*=/u,
+  "release-transition-cas",
+  "The API must import the deploy-start admission set from @localseo/domain, not redeclare it"
+);
+
+requireRegex(
+  "apps/api/src/modules/releases/release-execution.capability.ts",
+  /import \{[^}]*deployStartingReleasePlanStatuses[^}]*\}\s*from\s*"@localseo\/domain"/u,
+  "release-transition-cas",
+  "API deploy enqueue must gate on the domain-owned deploy-start admission set"
+);
+
+requireRegex(
+  "apps/worker/src/handlers/deploy.ts",
+  /import \{[^}]*deployStartingReleasePlanStatuses[^}]*\}\s*from\s*"@localseo\/domain"/u,
+  "release-transition-cas",
+  "Worker deploy start must gate on the domain-owned deploy-start admission set"
+);
+
+requireIncludes(
   "apps/worker/src/handlers/deploy.integration.ts",
   "does not let deployment ledger start revive a terminal release plan",
   "release-transition-cas",
