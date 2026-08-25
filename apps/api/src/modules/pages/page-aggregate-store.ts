@@ -47,8 +47,9 @@ import {
   renderPagePreviewFile,
   validatePageJsonAgainstRegistry
 } from "@localseo/page-registry";
+import { isPersistedId } from "../../persisted-id.js";
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+export { isPersistedId } from "../../persisted-id.js";
 
 export type Db = DatabaseClient;
 export type PageProposalRow = Awaited<ReturnType<typeof selectPageProposalRows>>[number];
@@ -649,10 +650,6 @@ export function parseStoredProposalJson(
   }
 
   return parsed.data;
-}
-
-export function isPersistedId(value: string): boolean {
-  return uuidPattern.test(value);
 }
 
 export function recordFromUnknown(value: unknown): Record<string, unknown> {

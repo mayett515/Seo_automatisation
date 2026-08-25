@@ -442,7 +442,7 @@ requireNotIncludes(
 
 for (const scopedFile of [
   "apps/api/src/modules/pages/page-aggregate-store.ts",
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-planning.capability.ts",
   "apps/api/src/modules/reports/report-aggregate-store.ts",
   "apps/api/src/preview-media.ts",
   "apps/worker/src/handlers/customer-report.ts",
@@ -701,14 +701,14 @@ requireRegex(
 );
 
 requireNotIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-rollback.capability.ts",
   ".submitSitemap(",
   "worker-owned-release-verification",
   "POST /verify must not submit sitemaps inline; release verification worker owns GSC handoff"
 );
 
 requireNotIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-rollback.capability.ts",
   ".verifyRelease(",
   "worker-owned-release-verification",
   "POST /verify must not run release verification inline; release verification worker owns execution"
@@ -2189,7 +2189,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "packages/ai/src/index.ts",
+  "packages/ai/src/page-proposal.ts",
   "canonicalPageProposalOutputExample",
   "page-proposal-real-provider-smoke",
   "real Page Proposal prompts must retain a contract-valid registry-prop example"
@@ -2763,7 +2763,7 @@ requireIncludes(
 );
 
 requireOrderedIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-planning.capability.ts",
   "FOR UPDATE OF pv",
   "decideReleasePlanTargetAdmission({",
   "release-plan-target-cas",
@@ -2807,21 +2807,21 @@ requireOrderedIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-planning.capability.ts",
   "pageVersionId: target.pageVersionId.toLowerCase()",
   "release-page-version-lock-order",
   "Release planning must canonicalize request UUIDs before JavaScript lock ordering"
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-preflight.capability.ts",
   "].sort();\n\n      if (releasePageVersionIds.length > 0)",
   "release-page-version-lock-order",
   "Deploy approval must sort release page-version ids before locking them"
 );
 
 requireOrderedIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-preflight.capability.ts",
   "for (const pageVersionId of releasePageVersionIds)",
   ".update(pageVersions)",
   "release-page-version-lock-order",
@@ -2941,14 +2941,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-planning.capability.ts",
   "hasApprovalEvidence: Boolean(row.pageVersionApprovedAt)",
   "page-release-planning",
   "Release-plan creation must require approved page versions with approval evidence"
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-planning.capability.ts",
   "createdByUserId",
   "page-release-planning",
   "Release-plan creation must persist actor evidence"
@@ -2962,7 +2962,7 @@ requireIncludes(
 );
 
 requireNotIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-preflight.capability.ts",
   "local-scaffold-user",
   "page-release-planning",
   "Release deploy approval must not fall back to a scaffold user"
@@ -2983,7 +2983,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-planning.capability.ts",
   "FOR UPDATE OF pv",
   "page-release-planning",
   "Release-plan creation must lock requested page versions before checking active plan membership"
@@ -3081,14 +3081,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-aggregate-store.ts",
   "preflightableReleasePlanStatuses",
   "release-transition-cas",
   "Release preflight must use an explicit expected-status set"
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-preflight.capability.ts",
   "const plan = await lockReleasePlan(tx, projectId, releasePlanId);",
   "release-transition-cas",
   "Release deploy approval must lock and re-read the release plan inside its transaction"
@@ -3195,14 +3195,14 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-aggregate-store.ts",
   'not(eq(deployments.providerOperationStatus, "manual_reconciliation_required"))',
   "deploy-provider-operation-state",
   "ADR 0009 manual reconciliation must exclude stranded deployments from API rollback source selection"
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-aggregate-store.ts",
   "requires manual reconciliation before rollback can be executed",
   "deploy-provider-operation-state",
   "API rollback execution must refuse a manually stranded deployment upfront instead of failing closed in the worker"
@@ -3293,7 +3293,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-preflight.capability.ts",
   'status: "release_candidate"',
   "page-version-lifecycle",
   "Release deploy approval must project included approved page versions to release_candidate"
@@ -3342,7 +3342,7 @@ requireIncludes(
 );
 
 requireIncludes(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-planning.capability.ts",
   "release_plan_cancelled",
   "page-version-lifecycle",
   "Release cancellation must persist actor audit evidence"
@@ -4916,14 +4916,14 @@ requireNotIncludes(
 );
 
 requireRegex(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-aggregate-store.ts",
   /await verifyPreviewMediaManifestsBytes[\s\S]{0,450}cause: error/u,
   "api-error-cause",
   "release media verification failures must carry their cause"
 );
 
 requireRegex(
-  "apps/api/src/modules/releases.module.ts",
+  "apps/api/src/modules/releases/release-aggregate-store.ts",
   /let manifests: Map<string, PreviewMediaManifest>[\s\S]{0,400}cause: error/u,
   "api-error-cause",
   "release media re-read failures must carry their cause"
