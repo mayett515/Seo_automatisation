@@ -111,19 +111,6 @@ export type PublishedDeploySnapshot = {
   evidence?: Record<string, unknown>;
 };
 
-export type RestoreDeployInput = {
-  projectId: string;
-  releasePlanId: string;
-  deploymentKey: string;
-};
-
-export type RestoreDeployResult = {
-  artifactKey: string;
-  providerDeployId?: string;
-  liveUrl?: string;
-  evidence?: Record<string, unknown>;
-};
-
 export type RollbackDeployInput = {
   projectId: string;
   releasePlanId: string;
@@ -271,10 +258,8 @@ export type DomainEvent = {
 export interface SiteHostingPort {
   beginDeploy(input: CreateDeployInput): Promise<BeginDeployResult>;
   uploadDeployFiles(input: UploadDeployFilesInput): Promise<UploadDeployFilesResult>;
-  createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult>;
   getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot>;
   getPublishedDeploy(input: { hostingSiteId: string }): Promise<PublishedDeploySnapshot | undefined>;
-  restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult>;
   rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult>;
 }
 
@@ -497,14 +482,6 @@ export class NotConfiguredSiteHostingAdapter implements SiteHostingPort {
     });
   }
 
-  createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult> {
-    return Promise.resolve({
-      status: "not_configured",
-      message: `Site hosting is not configured for release plan ${input.releasePlanId}.`,
-      liveUrls: []
-    });
-  }
-
   getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot> {
     return Promise.resolve({
       providerDeployId: input.providerDeployId,
@@ -515,13 +492,6 @@ export class NotConfiguredSiteHostingAdapter implements SiteHostingPort {
 
   getPublishedDeploy(): Promise<PublishedDeploySnapshot | undefined> {
     return Promise.resolve(undefined);
-  }
-
-  restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult> {
-    return Promise.resolve({
-      artifactKey: `dry_run/${input.releasePlanId}/rollback.json`,
-      evidence: { adapter: "not_configured" }
-    });
   }
 
   rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult> {

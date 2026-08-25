@@ -36,14 +36,7 @@ import {
   rollbackPoints
 } from "./releases.js";
 import { gscConnections, gscOpportunitySignals, gscSearchAnalyticsRows, gscSyncRuns } from "./gsc.js";
-import {
-  reportArtifacts,
-  reportClaims,
-  reportEvidenceItems,
-  reportGenerationRuns,
-  reportIssues,
-  reports
-} from "./reports.js";
+import { reports } from "./reports.js";
 import { technicalAuditFindings, technicalAuditRuns, websiteImportRuns } from "./website-import.js";
 export const projectRelations = relations(projects, ({ many, one }) => ({
   customer: one(customers, { fields: [projects.customerId], references: [customers.id] }),

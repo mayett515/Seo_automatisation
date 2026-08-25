@@ -1108,9 +1108,11 @@ async function markCandidateRecoveryFailed(
         reason === "transport_completed_without_product_truth"
           ? "Queue transport completed without terminal Opportunity Research truth."
           : "Opportunity Research exhausted bounded recovery.",
-      expectedRecoveryCount: input.candidate.recoveryCount,
       recordRecoveryExhausted: reason !== "transport_completed_without_product_truth",
-      staleBefore: input.staleBefore,
+      recovery: {
+        expectedRecoveryCount: input.candidate.recoveryCount,
+        staleBefore: input.staleBefore
+      },
       occurredAt: input.now
     });
   } else {

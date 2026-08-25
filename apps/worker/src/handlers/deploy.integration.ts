@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type {
   BeginDeployResult,
-  DeployReleaseResult,
   MediaAssetStoragePort,
   ObjectStoragePort,
   ProviderDeploySnapshot,
@@ -933,10 +932,6 @@ class StatefulSiteHosting implements SiteHostingPort {
     return Promise.resolve({ evidence: { uploaded: true } });
   }
 
-  createDeploy(): Promise<DeployReleaseResult> {
-    return Promise.reject(new Error("createDeploy should not be used by phased deploy integration tests"));
-  }
-
   getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot> {
     this.getDeployCalls.push(input.providerDeployId);
     if (this.getDeployError) {
@@ -948,10 +943,6 @@ class StatefulSiteHosting implements SiteHostingPort {
 
   getPublishedDeploy(): Promise<ProviderDeploySnapshot | undefined> {
     return Promise.resolve(providerSnapshot("provider-deploy-1", "ready"));
-  }
-
-  restoreDeploy(): Promise<{ artifactKey: string }> {
-    return Promise.resolve({ artifactKey: "unused" });
   }
 
   rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult> {

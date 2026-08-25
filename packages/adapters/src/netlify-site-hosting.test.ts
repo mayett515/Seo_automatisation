@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { ApprovedReleaseArtifact, PageJson, StaticSiteArtifact } from "@localseo/contracts";
 import { renderApprovedReleaseArtifact } from "@localseo/page-registry";
-import type { ObjectStoragePort } from "./index.js";
+import type { CreateDeployInput, ObjectStoragePort } from "./index.js";
 import { NetlifySiteHostingAdapter } from "./netlify-site-hosting.js";
 import { ProviderRequestError } from "./provider-errors.js";
 
@@ -48,7 +48,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       }
     });
 
-    const result = await adapter.createDeploy({
+    const result = await runPhasedDeploy(adapter, {
       projectId: "project-1",
       releasePlanId: "release-1",
       deploymentId: "deployment-1",
@@ -126,7 +126,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       }
     });
 
-    const result = await adapter.createDeploy({
+    const result = await runPhasedDeploy(adapter, {
       projectId: "project-1",
       releasePlanId: "release-1",
       deploymentKey: "release_plan:release-1",
@@ -176,7 +176,7 @@ void describe("NetlifySiteHostingAdapter", () => {
       }
     });
 
-    const result = await adapter.createDeploy({
+    const result = await runPhasedDeploy(adapter, {
       projectId: "project-1",
       releasePlanId: "release-1",
       deploymentKey: "release_plan:release-1",
@@ -285,7 +285,7 @@ void describe("NetlifySiteHostingAdapter", () => {
     });
 
     await assert.rejects(
-      adapter.createDeploy({
+      runPhasedDeploy(adapter, {
         projectId: "project-1",
         releasePlanId: "release-1",
         deploymentKey: "release_plan:release-1",
@@ -564,4 +564,26 @@ function staticFileBytes(file: StaticSiteArtifact["files"][number]): Buffer {
 
 function sha1(body: Uint8Array): string {
   return createHash("sha1").update(body).digest("hex");
+}
+
+async function runPhasedDeploy(adapter: NetlifySiteHostingAdapter, input: CreateDeployInput) {
+  const started = await adapter.beginDeploy(input);
+  if (started.status === "not_configured") {
+    return started;
+  }
+
+  await adapter.uploadDeployFiles({
+    projectId: input.projectId,
+    releasePlanId: input.releasePlanId,
+    deploymentKey: input.deploymentKey,
+    buildArtifactKey: input.buildArtifactKey,
+    providerDeployId: started.providerDeployId,
+    resumeToken: started.resumeToken
+  });
+  const snapshot = await adapter.getDeploy({ providerDeployId: started.providerDeployId });
+  return {
+    status: snapshot.status === "ready" ? ("ready" as const) : ("pending" as const),
+    providerDeployId: started.providerDeployId,
+    liveUrls: snapshot.liveUrls
+  };
 }

@@ -118,7 +118,7 @@ void describe("executeDeploy", () => {
       repository,
       siteHosting: createSiteHosting(
         {
-          status: "ready",
+          status: "started",
           providerDeployId: "provider-deploy-1",
           liveUrls: ["https://example.test/"]
         },
@@ -196,11 +196,18 @@ void describe("executeDeploy", () => {
         jobId: data.deploymentKey,
         objectStorage: createObjectStorage(),
         repository,
-        siteHosting: createSiteHosting({
-          status: "pending",
-          providerDeployId: "provider-deploy-1",
-          liveUrls: ["https://example.test/"]
-        })
+        siteHosting: createSiteHosting(
+          {
+            status: "started",
+            providerDeployId: "provider-deploy-1",
+            liveUrls: ["https://example.test/"]
+          },
+          {
+            providerDeployId: "provider-deploy-1",
+            status: "pending",
+            liveUrls: ["https://example.test/"]
+          }
+        )
       }),
       /Provider deploy is pending/u
     );
@@ -225,7 +232,7 @@ void describe("executeDeploy", () => {
         repository,
         siteHosting: createSiteHosting(
           {
-            status: "ready",
+            status: "started",
             providerDeployId: "provider-deploy-1",
             liveUrls: ["https://example.test/"]
           },
@@ -255,7 +262,7 @@ void describe("executeDeploy", () => {
         repository,
         siteHosting: createSiteHosting(
           {
-            status: "ready",
+            status: "started",
             providerDeployId: "provider-deploy-1",
             liveUrls: ["https://example.test/"]
           },
@@ -691,7 +698,7 @@ void describe("executeDeploy", () => {
       objectStorage: createObjectStorage(),
       repository,
       siteHosting: createSiteHosting({
-        status: "ready",
+        status: "started",
         providerDeployId: "provider-deploy-1",
         liveUrls: ["https://example.test/"]
       })
@@ -810,7 +817,7 @@ void describe("executeDeploy", () => {
       objectStorage: createObjectStorage(),
       repository,
       siteHosting: createSiteHosting({
-        status: "ready",
+        status: "started",
         providerDeployId: "provider-deploy-1",
         liveUrls: ["https://example.test/"]
       })
@@ -916,7 +923,7 @@ void describe("executeDeploy", () => {
       objectStorage: createObjectStorage(),
       repository,
       siteHosting: createSiteHosting({
-        status: "ready",
+        status: "started",
         providerDeployId: "provider-deploy-1",
         liveUrls: ["https://example.test/"]
       })
@@ -1128,7 +1135,7 @@ void describe("executeDeploy", () => {
         repository,
         siteHosting: createSiteHosting(
           {
-            status: "ready",
+            status: "started",
             providerDeployId: "provider-deploy-1",
             liveUrls: ["https://example.test/"]
           },
@@ -1158,7 +1165,7 @@ void describe("executeDeploy", () => {
         objectStorage: createObjectStorage(),
         repository,
         siteHosting: createSiteHosting({
-          status: "ready",
+          status: "started",
           providerDeployId: "provider-deploy-1",
           liveUrls: ["https://example.test/"]
         })
@@ -1450,7 +1457,7 @@ function createRepository(
 }
 
 function createSiteHosting(
-  result: Awaited<ReturnType<SiteHostingPort["createDeploy"]>> | Error,
+  result: Awaited<ReturnType<SiteHostingPort["beginDeploy"]>> | Error,
   snapshot?: Awaited<ReturnType<SiteHostingPort["getDeploy"]>>,
   options: {
     beginCalls?: Array<Parameters<SiteHostingPort["beginDeploy"]>[0]>;
@@ -1469,7 +1476,7 @@ function createSiteHosting(
         }
       : {
           providerDeployId: result.providerDeployId,
-          status: result.status === "ready" ? ("ready" as const) : ("deploying" as const),
+          status: "ready" as const,
           liveUrls: result.liveUrls,
           evidence: result.evidence
         };
@@ -1507,13 +1514,6 @@ function createSiteHosting(
         evidence: { adapter: "test" }
       });
     },
-    createDeploy: () => {
-      if (result instanceof Error) {
-        return Promise.reject(result);
-      }
-
-      return Promise.resolve(result);
-    },
     getDeploy: () => {
       if (options.getDeployError) {
         return Promise.reject(options.getDeployError);
@@ -1530,10 +1530,6 @@ function createSiteHosting(
         status: providerSnapshot.status,
         liveUrls: providerSnapshot.liveUrls,
         evidence: providerSnapshot.evidence
-      }),
-    restoreDeploy: () =>
-      Promise.resolve({
-        artifactKey: "rollback/release-1/previous-stable.json"
       }),
     rollbackDeploy: () =>
       Promise.resolve({

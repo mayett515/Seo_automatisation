@@ -200,9 +200,15 @@ export type WebsiteImportEvidencePageInput = {
   visibleTextSummary?: string;
 };
 
+export type WebsiteImportServiceTerm = {
+  label: string;
+  tokens: readonly string[];
+};
+
 export type WebsiteImportEvidenceInput = {
   sourceUrl: string;
   pages: readonly WebsiteImportEvidencePageInput[];
+  serviceVocabulary?: readonly WebsiteImportServiceTerm[];
 };
 
 export type TechnicalAuditPageInput = WebsiteImportEvidencePageInput & {
@@ -276,12 +282,29 @@ const areaStopWords = new Set([
   "leistungen",
   "kontakt",
   "ueber",
-  "uber"
+  "impressum",
+  "datenschutz",
+  "agb",
+  "blog",
+  "news",
+  "about",
+  "contact",
+  "kontakt",
+  "team",
+  "jobs",
+  "karriere",
+  "privacy",
+  "terms",
+  "sitemap",
+  "login",
+  "faq",
+  "home",
+  "index"
 ]);
 
 export function deriveWebsiteImportFacts(input: WebsiteImportEvidenceInput): WebsiteImportFacts {
   const brand = deriveBrandFact(input);
-  const services = deriveServiceFacts(input.pages);
+  const services = deriveServiceFacts(input.pages, input.serviceVocabulary ?? knownServiceTerms);
   const areas = deriveAreaFacts(input.pages);
 
   return {
@@ -509,7 +532,10 @@ function deriveBrandFact(input: WebsiteImportEvidenceInput): WebsiteImportFacts[
   };
 }
 
-function deriveServiceFacts(pages: readonly WebsiteImportEvidencePageInput[]): WebsiteImportFacts["services"] {
+function deriveServiceFacts(
+  pages: readonly WebsiteImportEvidencePageInput[],
+  vocabulary: readonly WebsiteImportServiceTerm[]
+): WebsiteImportFacts["services"] {
   const facts = new Map<string, ImportFactAccumulator>();
 
   for (const page of pages) {
@@ -518,7 +544,7 @@ function deriveServiceFacts(pages: readonly WebsiteImportEvidencePageInput[]): W
       [page.title, page.metaDescription, page.h1, page.visibleTextSummary].join(" ")
     );
 
-    for (const service of knownServiceTerms) {
+    for (const service of vocabulary) {
       const routeEvidence = service.tokens.some((token) => routeText.includes(token));
       const textEvidence = service.tokens.some((token) => pageText.includes(token));
 
@@ -534,20 +560,47 @@ function deriveServiceFacts(pages: readonly WebsiteImportEvidencePageInput[]): W
   return importFactsFromMap(facts, 6);
 }
 
+function isLocationRoutePattern(route: string, area: string): boolean {
+  const normalizedRoute = normalizeEvidenceText(route);
+  const areaKey = normalizeEvidenceText(area);
+  if (!areaKey) {
+    return false;
+  }
+
+  return (
+    normalizedRoute.includes(`/in-${areaKey}`) ||
+    normalizedRoute.includes(`/bei-${areaKey}`) ||
+    normalizedRoute.includes(`/um-${areaKey}`) ||
+    normalizedRoute.includes(`-${areaKey}/`) ||
+    normalizedRoute.endsWith(`-${areaKey}`)
+  );
+}
+
 function deriveAreaFacts(pages: readonly WebsiteImportEvidencePageInput[]): WebsiteImportFacts["areas"] {
   const facts = new Map<string, ImportFactAccumulator>();
 
   for (const page of pages) {
+    const pageText = [page.title, page.metaDescription, page.h1, page.visibleTextSummary].join(" ");
+    const textAreas = areasFromText(pageText);
+    const textNormalized = normalizeEvidenceText(pageText);
+
     for (const area of areasFromRoute(page.route)) {
+      const textEvidence =
+        textNormalized.includes(normalizeEvidenceText(area)) ||
+        textAreas.some((candidate) => normalizeEvidenceText(candidate) === normalizeEvidenceText(area));
+      if (!textEvidence && !isLocationRoutePattern(page.route, area)) {
+        continue;
+      }
+
       recordImportFact(facts, area, page.route, {
         routeEvidence: true,
-        textEvidence: false
+        textEvidence
       });
     }
 
-    for (const area of areasFromText([page.title, page.metaDescription, page.h1].join(" "))) {
+    for (const area of textAreas) {
       recordImportFact(facts, area, page.route, {
-        routeEvidence: false,
+        routeEvidence: isLocationRoutePattern(page.route, area),
         textEvidence: true
       });
     }

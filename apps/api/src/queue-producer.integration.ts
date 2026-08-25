@@ -193,7 +193,7 @@ function queueInput(fixture: { projectId: string; releasePlanId: string; jobId: 
     options: { attempts: 3 },
     audit: {
       projectId: fixture.projectId,
-      type: "deploy_release",
+      type: "deploy" as const,
       inputRef: fixture.releasePlanId,
       actorType: "system" as const,
       triggerSource: "integration_test"

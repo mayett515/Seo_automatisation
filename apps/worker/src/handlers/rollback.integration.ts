@@ -2,7 +2,6 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type {
   BeginDeployResult,
-  DeployReleaseResult,
   ProviderDeploySnapshot,
   RollbackDeployInput,
   RollbackDeployResult,
@@ -933,10 +932,6 @@ class FakeRollbackHosting implements SiteHostingPort {
     return Promise.reject(new Error("uploadDeployFiles should not be called by rollback integration tests"));
   }
 
-  createDeploy(): Promise<DeployReleaseResult> {
-    return Promise.reject(new Error("createDeploy should not be called by rollback integration tests"));
-  }
-
   getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot> {
     return Promise.resolve({
       providerDeployId: input.providerDeployId,
@@ -957,10 +952,6 @@ class FakeRollbackHosting implements SiteHostingPort {
     }
 
     return Promise.resolve(this.publishedDeploy);
-  }
-
-  restoreDeploy(): Promise<{ artifactKey: string }> {
-    return Promise.resolve({ artifactKey: "unused" });
   }
 
   rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult> {

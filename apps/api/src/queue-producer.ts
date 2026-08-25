@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Global, Inject, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import type { JobName, QueueName } from "@localseo/contracts";
+import type { JobName, JobType, QueueName } from "@localseo/contracts";
 import { jobRuns, type DatabaseClient } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
 import { and, eq, inArray, sql } from "@localseo/db/query";
@@ -31,7 +31,7 @@ type QueueRegistry = Partial<Record<ApiQueueName, Queue>>;
 type QueueAuditInput = {
   projectId?: string;
   leadId?: string;
-  type: string;
+  type: JobType;
   inputRef?: string;
   actorType: "user" | "system";
   actorUserId?: string;

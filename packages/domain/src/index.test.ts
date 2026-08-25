@@ -254,6 +254,52 @@ void describe("deriveWebsiteImportFacts", () => {
     );
   });
 
+  void it("does not treat legal or blog route segments as locations without corroborating text", () => {
+    const facts = deriveWebsiteImportFacts({
+      sourceUrl: "https://example.test/",
+      pages: [
+        {
+          route: "/blog/",
+          title: "News",
+          h1: "Artikel"
+        },
+        {
+          route: "/impressum/",
+          title: "Impressum",
+          h1: "Impressum"
+        }
+      ]
+    });
+
+    assert.equal(
+      facts.areas.some((area) => /blog|impressum/iu.test(area.value)),
+      false
+    );
+  });
+
+  void it("uses an injected service vocabulary instead of inventing unmatched sector terms", () => {
+    const facts = deriveWebsiteImportFacts({
+      sourceUrl: "https://example.test/",
+      pages: [
+        {
+          route: "/hundefrisur-berlin/",
+          title: "Hundefrisur in Berlin",
+          h1: "Hundefrisur in Berlin"
+        }
+      ],
+      serviceVocabulary: [{ label: "Hundefrisur", tokens: ["hundefrisur"] }]
+    });
+
+    assert.equal(
+      facts.services.some((service) => service.value === "Hundefrisur"),
+      true
+    );
+    assert.equal(
+      facts.services.some((service) => service.value === "Dachreinigung"),
+      false
+    );
+  });
+
   void it("keeps empty facts possible when imported evidence is too weak", () => {
     assert.deepEqual(
       deriveWebsiteImportFacts({

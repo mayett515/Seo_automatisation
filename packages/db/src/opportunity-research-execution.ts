@@ -461,11 +461,15 @@ export async function failOpportunityResearchExecution(
     suppressAutomaticRetry?: boolean;
     recordRecoveryExhausted?: boolean;
     expectedExecutionEpoch?: number;
-    expectedRecoveryCount?: number;
-    staleBefore?: Date;
+    recovery?: {
+      expectedRecoveryCount: number;
+      staleBefore: Date;
+    };
     occurredAt?: Date;
   }
 ): Promise<boolean> {
+  const expectedRecoveryCount = input.recovery?.expectedRecoveryCount;
+  const staleBefore = input.recovery?.staleBefore;
   return db.transaction(async (tx) => {
     await lockProject(tx, input.projectId);
     const state = await lockResearchState(tx, input.projectId);
@@ -474,10 +478,10 @@ export async function failOpportunityResearchExecution(
     if (!inArrayValue(run.status, ["queued", "running"])) return false;
     if (input.expectedExecutionEpoch !== undefined && run.executionEpoch !== input.expectedExecutionEpoch) return false;
     if (
-      input.expectedRecoveryCount !== undefined &&
-      (run.recoveryCount !== input.expectedRecoveryCount ||
-        !input.staleBefore ||
-        (run.status === "running" ? (run.lastHeartbeatAt ?? run.updatedAt) : run.updatedAt) > input.staleBefore ||
+      expectedRecoveryCount !== undefined &&
+      staleBefore &&
+      (run.recoveryCount !== expectedRecoveryCount ||
+        (run.status === "running" ? (run.lastHeartbeatAt ?? run.updatedAt) : run.updatedAt) > staleBefore ||
         state.activeRunId !== input.runId)
     ) {
       return false;
@@ -508,14 +512,14 @@ export async function failOpportunityResearchExecution(
       });
     }
     const failureCode = input.failureCode.slice(0, 120);
-    if (input.recordRecoveryExhausted && input.expectedRecoveryCount !== undefined) {
+    if (input.recordRecoveryExhausted && expectedRecoveryCount !== undefined) {
       await tx.insert(agentRunEvents).values({
         projectId: input.projectId,
         agentRunId: input.runId,
-        eventKey: `recovery.exhausted.${input.expectedRecoveryCount}`,
+        eventKey: `recovery.exhausted.${expectedRecoveryCount}`,
         eventType: "recovery.exhausted",
         executionEpoch: run.executionEpoch,
-        payloadJson: { recoveryCount: input.expectedRecoveryCount, failureCode },
+        payloadJson: { recoveryCount: expectedRecoveryCount, failureCode },
         occurredAt: now
       });
     }
@@ -536,16 +540,16 @@ export async function failOpportunityResearchExecution(
           ...(input.expectedExecutionEpoch === undefined
             ? []
             : [eq(agentRuns.executionEpoch, input.expectedExecutionEpoch)]),
-          ...(input.expectedRecoveryCount !== undefined
+          ...(expectedRecoveryCount !== undefined && staleBefore
             ? [
-                eq(agentRuns.recoveryCount, input.expectedRecoveryCount),
+                eq(agentRuns.recoveryCount, expectedRecoveryCount),
                 lte(
                   sql<Date>`CASE
                     WHEN ${agentRuns.status} = 'running'
                       THEN COALESCE(${agentRuns.lastHeartbeatAt}, ${agentRuns.updatedAt})
                     ELSE ${agentRuns.updatedAt}
                   END`,
-                  sql`${(input.staleBefore as Date).toISOString()}::timestamptz`
+                  sql`${staleBefore.toISOString()}::timestamptz`
                 )
               ]
             : [])

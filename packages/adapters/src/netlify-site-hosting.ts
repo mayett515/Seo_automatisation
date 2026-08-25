@@ -4,7 +4,6 @@ import { ProviderRequestError, runProviderRequestWithTimeout } from "./provider-
 import type {
   BeginDeployResult,
   CreateDeployInput,
-  DeployReleaseResult,
   ObjectStoragePort,
   PublishedDeploySnapshot,
   ProviderDeploySnapshot,
@@ -12,8 +11,6 @@ import type {
   ProviderUploadResumeToken,
   RollbackDeployInput,
   RollbackDeployResult,
-  RestoreDeployInput,
-  RestoreDeployResult,
   SiteHostingPort,
   UploadDeployFilesInput,
   UploadDeployFilesResult
@@ -138,52 +135,6 @@ export class NetlifySiteHostingAdapter implements SiteHostingPort {
     };
   }
 
-  async createDeploy(input: CreateDeployInput): Promise<DeployReleaseResult> {
-    const started = await this.beginDeploy(input);
-
-    if (started.status === "not_configured") {
-      return started;
-    }
-
-    const upload = await this.uploadDeployFiles({
-      projectId: input.projectId,
-      releasePlanId: input.releasePlanId,
-      deploymentKey: input.deploymentKey,
-      buildArtifactKey: input.buildArtifactKey,
-      providerDeployId: started.providerDeployId,
-      resumeToken: started.resumeToken
-    });
-    const snapshot = await this.getDeploy({ providerDeployId: started.providerDeployId });
-
-    if (snapshot.status === "ready") {
-      return {
-        status: "ready",
-        providerDeployId: started.providerDeployId,
-        liveUrls: snapshot.liveUrls,
-        evidence: {
-          adapter: "netlify",
-          deploymentKey: input.deploymentKey,
-          begin: started.evidence ?? null,
-          upload: upload.evidence ?? null,
-          state: snapshot.evidence?.state ?? null
-        }
-      };
-    }
-
-    return {
-      status: "pending",
-      providerDeployId: started.providerDeployId,
-      liveUrls: snapshot.liveUrls,
-      evidence: {
-        adapter: "netlify",
-        deploymentKey: input.deploymentKey,
-        begin: started.evidence ?? null,
-        upload: upload.evidence ?? null,
-        state: snapshot.evidence?.state ?? null
-      }
-    };
-  }
-
   async getDeploy(input: { providerDeployId: string }): Promise<ProviderDeploySnapshot> {
     const deploy = await this.netlifyRequest<NetlifyDeployResponse>(`/deploys/${input.providerDeployId}`, {
       method: "GET"
@@ -229,13 +180,6 @@ export class NetlifySiteHostingAdapter implements SiteHostingPort {
         state: typeof publishedDeploy.state === "string" ? publishedDeploy.state : "unknown"
       }
     };
-  }
-
-  restoreDeploy(input: RestoreDeployInput): Promise<RestoreDeployResult> {
-    return Promise.resolve({
-      artifactKey: `netlify/${input.releasePlanId}/restore-not-implemented.json`,
-      evidence: { adapter: "netlify", status: "restore_not_implemented" }
-    });
   }
 
   async rollbackDeploy(input: RollbackDeployInput): Promise<RollbackDeployResult> {

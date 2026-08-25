@@ -72,8 +72,14 @@ export const CreateTrackingKeyResponseSchema = TrackingKeySummarySchema.extend({
   trackingKey: z.string().min(32)
 });
 
+export const TrackingKeyListResponseSchema = z.object({
+  projectId: ProjectIdSchema,
+  keys: z.array(TrackingKeySummarySchema)
+});
+
 export type TrackingEvent = z.output<typeof TrackingEventSchema>;
 export type TrackingIngestResult = z.output<typeof TrackingIngestResultSchema>;
 export type CreateTrackingKeyRequest = z.output<typeof CreateTrackingKeyRequestSchema>;
 export type TrackingKeySummary = z.output<typeof TrackingKeySummarySchema>;
 export type CreateTrackingKeyResponse = z.output<typeof CreateTrackingKeyResponseSchema>;
+export type TrackingKeyListResponse = z.output<typeof TrackingKeyListResponseSchema>;
