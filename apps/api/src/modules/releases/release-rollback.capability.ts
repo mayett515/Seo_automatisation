@@ -38,7 +38,7 @@ export class ReleaseRollbackCapability {
   ) {}
 
   async executeRollback(projectId: string, releasePlanId: string, userId: string | undefined, body: unknown) {
-    await assertReleasePlanForProject(this.database.db, projectId, releasePlanId);
+    const db = await assertReleasePlanForProject(this.database.db, projectId, releasePlanId);
     const parsed = ExecuteRollbackRequestSchema.safeParse(body ?? {});
 
     if (!parsed.success) {
@@ -46,29 +46,10 @@ export class ReleaseRollbackCapability {
     }
 
     const input = parsed.data;
-    const db = this.database.db;
     const jobId = rollbackJobId(releasePlanId, input.rollbackPointId);
 
     if (!isPersistedId(input.rollbackPointId)) {
       throw new BadRequestException("Rollback point id must be a UUID.");
-    }
-
-    if (!isPersistedId(releasePlanId)) {
-      throw new BadRequestException("Release plan id must be a UUID.");
-    }
-
-    if (!db) {
-      return QueueJobSchema.parse({
-        projectId,
-        releasePlanId,
-        jobId,
-        type: "rollback",
-        status: "dry_run",
-        inputRef: input.rollbackPointId,
-        createdBy: userId,
-        message: "Release persistence is not configured. This is an explicit dry-run response.",
-        createdAt: new Date().toISOString()
-      });
     }
 
     await loadRollbackPointForRelease(db, projectId, releasePlanId, input.rollbackPointId);
@@ -125,7 +106,7 @@ export class ReleaseRollbackCapability {
     userId: string | undefined,
     body: unknown
   ): Promise<ReleaseVerificationQueueResponse> {
-    await assertReleasePlanForProject(this.database.db, projectId, releasePlanId);
+    const db = await assertReleasePlanForProject(this.database.db, projectId, releasePlanId);
     const parsed = VerifyReleaseRequestSchema.safeParse(body ?? {});
 
     if (!parsed.success) {
@@ -133,23 +114,9 @@ export class ReleaseRollbackCapability {
     }
 
     const input = parsed.data;
-    const db = this.database.db;
 
     if (!isPersistedId(releasePlanId)) {
       throw new BadRequestException("Release plan id must be a UUID.");
-    }
-
-    if (!db) {
-      return ReleaseVerificationQueueResponseSchema.parse({
-        jobId: `release-verification:${releasePlanId}:dry-run`,
-        projectId,
-        releasePlanId,
-        deploymentId: input.deploymentId,
-        type: "release_verification",
-        status: "dry_run",
-        message: "Release persistence is required before post-deploy verification can run.",
-        createdAt: new Date().toISOString()
-      });
     }
 
     const deployment = await loadDeploymentForVerification(db, projectId, releasePlanId, input.deploymentId);

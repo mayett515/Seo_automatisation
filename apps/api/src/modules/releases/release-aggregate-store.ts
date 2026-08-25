@@ -122,11 +122,14 @@ export function normalizeQueueFailureMessage(error: unknown): string {
   return message.slice(0, 500);
 }
 
+// Returns the narrowed handle: callers need the persistence check AND the
+// non-undefined type, and one owner for both keeps a "no database" branch
+// from reappearing downstream with a different answer.
 export async function assertReleasePlanForProject(
   db: Db | undefined,
   projectId: string,
   releasePlanId: string
-): Promise<void> {
+): Promise<Db> {
   if (!isPersistedId(releasePlanId)) {
     throw new BadRequestException("Release plan id must be a UUID.");
   }
@@ -136,6 +139,7 @@ export async function assertReleasePlanForProject(
   }
 
   await loadReleasePlanForProject(db, projectId, releasePlanId);
+  return db;
 }
 
 export async function loadReleasePlanForProject(
