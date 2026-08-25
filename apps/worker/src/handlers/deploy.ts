@@ -25,11 +25,7 @@ import {
   type ReleasePlan,
   type StaticSiteFile
 } from "@localseo/contracts";
-import {
-  buildReleaseDeploymentKey,
-  canDeployRelease,
-  deployStartingReleasePlanStatuses
-} from "@localseo/domain";
+import { buildReleaseDeploymentKey, canDeployRelease, deployStartingReleasePlanStatuses } from "@localseo/domain";
 import {
   buildPageMediaVariantPath,
   collectPageMediaAssetIds,

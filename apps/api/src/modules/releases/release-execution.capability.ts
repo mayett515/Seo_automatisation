@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException } from "@nestjs/common";
 import { DeployJobDataSchema, QueueJobSchema, queueJobNames } from "@localseo/contracts";
-import {
-  buildReleaseDeploymentKey,
-  canDeployRelease,
-  deployStartingReleasePlanStatuses
-} from "@localseo/domain";
+import { buildReleaseDeploymentKey, canDeployRelease, deployStartingReleasePlanStatuses } from "@localseo/domain";
 import { releasePlans } from "@localseo/db";
 import { and, eq, inArray } from "@localseo/db/query";
 import { isPersistedId } from "../../persisted-id.js";
