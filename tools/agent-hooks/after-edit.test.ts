@@ -20,6 +20,7 @@ import { checkGroupsFor, findRepoRoot } from "./after-edit.mjs";
 const LANE_LEAF = "apps/worker/src/handlers/website-import.lane.md";
 const LANE = "lane inventory";
 const DOCS = "rule anchors and document health";
+const RETIRED = "retired identifiers";
 
 void test("a file inside a workspace package resolves to the repository root", () => {
   const root = findRepoRoot(dirname(resolve(LANE_LEAF)));
@@ -44,28 +45,42 @@ void test("the resolved root is not the nearest package that happens to install 
 });
 
 void test("a lane leaf selects the lane inventory check", () => {
-  deepStrictEqual(checkGroupsFor([LANE_LEAF]), [LANE]);
+  deepStrictEqual(checkGroupsFor([LANE_LEAF]), [LANE, RETIRED]);
 });
 
 void test("the registries the inventory reads select it too", () => {
   deepStrictEqual(checkGroupsFor(["apps/worker/src/lane-handler-registration.ts"]), [LANE]);
-  deepStrictEqual(checkGroupsFor(["packages/contracts/src/jobs.ts"]), [LANE]);
+  deepStrictEqual(checkGroupsFor(["packages/contracts/src/jobs.ts"]), [LANE, RETIRED]);
 });
 
 void test("a rule file selects the anchor and health checks", () => {
-  deepStrictEqual(checkGroupsFor(["packages/contracts/AGENTS.md"]), [DOCS]);
+  deepStrictEqual(checkGroupsFor(["packages/contracts/AGENTS.md"]), [DOCS, RETIRED]);
   deepStrictEqual(checkGroupsFor([".claude/rules/boundaries.md"]), [DOCS]);
 });
 
 void test("a lane document selects both groups", () => {
-  deepStrictEqual(checkGroupsFor(["docs/agents/lanes/ROOT.md"]), [LANE, DOCS]);
+  deepStrictEqual(checkGroupsFor(["docs/agents/lanes/ROOT.md"]), [LANE, DOCS, RETIRED]);
+});
+
+/**
+ * The retired-identifier check reads two sides of one boundary: the code that
+ * owns a name, and the documents where the old one survives. Both sides must
+ * route, because the failure it guards against is precisely the edit that
+ * changes one side and forgets the other.
+ */
+void test("both sides of a rename route to the retired-identifier check", () => {
+  deepStrictEqual(checkGroupsFor(["tools/retired-identifiers/registry.ts"]), [RETIRED]);
+  deepStrictEqual(checkGroupsFor([".ai-project-rules/02-stack-and-boundaries.md"]), [RETIRED]);
+  // README is scanned for retired names but carries no rule anchors, so it
+  // selects one group and not the other.
+  deepStrictEqual(checkGroupsFor(["README.md"]), [RETIRED]);
 });
 
 void test("Windows paths route the same as POSIX ones", () => {
   // The path character classes lost their backslash alternative once already,
   // which would have made every absolute path on this platform match nothing.
-  deepStrictEqual(checkGroupsFor(["C:\\repo\\apps\\worker\\src\\handlers\\report.lane.md"]), [LANE]);
-  deepStrictEqual(checkGroupsFor(["C:\\repo\\packages\\contracts\\AGENTS.md"]), [DOCS]);
+  deepStrictEqual(checkGroupsFor(["C:\\repo\\apps\\worker\\src\\handlers\\report.lane.md"]), [LANE, RETIRED]);
+  deepStrictEqual(checkGroupsFor(["C:\\repo\\packages\\contracts\\AGENTS.md"]), [DOCS, RETIRED]);
 });
 
 void test("a path that begins at the matched segment still routes", () => {
@@ -73,10 +88,14 @@ void test("a path that begins at the matched segment still routes", () => {
   // separator matches an absolute path and misses the relative form, where the
   // segment sits at position zero. Hosts pass both forms, and the miss is
   // silent - these four routed to nothing while the hook reported itself wired.
-  deepStrictEqual(checkGroupsFor(["AGENTS.md"]), [DOCS]);
-  deepStrictEqual(checkGroupsFor(["CLAUDE.md"]), [DOCS]);
+  deepStrictEqual(checkGroupsFor(["AGENTS.md"]), [DOCS, RETIRED]);
+  deepStrictEqual(checkGroupsFor(["CLAUDE.md"]), [DOCS, RETIRED]);
   deepStrictEqual(checkGroupsFor([".codex/hooks.json"]), [DOCS]);
-  deepStrictEqual(checkGroupsFor(["docs/progress/README.md"]), [DOCS]);
+  // A progress README routes to the retired check and the check then ignores
+  // it, because progress entries are historical and outside the scanned roots.
+  // Over-matching costs a run; under-matching costs a finding, and a hook that
+  // reports nothing is indistinguishable from a healthy repository.
+  deepStrictEqual(checkGroupsFor(["docs/progress/README.md"]), [DOCS, RETIRED]);
 });
 
 void test("an ordinary source file selects nothing", () => {

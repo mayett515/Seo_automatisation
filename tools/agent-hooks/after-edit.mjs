@@ -55,6 +55,21 @@ const CHECKS = [
     remedy:
       "An anchored sentence exists because deleting it once cost something; the anchor names the reason.\n" +
       "Restore the wording, or change the anchor in the same edit and say why."
+  },
+  {
+    // A rename crosses this boundary in one direction only: the compiler
+    // renames the code, and nothing renames the prose. The inputs are therefore
+    // both sides - the registry and the owners it names, and the document roots
+    // where a retired name survives unnoticed.
+    label: "retired identifiers",
+    inputs:
+      /((?:^|[\\/])tools[\\/]retired-identifiers[\\/].+\.ts|(?:^|[\\/])packages[\\/]contracts[\\/]src[\\/].+\.ts|(?:^|[\\/])docs[\\/]agents[\\/].+\.md|(?:^|[\\/])\.ai-project-rules[\\/].+\.md|(?:^|[\\/])apps[\\/]worker[\\/]src[\\/]handlers[\\/][^\\/]+\.lane\.md|(?:^|[\\/])(AGENTS|CLAUDE|README)\.md)$/i,
+    checkers: ["tools/check-retired-identifiers.ts"],
+    remedy:
+      "A retired name still stands in an active source. Repair the claim rather than the word:\n" +
+      "the replacement is not required to stand where the old name stood, and deleting the\n" +
+      "sentence is often the honest fix. A mention that must survive needs an allowance in\n" +
+      "tools/retired-identifiers/registry.ts with a path, a budget, and a reason."
   }
 ];
 
