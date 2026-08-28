@@ -21,3 +21,6 @@ Docs are claims about the system; a stale claim is worse than no claim.
   it. A number, command, or path that lives in two files will drift.
 - Examples are executable or exact: commands copy-paste-runnable, paths real,
   code fences syntactically valid.
+- A number or status that a command can produce is quoted from the command,
+  never frozen into prose. A frozen count outlives its truth and gets
+  inherited as a current fact by every later reader.
