@@ -65,7 +65,10 @@ why it moved out of a findings file and into the instruction file.
   also corrects [2026-08-25](2026-08-25.md), which recorded five unused
   report-table imports; those are gone.
 - `corepack pnpm typecheck` - pass across all workspace packages.
-- `corepack pnpm test` - 125 of 125 pass.
+- `corepack pnpm test` - 556 of 556 pass across 11 packages. An earlier
+  version of this line read "125 of 125", which is the last package's
+  summary rather than the workspace total; the root script runs the
+  packages recursively and prints one summary each.
 - Worker integration suite against disposable PostgreSQL 17 via
   `TEST_DATABASE_URL` - 155 of 155 pass; `deploy.integration.ts` alone 18 of 18,
   including "does not let deployment ledger start revive a terminal release

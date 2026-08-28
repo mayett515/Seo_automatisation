@@ -5,18 +5,14 @@ import {
   LeadSchema,
   PotentialReportSchema,
   QueueJobSchema,
-  queueJobNames,
   type CreateLeadInput,
   type Lead,
   type PotentialReport,
   type QueueJob
 } from "@localseo/contracts";
-import { QueueProducerService } from "../queue-producer.js";
 
 @Injectable()
-class LeadsService {
-  constructor(@Inject(QueueProducerService) private readonly queues: QueueProducerService) {}
-
+export class LeadsService {
   createLead(input: CreateLeadInput): Lead {
     return LeadSchema.parse({
       id: randomUUID(),
@@ -26,22 +22,19 @@ class LeadsService {
     });
   }
 
-  async queuePreAudit(leadId: string): Promise<QueueJob> {
-    const jobId = randomUUID();
-    const enqueued = await this.queues.enqueue({
-      queueName: "pre-audit",
-      jobName: queueJobNames["pre-audit"],
-      jobId,
-      data: { leadId }
-    });
-
+  queuePreAudit(leadId: string): QueueJob {
+    // `pre-audit` has no worker handler, so admitting it to the queue would
+    // enqueue a job nothing can process. Fail closed instead: answer honestly
+    // with a dry-run receipt and never write the job. The public pre-sales
+    // capture (`POST /leads`) is unaffected. See pre-audit.lane.md for the
+    // recorded reason and trigger.
     return QueueJobSchema.parse({
-      jobId,
+      jobId: randomUUID(),
       leadId,
       type: "pre_audit",
-      status: enqueued ? "queued" : "dry_run",
+      status: "dry_run",
       inputRef: leadId,
-      message: enqueued ? undefined : "Pre-audit queue is not configured. This is an explicit dry-run response.",
+      message: "Pre-audit worker is not built. This is an explicit dry-run response.",
       createdAt: new Date().toISOString()
     });
   }

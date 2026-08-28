@@ -4901,6 +4901,13 @@ requireIncludes(
 
 requireIncludes(
   "AGENTS.md",
+  "docs/agents/lanes/generated-map.md",
+  "agent-rule-layer",
+  "the routing table must name the lane map: three sessions reconstructed system state from code because the entry point did not point at it"
+);
+
+requireIncludes(
+  "AGENTS.md",
   "Match the proof to the change",
   "agent-rule-layer",
   "the host-neutral proof matrix must stay in the root AGENTS.md: a green typecheck is not evidence for a database, route, or wiring change"

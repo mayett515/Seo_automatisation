@@ -58,6 +58,33 @@ export const queueNames = [
 
 export type QueueName = (typeof queueNames)[number];
 
+// The set of queues the API may enqueue into. A runtime value (not only a type)
+// so the lane-inventory checker can read it through a normal import and prove a
+// lane that cannot run is never reachable from an HTTP request. Kept here, next
+// to `queueNames`, because it must be importable without pulling in the NestJS
+// module that enqueues (`apps/api/src/queue-producer.ts`).
+//
+// `pre-audit` is deliberately absent: its worker handler does not exist, so
+// admitting it here would let an HTTP request enqueue a job nothing can
+// process. The leads module answers the pre-audit request honestly (dry_run)
+// instead. See apps/worker/src/handlers/pre-audit.lane.md for the recorded
+// reason and trigger.
+export const apiQueueNames = [
+  "website-import",
+  "opportunity-scout",
+  "opportunity-research",
+  "page-generation",
+  "media-processing",
+  "serp-scout",
+  "technical-audit",
+  "deploy",
+  "rollback",
+  "release-verification",
+  "report"
+] as const satisfies readonly QueueName[];
+
+export type ApiQueueName = (typeof apiQueueNames)[number];
+
 // Canonical job name for each queue. The worker routes a job when its queue
 // name OR its job name matches a lane, so each queue maps to one canonical job
 // name (mirroring the exact literals already used at enqueue sites today).
