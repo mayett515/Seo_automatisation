@@ -39,4 +39,4 @@ nothing else. This is G1 at its sharpest.
 No form values, no names, e-mail addresses or phone numbers taken from inputs,
 no session replay without consent, and no mixing of data across projects.
 
-_Enforced outside the lanes:_ packages/contracts/src/tracking.ts:27 - the event contract admits no form content and forces route to be path-only
+_Mechanised at:_ packages/contracts/src/tracking.ts:TrackingEventSchema - the event contract admits no form content and forces route to be path-only

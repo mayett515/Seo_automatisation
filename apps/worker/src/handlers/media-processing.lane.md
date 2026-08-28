@@ -2,12 +2,7 @@
 lane: media-processing
 domain: page
 state: built
-enforces: [G2, D2]
 missing: []
-consumes: [media-upload-intent]
-produces: [media-asset-variants]
-terminal: [media-asset-variants]
-external: [media-upload-intent]
 reason: ""
 trigger: ""
 proof: apps/worker/src/handlers/media-processing.integration.ts

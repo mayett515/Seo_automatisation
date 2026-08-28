@@ -2,29 +2,13 @@ import { randomUUID } from "node:crypto";
 import { Global, Inject, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import type { JobName, JobType, QueueName } from "@localseo/contracts";
+import type { ApiQueueName, JobName, JobType } from "@localseo/contracts";
 import { jobRuns, type DatabaseClient } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
 import { and, eq, inArray, sql } from "@localseo/db/query";
 import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
-
-export type ApiQueueName = Extract<
-  QueueName,
-  | "pre-audit"
-  | "website-import"
-  | "opportunity-scout"
-  | "opportunity-research"
-  | "page-generation"
-  | "media-processing"
-  | "serp-scout"
-  | "technical-audit"
-  | "deploy"
-  | "rollback"
-  | "release-verification"
-  | "report"
->;
 
 type QueueRegistry = Partial<Record<ApiQueueName, Queue>>;
 
@@ -63,7 +47,6 @@ export class QueueProducerService implements OnModuleDestroy {
     const redisConnection = env.REDIS_URL ? createRedisConnection(env.REDIS_URL) : undefined;
     this.queues = redisConnection
       ? {
-          "pre-audit": new Queue("pre-audit", { connection: redisConnection }),
           "website-import": new Queue("website-import", { connection: redisConnection }),
           "opportunity-scout": new Queue("opportunity-scout", { connection: redisConnection }),
           "opportunity-research": new Queue("opportunity-research", { connection: redisConnection }),

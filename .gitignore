@@ -15,3 +15,6 @@ playwright-report/
 *.tsbuildinfo
 apps/web/dist/
 *.zip
+
+# Local agent-harness permission file with host-specific paths; never commit.
+reasonix.toml

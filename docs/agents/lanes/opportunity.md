@@ -14,11 +14,17 @@ Product source: `product/06-local-seo-engine.md`,
 
 ## Invariants
 
-### D1 - An opportunity is a named lane, not a score
+### D1 - An opportunity must be explainable, whatever its key
 
 The customer must be able to ask why. "Quick win" and "strategic market" can be
-explained; a summed number cannot. The plan's four difficulty types map onto
-named lanes for exactly this reason.
+explained; the pack's single summed `opportunity_score` cannot. The pack
+(`product/06-local-seo-engine.md`) _does_ define an `Opportunity Score` as the
+sum of search-intent, business-value, visibility, competitor-weakness,
+local-relevance, content-gap and inverse-effort factors. The implementation
+later chose named lanes plus value bands over that single score; that is an
+architecture decision, not a restatement of the pack. The product intent that
+carries through both is explainability: a customer must be able to ask why a
+chance is ranked the way it is.
 
 ### D2 - Weak candidates stay on the internal radar
 

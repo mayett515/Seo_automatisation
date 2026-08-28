@@ -2,12 +2,7 @@
 lane: rollback
 domain: release
 state: built
-enforces: [G2, D1, D4]
 missing: []
-consumes: [rollback-point, rollback-request]
-produces: [rollback-outcome]
-terminal: [rollback-outcome]
-external: [rollback-point, rollback-request]
 reason: ""
 trigger: ""
 proof: apps/worker/src/handlers/rollback.integration.ts

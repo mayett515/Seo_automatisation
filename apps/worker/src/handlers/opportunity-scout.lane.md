@@ -2,12 +2,7 @@
 lane: opportunity-scout
 domain: opportunity
 state: built
-enforces: [G1, G2, D1, D2]
 missing: []
-consumes: [project-context, gsc-opportunity-signals]
-produces: [opportunity-candidates]
-terminal: []
-external: [project-context]
 reason: ""
 trigger: ""
 proof: apps/worker/src/handlers/opportunity-scout.integration.ts
@@ -20,8 +15,9 @@ proof: apps/worker/src/handlers/opportunity-scout.integration.ts
   campaign.
 - **D2** -> weak candidates are held rather than surfaced. The signal statuses
   `internal_radar` and `near_term_target`
-  (`packages/contracts/src/gsc.ts:16`) implement the plan's rule that poor
-  averages stay internal instead of being shown next to real wins.
+  (`packages/contracts/src/gsc.ts:gscOpportunitySignalStatuses`) implement the
+  plan's rule that poor averages stay internal instead of being shown next to
+  real wins.
 - **G1** -> every candidate is derived from stored evidence, never from a guess
   about a market.
 

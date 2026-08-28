@@ -4,6 +4,13 @@ Current baseline: after deploy provider-operation hardening, release-verificatio
 
 This page records what the backend foundation now enforces, what is still intentionally incomplete, and where the next serious foundation items sit on the roadmap.
 
+Queue-lane identity, runnable state, and missing work are owned by the lane
+inventory, not this page: see
+[`docs/agents/lanes/generated-map.md`](../agents/lanes/generated-map.md) and the
+leaves next to each handler in `apps/worker/src/handlers/`. This page records
+cross-cutting platform foundation status and links to lane status rather than
+re-declaring it.
+
 ## Current Foundation
 
 ```mermaid

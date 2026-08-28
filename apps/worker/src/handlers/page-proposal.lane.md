@@ -2,12 +2,7 @@
 lane: page-generation
 domain: page
 state: built
-enforces: [G1, G2, D1, D2]
 missing: []
-consumes: [accepted-opportunity, page-template]
-produces: [page-version]
-terminal: []
-external: [accepted-opportunity, page-template]
 reason: ""
 trigger: ""
 proof: apps/worker/src/handlers/page-proposal.integration.ts

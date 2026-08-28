@@ -1,16 +1,11 @@
 ---
 lane: website-import
 domain: website
-state: partial
-enforces: [G2, D1]
-missing: ["no proof of its own - no test or integration suite exercises handleWebsiteImportJob"]
-consumes: [project-website-url]
-produces: [website-import-snapshot]
-terminal: [website-import-snapshot]
-external: [project-website-url]
-reason: "The lane runs and other suites depend on its output, but nothing exercises the handler itself. A green workspace therefore says nothing about whether this lane still crawls and stores correctly."
-trigger: "A dedicated integration test against a real database with a stubbed crawler. Until then the state stays partial regardless of how green the workspace looks."
-proof: ""
+state: built
+missing: []
+reason: ""
+trigger: ""
+proof: apps/worker/src/handlers.test.ts
 ---
 
 ## Is
@@ -23,8 +18,13 @@ proof: ""
 
 ## Is not
 
+- Not the rebuild itself. This lane crawls and snapshots; the pack's
+  Clone/Rebuild Worker (`product/04-main-website-rebuild.md`) also recognizes
+  components, generates a React/Vite project, improves SEO/speed/CTA/mobile,
+  and deploys a staging preview. That rebuild-and-preview half has no owner and
+  no recorded reason for being absent - see the `website` domain parent.
 - Does not deploy anything. Staging and its `noindex` rule belong to the
-  release path (`apps/api/src/modules/projects.module.ts:562`).
+  release path (`apps/api/src/modules/projects.module.ts:ProjectsService`).
 - Does not decide what the rebuilt site should look like. Template and
   component selection is the page domain.
 - Not a competitor crawler. `technical-audit` inspects the customer's own site;

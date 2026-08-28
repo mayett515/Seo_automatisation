@@ -5,8 +5,11 @@
 Before anyone is asked for anything, a prospect gets an honest picture of what
 is possible. They enter a website, their services, and answer a few questions;
 the system produces a potential report for the next two to three months and the
-next half year. The report exists to make an informed decision possible, not to
-sell - which is why its ethics are stricter than anything else in the product.
+next half year. The pack names this a **pre-sales** report: its flow ends in
+"Auftrag starten" (start order), so the report exists to convert a prospect
+into a customer. What is stricter here is the report's _honesty_, not its
+purpose - the forecast must be conservative enough that a "yes" is earned, not
+extracted.
 
 Lanes: `pre-audit`.
 

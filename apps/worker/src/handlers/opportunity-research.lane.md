@@ -2,12 +2,7 @@
 lane: opportunity-research
 domain: opportunity
 state: built
-enforces: [G1, G2, D1]
 missing: []
-consumes: [opportunity-candidates]
-produces: [opportunity-research-findings]
-terminal: [opportunity-research-findings]
-external: []
 reason: ""
 trigger: ""
 proof: apps/worker/src/opportunity-research-scheduler.integration.ts
@@ -21,8 +16,11 @@ proof: apps/worker/src/opportunity-research-scheduler.integration.ts
 - **G2** -> a research run that produced nothing usable terminates as failed
   rather than leaving an active row that looks like work in progress. Bounded
   recovery covers the crash case (ADR 0018).
-- **D1** -> output stays in the named-lane vocabulary rather than producing a
-  score that nobody can defend to a customer.
+- **D1** -> output stays explainable: the research axes carry named lanes
+  (`defend_advance`, `quick_win`, `build_cluster`, `strategic_market`) and value
+  bands rather than only the pack's summed `opportunity_score`, so a customer
+  can be told why something is ranked as it is. This is the implementation's
+  chosen shape for D1, not a claim that the pack never had a score.
 
 ## Is not
 

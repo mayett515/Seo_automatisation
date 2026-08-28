@@ -2,12 +2,7 @@
 lane: notifications
 domain: notification
 state: scaffold
-enforces: []
 missing: ["worker handler", "no producer - nothing enqueues into this queue"]
-consumes: []
-produces: []
-terminal: []
-external: []
 reason: "Worker W10 of the original topology (architecture/04-worker-architecture.md). Never built, and no decision records whether the product needs it: today the customer learns about a finished deploy or a waiting approval by looking, not by being told."
 trigger: "A workflow where waiting for the customer to look is too slow - an approval that blocks a deploy, or a verification failure that needs attention."
 proof: ""

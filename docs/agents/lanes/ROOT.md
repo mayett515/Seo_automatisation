@@ -60,7 +60,7 @@ _Serves P1 and P3._ `queued`, `completed`, `failed`, `dry_run`,
 returned for work that did not happen, and a failure is never reported for work
 already underway.
 
-_Already written in:_ `.claude/rules/nest.md:32`.
+_Already written in:_ `.claude/rules/nest.md` (Status honesty).
 
 ### G3 — A proof does not cross a process, queue, or persistence boundary
 
@@ -70,7 +70,7 @@ checked again, and a re-established check proves what was read, never that no
 one else is writing concurrently. Without this, "the customer decides what goes
 live" holds only until the first race.
 
-_Already written in:_ `apps/api/AGENTS.md:48`.
+_Already written in:_ `apps/api/AGENTS.md` (Release admission and deploy).
 
 ### G4 — Every public write boundary is authenticated or rate-limited, and audited
 
@@ -79,7 +79,7 @@ persistence or the job infrastructure from an unauthenticated request carries a
 rate limit and leaves an audit trace. The tracking ingestion boundary is the
 reference implementation.
 
-_Enforced outside the lanes:_ apps/api/src/modules/tracking.module.ts - the tracking ingestion boundary carries the rate limit, origin binding and project key check
+_Mechanised at:_ apps/api/src/modules/tracking.module.ts - the tracking ingestion boundary carries the rate limit, origin binding and project key check
 
 _First written here._ The rule was practiced but never stated, which is how a
 public unguarded enqueue survived in `pre-audit` without anyone being able to

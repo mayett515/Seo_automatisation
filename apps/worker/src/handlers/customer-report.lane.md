@@ -2,16 +2,11 @@
 lane: report
 domain: report
 state: partial
-enforces: [G1, G2, D2, D3]
 missing:
   [
-    "the narration layer - the six analyst status labels from prompts/seo-analyst-agent-prompt.md exist nowhere in the code, so the report delivers evidence rather than framing decisions"
+    "the six analyst status labels (Gewonnen/Stark/Beobachten/Angriff/Problem/Keine Daten) and the won/momentum/attack split exist nowhere in the code - the report narrates section headings and transitions, but does not frame decisions in the analyst vocabulary"
   ]
-consumes: [gsc-search-analytics-rows, deployment, release-verification-evidence, page-version, opportunity-candidates]
-produces: [customer-report]
-terminal: [customer-report]
-external: []
-reason: "The delivery half is built and proven: sections, evidence binding, publication and correction lineage. The narration half was never started, and no record says the order was chosen deliberately."
+reason: "The delivery half and a bounded narration half are built and proven: sections, evidence binding, publication, correction lineage, and attributed heading/transition narrative fragments. The analyst framing half - six status labels plus the won/momentum/attack split - was never started, and no record says the order was chosen deliberately."
 trigger: "Implement the six analyst status labels from prompts/seo-analyst-agent-prompt.md over the existing GSC signal types, and split ranking_results into won, momentum and attack."
 proof: apps/worker/src/handlers/customer-report.integration.ts
 ---
@@ -30,12 +25,14 @@ proof: apps/worker/src/handlers/customer-report.integration.ts
 
 ## Is not
 
-- **Not yet the decision engine the plan describes.** Built sections are
-  `ranking_results`, `page_delivery`, `live_health`, `warnings`,
-  `rollback_corrections`, `future_opportunities` - a delivery report bound to
-  evidence. The plan's report opens with a situation assessment and separates
-  won, momentum and attack. Those three are currently one section, and the six
-  status labels do not exist.
+- **Not yet the decision-framing layer the plan describes.** The bounded-AI
+  narrative already exists (`narrativeMode: "bounded_ai"`, heading and
+  transition fragments per section in `packages/domain/src/report.ts` and
+  `packages/ai/src/report-narrative.ts`); what does not exist is the analyst
+  status vocabulary. The plan's report opens with a situation assessment and
+  separates won, momentum and attack under the six status labels
+  (Gewonnen/Stark/Beobachten/Angriff/Problem/Keine Daten). Those are currently
+  one `ranking_results` section with no status framing.
 - This is sequencing rather than loss: without bound evidence there is no honest
   momentum sentence to write. But nothing records that the sequence was chosen,
   which is why it reads like a gap when someone compares plan and code.

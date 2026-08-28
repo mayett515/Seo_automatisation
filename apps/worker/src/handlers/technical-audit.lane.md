@@ -2,12 +2,7 @@
 lane: technical-audit
 domain: evidence
 state: built
-enforces: [G2, D1, D2]
 missing: []
-consumes: [project-website-url]
-produces: [technical-audit-findings]
-terminal: [technical-audit-findings]
-external: [project-website-url]
 reason: ""
 trigger: ""
 proof: apps/worker/src/handlers/technical-audit.integration.ts
@@ -25,5 +20,5 @@ proof: apps/worker/src/handlers/technical-audit.integration.ts
 - Does not audit competitors. It inspects the customer's own site.
 - Does not fix anything. Findings feed proposals; the page domain changes pages.
 - Not the local page quality gate. That is a pure function,
-  `evaluateLocalPageQa` (`packages/seo/src/index.ts:24`), applied where pages are
-  produced rather than as a lane of its own.
+  `evaluateLocalPageQa` (`packages/seo/src/index.ts:evaluateLocalPageQa`),
+  applied where pages are produced rather than as a lane of its own.

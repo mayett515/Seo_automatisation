@@ -30,9 +30,9 @@ approved one, so that what was approved stays inspectable.
 Draft and noindex pages never enter the sitemap, and canonicals never point at a
 preview domain.
 
-_Enforced outside the lanes:_ packages/contracts/src/pages.ts:192 - sitemapReady
-defaults to false, so a page stays out of the sitemap until something marks it
-ready.
+_Mechanised at:_ packages/contracts/src/pages.ts:PageJsonSchema -
+`sitemapReady` defaults to false, so a page stays out of the sitemap until
+something marks it ready.
 
 ### D4 - A generated page carries its own local substance
 
@@ -40,6 +40,6 @@ Own local content, own search intent, real proofs where they exist, sensible
 internal links and a clear CTA. A page that only varies a place name fails the
 quality gate.
 
-_Enforced outside the lanes:_ packages/seo/src/index.ts:24 - evaluateLocalPageQa
-is a pure function applied where pages are produced, which is why the planned
-seo-qa worker was never needed.
+_Mechanised at:_ packages/seo/src/index.ts:evaluateLocalPageQa is a
+pure function applied where pages are produced, which is why the planned seo-qa
+worker was never needed.

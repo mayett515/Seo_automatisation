@@ -2,12 +2,7 @@
 lane: local-analysis
 domain: opportunity
 state: scaffold
-enforces: []
 missing: ["worker handler", "no producer - nothing enqueues into this queue"]
-consumes: []
-produces: []
-terminal: []
-external: []
 reason: "Superseded, not merely unbuilt. This is queue Q3 of the original topology, the Competitor plus Opportunity Worker (architecture/04-worker-architecture.md). That work exists and runs, under the names opportunity-scout and opportunity-research. The declaration outlived the design and nothing records the rename."
 trigger: "Remove the queue name from the registry, or record why an empty declaration is kept. In the code as it stands, unreachable and unreferenced means it should go."
 proof: ""
