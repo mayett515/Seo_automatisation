@@ -36,7 +36,7 @@ Core product truth:
 2. deployment-agent-extension-only/local-seo-product-knowledge-pack/
 
 Field evidence:
-3. `C:\gebäudeservicefirma\Seo` as read-only field evidence when explicitly relevant
+3. `../martines-dach-gebaeudeservice/Seo` as read-only field evidence when explicitly relevant
 4. .ai-project-references/field-evidence/
 
 Frontend inspiration:

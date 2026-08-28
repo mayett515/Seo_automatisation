@@ -13,7 +13,7 @@ dependencies:
   - ".ai-project-rules/10-seo-verification-gsc.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/06-local-seo-engine.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/07-subdomains-local-pages.md"
-  - "C:\\gebäudeservicefirma\\Seo\\workflow"
+  - "../martines-dach-gebaeudeservice/Seo/workflow"
 priority_schema: "critical > strong > guideline"
 ---
 
@@ -32,7 +32,7 @@ You have been routed here because the task touches local SEO page quality, servi
 <positive-directives>
 - Each subpage needs its own local purpose, wording, alt texts, schema, internal links, search intent, and proof strategy.
 - Treat this file as the reusable quality gate before preview approval, deploy handoff, and customer-report handoff.
-- Use `C:\gebäudeservicefirma\Seo\workflow` as read-only field evidence when real workflow examples are needed.
+- Use `../martines-dach-gebaeudeservice/Seo/workflow` as read-only field evidence when real workflow examples are needed.
 </positive-directives>
 
 ## 2. Required Page Brief
@@ -137,7 +137,7 @@ This 38-rule file is an intentional guard exception: it is the single reusable a
 Use the Dachau clear-out workflow as a reference pattern when relevant:
 
 ```text
-C:\gebäudeservicefirma\Seo\workflow\entruempelung-dachau-workflow-2026-06-25.md
+../martines-dach-gebaeudeservice/Seo/workflow\entruempelung-dachau-workflow-2026-06-25.md
 ```
 
 That workflow demonstrates the expected loop: GSC signal -> dedicated local page -> hub role separation -> unique local sections -> LocalBusiness/Service/FAQPage schema -> internal links -> sitemap/redirect/noscript updates -> build/deploy/live checks -> GSC indexing sequence -> delayed customer-facing reporting until real proof exists.

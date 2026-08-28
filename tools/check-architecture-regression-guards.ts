@@ -4969,6 +4969,42 @@ if (claudeRuleNames.length < expectedRuleCount) {
   });
 }
 
+// `apiQueueNames` is read as the set of lanes the API enqueues into, and the
+// generated lane map projects it. That only holds while the shared producer is
+// the only place in the API that builds a queue. It was not: `gsc.module.ts`
+// constructs its own `new Queue("gsc-sync")` behind `POST .../gsc/sync`, so a
+// map column named "HTTP reachable" was false for that lane and stayed green.
+// The column now says what the list proves; this keeps the bypass count from
+// growing silently. A third entry here is a decision, not a detail.
+const QUEUE_CONSTRUCTION_ALLOWED = new Set([
+  "apps/api/src/queue-producer.ts",
+  // Known exception, recorded rather than hidden: moving this onto the shared
+  // producer is an open slice, and until then the lane map says so.
+  "apps/api/src/modules/gsc.module.ts"
+]);
+
+function typeScriptFilesUnder(directory: string): string[] {
+  const found: string[] = [];
+  const visit = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = `${current}/${entry.name}`;
+      if (entry.isDirectory()) visit(path);
+      else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) found.push(path);
+    }
+  };
+  visit(directory);
+  return found;
+}
+
+for (const file of typeScriptFilesUnder("apps/api/src")) {
+  if (QUEUE_CONSTRUCTION_ALLOWED.has(file)) continue;
+  if (!/\bnew Queue\s*\(/u.test(read(file))) continue;
+  failures.push({
+    category: "queue-producer-boundary",
+    message: `${file}: constructs a queue outside the shared API producer, so apiQueueNames no longer describes what the API can enqueue into and the lane map inherits the error. Enqueue through apps/api/src/queue-producer.ts, or add this file to QUEUE_CONSTRUCTION_ALLOWED and say why in the lane documentation.`
+  });
+}
+
 // `.codex/hooks.json` and `.cursor/hooks.json` are verbatim copies of their
 // pack masters, and the lane inventory hook is project-owned - lanes mean
 // nothing in another repository on this stack, so it will never come back from

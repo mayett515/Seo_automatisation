@@ -5,6 +5,21 @@ This project uses a native agent layer shared by Cursor, Codex, and Claude Code.
 - Before editing below `apps/` or `packages/`, follow the nearest nested `AGENTS.md` in addition to this file.
 - Issue tracker, triage labels, domain docs: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md`.
 
+## Start here
+
+Three questions get confused with each other, so they are routed separately. A
+cold start on an unfamiliar machine took fourteen hops to find the second one.
+
+| Question                                    | Read                                                                                                                                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| What was this product meant to be?          | `local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/00-AI-INGESTION-GUIDE.md` — the original plan, written before implementation. Not a description of what is built. |
+| What does the product actually do today?    | `docs/architecture/app-blueprint.md` — the implemented loop.                                                                                                                         |
+| Which queue lanes exist, and in what state? | `docs/agents/lanes/generated-map.md` — generated from the leaves beside each handler, never hand-edited.                                                                             |
+
+The roadmap under `docs/architecture/` records how the second was reached; it is
+history, not current state. When these disagree, the code wins, then the
+blueprint, then the pack.
+
 ## Shared native layer
 
 Root and nested `AGENTS.md` files are shared by Cursor and Codex; Claude Code additionally loads `CLAUDE.md`. Repeatable workflows live in `.agents/skills/`. Full host wiring, skill ownership, and vendored-pack sync rules: `docs/agents/rule-system-maintenance.md`.
@@ -108,7 +123,7 @@ Core product truth:
 2. deployment-agent-extension-only/local-seo-product-knowledge-pack/
 
 Field evidence:
-3. `C:\gebäudeservicefirma\Seo` as read-only field evidence when explicitly relevant
+3. `../martines-dach-gebaeudeservice/Seo` as read-only field evidence when explicitly relevant
 4. .ai-project-references/field-evidence/
 
 Frontend inspiration:

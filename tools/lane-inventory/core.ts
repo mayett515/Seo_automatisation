@@ -115,8 +115,12 @@ export function buildMap(leaves: readonly LeafFile[], mapFile: string, registrie
     'This file answers "what exists and in what state". It is a review starting',
     "point, not unquestionable truth: the reason and proof for each state live in",
     "that lane's leaf, under apps/worker/src/handlers/. Handler registered and",
-    "HTTP reachable are read from the code; every other column is the leaf's own",
-    "claim about itself.",
+    "admitted by API producer are read from the code; every other column is the",
+    "leaf's own claim about itself.",
+    "",
+    "Admitted by API producer means the shared producer will enqueue into that",
+    "lane. It is not the same as unreachable from HTTP: a module that builds its",
+    "own queue bypasses that list, and `gsc-sync` does. See SCHEMA.md.",
     ""
   ];
 
@@ -125,17 +129,19 @@ export function buildMap(leaves: readonly LeafFile[], mapFile: string, registrie
     lines.push(
       `## ${domain}`,
       "",
-      "| Lane | State | Handler registered | HTTP reachable | Missing | Proof |",
+      "| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |",
       "| --- | --- | --- | --- | --- | --- |"
     );
     for (const leaf of domainLeaves) {
       const missing = leaf.missing.length === 0 ? "-" : String(leaf.missing.length);
       const proof = leaf.proof === "" ? "-" : leaf.proof;
-      // Both of these are read from the registries the checker already holds.
-      // Without them a reader equates `built` with reachable from the API and
-      // counts one lane too many: `gsc-sync` has a handler and is deliberately
-      // not admitted. Projecting facts the checker owns adds no new place for
-      // the documentation to drift.
+      // Both are read from registries the checker already holds, so projecting
+      // them adds no new place for the documentation to drift. The second
+      // column was first called "HTTP reachable", which claimed more than
+      // `apiQueueNames` carries: gsc.module.ts builds its own queue and serves
+      // POST /projects/:projectId/gsc/sync, so `gsc-sync` is reachable over
+      // HTTP while absent from that list. The name now says what the source
+      // proves; a regression guard keeps the bypass count from growing.
       const registered = registries.lanesWithRegisteredHandler.has(leaf.lane) ? "yes" : "no";
       const reachable = registries.apiQueueNames.includes(leaf.lane) ? "yes" : "no";
       lines.push(`| \`${leaf.lane}\` | ${leaf.state} | ${registered} | ${reachable} | ${missing} | ${proof} |`);

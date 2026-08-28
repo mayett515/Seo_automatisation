@@ -12,10 +12,10 @@ dependencies:
   - ".ai-project-rules/11-reporting-anti-regression.md"
   - ".ai-project-rules/12-local-seo-page-quality-gate.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/06-local-seo-engine.md"
-  - "C:\\gebäudeservicefirma\\Seo\\future-seo-growth-plan\\README.md"
-  - "C:\\gebäudeservicefirma\\Seo\\future-seo-growth-plan\\02-growth-roadmap.md"
-  - "C:\\gebäudeservicefirma\\Seo\\future-seo-growth-plan\\03-keyword-map.md"
-  - "C:\\gebäudeservicefirma\\Seo\\ungenutzte_potentiale\\ungenutzte_potentiale.md"
+  - "../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/README.md"
+  - "../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/02-growth-roadmap.md"
+  - "../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/03-keyword-map.md"
+  - "../martines-dach-gebaeudeservice/Seo/ungenutzte_potentiale/ungenutzte_potentiale.md"
 priority_schema: "critical > strong > guideline"
 ---
 
@@ -28,8 +28,8 @@ You have been routed here because the task touches future SEO growth, automated 
 ## 1. Source Role
 
 <positive-directives>
-- Treat `C:\gebäudeservicefirma\Seo\future-seo-growth-plan` as read-only field evidence for roadmap structure, keyword tiers, and rollout sequencing.
-- Treat `C:\gebäudeservicefirma\Seo\ungenutzte_potentiale` as read-only field evidence for opportunity hypotheses and market ideas.
+- Treat `../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan` as read-only field evidence for roadmap structure, keyword tiers, and rollout sequencing.
+- Treat `../martines-dach-gebaeudeservice/Seo/ungenutzte_potentiale` as read-only field evidence for opportunity hypotheses and market ideas.
 - Use product-pack architecture for app behavior; use field SEO evidence to shape planning heuristics and practical workflows.
 - Convert useful lessons into project-local rules, workflows, or backlog items instead of editing the external customer folders.
 - Treat automated GSC OAuth/API sync as the primary opportunity-mining source.
@@ -149,11 +149,11 @@ THEN label it as a hypothesis until validated by service fit, keyword intent, co
 Useful external evidence map:
 
 ```text
-C:\gebäudeservicefirma\Seo\future-seo-growth-plan\README.md
-C:\gebäudeservicefirma\Seo\future-seo-growth-plan\02-growth-roadmap.md
-C:\gebäudeservicefirma\Seo\future-seo-growth-plan\03-keyword-map.md
-C:\gebäudeservicefirma\Seo\future-seo-growth-plan\05-execution-backlog.md
-C:\gebäudeservicefirma\Seo\ungenutzte_potentiale\ungenutzte_potentiale.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\README.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\02-growth-roadmap.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\03-keyword-map.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\05-execution-backlog.md
+../martines-dach-gebaeudeservice/Seo/ungenutzte_potentiale\ungenutzte_potentiale.md
 ```
 
 Current reusable lesson: opportunity files explain the "why" behind targets, and automated GSC sync explains where Google is already testing the domain. Every app-generated page still needs its own evidence, page brief, quality gate, customer approval, deployment verification, and conservative reporting.

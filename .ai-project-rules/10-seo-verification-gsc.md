@@ -9,7 +9,7 @@ protocol_compat: "mcp: 2026-05"
 dependencies:
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/08-deployment-netlify-gsc.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/backend/02-worker-job-contracts.md"
-  - "C:\\gebäudeservicefirma\\Seo\\checkobworking\\thursday-check.md"
+  - "../martines-dach-gebaeudeservice/Seo/checkobworking/thursday-check.md"
 priority_schema: "critical > strong > guideline"
 ---
 

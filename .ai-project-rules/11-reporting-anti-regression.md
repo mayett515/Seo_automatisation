@@ -8,7 +8,7 @@ protocol_compat: "mcp: 2026-05"
 dependencies:
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/09-reports-seo-game.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/decisions/ADR-005-conservative-forecasting.md"
-  - "C:\\gebäudeservicefirma\\Seo\\future-seo-growth-plan\\04-anti-regression.md"
+  - "../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/04-anti-regression.md"
   - "docs/architecture/decisions/0021-digest-bound-customer-report-publication.md"
 priority_schema: "critical > strong > guideline"
 rule_budget: "guard-exception"

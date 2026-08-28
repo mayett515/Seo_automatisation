@@ -30,9 +30,18 @@ approved one, so that what was approved stays inspectable.
 Draft and noindex pages never enter the sitemap, and canonicals never point at a
 preview domain.
 
-_Mechanised at:_ packages/contracts/src/pages.ts:PageJsonSchema -
-`sitemapReady` defaults to false, so a page stays out of the sitemap until
-something marks it ready.
+_Unchecked policy._ This was written with a `_Mechanised at:_` address pointing
+at `packages/contracts/src/pages.ts:PageJsonSchema`, whose `sitemapReady`
+default is `false`. A default proves the starting value and nothing about
+exclusion; no sitemap generator filters on the field, and the QA path treats a
+missing sitemap readiness as a warning rather than a refusal. The address check
+stayed green because the symbol exists, which is the stated limit of that check.
+Bind this to a real sitemap filter, or leave it as the rule it currently is -
+followed by people and reviews, checked by nothing.
+
+The removed claim read: "`sitemapReady` defaults to false, so a page stays out
+of the sitemap until something marks it ready." The second half did not follow
+from the first.
 
 ### D4 - A generated page carries its own local substance
 
