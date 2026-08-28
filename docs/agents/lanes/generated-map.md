@@ -3,61 +3,67 @@
 Do not edit. Regenerate with `corepack pnpm exec tsx tools/check-lane-inventory.ts --write`.
 This file answers "what exists and in what state". It is a review starting
 point, not unquestionable truth: the reason and proof for each state live in
-the leaf next to the handler named in the first column.
+that lane's leaf, under apps/worker/src/handlers/. Handler registered and
+admitted by API producer are read from the code; every other column is the
+leaf's own claim about itself.
+
+Admitted by API producer means the shared producer will enqueue into that
+lane. It is named for the producer rather than for HTTP, because a module
+that built its own queue once made the wider claim false. See SCHEMA.md.
 
 ## evidence
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `analytics` | scaffold | 2 | - |
-| `gsc-sync` | built | - | apps/worker/src/handlers/gsc-sync.integration.ts |
-| `serp-scout` | partial | 1 | apps/worker/src/handlers/serp-scout.integration.ts |
-| `technical-audit` | built | - | apps/worker/src/handlers/technical-audit.integration.ts |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `analytics` | scaffold | no | no | 2 | - |
+| `gsc-sync` | built | yes | yes | - | apps/worker/src/handlers/gsc-sync.integration.ts |
+| `serp-scout` | partial | yes | yes | 1 | apps/worker/src/handlers/serp-scout.integration.ts |
+| `technical-audit` | built | yes | yes | - | apps/worker/src/handlers/technical-audit.integration.ts |
 
 ## intake
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `pre-audit` | scaffold | 4 | - |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `pre-audit` | scaffold | no | no | 4 | - |
 
 ## notification
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `notifications` | scaffold | 2 | - |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `notifications` | scaffold | no | no | 2 | - |
 
 ## opportunity
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `local-analysis` | scaffold | 2 | - |
-| `opportunity-research` | built | - | apps/worker/src/opportunity-research-scheduler.integration.ts |
-| `opportunity-scout` | built | - | apps/worker/src/handlers/opportunity-scout.integration.ts |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `local-analysis` | scaffold | no | no | 2 | - |
+| `opportunity-research` | built | yes | yes | - | apps/worker/src/opportunity-research-scheduler.integration.ts |
+| `opportunity-scout` | built | yes | yes | - | apps/worker/src/handlers/opportunity-scout.integration.ts |
 
 ## page
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `media-processing` | built | - | apps/worker/src/handlers/media-processing.integration.ts |
-| `page-generation` | built | - | apps/worker/src/handlers/page-proposal.integration.ts |
-| `seo-qa` | scaffold | 2 | - |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `media-processing` | built | yes | yes | - | apps/worker/src/handlers/media-processing.integration.ts |
+| `page-generation` | built | yes | yes | - | apps/worker/src/handlers/page-proposal.integration.ts |
+| `seo-qa` | scaffold | no | no | 2 | - |
 
 ## release
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `deploy` | built | - | apps/worker/src/handlers/deploy.integration.ts |
-| `release-verification` | built | - | apps/worker/src/handlers/release-verification.integration.ts |
-| `rollback` | built | - | apps/worker/src/handlers/rollback.integration.ts |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `deploy` | built | yes | yes | - | apps/worker/src/handlers/deploy.integration.ts |
+| `release-verification` | built | yes | yes | - | apps/worker/src/handlers/release-verification.integration.ts |
+| `rollback` | built | yes | yes | - | apps/worker/src/handlers/rollback.integration.ts |
 
 ## report
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `report` | partial | 1 | apps/worker/src/handlers/customer-report.integration.ts |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `report` | partial | yes | yes | 1 | apps/worker/src/handlers/customer-report.integration.ts |
 
 ## website
 
-| Lane | State | Missing | Proof |
-| --- | --- | --- | --- |
-| `website-import` | built | - | apps/worker/src/handlers.test.ts |
+| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
+| --- | --- | --- | --- | --- | --- |
+| `website-import` | built | yes | yes | - | apps/worker/src/handlers.test.ts |

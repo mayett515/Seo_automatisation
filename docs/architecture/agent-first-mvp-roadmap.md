@@ -986,7 +986,7 @@ Context records may summarize field workflows, Big Eater findings, reusable SEO 
 Scheme/context-record note:
 
 ```text
-C:/gebäudeservicefirma/Seo/future-seo-growth-plan is a useful field example of
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan is a useful field example of
 the record/rule-shard shape:
   YAML frontmatter for metadata
   XML-style blocks for routing and constraints
@@ -1085,7 +1085,7 @@ This roadmap is grounded in:
 ../big-eater/rag-stealer-findings-2026-07-02.md
 ../big-eater/agentic-evidence-web-ui-stealer-findings-2026-07-02.md
 ../big-eater/markdown-context-db-strategy-local-seo-2026-07-06.md
-../martines-dach-gebaeudeservice/Seo\future-seo-growth-plan
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/architecture/05-ai-agent-architecture.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/05-template-component-preview-system.md
 local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/07-subdomains-local-pages.md

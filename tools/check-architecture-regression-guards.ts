@@ -4969,6 +4969,56 @@ if (claudeRuleNames.length < expectedRuleCount) {
   });
 }
 
+// `sharedApiQueueNames` is read as the set of lanes the API enqueues into, and
+// the generated lane map projects it. That only holds while the shared producer
+// is the only place in the API that builds a queue. It was not: gsc.module.ts
+// constructed its own, so a map column named "HTTP reachable" was false for
+// `gsc-sync` and stayed green. That module now enqueues through the producer
+// and the allowlist has one entry again.
+//
+// This matches one spelling, `new Queue(`. A wrapper, an alias or a generic
+// construction would pass it. It is a regression net against the mistake that
+// already happened, not a proof that the producer boundary is complete, and it
+// must not be cited as one.
+const QUEUE_CONSTRUCTION_ALLOWED = new Set(["apps/api/src/queue-producer.ts"]);
+
+function typeScriptFilesUnder(directory: string): string[] {
+  const found: string[] = [];
+  const visit = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = `${current}/${entry.name}`;
+      if (entry.isDirectory()) visit(path);
+      else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) found.push(path);
+    }
+  };
+  visit(directory);
+  return found;
+}
+
+for (const file of typeScriptFilesUnder("apps/api/src")) {
+  if (QUEUE_CONSTRUCTION_ALLOWED.has(file)) continue;
+  if (!/\bnew Queue\s*\(/u.test(read(file))) continue;
+  failures.push({
+    category: "queue-producer-regression",
+    message: `${file}: constructs a queue outside the shared API producer, so sharedApiQueueNames no longer describes what the API can enqueue into and the lane map inherits the error. Enqueue through apps/api/src/queue-producer.ts, or add this file to QUEUE_CONSTRUCTION_ALLOWED and say why in the lane documentation.`
+  });
+}
+
+// `.codex/hooks.json` and `.cursor/hooks.json` are verbatim copies of their
+// pack masters, and the lane inventory hook is project-owned - lanes mean
+// nothing in another repository on this stack, so it will never come back from
+// a pack. Re-adopting either pack overwrites the file and takes the hook with
+// it, silently, leaving a host that looks wired and checks nothing. These two
+// anchors make that overwrite fail the build instead.
+for (const host of [".codex/hooks.json", ".cursor/hooks.json"]) {
+  requireIncludes(
+    host,
+    "post-edit-checks",
+    "agent-rule-layer",
+    "the project-owned lane inventory hook must survive pack re-adoption; re-add the PostToolUse entry after copying the pack file"
+  );
+}
+
 for (const skill of [".claude/skills/anti-regression/SKILL.md", ".agents/skills/anti-regression/SKILL.md"]) {
   requireIncludes(
     skill,

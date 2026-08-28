@@ -60,7 +60,7 @@ it and nothing more; the rest is review judgment.
 
 | State                | What the author asserts                                                               | What the checker verifies                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `built`              | reachable and executable, with a fitting behavioral proof                             | the lane has a registered handler, and `proof` names a path that exists on disk                           |
+| `built`              | reachable and executable, with a fitting behavioral proof                             | the lane has a registered handler, and `proof` names a file on disk                                       |
 | `partial`            | executable, with a concrete named functional gap that `missing` describes             | the lane has a registered handler, and `missing` names at least one thing                                 |
 | `scaffold`           | not executable and unreachable from every enqueue path                                | the lane has no registered handler and is absent from `apiQueueNames`                                     |
 | `absent-by-decision` | deliberately not built, with a recorded decision and a recorded trigger to revisit it | the lane has no registered handler and is absent from `apiQueueNames`; `reason` and `trigger` are present |
@@ -76,11 +76,11 @@ reachable but lacks a test is a verification gap, not `partial`.
 
 Each fact is named for what its source proves, and for nothing more.
 
-| Fact                         | Source                                                                    | What it establishes                                                             |
-| ---------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `lanesWithRegisteredHandler` | `apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler` | the lane has a handler in the dispatch registry — not that the handler succeeds |
-| `reachableFromHttp`          | `packages/contracts/src/jobs.ts:apiQueueNames`                            | the API may enqueue into the lane — not that any request does, and HTTP only    |
-| proof existence              | the file system                                                           | the cited path is a file — not that its contents prove anything                 |
+| Fact                          | Source                                                                    | What it establishes                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `lanesWithRegisteredHandler`  | `apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler` | the lane has a handler in the dispatch registry — not that the handler succeeds                                              |
+| `admittedBySharedApiProducer` | `packages/contracts/src/jobs.ts:sharedApiQueueNames`                      | the shared API producer admits the lane — not that any request enqueues, and not that the lane is unreachable by other means |
+| proof existence               | the file system                                                           | the cited path is a file — not that its contents prove anything                                                              |
 
 `lanesWithRegisteredHandler` is trustworthy because it is not a description of
 the dispatch table but its type source:
@@ -146,7 +146,7 @@ field, never in a message.
   dispatch registry has no handler for.
 - `LANE_HANDLER_UNEXPECTED` — a `scaffold` or `absent-by-decision` leaf against
   a lane the dispatch registry does have a handler for.
-- `LANE_HTTP_REACHABILITY_CONTRADICTION` — a `scaffold` or `absent-by-decision`
+- `LANE_API_PRODUCER_ADMISSION_CONTRADICTION` — a `scaffold` or `absent-by-decision`
   leaf claims the lane does not run, and `apiQueueNames` admits it, so the API
   may enqueue into it. The predicate says nothing about handlers: a lane that is
   both registered and claimed non-running also produces
@@ -171,7 +171,7 @@ field, never in a message.
 
 Every finding is collected; the checker never stops at the first.
 
-`LANE_HTTP_REACHABILITY_CONTRADICTION` is the one that would have caught the
+`LANE_API_PRODUCER_ADMISSION_CONTRADICTION` is the one that would have caught the
 `pre-audit` defect before three separate reviews had to find it by tracing
 execution. `MECHANISM_ADDRESS_MISSING` is the one that keeps a mechanisation
 claim from being satisfied by its own phrasing.
@@ -185,11 +185,11 @@ it does not, the rule stands as policy rather than as a claim about the code.
 These are not gaps to be closed quietly; they bound what any output of this
 system may be described as proving.
 
-- **Reachability covers HTTP only.** Worker-internal producers exist and are
-  known — `apps/worker/src/work-recovery.ts`,
+- **Producer admission is not reachability.** `sharedApiQueueNames` covers the shared producer in `apps/api/src/queue-producer.ts`. A module that constructs its own queue would bypass it, which is how `gsc-sync` was once reachable over HTTP and absent from the list. That module now enqueues through the producer, and `tools/check-architecture-regression-guards.ts` fails the build on any queue constructed elsewhere under `apps/api/src`. The fact keeps the producer's name rather than HTTP's: the guard matches one spelling of queue construction and is a regression net, not a proof that the boundary is complete.
+- **Worker-internal producers are outside every list here.** Three are known — `apps/worker/src/work-recovery.ts`,
   `apps/worker/src/opportunity-research-scheduler.ts` and
   `apps/worker/src/media-storage-cleanup.ts` all enqueue — and none of them is
-  covered by `reachableFromHttp`. A future producer registry would only count if
+  covered by `admittedBySharedApiProducer`. A future producer registry would only count if
   producers actually enqueue through it; a list maintained beside them is not
   authoritative, because nothing forces a new producer to appear in it.
 - **A registered handler is not a working lane.** Membership in

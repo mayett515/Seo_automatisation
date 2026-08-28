@@ -63,11 +63,6 @@ export const LaneLeafSchema = z.discriminatedUnion("state", [
 export type LaneLeaf = z.output<typeof LaneLeafSchema>;
 
 /**
- * The field names a leaf may carry, derived from the schema rather than
- * retyped. Every variant shares one field set, so one variant answers for all.
- * SCHEMA.md is checked against this list in both directions.
- */
-/**
  * The field names a leaf may carry, read from the schema rather than retyped.
  * Every variant carries the same set by construction; `laneLeafVariantFields`
  * makes tsc reject a variant that drifts from that, so this list speaks for all

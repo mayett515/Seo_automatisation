@@ -70,6 +70,12 @@ valid outcome. Never refactor to prove a rule applies.
   the code owns: a registry, an export, the file system. A claim checked only
   against another document stays green no matter what the code does - write
   the binding, or mark the claim as unchecked policy.
+- A mechanism that is installed is not a mechanism that runs. A wired hook, a
+  registered guard, a configured check: before relying on any of them, make it
+  block something and watch the block happen. Configuration that reports itself
+  as active is a claim about itself, not evidence that it fires, and the
+  failure is silent - the wrong envelope or the wrong key finds no field it
+  recognises, exits clean, and permits everything.
 
 ## Host repo commands
 

@@ -5,6 +5,31 @@ This project uses a native agent layer shared by Cursor, Codex, and Claude Code.
 - Before editing below `apps/` or `packages/`, follow the nearest nested `AGENTS.md` in addition to this file.
 - Issue tracker, triage labels, domain docs: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md`.
 
+## Start here
+
+Four questions get confused with each other, so they are routed separately. A
+cold start on an unfamiliar machine took fourteen hops to find the second one.
+
+| Question                                                | Read                                                                                                                                                                                                                                                |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What was this product meant to be?                      | `local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/00-AI-INGESTION-GUIDE.md` — the original plan, written before implementation. Not a description of what is built.                                                                |
+| What does the product actually do today?                | `docs/architecture/app-blueprint.md` — the implemented loop.                                                                                                                                                                                        |
+| Which queue lanes exist, and in what state?             | `docs/agents/lanes/generated-map.md` — generated from the leaves beside each handler, never hand-edited.                                                                                                                                            |
+| Which real manual SEO workflow does this industrialize? | `../martines-dach-gebaeudeservice/Seo` — the customer site and the hand-run operation the product automates: workflows, keyword analyses, growth plan, customer reports, raw GSC exports. A read-only sibling checkout, not inside this repository. |
+
+The roadmap under `docs/architecture/` records how the second was reached; it is
+history, not current state. `../big-eater` is optional reference material - a
+frozen research clone at commit `508ab73`, useful when re-mining patterns and
+not part of any cold start; its own status sections are a snapshot and were
+never current.
+
+When they disagree, which one wins depends on the question. For what the
+system does right now, the code decides and the blueprint follows it. For what
+the product was meant to do, the knowledge pack decides and the code does not
+overrule it - a divergence there is either a deliberate change, which belongs
+in an ADR, or a defect. Never let an implementation quietly redefine the
+intent it failed to meet.
+
 ## Shared native layer
 
 Root and nested `AGENTS.md` files are shared by Cursor and Codex; Claude Code additionally loads `CLAUDE.md`. Repeatable workflows live in `.agents/skills/`. Full host wiring, skill ownership, and vendored-pack sync rules: `docs/agents/rule-system-maintenance.md`.
@@ -76,6 +101,7 @@ the error-shape taxonomy and branching escalation, read
 - Match the proof to the change, not to convenience: pure decisions and mappers -> unit test; database queries and row mapping -> integration test against a real database; route, navigation, empty state -> browser check; framework wiring -> a started process serving a real request or job. When the fitting proof cannot run, name the missing one and why - a cheaper green check never stands in for it.
 - Name a check or fact by what its source proves, never by what it is hoped to mean: file existence is not validity, HTTP reachability is not reachability, a registered handler is not a working one.
 - A documented claim about system state must be comparable against something the code owns (a registry, an export, the file system). A claim checked only against another document stays green no matter what the code does - write the binding, or mark the claim as unchecked policy.
+- A mechanism that is installed is not a mechanism that runs. A wired hook, a registered guard, a configured check: before relying on any of them, make it block something and watch the block happen. Configuration that reports itself as active is a claim about itself, not evidence that it fires, and the failure is silent - the wrong envelope or the wrong key finds no field it recognises, exits clean, and permits everything.
 - Every review asks, besides soundness: does this diff implement what was actually asked? Find the originating requirement (issue, spec, ADR, or the user's words); never reconstruct one from the diff and grade the diff against it. Sound-but-wrong-thing and right-intent-built-badly are separate verdicts.
 - When reviewing a repository or subsystem, read change frequency alongside size: churn tells you where findings pay back; a large file nobody touches pays back never.
 - Plain TypeScript first; pattern matching, Result libraries, or a new FP ecosystem only with real repeated pressure and explicit approval.
@@ -107,7 +133,7 @@ Core product truth:
 2. deployment-agent-extension-only/local-seo-product-knowledge-pack/
 
 Field evidence:
-3. `C:\gebäudeservicefirma\Seo` as read-only field evidence when explicitly relevant
+3. `../martines-dach-gebaeudeservice/Seo` as read-only field evidence when explicitly relevant
 4. .ai-project-references/field-evidence/
 
 Frontend inspiration:

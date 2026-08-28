@@ -8,7 +8,7 @@ protocol_compat: "mcp: 2026-05"
 dependencies:
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/06-local-seo-engine.md"
   - "local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/product/07-subdomains-local-pages.md"
-  - "C:\\gebäudeservicefirma\\Seo"
+  - "../martines-dach-gebaeudeservice/Seo"
 priority_schema: "critical > strong > guideline"
 ---
 

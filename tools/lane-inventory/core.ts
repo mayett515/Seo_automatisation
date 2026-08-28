@@ -4,7 +4,7 @@
 //
 // Every fact this core reasons over is named for what its source proves, never
 // for what a reader might hope it proves. `lanesWithRegisteredHandler` says a
-// handler is registered, not that a job succeeds. `reachableFromHttp` says the
+// handler is registered, not that a job succeeds. `admittedBySharedApiProducer` says the
 // API may enqueue, not that anything does. Proof existence says a file is on
 // disk, not that its contents prove anything. Findings state facts; the reason
 // behind a fact lives in the leaf's `reason` field, never in a message here.
@@ -21,7 +21,7 @@ export type FindingCode =
   | "LANE_PROOF_FILE_MISSING"
   | "LANE_HANDLER_MISSING"
   | "LANE_HANDLER_UNEXPECTED"
-  | "LANE_HTTP_REACHABILITY_CONTRADICTION"
+  | "LANE_API_PRODUCER_ADMISSION_CONTRADICTION"
   | "API_QUEUE_NOT_IN_REGISTRY"
   | "MECHANISM_ADDRESS_MISSING"
   | "ADDRESS_PATH_MISSING"
@@ -45,10 +45,13 @@ export type CheckInput = {
   /** Runtime queue names from the code-owned registry (packages/contracts). */
   readonly queueNames: readonly string[];
   /**
-   * Queues the API may enqueue into (`packages/contracts/src/jobs.ts:apiQueueNames`).
-   * This is the reachable-from-HTTP fact, and it covers HTTP only.
+   * Queues the shared API producer admits
+   * (`packages/contracts/src/jobs.ts:sharedApiQueueNames`). This proves admission by
+   * that producer and nothing wider. It was read as the reachable-from-HTTP
+   * fact until `gsc-sync` disproved it: gsc.module.ts constructs its own queue
+   * behind an endpoint, so a lane can be reachable and absent from this list.
    */
-  readonly apiQueueNames: readonly string[];
+  readonly sharedApiQueueNames: readonly string[];
   /**
    * Lanes whose handler-registry entry carries a handler
    * (`apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler`, which the
@@ -75,20 +78,34 @@ export type AddressCheck = {
   readonly files: readonly string[];
   /** Reads a file to string; injected so the core stays free of fs. */
   readonly readFile: (path: string) => string;
-  /** Answers whether a cited path exists on disk. */
+  /** Answers whether a cited path exists on disk, as a file or a directory. */
   readonly pathExists: (path: string) => boolean;
+  /**
+   * Answers whether a path is a regular file. Separate from `pathExists`
+   * because a proof that resolves to a directory passed the existence check
+   * while the finding message said "is not a file on disk" - the name claimed
+   * more than the source carried, which is the exact defect this layer exists
+   * to catch, found here by a reviewer.
+   */
+  readonly pathIsFile: (path: string) => boolean;
 };
 
 function push(acc: Finding[], code: FindingCode, message: string): void {
   acc.push({ code, message });
 }
 
+/** The code-owned facts the map projects alongside each leaf's own claims. */
+export type MapRegistries = {
+  readonly lanesWithRegisteredHandler: ReadonlySet<string>;
+  readonly sharedApiQueueNames: readonly string[];
+};
+
 /**
  * Build the generated map from leaves. The map is a summary, not a graph:
  * artifact edges were free strings and produced a false data-flow model, so
  * they are dropped rather than re-derived.
  */
-export function buildMap(leaves: readonly LeafFile[], mapFile: string): string {
+export function buildMap(leaves: readonly LeafFile[], mapFile: string, registries: MapRegistries): string {
   const byDomain = new Map<string, LaneLeaf[]>();
   for (const { leaf } of [...leaves].sort((left, right) => left.leaf.lane.localeCompare(right.leaf.lane))) {
     byDomain.set(leaf.domain, [...(byDomain.get(leaf.domain) ?? []), leaf]);
@@ -100,17 +117,37 @@ export function buildMap(leaves: readonly LeafFile[], mapFile: string): string {
     "Do not edit. Regenerate with `corepack pnpm exec tsx tools/check-lane-inventory.ts --write`.",
     'This file answers "what exists and in what state". It is a review starting',
     "point, not unquestionable truth: the reason and proof for each state live in",
-    "the leaf next to the handler named in the first column.",
+    "that lane's leaf, under apps/worker/src/handlers/. Handler registered and",
+    "admitted by API producer are read from the code; every other column is the",
+    "leaf's own claim about itself.",
+    "",
+    "Admitted by API producer means the shared producer will enqueue into that",
+    "lane. It is named for the producer rather than for HTTP, because a module",
+    "that built its own queue once made the wider claim false. See SCHEMA.md.",
     ""
   ];
 
   for (const domain of [...byDomain.keys()].sort()) {
     const domainLeaves = byDomain.get(domain) ?? [];
-    lines.push(`## ${domain}`, "", "| Lane | State | Missing | Proof |", "| --- | --- | --- | --- |");
+    lines.push(
+      `## ${domain}`,
+      "",
+      "| Lane | State | Handler registered | Admitted by API producer | Missing | Proof |",
+      "| --- | --- | --- | --- | --- | --- |"
+    );
     for (const leaf of domainLeaves) {
       const missing = leaf.missing.length === 0 ? "-" : String(leaf.missing.length);
       const proof = leaf.proof === "" ? "-" : leaf.proof;
-      lines.push(`| \`${leaf.lane}\` | ${leaf.state} | ${missing} | ${proof} |`);
+      // Both are read from registries the checker already holds, so projecting
+      // them adds no new place for the documentation to drift. The second
+      // column was first called "HTTP reachable", which claimed more than
+      // `sharedApiQueueNames` carries: a module that constructs its own queue
+      // is reachable and absent from it. That bypass is gone and a guard keeps
+      // it gone, but the name still describes the producer, because the day it
+      // returns the name must not have to change again.
+      const registered = registries.lanesWithRegisteredHandler.has(leaf.lane) ? "yes" : "no";
+      const reachable = registries.sharedApiQueueNames.includes(leaf.lane) ? "yes" : "no";
+      lines.push(`| \`${leaf.lane}\` | ${leaf.state} | ${registered} | ${reachable} | ${missing} | ${proof} |`);
     }
     lines.push("");
   }
@@ -165,12 +202,13 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     }
 
     const hasRegisteredHandler = input.lanesWithRegisteredHandler.has(leaf.lane);
-    const reachableFromHttp = input.apiQueueNames.includes(leaf.lane);
+    const admittedBySharedApiProducer = input.sharedApiQueueNames.includes(leaf.lane);
     const runnableState = leaf.state === "built" || leaf.state === "partial";
 
-    // A `built` leaf names a proof file. Existence only: this establishes that
-    // the file is on disk, never that it proves the lane behaves correctly.
-    if (leaf.state === "built" && !address.pathExists(leaf.proof)) {
+    // A `built` leaf names a proof file. File existence only: this establishes
+    // that a regular file is on disk at that path, never that it proves the
+    // lane behaves correctly.
+    if (leaf.state === "built" && !address.pathIsFile(leaf.proof)) {
       push(findings, "LANE_PROOF_FILE_MISSING", `${file}: proof "${leaf.proof}" is not a file on disk`);
     }
 
@@ -198,11 +236,11 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     // nothing about whether a handler exists - a lane that is both registered
     // and claimed non-running is reported separately by LANE_HANDLER_UNEXPECTED,
     // and both findings are collected.
-    if (!runnableState && reachableFromHttp) {
+    if (!runnableState && admittedBySharedApiProducer) {
       push(
         findings,
-        "LANE_HTTP_REACHABILITY_CONTRADICTION",
-        `${file}: state "${leaf.state}" claims the lane does not run, and apiQueueNames admits it, so the API may enqueue into it`
+        "LANE_API_PRODUCER_ADMISSION_CONTRADICTION",
+        `${file}: state "${leaf.state}" claims the lane does not run, and sharedApiQueueNames admits it, so the API may enqueue into it`
       );
     }
   }
@@ -272,7 +310,10 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     }
   }
 
-  const map = buildMap(leaves, input.mapFile);
+  const map = buildMap(leaves, input.mapFile, {
+    lanesWithRegisteredHandler: input.lanesWithRegisteredHandler,
+    sharedApiQueueNames: input.sharedApiQueueNames
+  });
   // The generated map is never hand-written, so a drifted one is a finding.
   if (input.existingMap !== undefined && input.existingMap !== map) {
     push(findings, "MAP_STALE", `${input.mapFile}: out of date; regenerate with --write`);

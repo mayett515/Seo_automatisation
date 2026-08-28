@@ -1,0 +1,40 @@
+{
+  "description": "Pragmatic TypeScript protections and immediate lint feedback.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .codex/hooks/pre-tool-policy.mjs",
+            "commandWindows": "node .codex/hooks/pre-tool-policy.mjs",
+            "statusMessage": "Checking repository write policy",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .codex/hooks/post-edit-lint.mjs",
+            "commandWindows": "node .codex/hooks/post-edit-lint.mjs",
+            "statusMessage": "Linting edited TypeScript files",
+            "timeout": 90
+          },
+          {
+            "type": "command",
+            "command": "node .codex/hooks/post-edit-checks.mjs",
+            "commandWindows": "node .codex/hooks/post-edit-checks.mjs",
+            "statusMessage": "Running the repository's own checks",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}

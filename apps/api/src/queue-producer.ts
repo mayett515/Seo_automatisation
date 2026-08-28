@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Global, Inject, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import type { AcceptedJobName, ApiQueueName, JobType } from "@localseo/contracts";
+import type { AcceptedJobName, SharedApiQueueName, JobType } from "@localseo/contracts";
 import { jobRuns, type DatabaseClient } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
 import { and, eq, inArray, sql } from "@localseo/db/query";
@@ -10,7 +10,7 @@ import { DatabaseService } from "./database/database.service.js";
 
 const env = parseAppEnv(process.env);
 
-type QueueRegistry = Partial<Record<ApiQueueName, Queue>>;
+type QueueRegistry = Partial<Record<SharedApiQueueName, Queue>>;
 
 type QueueAuditInput = {
   projectId?: string;
@@ -26,8 +26,8 @@ type QueueAuditInput = {
 // its canonical job plus any secondary bound to it, and nothing else. Pairing a
 // job name with a foreign queue is unwritable rather than merely unusual.
 type EnqueueTarget = {
-  [Lane in ApiQueueName]: { queueName: Lane; jobName: AcceptedJobName<Lane> };
-}[ApiQueueName];
+  [Lane in SharedApiQueueName]: { queueName: Lane; jobName: AcceptedJobName<Lane> };
+}[SharedApiQueueName];
 
 type EnqueueInput = EnqueueTarget & {
   jobId: string;
@@ -53,6 +53,7 @@ export class QueueProducerService implements OnModuleDestroy {
     this.queues = redisConnection
       ? {
           "website-import": new Queue("website-import", { connection: redisConnection }),
+          "gsc-sync": new Queue("gsc-sync", { connection: redisConnection }),
           "opportunity-scout": new Queue("opportunity-scout", { connection: redisConnection }),
           "opportunity-research": new Queue("opportunity-research", { connection: redisConnection }),
           "page-generation": new Queue("page-generation", { connection: redisConnection }),
@@ -67,8 +68,17 @@ export class QueueProducerService implements OnModuleDestroy {
       : {};
   }
 
-  isQueueConfigured(queueName: ApiQueueName): boolean {
+  isQueueConfigured(queueName: SharedApiQueueName): boolean {
     return Boolean(this.queues[queueName]);
+  }
+
+  /**
+   * Whether a lane has a live queue. Callers that must answer before doing work
+   * ask the owner rather than re-reading REDIS_URL for themselves; a second
+   * reader of the same environment is a second thing to keep in step.
+   */
+  hasQueue(queueName: SharedApiQueueName): boolean {
+    return this.queues[queueName] !== undefined;
   }
 
   async enqueue(input: EnqueueInput): Promise<boolean> {

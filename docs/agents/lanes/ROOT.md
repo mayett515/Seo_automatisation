@@ -7,9 +7,16 @@ invariants (`G`)** are how those constraints are held up in code, and each one
 names the constraint it serves.
 
 Domain parents add numbered `D` rules for their own area and never restate
-these. Each lane leaf names what it enforces in `enforces`, and its `Is`
-section gives the address. An invariant no lane enforces is an intention, and
-the guard says so out loud.
+these. A rule held by code that is not a lane names that code on a
+`_Mechanised at:_` line, and the guard requires an address there rather than
+the phrase alone. Everything else here is policy: written down, followed by
+people and reviews, and checked by nothing.
+
+Leaves used to carry an `enforces` field claiming which rules each lane held.
+An audit found all twelve such leaves naming rules with no address in the code,
+all green, so the field and the coverage check over it were removed rather than
+propped up. A rule that has no mechanism is stated as a rule; it is not dressed
+as an enforced one.
 
 The chain is meant to be readable in both directions: from a line of code up to
 the reason it exists, and from the product idea down to the place that holds it.

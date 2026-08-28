@@ -12,7 +12,11 @@ export default tseslint.config(
       "**/node_modules/**",
       "eslint.config.mjs",
       "packages/db/migrations/**",
-      ".claude/worktrees/**"
+      ".claude/worktrees/**",
+      // Declaration files carry no logic to lint, and typed linting has no
+      // project for them: the shared hook body must stay .mjs because the host
+      // hooks run under plain node, so its types live in a hand-written .d.mts.
+      "**/*.d.mts"
     ]
   },
   js.configs.recommended,
