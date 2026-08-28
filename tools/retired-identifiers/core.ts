@@ -28,7 +28,8 @@ export type FindingCode =
   | "ALLOWANCE_REASON_MISSING"
   | "ALLOWANCE_UNUSED"
   | "REPLACEMENT_EXPORT_MISSING"
-  | "REPLACEMENT_OWNER_UNREADABLE";
+  | "REPLACEMENT_OWNER_UNREADABLE"
+  | "REMOVED_EXPORT_STILL_REFERENCED";
 
 export type Finding = { readonly code: FindingCode; readonly message: string };
 
@@ -169,6 +170,69 @@ function checkReplacement(entry: RetiredIdentifier, exportsByOwner: CheckInput["
   }
 
   return [];
+}
+
+export type DiffCheckInput = {
+  /**
+   * Names exported by the changed TypeScript files before the change, and
+   * after it. The difference is what disappeared.
+   *
+   * Both sides are unions over the *same* set of changed files, which is what
+   * makes a move harmless: a symbol that left one file and appeared in another
+   * is in both unions, because the file that received it necessarily changed
+   * too. Comparing file by file would report every move as a removal.
+   */
+  readonly exportedBefore: ReadonlySet<string>;
+  readonly exportedAfter: ReadonlySet<string>;
+  readonly files: readonly ScannedFile[];
+  /**
+   * Names the registry already governs. Those are the tree check's business;
+   * reporting them here as well would say the same thing twice under two
+   * codes. This pass exists to find the ones nobody has recorded yet.
+   */
+  readonly knownRetired: ReadonlySet<string>;
+  readonly registryPath: string;
+};
+
+/**
+ * Names that left the exported surface and are still written down somewhere
+ * active.
+ *
+ * This deliberately does not try to tell a rename from a deletion. It cannot,
+ * and it does not need to: after a rename the surviving mention names something
+ * that no longer exists, and after a deletion it names something that no longer
+ * exists. The repair is the same either way, which is why the question can be
+ * skipped rather than guessed.
+ *
+ * It is the discovery half of this check. The tree pass proves that recorded
+ * names stay gone; without this, nothing notices the first time a name should
+ * have been recorded, and the whole mechanism waits on somebody remembering.
+ */
+export function checkRemovedExports(input: DiffCheckInput): readonly Finding[] {
+  const findings: Finding[] = [];
+
+  for (const name of input.exportedBefore) {
+    if (input.exportedAfter.has(name)) continue;
+    if (input.knownRetired.has(name)) continue;
+
+    const found = input.files.flatMap((file) => occurrencesIn(file, name, input.registryPath));
+    if (found.length === 0) continue;
+
+    // A widely used name produces dozens of sites and an unreadable line. Show
+    // the first few and say how many were not shown: a truncation that hides
+    // its own size reads as a complete list.
+    const shown = found.slice(0, 8).map((occurrence) => `${occurrence.path}:${occurrence.line}`);
+    const where =
+      found.length > shown.length
+        ? `${shown.join(", ")} and ${found.length - shown.length} more (${found.length} in total)`
+        : shown.join(", ");
+    findings.push({
+      code: "REMOVED_EXPORT_STILL_REFERENCED",
+      message: `\`${name}\` is no longer exported, and still appears in ${where}. Whether it was renamed or deleted, those mentions now name something that does not exist. Repair them; if one must survive, record \`${name}\` in tools/retired-identifiers/registry.ts with an allowance - a deletion is a valid entry with no replacement.`
+    });
+  }
+
+  return findings;
 }
 
 export function checkRetiredIdentifiers(input: CheckInput): readonly Finding[] {

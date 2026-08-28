@@ -2,8 +2,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  checkRemovedExports,
   checkRetiredIdentifiers,
   type CheckInput,
+  type DiffCheckInput,
   type FindingCode,
   type RetiredIdentifier,
   type ScannedFile
@@ -150,6 +152,67 @@ void describe("retired identifier check", () => {
         entry({ allowed: [{ path: decision, maxOccurrences: 1, why: "Quoted as part of the accepted decision." }] })
       ];
       assert.deepEqual(codes(baseInput({ entries })), ["ALLOWANCE_UNUSED"]);
+    });
+  });
+
+  // The discovery half. Without it the tree pass only ever proves that names
+  // somebody already recorded stay gone, and the first mention of a name
+  // nobody recorded goes unnoticed.
+  void describe("removed exports", () => {
+    function diffInput(overrides: Partial<DiffCheckInput> = {}): DiffCheckInput {
+      return {
+        exportedBefore: new Set(["oldThing"]),
+        exportedAfter: new Set(["newThing"]),
+        files: [{ path: "docs/agents/domain.md", text: "See `oldThing` for the rule.\n" }],
+        knownRetired: new Set<string>(),
+        registryPath: REGISTRY,
+        ...overrides
+      };
+    }
+
+    const diffCodes = (input: DiffCheckInput): FindingCode[] =>
+      checkRemovedExports(input).map((finding) => finding.code);
+
+    void it("reports a name that left the exported surface and still stands in a document", () => {
+      assert.deepEqual(diffCodes(diffInput()), ["REMOVED_EXPORT_STILL_REFERENCED"]);
+    });
+
+    void it("says nothing when the removed name is written down nowhere", () => {
+      assert.deepEqual(diffCodes(diffInput({ files: [] })), []);
+    });
+
+    // A symbol that moved file is present in both unions, because the file that
+    // received it had to change too. Comparing file by file would call every
+    // move a removal.
+    void it("does not report a symbol that only moved to another changed file", () => {
+      const input = diffInput({ exportedAfter: new Set(["newThing", "oldThing"]) });
+      assert.deepEqual(diffCodes(input), []);
+    });
+
+    // The registry's own entries belong to the tree pass. Reporting them here
+    // as well would state one fact twice under two codes.
+    void it("leaves a name the registry already governs to the tree check", () => {
+      assert.deepEqual(diffCodes(diffInput({ knownRetired: new Set(["oldThing"]) })), []);
+    });
+
+    // A cap that hides its own size reads as a complete list.
+    void it("says how many sites it did not list", () => {
+      const files = Array.from({ length: 12 }, (_unused, index) => ({
+        path: `docs/agents/note-${index}.md`,
+        text: "`oldThing`\n"
+      }));
+      const [finding] = checkRemovedExports(diffInput({ files }));
+      assert.match(finding?.message ?? "", /and 4 more \(12 in total\)/u);
+    });
+
+    void it("names every place the removed name survives", () => {
+      const files = [
+        { path: "docs/agents/domain.md", text: "one\n`oldThing`\n" },
+        { path: ".ai-project-rules/02-stack-and-boundaries.md", text: "`oldThing`\n" }
+      ];
+      const [finding] = checkRemovedExports(diffInput({ files }));
+      assert.match(finding?.message ?? "", /domain\.md:2/u);
+      assert.match(finding?.message ?? "", /02-stack-and-boundaries\.md:1/u);
     });
   });
 

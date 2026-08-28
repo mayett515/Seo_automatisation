@@ -21,14 +21,74 @@
 // The post-edit hooks run this same script for early feedback after an edit.
 // They report after the fact and change nothing; the blocking authority is
 // `text:check` and the required CI checks.
+//
+// The hooks run the tree pass only, deliberately. Giving them `--since HEAD`
+// was the original plan and is wrong: the hook fires the moment a declaration
+// is renamed, which is before the author has had any chance to repair the
+// mentions, so every rename would produce a finding about work still in
+// progress. The diff pass belongs where a change is finished and offered -
+// the pull request. A hook that cries at the start of every rename is a hook
+// people learn to ignore.
 
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 
-import { checkRetiredIdentifiers, type Finding } from "./retired-identifiers/core.js";
+import { checkRemovedExports, checkRetiredIdentifiers, type Finding } from "./retired-identifiers/core.js";
 import { retiredIdentifiers } from "./retired-identifiers/registry.js";
 import { ACTIVE_FILES, ACTIVE_ROOTS, collectFiles, exportedNames } from "./retired-identifiers/scan.js";
 
 const REGISTRY_PATH = "tools/retired-identifiers/registry.ts";
+
+function git(args: readonly string[]): string {
+  // stderr is discarded because two of the three callers treat failure as a
+  // fact, not an error: a file added in this change has no content at the base
+  // commit, and git says so on stderr with a non-zero exit. Letting that
+  // through would print a `fatal:` line per new file above a passing run.
+  return execFileSync("git", [...args], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+}
+
+/**
+ * The commit to compare against. `git merge-base` is asked first so a branch
+ * that has fallen behind does not report every file the base branch moved on
+ * without it; `--since HEAD` resolves to HEAD and compares the working tree.
+ */
+function baseCommit(ref: string): string {
+  try {
+    return git(["merge-base", ref, "HEAD"]).trim();
+  } catch {
+    return ref;
+  }
+}
+
+/** File contents at a commit. A file that did not exist there contributes nothing. */
+function contentAt(commit: string, path: string): string {
+  try {
+    return git(["show", `${commit}:${path}`]);
+  } catch {
+    return "";
+  }
+}
+
+function changedTypeScriptFiles(base: string): string[] {
+  return git(["diff", "--name-only", base])
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.endsWith(".ts") || line.endsWith(".tsx") || line.endsWith(".mts"));
+}
+
+function unionOfExports(files: readonly string[], contentFor: (path: string) => string): Set<string> {
+  const names = new Set<string>();
+  for (const file of files) {
+    const text = contentFor(file);
+    if (text === "") continue;
+    for (const name of exportedNames(file, text)) names.add(name);
+  }
+  return names;
+}
 
 function read(path: string): string {
   return readFileSync(path, "utf8");
@@ -55,15 +115,52 @@ function exportsByOwner(): Map<string, ReadonlySet<string>> {
   return owners;
 }
 
+/**
+ * `--since <ref>` adds the discovery pass to the tree pass.
+ *
+ * Without it, this check only ever proves that names somebody already recorded
+ * stay gone, so the mechanism waits on a person remembering to record the first
+ * one. With it, an export that leaves the surface while its name still stands
+ * in an active source is reported whether it was renamed or deleted - the
+ * mention is stale either way, so the question does not have to be answered.
+ */
+function sinceRef(argv: readonly string[]): string | undefined {
+  const index = argv.indexOf("--since");
+  if (index < 0) return undefined;
+  const ref = argv[index + 1];
+  if (!ref || ref.startsWith("--")) {
+    console.error("--since needs a git ref, for example: --since origin/main");
+    process.exit(2);
+  }
+  return ref;
+}
+
 function main(): void {
   const files = collectFiles([...ACTIVE_ROOTS], [...ACTIVE_FILES], readDirectory, read, existsSync);
 
-  const findings: readonly Finding[] = checkRetiredIdentifiers({
-    entries: retiredIdentifiers,
-    files,
-    registryPath: REGISTRY_PATH,
-    exportsByOwner: exportsByOwner()
-  });
+  const findings: Finding[] = [
+    ...checkRetiredIdentifiers({
+      entries: retiredIdentifiers,
+      files,
+      registryPath: REGISTRY_PATH,
+      exportsByOwner: exportsByOwner()
+    })
+  ];
+
+  const ref = sinceRef(process.argv);
+  if (ref) {
+    const base = baseCommit(ref);
+    const changed = changedTypeScriptFiles(base);
+    findings.push(
+      ...checkRemovedExports({
+        exportedBefore: unionOfExports(changed, (path) => contentAt(base, path)),
+        exportedAfter: unionOfExports(changed, (path) => (existsSync(path) ? read(path) : "")),
+        files,
+        knownRetired: new Set(retiredIdentifiers.map((entry) => entry.retired)),
+        registryPath: REGISTRY_PATH
+      })
+    );
+  }
 
   if (findings.length > 0) {
     // The banner the shared after-edit hook matches to tell findings apart from
@@ -73,8 +170,12 @@ function main(): void {
     process.exit(1);
   }
 
+  // Say which passes ran. "Passed" without the scope is the kind of green that
+  // gets read as more than it proves; the tree pass alone does not look at what
+  // this change removed.
+  const scope = ref ? `, and no export removed since ${ref} is still referenced` : "";
   console.log(
-    `Retired identifier check passed for ${retiredIdentifiers.length} retired name(s) over ${files.length} active files.`
+    `Retired identifier check passed for ${retiredIdentifiers.length} retired name(s) over ${files.length} active files${scope}.`
   );
 }
 

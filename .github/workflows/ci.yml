@@ -13,6 +13,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        # Full history: the retired-identifier check compares this change
+        # against the merge base to find exports that left the surface while
+        # their name still stands somewhere. The default shallow clone has no
+        # merge base to compare against.
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,6 +36,17 @@ jobs:
 
       - name: Check critical text files
         run: corepack pnpm text:check
+
+      # The discovery half of the retired-identifier check, which needs a base
+      # commit and therefore cannot live in `text:check`. It reports a name that
+      # left the exported surface in this change while still standing in an
+      # active source - stale whether it was renamed or deleted. Only on pull
+      # requests: on a push to main the merge base is the commit itself.
+      - name: Check for exports removed while still referenced
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: corepack pnpm exec tsx tools/check-retired-identifiers.ts --since "origin/$BASE_REF"
 
       - name: Check working tree whitespace
         run: git diff --check
