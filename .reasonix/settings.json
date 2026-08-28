@@ -17,7 +17,7 @@
     "PostToolUse": [
       {
         "match": "write_file",
-        "command": "node .reasonix/hooks/claude-policy-adapter.mjs .claude/hooks/post-edit-lane-inventory.mjs",
+        "command": "node .reasonix/hooks/claude-policy-adapter.mjs .claude/hooks/post-edit-checks.mjs",
         "description": "Lane inventory feedback, through the same adapter as the policy hooks",
         "timeout": 90000
       }

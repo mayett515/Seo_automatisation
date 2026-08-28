@@ -16,7 +16,7 @@
         "timeout": 90
       },
       {
-        "command": "node .cursor/hooks/post-edit-lane-inventory.mjs",
+        "command": "node .cursor/hooks/post-edit-checks.mjs",
         "matcher": "Write",
         "timeout": 90
       }

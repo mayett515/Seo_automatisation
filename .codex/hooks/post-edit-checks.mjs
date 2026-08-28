@@ -12,7 +12,7 @@
  */
 import { isAbsolute, resolve } from "node:path";
 
-import { readPayload, reportAndExit } from "../../tools/lane-inventory/after-edit.mjs";
+import { readPayload, reportAndExit } from "../../tools/agent-hooks/after-edit.mjs";
 
 const payload = await readPayload();
 if (!payload) process.exit(0);

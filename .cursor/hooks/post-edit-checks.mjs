@@ -4,7 +4,7 @@
  * different keys, so accept all three rather than betting on one. Everything
  * else lives in the shared body.
  */
-import { readPayload, reportAndExit } from "../../tools/lane-inventory/after-edit.mjs";
+import { readPayload, reportAndExit } from "../../tools/agent-hooks/after-edit.mjs";
 
 const payload = await readPayload();
 if (!payload) process.exit(0);

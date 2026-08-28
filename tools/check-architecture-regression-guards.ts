@@ -4978,7 +4978,7 @@ if (claudeRuleNames.length < expectedRuleCount) {
 for (const host of [".codex/hooks.json", ".cursor/hooks.json"]) {
   requireIncludes(
     host,
-    "post-edit-lane-inventory",
+    "post-edit-checks",
     "agent-rule-layer",
     "the project-owned lane inventory hook must survive pack re-adoption; re-add the PostToolUse entry after copying the pack file"
   );

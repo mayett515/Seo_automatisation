@@ -14,7 +14,7 @@
       }
     ]
   },
-  "post-edit-lane-inventory": {
+  "post-edit-checks": {
     "enabled": true,
     "PostToolUse": [
       {
@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .agents/hooks/post-edit-lane-inventory-agy.mjs",
+            "command": "node .agents/hooks/post-edit-checks-agy.mjs",
             "timeout": 90
           }
         ]

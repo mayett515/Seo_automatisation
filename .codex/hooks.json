@@ -28,9 +28,9 @@
           },
           {
             "type": "command",
-            "command": "node .codex/hooks/post-edit-lane-inventory.mjs",
-            "commandWindows": "node .codex/hooks/post-edit-lane-inventory.mjs",
-            "statusMessage": "Checking the queue lane inventory",
+            "command": "node .codex/hooks/post-edit-checks.mjs",
+            "commandWindows": "node .codex/hooks/post-edit-checks.mjs",
+            "statusMessage": "Running the repository's own checks",
             "timeout": 90
           }
         ]
