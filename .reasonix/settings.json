@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "match": "bash",
+        "command": "node .reasonix/hooks/claude-policy-adapter.mjs .claude/hooks/guard-bash.mjs",
+        "description": "Shared Bash policy: the rules Claude Code enforces, one owner",
+        "timeout": 10000
+      },
+      {
+        "match": "write_file",
+        "command": "node .reasonix/hooks/claude-policy-adapter.mjs .claude/hooks/protect-paths.mjs",
+        "description": "Shared write policy: migrations, lockfile, frozen bundles",
+        "timeout": 10000
+      }
+    ]
+  }
+}
