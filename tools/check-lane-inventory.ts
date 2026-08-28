@@ -7,14 +7,14 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 // - `apiQueueNames` is the runtime list of queues the API may enqueue into, so
 //   the checker and the enqueue path share one source. This is the
 //   reachable-from-HTTP fact and covers HTTP only.
-// - `executableLaneNames` is the list the worker's handler registry derives its
+// - `lanesWithRegisteredHandler` is the list the worker's handler registry derives its
 //   type from, so it states which lanes have a registered handler and cannot
 //   drift from the dispatch table without a compile error.
 //
 // A registry read that yields nothing fails the check, it does not silently pass.
 import { LaneLeafSchema, apiQueueNames, laneLeafFieldNames, queueNames } from "@localseo/contracts";
 
-import { executableLaneNames } from "../apps/worker/src/lane-executability.js";
+import { lanesWithRegisteredHandler } from "../apps/worker/src/lane-handler-registration.js";
 import { checkLaneInventory, type Finding, type LeafFile } from "./lane-inventory/core.js";
 
 const LANES_DIR = "docs/agents/lanes";
@@ -145,7 +145,7 @@ function main(): void {
     {
       queueNames,
       apiQueueNames,
-      lanesWithRegisteredHandler: new Set<string>(executableLaneNames),
+      lanesWithRegisteredHandler: new Set<string>(lanesWithRegisteredHandler),
       leaves,
       mapFile: MAP_FILE,
       // When writing, the current content on disk is irrelevant: the generated
@@ -179,7 +179,7 @@ function main(): void {
 
   console.log(
     `Lane inventory check passed for ${queueNames.length} lanes ` +
-      `(${executableLaneNames.length} with a registered handler, ${laneLeafFieldNames.length} validated leaf fields).`
+      `(${lanesWithRegisteredHandler.length} with a registered handler, ${laneLeafFieldNames.length} validated leaf fields).`
   );
 }
 

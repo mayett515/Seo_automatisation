@@ -51,7 +51,7 @@ export type CheckInput = {
   readonly apiQueueNames: readonly string[];
   /**
    * Lanes whose handler-registry entry carries a handler
-   * (`apps/worker/src/lane-executability.ts:executableLaneNames`, which the
+   * (`apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler`, which the
    * registry type is derived from). Membership proves registration, nothing more.
    */
   readonly lanesWithRegisteredHandler: ReadonlySet<string>;
@@ -193,13 +193,16 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
       );
     }
 
-    // A lane no handler processes, admitted to the set an HTTP request may
-    // enqueue into.
+    // Two facts that cannot both be intended: the leaf claims a state in which
+    // the lane does not run, and the API may enqueue into it. The predicate says
+    // nothing about whether a handler exists - a lane that is both registered
+    // and claimed non-running is reported separately by LANE_HANDLER_UNEXPECTED,
+    // and both findings are collected.
     if (!runnableState && reachableFromHttp) {
       push(
         findings,
         "LANE_HTTP_REACHABILITY_CONTRADICTION",
-        `${file}: state "${leaf.state}" against a lane in apiQueueNames, so an HTTP request can enqueue work no handler processes`
+        `${file}: state "${leaf.state}" claims the lane does not run, and apiQueueNames admits it, so the API may enqueue into it`
       );
     }
   }
@@ -264,7 +267,7 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     }
   }
   for (const field of documented) {
-    if (!(laneLeafFieldNames as readonly string[]).includes(field)) {
+    if (!laneLeafFieldNames.includes(field)) {
       push(findings, "SCHEMA_FIELD_DRIFT", `SCHEMA.md: field "${field}" is documented and not validated`);
     }
   }

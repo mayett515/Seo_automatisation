@@ -18,7 +18,7 @@ import { handleSectionCopySuggestionJob } from "./handlers/section-copy-suggesti
 import { handleSerpScoutJob } from "./handlers/serp-scout.js";
 import { handleTechnicalAuditJob } from "./handlers/technical-audit.js";
 import { handleWebsiteImportJob } from "./handlers/website-import.js";
-import { executableLaneNames } from "./lane-executability.js";
+import { lanesWithRegisteredHandler } from "./lane-handler-registration.js";
 
 // The registry only records adapters; nothing here calls a handler, so a stub
 // context is enough to observe which handler each lane is bound to.
@@ -55,7 +55,7 @@ const expectedPrimaries = {
   "release-verification": handleReleaseVerificationJob,
   "gsc-sync": handleGscSyncJob,
   report: handleCustomerReportGenerationJob
-} as const satisfies Record<(typeof executableLaneNames)[number], unknown>;
+} as const satisfies Record<(typeof lanesWithRegisteredHandler)[number], unknown>;
 
 const unhandledLanes = ["pre-audit", "local-analysis", "seo-qa", "analytics", "notifications"] as const;
 
@@ -63,8 +63,12 @@ void describe("createHandlerRegistry", () => {
   void it("binds every executable lane to its own handler", () => {
     const registry = createHandlerRegistry(context());
 
-    for (const lane of executableLaneNames) {
-      assert.equal(registry[lane].primary.handler, expectedPrimaries[lane], `${lane} is bound to the wrong handler`);
+    for (const lane of lanesWithRegisteredHandler) {
+      assert.equal(
+        registry[lane].primary.handlerIdentity,
+        expectedPrimaries[lane],
+        `${lane} is bound to the wrong handler`
+      );
     }
   });
 
@@ -72,11 +76,11 @@ void describe("createHandlerRegistry", () => {
     const registry = createHandlerRegistry(context());
 
     assert.equal(
-      registry["page-generation"].secondaries[secondaryJobNames.pageGeneration]?.handler,
+      registry["page-generation"].secondaries[secondaryJobNames.pageGeneration]?.handlerIdentity,
       handleSectionCopySuggestionJob
     );
     assert.equal(
-      registry.report.secondaries[secondaryJobNames.customerReportHtmlRender]?.handler,
+      registry.report.secondaries[secondaryJobNames.customerReportHtmlRender]?.handlerIdentity,
       handleCustomerReportHtmlRenderJob
     );
   });
@@ -84,7 +88,7 @@ void describe("createHandlerRegistry", () => {
   void it("carries no secondary bindings on lanes that have none", () => {
     const registry = createHandlerRegistry(context());
 
-    for (const lane of executableLaneNames) {
+    for (const lane of lanesWithRegisteredHandler) {
       if (lane === "page-generation" || lane === "report") continue;
       assert.deepEqual(Object.keys(registry[lane].secondaries), [], `${lane} has an unexpected secondary binding`);
     }
@@ -101,7 +105,7 @@ void describe("createHandlerRegistry", () => {
   void it("covers every registered queue and nothing else", () => {
     const registry = createHandlerRegistry(context());
 
-    assert.equal(Object.keys(registry).length, executableLaneNames.length + unhandledLanes.length);
+    assert.equal(Object.keys(registry).length, lanesWithRegisteredHandler.length + unhandledLanes.length);
     assert.equal(Object.keys(registry).length, 17);
   });
 });

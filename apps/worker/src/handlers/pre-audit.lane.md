@@ -4,7 +4,7 @@ domain: intake
 state: scaffold
 missing:
   [
-    "worker handler - the handler registry entry for this lane is null, because apps/worker/src/lane-executability.ts:executableLaneNames does not list pre-audit",
+    "worker handler - the handler registry entry for this lane is null, because apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler does not list pre-audit",
     "persistence - createLead returns a parsed object and stores nothing, so D2 is unenforced",
     "G4 rate limit - the tracking boundary has one for its public endpoint, this has none",
     "G4 audit trace - no pre-audit run is recorded, so no audit attaches"
@@ -16,19 +16,20 @@ proof: ""
 
 ## Is
 
-`enforces` is empty, and that is the finding. Every rule this lane would need to
-carry exists only as an intention, with no address in the code:
+Two facts the checker verifies: this lane has no entry in the handler registry
+(`apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler` does
+not list it), and `apiQueueNames` does not admit it, so no HTTP request enqueues
+into it.
+
+What follows is prose and is checked by nobody. The rules this lane would carry
+exist as intentions, with no code behind them:
 
 - A prospect's site is assessed before anyone is asked for anything, and the
-  resulting potential report is conservative rather than flattering (P3) —
-  **no enforcing code**.
-- A lead is a durable record, because a later audit must attach to something —
-  **no enforcing code**; `createLead` returns a value and keeps nothing.
-- G4, the public-boundary rule — **unenforced**: the rate limit and audit trace
-  are not built, and there is no global guard or per-controller guard.
-
-A lane whose `Is` cannot name a single address is a lane that does not exist,
-however completely it is wired.
+  resulting potential report is conservative rather than flattering (P3).
+- A lead is a durable record, because a later audit must attach to something.
+  `createLead` returns a value and keeps nothing.
+- G4, the public-boundary rule: neither the rate limit nor the audit trace is
+  built.
 
 ## Is not
 

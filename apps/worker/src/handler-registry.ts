@@ -24,32 +24,32 @@ import { handleSectionCopySuggestionJob } from "./handlers/section-copy-suggesti
 import { handleSerpScoutJob } from "./handlers/serp-scout.js";
 import { handleTechnicalAuditJob } from "./handlers/technical-audit.js";
 import { handleWebsiteImportJob } from "./handlers/website-import.js";
-import type { ExecutableLane, UnhandledLane } from "./lane-executability.js";
+import type { LaneWithRegisteredHandler, LaneWithoutRegisteredHandler } from "./lane-handler-registration.js";
 
 /**
- * One handler plus the arguments it was bound with. `handler` is the identity
- * a test can compare against; `run` is what the dispatcher calls. Both come out
- * of `bind`, from the same parameter, so the recorded identity and the invoked
- * function cannot drift apart.
+ * One handler plus the arguments it was bound with. `handlerIdentity` is what a
+ * test compares; `run` is what the dispatcher calls. Both come out of `bind`,
+ * from the same parameter, so the recorded identity and the invoked function
+ * cannot drift apart.
  */
 export type LaneBinding = {
   /**
-   * Identity only, never invoked through this field. The bound arguments are
-   * typed `never[]` so a handler of any arity is assignable without a cast,
-   * and so nothing can call it here.
+   * The bound handler, exposed for identity comparison only. It is typed
+   * `unknown` so it accepts a handler of any arity without a cast and cannot be
+   * invoked through this field: calling it here would run a handler without the
+   * dependencies it was bound with. `run` is the only callable member.
    */
-  readonly handler: (job: Job, ...rest: never[]) => Promise<Record<string, unknown>>;
+  readonly handlerIdentity: unknown;
   readonly run: (job: Job) => Promise<Record<string, unknown>>;
 };
 
-// The handler is required to be both the concrete function being bound and a
-// `LaneBinding["handler"]`, so the recorded identity is the same value the
-// returned `run` calls. No cast sits between them, so they cannot drift.
+// Both members come out of the same `handler` parameter with no cast between
+// them, so the identity a test compares is the function `run` calls.
 function bind<A extends readonly unknown[]>(
-  handler: ((job: Job, ...rest: A) => Promise<Record<string, unknown>>) & LaneBinding["handler"],
+  handler: (job: Job, ...rest: A) => Promise<Record<string, unknown>>,
   ...rest: A
 ): LaneBinding {
-  return { handler, run: (job) => handler(job, ...rest) };
+  return { handlerIdentity: handler, run: (job) => handler(job, ...rest) };
 }
 
 /**
@@ -62,11 +62,13 @@ export type LaneRegistryEntry = {
 };
 
 /**
- * The registry shape is derived from `executableLaneNames`, so a lane listed
+ * The registry shape is derived from `lanesWithRegisteredHandler`, so a lane listed
  * there without an entry, an entry on a lane not listed there, or a missing key
  * is a compile error rather than a runtime surprise.
  */
-export type HandlerRegistry = { [K in ExecutableLane]: LaneRegistryEntry } & { [K in UnhandledLane]: null };
+export type HandlerRegistry = { [K in LaneWithRegisteredHandler]: LaneRegistryEntry } & {
+  [K in LaneWithoutRegisteredHandler]: null;
+};
 
 /** The shared adapters and settings the bound handlers were already given. */
 export type HandlerRegistryContext = {

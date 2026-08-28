@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { LaneLeafSchema, laneLeafFieldNames, laneStates } from "./lane-inventory.js";
+import { LaneLeafSchema, laneLeafFieldNames } from "./lane-inventory.js";
 
 const built = {
   lane: "deploy",
@@ -80,9 +80,5 @@ void describe("LaneLeafSchema", () => {
 void describe("laneLeafFieldNames", () => {
   void it("names every field of the leaf shape, in schema order", () => {
     assert.deepEqual(laneLeafFieldNames, ["lane", "domain", "state", "missing", "reason", "trigger", "proof"]);
-  });
-
-  void it("lists the four lane states", () => {
-    assert.deepEqual(laneStates, ["built", "partial", "scaffold", "absent-by-decision"]);
   });
 });

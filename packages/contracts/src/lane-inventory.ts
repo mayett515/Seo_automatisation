@@ -8,10 +8,6 @@ import { z } from "zod";
 // Every variant is strict: an undocumented field is a drift signal, not a
 // harmless extra, so it is rejected rather than silently stripped.
 
-export const laneStates = ["built", "partial", "scaffold", "absent-by-decision"] as const;
-
-export type LaneState = (typeof laneStates)[number];
-
 const laneIdentity = {
   lane: z.string().min(1),
   domain: z.string().min(1)
@@ -71,4 +67,25 @@ export type LaneLeaf = z.output<typeof LaneLeafSchema>;
  * retyped. Every variant shares one field set, so one variant answers for all.
  * SCHEMA.md is checked against this list in both directions.
  */
-export const laneLeafFieldNames = Object.keys(BuiltLaneLeafSchema.shape) as readonly (keyof LaneLeaf)[];
+/**
+ * The field names a leaf may carry, read from the schema rather than retyped.
+ * Every variant carries the same set by construction; `laneLeafVariantFields`
+ * makes tsc reject a variant that drifts from that, so this list speaks for all
+ * four without asserting it.
+ */
+export const laneLeafFieldNames: readonly string[] = Object.keys(BuiltLaneLeafSchema.shape);
+
+// A variant whose field names differ from the built variant's stops compiling
+// here, which is what lets `laneLeafFieldNames` be read from one of them.
+type SameFieldNames<Left, Right> = [keyof Left] extends [keyof Right]
+  ? [keyof Right] extends [keyof Left]
+    ? true
+    : never
+  : never;
+
+const laneLeafVariantsShareFieldNames: [
+  SameFieldNames<typeof BuiltLaneLeafSchema.shape, typeof PartialLaneLeafSchema.shape>,
+  SameFieldNames<typeof BuiltLaneLeafSchema.shape, typeof ScaffoldLaneLeafSchema.shape>,
+  SameFieldNames<typeof BuiltLaneLeafSchema.shape, typeof AbsentByDecisionLaneLeafSchema.shape>
+] = [true, true, true];
+void laneLeafVariantsShareFieldNames;

@@ -37,7 +37,7 @@ import {
 } from "@localseo/ai";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { createDatabaseClient } from "@localseo/db";
-import { queueJobNames, queueNames, secondaryJobNames, type QueueName } from "@localseo/contracts";
+import { queueJobNames, queueNames, secondaryJobLanes, type QueueName } from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
 import {
   MediaProcessingConfigurationError,
@@ -142,7 +142,7 @@ const sharedTokenCipher = env.GSC_TOKEN_ENCRYPTION_KEY
   : undefined;
 
 // Built once, from the shared adapters above. `routeJob` reads this table and
-// nothing else, so the lane list in `lane-executability.ts` describes the
+// nothing else, so the lane list in `lane-handler-registration.ts` describes the
 // dispatch that actually happens.
 const handlerRegistry = createHandlerRegistry({
   dbHandle: sharedDbHandle,
@@ -261,23 +261,36 @@ export async function cleanMediaStorage(): Promise<MediaStorageCleanupResult> {
   });
 }
 
+// Both routing failures carry their dynamic parts as fields rather than in the
+// message, so the message stays stable for grouping and a caller reads the data
+// instead of parsing a string. Neither can be fixed by running the same job
+// again, which is why both are terminal.
+
 /** No lane owns this queue name or job name. */
 export class UnknownWorkerJobError extends Error {
   readonly code = "UNKNOWN_WORKER_JOB";
+  readonly queueName: string;
+  readonly jobName: string;
 
   constructor(queueName: string, jobName: string) {
-    super(`Worker job resolves to no registered queue lane: ${queueName}:${jobName}`);
+    super("Worker job resolves to no registered queue lane");
     this.name = "UnknownWorkerJobError";
+    this.queueName = queueName;
+    this.jobName = jobName;
   }
 }
 
 /** The lane is registered in `queueNames` and its registry entry is null. */
-export class UnhandledLaneError extends Error {
+export class LaneHandlerMissingError extends Error {
   readonly code = "LANE_HANDLER_MISSING";
+  readonly lane: QueueName;
+  readonly jobName: string;
 
   constructor(lane: QueueName, jobName: string) {
-    super(`Registered queue has no handler: ${lane}:${jobName}`);
-    this.name = "UnhandledLaneError";
+    super("Registered queue has no handler");
+    this.name = "LaneHandlerMissingError";
+    this.lane = lane;
+    this.jobName = jobName;
   }
 }
 
@@ -285,8 +298,7 @@ export class UnhandledLaneError extends Error {
 // the canonical job name of every lane and the secondary job names resolve here.
 const laneByJobName: Readonly<Record<string, QueueName>> = {
   ...Object.fromEntries(queueNames.map((lane) => [queueJobNames[lane], lane] as const)),
-  [secondaryJobNames.pageGeneration]: "page-generation",
-  [secondaryJobNames.customerReportHtmlRender]: "report"
+  ...secondaryJobLanes
 };
 
 function isQueueName(value: string): value is QueueName {
@@ -315,7 +327,7 @@ export async function routeJob(job: Job): Promise<Record<string, unknown>> {
   const entry = handlerRegistry[lane];
 
   if (entry === null) {
-    throw new UnhandledLaneError(lane, job.name);
+    throw new LaneHandlerMissingError(lane, job.name);
   }
 
   return (entry.secondaries[job.name] ?? entry.primary).run(job);
@@ -336,6 +348,10 @@ export { parseCustomerReportHtmlRenderJobData };
 
 export function isTerminalWorkerError(error: unknown): boolean {
   return (
+    // Routing failures: the queue/job pair or the null registry entry is the
+    // same on every attempt, so a retry can only repeat the failure.
+    error instanceof UnknownWorkerJobError ||
+    error instanceof LaneHandlerMissingError ||
     error instanceof DeployConfigurationError ||
     error instanceof DeployEvidenceError ||
     error instanceof ProviderDeployTerminalStatusError ||

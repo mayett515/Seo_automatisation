@@ -76,11 +76,11 @@ reachable but lacks a test is a verification gap, not `partial`.
 
 Each fact is named for what its source proves, and for nothing more.
 
-| Fact                         | Source                                                      | What it establishes                                                             |
-| ---------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `lanesWithRegisteredHandler` | `apps/worker/src/lane-executability.ts:executableLaneNames` | the lane has a handler in the dispatch registry — not that the handler succeeds |
-| `reachableFromHttp`          | `packages/contracts/src/jobs.ts:apiQueueNames`              | the API may enqueue into the lane — not that any request does, and HTTP only    |
-| proof existence              | the file system                                             | the cited path is a file — not that its contents prove anything                 |
+| Fact                         | Source                                                                    | What it establishes                                                             |
+| ---------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `lanesWithRegisteredHandler` | `apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler` | the lane has a handler in the dispatch registry — not that the handler succeeds |
+| `reachableFromHttp`          | `packages/contracts/src/jobs.ts:apiQueueNames`                            | the API may enqueue into the lane — not that any request does, and HTTP only    |
+| proof existence              | the file system                                                           | the cited path is a file — not that its contents prove anything                 |
 
 `lanesWithRegisteredHandler` is trustworthy because it is not a description of
 the dispatch table but its type source:
@@ -147,8 +147,10 @@ field, never in a message.
 - `LANE_HANDLER_UNEXPECTED` — a `scaffold` or `absent-by-decision` leaf against
   a lane the dispatch registry does have a handler for.
 - `LANE_HTTP_REACHABILITY_CONTRADICTION` — a `scaffold` or `absent-by-decision`
-  lane that appears in `apiQueueNames`, so an HTTP request can enqueue work no
-  handler processes.
+  leaf claims the lane does not run, and `apiQueueNames` admits it, so the API
+  may enqueue into it. The predicate says nothing about handlers: a lane that is
+  both registered and claimed non-running also produces
+  `LANE_HANDLER_UNEXPECTED`, and both findings are collected.
 - `API_QUEUE_NOT_IN_REGISTRY` — `apiQueueNames` admitting a name `queueNames`
   does not declare. This is registry incoherence, not a reachability
   contradiction, so it carries its own code: a finding is named by what its

@@ -117,9 +117,31 @@ export const secondaryJobNames = {
   customerReportHtmlRender: "customer_report_html_render"
 } as const;
 
+// A secondary job runs on an existing lane rather than one of its own. This map
+// owns which lane each belongs to: the producer derives the job names a queue
+// accepts from it, and the worker resolves a secondary job name back to its
+// lane through it, so neither side keeps its own copy of the pairing.
+export const secondaryJobLanes = {
+  [secondaryJobNames.pageGeneration]: "page-generation",
+  [secondaryJobNames.customerReportHtmlRender]: "report"
+} as const satisfies Readonly<Record<string, QueueName>>;
+
 // The full set of valid job-name literals: every canonical queue job plus the
 // secondary jobs. Used to type enqueue `jobName` fields.
 export type JobName = (typeof queueJobNames)[QueueName] | (typeof secondaryJobNames)[keyof typeof secondaryJobNames];
+
+/**
+ * The job names a given lane accepts: its canonical job name, plus any
+ * secondary job bound to that lane. A pairing outside this set is a lane
+ * mismatch, and typing an enqueue against it makes the mismatch unwritable.
+ */
+export type AcceptedJobName<Lane extends QueueName> =
+  | (typeof queueJobNames)[Lane]
+  | {
+      [Secondary in keyof typeof secondaryJobLanes]: (typeof secondaryJobLanes)[Secondary] extends Lane
+        ? Secondary
+        : never;
+    }[keyof typeof secondaryJobLanes];
 
 export const JobTypeSchema = z.enum(jobTypes);
 export const QueueNameSchema = z.enum(queueNames);
