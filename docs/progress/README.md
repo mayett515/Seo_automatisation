@@ -65,3 +65,4 @@ Do not log every tiny edit. Commit history already covers that.
 - [2026-08-25-finding-fixes.md](2026-08-25-finding-fixes.md)
 - [2026-08-25-rule-layer-and-mirrors.md](2026-08-25-rule-layer-and-mirrors.md)
 - [2026-08-26-lane-inventory.md](2026-08-26-lane-inventory.md)
+- [2026-08-28-agent-hosts-and-review-round.md](2026-08-28-agent-hosts-and-review-round.md)
