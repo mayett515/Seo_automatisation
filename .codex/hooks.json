@@ -25,6 +25,13 @@
             "commandWindows": "node .codex/hooks/post-edit-lint.mjs",
             "statusMessage": "Linting edited TypeScript files",
             "timeout": 90
+          },
+          {
+            "type": "command",
+            "command": "node .codex/hooks/post-edit-lane-inventory.mjs",
+            "commandWindows": "node .codex/hooks/post-edit-lane-inventory.mjs",
+            "statusMessage": "Checking the queue lane inventory",
+            "timeout": 90
           }
         ]
       }

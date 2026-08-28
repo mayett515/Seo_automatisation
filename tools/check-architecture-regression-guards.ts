@@ -4969,6 +4969,21 @@ if (claudeRuleNames.length < expectedRuleCount) {
   });
 }
 
+// `.codex/hooks.json` and `.cursor/hooks.json` are verbatim copies of their
+// pack masters, and the lane inventory hook is project-owned - lanes mean
+// nothing in another repository on this stack, so it will never come back from
+// a pack. Re-adopting either pack overwrites the file and takes the hook with
+// it, silently, leaving a host that looks wired and checks nothing. These two
+// anchors make that overwrite fail the build instead.
+for (const host of [".codex/hooks.json", ".cursor/hooks.json"]) {
+  requireIncludes(
+    host,
+    "post-edit-lane-inventory",
+    "agent-rule-layer",
+    "the project-owned lane inventory hook must survive pack re-adoption; re-add the PostToolUse entry after copying the pack file"
+  );
+}
+
 for (const skill of [".claude/skills/anti-regression/SKILL.md", ".agents/skills/anti-regression/SKILL.md"]) {
   requireIncludes(
     skill,
