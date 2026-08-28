@@ -7,7 +7,7 @@ This project uses a native agent layer shared by Cursor, Codex, and Claude Code.
 
 ## Start here
 
-Four questions get confused with each other, so they are routed separately. A
+Five questions get confused with each other, so they are routed separately. A
 cold start on an unfamiliar machine took fourteen hops to find the second one.
 
 | Question                                                | Read                                                                                                                                                                                                                                                |
@@ -16,6 +16,7 @@ cold start on an unfamiliar machine took fourteen hops to find the second one.
 | What does the product actually do today?                | `docs/architecture/app-blueprint.md` — the implemented loop.                                                                                                                                                                                        |
 | Which queue lanes exist, and in what state?             | `docs/agents/lanes/generated-map.md` — generated from the leaves beside each handler, never hand-edited.                                                                                                                                            |
 | Which real manual SEO workflow does this industrialize? | `../martines-dach-gebaeudeservice/Seo` — the customer site and the hand-run operation the product automates: workflows, keyword analyses, growth plan, customer reports, raw GSC exports. A read-only sibling checkout, not inside this repository. |
+| What may be built, and under what constraints?          | `.ai-project-rules/00-system-index.md` — the product rules, still active. The index routes to the relevant shard. It says what is allowed; the lane map says what of it exists. Neither replaces the other.                                         |
 
 The roadmap under `docs/architecture/` records how the second was reached; it is
 history, not current state. `../big-eater` is optional reference material - a
