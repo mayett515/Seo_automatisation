@@ -1,13 +1,32 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildMap, checkLaneInventory, hasExportedSymbol, type CheckInput, type Leaf } from "./core.js";
+import type { LaneLeaf } from "@localseo/contracts";
+
+import {
+  buildMap,
+  checkLaneInventory,
+  documentedLeafFields,
+  hasExportedSymbol,
+  type CheckInput,
+  type LeafFile
+} from "./core.js";
 
 const queueNames = ["deploy", "report", "pre-audit"] as const;
 
-function leaf(overrides: Partial<Leaf> = {}): Leaf {
-  return {
-    file: `apps/worker/src/handlers/${overrides.lane ?? "deploy"}.lane.md`,
+type BuiltLeaf = Extract<LaneLeaf, { state: "built" }>;
+type PartialLeaf = Extract<LaneLeaf, { state: "partial" }>;
+type ScaffoldLeaf = Extract<LaneLeaf, { state: "scaffold" }>;
+
+// The leaf shape itself is validated by the contract schema and tested in
+// packages/contracts/src/lane-inventory.test.ts. These factories build leaves
+// that are already valid, so each test below isolates one derived fact.
+function at(lane: string): string {
+  return `apps/worker/src/handlers/${lane}.lane.md`;
+}
+
+function built(overrides: Partial<BuiltLeaf> = {}): LeafFile {
+  const leaf: BuiltLeaf = {
     lane: "deploy",
     domain: "release",
     state: "built",
@@ -17,16 +36,60 @@ function leaf(overrides: Partial<Leaf> = {}): Leaf {
     proof: "apps/worker/src/handlers/deploy.integration.ts",
     ...overrides
   };
+  return { file: at(leaf.lane), leaf };
 }
+
+function partial(overrides: Partial<PartialLeaf> = {}): LeafFile {
+  const leaf: PartialLeaf = {
+    lane: "report",
+    domain: "report",
+    state: "partial",
+    missing: ["the analyst status vocabulary"],
+    reason: "the framing half was never started",
+    trigger: "implement the six analyst status labels",
+    proof: "apps/worker/src/handlers/customer-report.integration.ts",
+    ...overrides
+  };
+  return { file: at(leaf.lane), leaf };
+}
+
+function scaffold(overrides: Partial<ScaffoldLeaf> = {}): LeafFile {
+  const leaf: ScaffoldLeaf = {
+    lane: "pre-audit",
+    domain: "intake",
+    state: "scaffold",
+    missing: ["worker handler"],
+    reason: "unbuilt",
+    trigger: "build it",
+    proof: "",
+    ...overrides
+  };
+  return { file: at(leaf.lane), leaf };
+}
+
+const schemaSource = [
+  "```yaml",
+  "---",
+  "lane: deploy",
+  "domain: release",
+  "state: built",
+  "missing: []",
+  'reason: ""',
+  'trigger: ""',
+  "proof: apps/worker/src/handlers/deploy.integration.ts",
+  "---",
+  "```"
+].join("\n");
 
 function baseInput(overrides: Partial<CheckInput> = {}): CheckInput {
   return {
     queueNames,
     apiQueueNames: ["deploy", "report"],
-    leaves: [leaf()],
+    lanesWithRegisteredHandler: new Set(["deploy", "report"]),
+    leaves: [built(), partial(), scaffold()],
     mapFile: "docs/agents/lanes/generated-map.md",
     existingMap: undefined,
-    schemaSource: "lane:\ndomain:\nstate:\nmissing:\nreason:\ntrigger:\nproof:\n",
+    schemaSource,
     ...overrides
   };
 }
@@ -39,134 +102,162 @@ function run(input: CheckInput) {
   return checkLaneInventory(input, noAddress());
 }
 
+function codes(result: ReturnType<typeof run>): string[] {
+  return result.findings.map((finding) => finding.code);
+}
+
 void describe("checkLaneInventory", () => {
   void it("passes a well-formed input", () => {
+    const result = run(baseInput());
+    assert.equal(result.findings.length, 0, JSON.stringify(result.findings));
+  });
+
+  void it("reports every finding rather than stopping at the first", () => {
     const result = run(
       baseInput({
-        leaves: [
-          leaf({}),
-          leaf({ lane: "report", domain: "report" }),
-          leaf({
-            lane: "pre-audit",
-            domain: "intake",
-            state: "scaffold",
-            missing: ["handler"],
-            reason: "unbuilt",
-            trigger: "build it",
-            proof: ""
-          })
-        ]
+        leaves: [built({ lane: "ghost" }), scaffold({ lane: "deploy", domain: "release" })]
       })
     );
 
-    assert.equal(result.failures.length, 0, JSON.stringify(result.failures));
+    assert.ok(codes(result).includes("LEAF_LANE_UNKNOWN"));
+    assert.ok(codes(result).includes("LANE_LEAF_MISSING"));
+    assert.ok(codes(result).includes("LANE_HANDLER_UNEXPECTED"));
+    assert.ok(result.findings.length >= 3);
   });
 
-  void it("fails when a queueName has no leaf (1-registry)", () => {
+  void it("fails when a queueName has no leaf (LANE_LEAF_MISSING)", () => {
     const result = run(baseInput({ leaves: [] }));
-    assert.ok(result.failures.some((f) => f.check === "1-registry"));
+    assert.ok(codes(result).includes("LANE_LEAF_MISSING"));
   });
 
-  void it("fails when two leaves claim one lane (1-registry)", () => {
-    const result = run(baseInput({ leaves: [leaf(), leaf({ file: "x.lane.md" })] }));
-    assert.ok(result.failures.some((f) => f.check === "1-registry" && f.message.includes("2 leaves")));
+  void it("fails when two leaves claim one lane (LANE_LEAF_DUPLICATE)", () => {
+    const result = run(baseInput({ leaves: [built(), built(), partial(), scaffold()] }));
+    assert.ok(result.findings.some((f) => f.code === "LANE_LEAF_DUPLICATE" && f.message.includes("2 leaves")));
   });
 
-  void it("fails when a leaf names a lane not in the registry (1-registry)", () => {
-    const l = leaf({ lane: "ghost" });
-    const result = run(baseInput({ leaves: [l] }));
-    assert.ok(result.failures.some((f) => f.check === "1-registry" && f.message.includes("ghost")));
+  void it("fails when a leaf names a lane not in the registry (LEAF_LANE_UNKNOWN)", () => {
+    const result = run(baseInput({ leaves: [built(), partial(), scaffold(), built({ lane: "ghost" })] }));
+    assert.ok(result.findings.some((f) => f.code === "LEAF_LANE_UNKNOWN" && f.message.includes("ghost")));
   });
 
-  void it("fails an invalid state (2-shape)", () => {
-    const result = run(baseInput({ leaves: [leaf({ state: "nope" })] }));
-    assert.ok(result.failures.some((f) => f.check === "2-shape"));
+  void it("fails a built lane whose proof file is not on disk (LANE_PROOF_FILE_MISSING)", () => {
+    const result = checkLaneInventory(baseInput({ leaves: [built({ proof: "apps/missing.ts" })] }), {
+      files: [],
+      readFile: () => "",
+      pathExists: (path) => path !== "apps/missing.ts"
+    });
+    assert.ok(result.findings.some((f) => f.code === "LANE_PROOF_FILE_MISSING" && f.message.includes("missing.ts")));
   });
 
-  void it("fails a non-built lane without reason or trigger (2-reason)", () => {
-    const result = run(baseInput({ leaves: [leaf({ state: "partial", missing: ["x"], reason: "", trigger: "" })] }));
-    assert.ok(result.failures.some((f) => f.check === "2-reason"));
+  void it("accepts a built lane whose proof file is on disk", () => {
+    const result = checkLaneInventory(baseInput({ leaves: [built()] }), {
+      files: [],
+      readFile: () => "",
+      pathExists: (path) => path === "apps/worker/src/handlers/deploy.integration.ts"
+    });
+    assert.equal(result.findings.filter((f) => f.code === "LANE_PROOF_FILE_MISSING").length, 0);
   });
 
-  void it("fails a built lane with no proof path at all (3-proof)", () => {
-    const result = run(baseInput({ leaves: [leaf({ proof: "" })] }));
-    assert.ok(result.failures.some((f) => f.check === "3-proof" && f.message.includes("requires a proof path")));
+  void it("fails a built lane with no registered handler (LANE_HANDLER_MISSING)", () => {
+    const result = run(baseInput({ lanesWithRegisteredHandler: new Set(["report"]) }));
+    assert.ok(result.findings.some((f) => f.code === "LANE_HANDLER_MISSING" && f.message.includes("deploy")));
   });
 
-  void it("fails a built lane that lists missing pieces (3-proof)", () => {
-    const result = run(baseInput({ leaves: [leaf({ missing: ["gap"] })] }));
-    assert.ok(result.failures.some((f) => f.check === "3-proof" && f.message.includes("missing")));
+  void it("fails a partial lane with no registered handler (LANE_HANDLER_MISSING)", () => {
+    const result = run(baseInput({ lanesWithRegisteredHandler: new Set(["deploy"]) }));
+    assert.ok(result.findings.some((f) => f.code === "LANE_HANDLER_MISSING" && f.message.includes("report")));
   });
 
-  void it("fails a scaffold lane reachable from the API (6-reachable)", () => {
+  void it("accepts a built and a partial lane that both have a registered handler", () => {
+    const result = run(baseInput({ leaves: [built(), partial(), scaffold()] }));
+    assert.equal(result.findings.filter((f) => f.code === "LANE_HANDLER_MISSING").length, 0);
+  });
+
+  void it("fails a scaffold lane that has a registered handler (LANE_HANDLER_UNEXPECTED)", () => {
+    const result = run(baseInput({ lanesWithRegisteredHandler: new Set(["deploy", "report", "pre-audit"]) }));
+    assert.ok(result.findings.some((f) => f.code === "LANE_HANDLER_UNEXPECTED" && f.message.includes("pre-audit")));
+  });
+
+  void it("accepts a scaffold lane with no registered handler", () => {
+    const result = run(baseInput());
+    assert.equal(result.findings.filter((f) => f.code === "LANE_HANDLER_UNEXPECTED").length, 0);
+  });
+
+  void it("fails a scaffold lane admitted to apiQueueNames (LANE_HTTP_REACHABILITY_CONTRADICTION)", () => {
+    const result = run(baseInput({ apiQueueNames: ["deploy", "report", "pre-audit"] }));
+    assert.ok(result.findings.some((f) => f.code === "LANE_HTTP_REACHABILITY_CONTRADICTION"));
+  });
+
+  void it("fails an absent-by-decision lane admitted to apiQueueNames", () => {
     const result = run(
       baseInput({
         apiQueueNames: ["deploy", "report", "pre-audit"],
-        leaves: [leaf({ state: "scaffold", missing: ["h"], reason: "r", trigger: "t" })]
+        leaves: [
+          built(),
+          partial(),
+          {
+            file: at("pre-audit"),
+            leaf: {
+              lane: "pre-audit",
+              domain: "intake",
+              state: "absent-by-decision",
+              missing: [],
+              reason: "decided against",
+              trigger: "a workflow that needs it",
+              proof: ""
+            }
+          }
+        ]
       })
     );
-    assert.ok(result.failures.some((f) => f.check === "6-reachable"));
+    assert.ok(result.findings.some((f) => f.code === "LANE_HTTP_REACHABILITY_CONTRADICTION"));
   });
 
-  void it("fails a missing proof path when the file does not exist", () => {
-    const result = checkLaneInventory(baseInput({ leaves: [leaf({ proof: "apps/missing.ts" })] }), {
-      files: [],
-      readFile: () => "",
-      pathExists: (p) => p !== "apps/missing.ts"
-    });
-    assert.ok(result.failures.some((f) => f.check === "3-proof" && f.message.includes("missing.ts")));
+  void it("accepts a scaffold lane that is absent from apiQueueNames", () => {
+    const result = run(baseInput());
+    assert.equal(result.findings.filter((f) => f.code === "LANE_HTTP_REACHABILITY_CONTRADICTION").length, 0);
   });
 
-  void it("fails a mechanisation claim that names no address (7-unaddressed-mechanism)", () => {
+  void it("fails a mechanisation claim that names no address (MECHANISM_ADDRESS_MISSING)", () => {
     const result = checkLaneInventory(baseInput(), {
       files: ["docs/agents/lanes/website.md"],
       readFile: () => "### D3 - a rule\n\n_Mechanised at:_ the release domain owns this; see release.md D1\n",
       pathExists: () => true
     });
-    assert.equal(result.failures.filter((f) => f.check === "7-unaddressed-mechanism").length, 1);
+    assert.equal(result.findings.filter((f) => f.code === "MECHANISM_ADDRESS_MISSING").length, 1);
   });
 
   void it("accepts a mechanisation claim that names a path and symbol", () => {
     const result = checkLaneInventory(baseInput(), {
       files: ["docs/agents/lanes/website.md"],
-      readFile: (p) =>
-        p.endsWith("website.md")
+      readFile: (path) =>
+        path.endsWith("website.md")
           ? "_Mechanised at:_ apps/api/src/modules/projects.module.ts:ProjectsService - preview is noindex\n"
           : "export class ProjectsService {}",
       pathExists: () => true
     });
-    assert.equal(result.failures.filter((f) => f.check === "7-unaddressed-mechanism").length, 0);
+    assert.equal(result.findings.filter((f) => f.code === "MECHANISM_ADDRESS_MISSING").length, 0);
   });
 
-  void it("fails a stale generated map (11-stale-map)", () => {
-    const result = run(baseInput({ existingMap: "hand-edited\n" }));
-    assert.ok(result.failures.some((f) => f.check === "11-stale-map"));
-  });
-
-  void it("fails a schema that omits a validated field (10-schema-drift)", () => {
-    const result = run(baseInput({ schemaSource: "lane:\n" }));
-    assert.ok(result.failures.some((f) => f.check === "10-schema-drift"));
-  });
-
-  void it("fails a cited address whose symbol is not exported (12-address)", () => {
-    const result = checkLaneInventory(baseInput(), {
-      files: ["docs/agents/lanes/release.md"],
-      readFile: () => "the owner is packages/domain/src/index.ts:doesNotExist",
-      pathExists: (p) => p === "packages/domain/src/index.ts"
-    });
-    assert.ok(result.failures.some((f) => f.check === "12-address" && f.message.includes("doesNotExist")));
-  });
-
-  void it("fails a cited address whose path does not exist (12-address)", () => {
+  void it("fails a cited address whose path does not exist (ADDRESS_PATH_MISSING)", () => {
     const result = checkLaneInventory(baseInput(), {
       files: ["docs/agents/lanes/release.md"],
       readFile: () => "the owner is packages/nowhere/nope.ts:Something",
       pathExists: () => false
     });
-    assert.ok(result.failures.some((f) => f.check === "12-address"));
+    assert.ok(result.findings.some((f) => f.code === "ADDRESS_PATH_MISSING"));
   });
 
-  void it("accepts an exported-symbol address that exists (12-address)", () => {
+  void it("fails a cited address whose symbol is not exported (ADDRESS_SYMBOL_MISSING)", () => {
+    const result = checkLaneInventory(baseInput(), {
+      files: ["docs/agents/lanes/release.md"],
+      readFile: () => "the owner is packages/domain/src/index.ts:doesNotExist",
+      pathExists: (path) => path === "packages/domain/src/index.ts"
+    });
+    assert.ok(result.findings.some((f) => f.code === "ADDRESS_SYMBOL_MISSING" && f.message.includes("doesNotExist")));
+  });
+
+  void it("accepts an exported-symbol address that exists", () => {
     const result = checkLaneInventory(baseInput(), {
       files: ["docs/agents/lanes/release.md"],
       readFile: (path) =>
@@ -175,7 +266,43 @@ void describe("checkLaneInventory", () => {
           : "export const deployStartingReleasePlanStatuses = [];",
       pathExists: () => true
     });
-    assert.equal(result.failures.filter((f) => f.check === "12-address").length, 0);
+    assert.equal(
+      result.findings.filter((f) => f.code === "ADDRESS_PATH_MISSING" || f.code === "ADDRESS_SYMBOL_MISSING").length,
+      0
+    );
+  });
+
+  void it("fails a schema that omits a validated field (SCHEMA_FIELD_DRIFT)", () => {
+    const result = run(baseInput({ schemaSource: ["```yaml", "---", "lane: deploy", "---", "```"].join("\n") }));
+    assert.ok(result.findings.some((f) => f.code === "SCHEMA_FIELD_DRIFT" && f.message.includes("not documented")));
+  });
+
+  void it("fails a schema that documents a field nothing validates (SCHEMA_FIELD_DRIFT)", () => {
+    const result = run(baseInput({ schemaSource: `${schemaSource.replace("---\n```", "enforces: []\n---\n```")}` }));
+    assert.ok(result.findings.some((f) => f.code === "SCHEMA_FIELD_DRIFT" && f.message.includes("not validated")));
+  });
+
+  void it("fails a stale generated map (MAP_STALE)", () => {
+    const result = run(baseInput({ existingMap: "hand-edited\n" }));
+    assert.ok(codes(result).includes("MAP_STALE"));
+  });
+});
+
+void describe("documentedLeafFields", () => {
+  void it("reads the field names out of the SCHEMA.md example block", () => {
+    assert.deepEqual(documentedLeafFields(schemaSource), [
+      "lane",
+      "domain",
+      "state",
+      "missing",
+      "reason",
+      "trigger",
+      "proof"
+    ]);
+  });
+
+  void it("returns nothing when the example block is absent", () => {
+    assert.deepEqual(documentedLeafFields("# SCHEMA\n\nno example here\n"), []);
   });
 });
 
@@ -199,7 +326,7 @@ void describe("hasExportedSymbol", () => {
 
 void describe("buildMap", () => {
   void it("includes a review-starting-point disclaimer and no hand-written flow", () => {
-    const map = buildMap([leaf({ lane: "deploy", domain: "release" })], "docs/agents/lanes/generated-map.md");
+    const map = buildMap([built()], "docs/agents/lanes/generated-map.md");
     assert.ok(map.includes("review starting"));
     assert.ok(!map.includes("flowchart"));
   });

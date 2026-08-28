@@ -78,7 +78,9 @@ import {
   parseGscSyncJobData,
   parseReleaseVerificationJobData,
   routeJob,
-  toWorkerRethrowError
+  toWorkerRethrowError,
+  UnhandledLaneError,
+  UnknownWorkerJobError
 } from "./handlers.js";
 
 void describe("createObjectStorageAdapter", () => {
@@ -481,15 +483,54 @@ void describe("routeJob", () => {
     );
   });
 
-  void it("fails unknown jobs honestly instead of returning success metadata", async () => {
+  void it("fails a registered lane that has no handler with the fact, not an intent", async () => {
     await assert.rejects(
       routeJob({
-        id: "unknown-job-1",
+        id: "seo-qa-job-1",
         queueName: "seo-qa",
         name: "score",
         data: {}
       } as Job),
-      /Worker job is not implemented: seo-qa:score/u
+      (error: unknown) => {
+        assert.ok(error instanceof UnhandledLaneError);
+        assert.equal(error.code, "LANE_HANDLER_MISSING");
+        assert.equal(error.message, "Registered queue has no handler: seo-qa:score");
+        return true;
+      }
+    );
+  });
+
+  void it("fails a pre-audit job because the lane carries no registry entry", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "pre-audit-job-1",
+        queueName: "pre-audit",
+        name: "pre_audit",
+        data: {}
+      } as Job),
+      (error: unknown) => {
+        assert.ok(error instanceof UnhandledLaneError);
+        assert.equal(error.code, "LANE_HANDLER_MISSING");
+        assert.equal(error.message, "Registered queue has no handler: pre-audit:pre_audit");
+        return true;
+      }
+    );
+  });
+
+  void it("fails a job whose queue name and job name resolve to no lane", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "unknown-job-1",
+        queueName: "not-a-queue",
+        name: "not-a-job",
+        data: {}
+      } as Job),
+      (error: unknown) => {
+        assert.ok(error instanceof UnknownWorkerJobError);
+        assert.equal(error.code, "UNKNOWN_WORKER_JOB");
+        assert.equal(error.message, "Worker job resolves to no registered queue lane: not-a-queue:not-a-job");
+        return true;
+      }
     );
   });
 });

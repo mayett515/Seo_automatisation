@@ -4,7 +4,7 @@ domain: intake
 state: scaffold
 missing:
   [
-    "worker handler - the dispatcher falls through and throws at apps/worker/src/handlers.ts:routeJob",
+    "worker handler - the handler registry entry for this lane is null, because apps/worker/src/lane-executability.ts:executableLaneNames does not list pre-audit",
     "persistence - createLead returns a parsed object and stores nothing, so D2 is unenforced",
     "G4 rate limit - the tracking boundary has one for its public endpoint, this has none",
     "G4 audit trace - no pre-audit run is recorded, so no audit attaches"

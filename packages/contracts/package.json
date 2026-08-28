@@ -41,6 +41,11 @@
       "types": "./dist/jobs.d.ts",
       "default": "./src/jobs.ts"
     },
+    "./lane-inventory": {
+      "production": "./dist/lane-inventory.js",
+      "types": "./dist/lane-inventory.d.ts",
+      "default": "./src/lane-inventory.ts"
+    },
     "./pages": {
       "production": "./dist/pages.js",
       "types": "./dist/pages.d.ts",
