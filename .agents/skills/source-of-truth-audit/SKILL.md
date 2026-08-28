@@ -27,6 +27,20 @@ one-off audit.
 5. If the same class of mirror can recur, extend the host repo's guard script
    (`tools/`) so the audit does not need repeating. A check that fails CI is
    worth more than a finding in a report.
+6. When the audit ends in a rename, the rename is not finished when the code
+   compiles. A rename refactor rewrites every reference the type graph can
+   resolve, and editing a declaration by hand turns the remaining ones into
+   compile errors; both reach code and nothing else. Strings, comments,
+   Markdown, and configuration lie outside, so a retired name survives there
+   through a green build — a typechecker does not read prose, and a prose
+   check does not know a symbol was renamed. Search the retired name across
+   the whole repository, exempt what deliberately records the past
+   (changelogs, decision records, progress notes), and repair the rest. Repair
+   the claim rather than the word: deleting a stale sentence is often the
+   honest fix, and a rule demanding that the successor stand where the old
+   name stood teaches authors to paste it in to turn a check green. Then
+   record the retirement where a check can enforce it, so the tree cannot
+   drift back to the old name later.
 
 ## Judgment rules
 
