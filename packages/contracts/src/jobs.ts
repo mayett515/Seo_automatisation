@@ -65,14 +65,13 @@ export type QueueName = (typeof queueNames)[number];
 // (`apps/api/src/queue-producer.ts`).
 //
 // This list used to be described as proving that a lane which cannot run is
-// never reachable from an HTTP request. It does not, and `gsc-sync` is the
-// counterexample: `apps/api/src/modules/gsc.module.ts` constructs its own queue
-// behind `POST /projects/:projectId/gsc/sync`, so that lane is reachable and
-// absent here. The name says `shared` for that reason. Consolidating the GSC
-// enqueue path onto this producer is deferred, not declined - it needs a
-// database-backed integration proof because both sides record job runs - and
-// `tools/check-architecture-regression-guards.ts` fails the build on any
-// further producer, so the exception cannot quietly become a pattern.
+// never reachable from an HTTP request, and `gsc-sync` disproved it:
+// `apps/api/src/modules/gsc.module.ts` built its own queue behind an endpoint,
+// so that lane was reachable and absent here. It now enqueues through the
+// shared producer, and `tools/check-architecture-regression-guards.ts` fails
+// the build on any queue constructed elsewhere under `apps/api/src`. The name
+// still says `shared` on purpose: it names the producer this list describes,
+// not the coincidence that the producer is currently the only one.
 //
 // `pre-audit` is deliberately absent: its worker handler does not exist, so
 // admitting it here would let an HTTP request enqueue a job nothing can
@@ -81,6 +80,7 @@ export type QueueName = (typeof queueNames)[number];
 // reason and trigger.
 export const sharedApiQueueNames = [
   "website-import",
+  "gsc-sync",
   "opportunity-scout",
   "opportunity-research",
   "page-generation",

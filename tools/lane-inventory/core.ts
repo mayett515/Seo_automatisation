@@ -122,8 +122,8 @@ export function buildMap(leaves: readonly LeafFile[], mapFile: string, registrie
     "leaf's own claim about itself.",
     "",
     "Admitted by API producer means the shared producer will enqueue into that",
-    "lane. It is not the same as unreachable from HTTP: a module that builds its",
-    "own queue bypasses that list, and `gsc-sync` does. See SCHEMA.md.",
+    "lane. It is named for the producer rather than for HTTP, because a module",
+    "that built its own queue once made the wider claim false. See SCHEMA.md.",
     ""
   ];
 
@@ -141,10 +141,10 @@ export function buildMap(leaves: readonly LeafFile[], mapFile: string, registrie
       // Both are read from registries the checker already holds, so projecting
       // them adds no new place for the documentation to drift. The second
       // column was first called "HTTP reachable", which claimed more than
-      // `sharedApiQueueNames` carries: gsc.module.ts builds its own queue and serves
-      // POST /projects/:projectId/gsc/sync, so `gsc-sync` is reachable over
-      // HTTP while absent from that list. The name now says what the source
-      // proves; a regression guard keeps the bypass count from growing.
+      // `sharedApiQueueNames` carries: a module that constructs its own queue
+      // is reachable and absent from it. That bypass is gone and a guard keeps
+      // it gone, but the name still describes the producer, because the day it
+      // returns the name must not have to change again.
       const registered = registries.lanesWithRegisteredHandler.has(leaf.lane) ? "yes" : "no";
       const reachable = registries.sharedApiQueueNames.includes(leaf.lane) ? "yes" : "no";
       lines.push(`| \`${leaf.lane}\` | ${leaf.state} | ${registered} | ${reachable} | ${missing} | ${proof} |`);

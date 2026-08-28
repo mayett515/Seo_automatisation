@@ -53,6 +53,7 @@ export class QueueProducerService implements OnModuleDestroy {
     this.queues = redisConnection
       ? {
           "website-import": new Queue("website-import", { connection: redisConnection }),
+          "gsc-sync": new Queue("gsc-sync", { connection: redisConnection }),
           "opportunity-scout": new Queue("opportunity-scout", { connection: redisConnection }),
           "opportunity-research": new Queue("opportunity-research", { connection: redisConnection }),
           "page-generation": new Queue("page-generation", { connection: redisConnection }),
@@ -69,6 +70,15 @@ export class QueueProducerService implements OnModuleDestroy {
 
   isQueueConfigured(queueName: SharedApiQueueName): boolean {
     return Boolean(this.queues[queueName]);
+  }
+
+  /**
+   * Whether a lane has a live queue. Callers that must answer before doing work
+   * ask the owner rather than re-reading REDIS_URL for themselves; a second
+   * reader of the same environment is a second thing to keep in step.
+   */
+  hasQueue(queueName: SharedApiQueueName): boolean {
+    return this.queues[queueName] !== undefined;
   }
 
   async enqueue(input: EnqueueInput): Promise<boolean> {

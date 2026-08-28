@@ -8,15 +8,15 @@ admitted by API producer are read from the code; every other column is the
 leaf's own claim about itself.
 
 Admitted by API producer means the shared producer will enqueue into that
-lane. It is not the same as unreachable from HTTP: a module that builds its
-own queue bypasses that list, and `gsc-sync` does. See SCHEMA.md.
+lane. It is named for the producer rather than for HTTP, because a module
+that built its own queue once made the wider claim false. See SCHEMA.md.
 
 ## evidence
 
 | Lane | State | Handler registered | Admitted by API producer | Missing | Proof |
 | --- | --- | --- | --- | --- | --- |
 | `analytics` | scaffold | no | no | 2 | - |
-| `gsc-sync` | built | yes | no | - | apps/worker/src/handlers/gsc-sync.integration.ts |
+| `gsc-sync` | built | yes | yes | - | apps/worker/src/handlers/gsc-sync.integration.ts |
 | `serp-scout` | partial | yes | yes | 1 | apps/worker/src/handlers/serp-scout.integration.ts |
 | `technical-audit` | built | yes | yes | - | apps/worker/src/handlers/technical-audit.integration.ts |
 

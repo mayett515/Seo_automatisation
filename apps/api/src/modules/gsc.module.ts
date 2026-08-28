@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   AesGcmTokenCipher,
   GoogleSearchConsoleAdapter,
-  createRedisConnection,
   type SearchConsoleAuthorizationState,
   type SearchConsolePort
 } from "@localseo/adapters";
@@ -28,7 +27,6 @@ import {
   gscOpportunitySignals,
   gscSearchAnalyticsRows,
   gscSyncRuns,
-  jobRuns,
   type DatabaseClient
 } from "@localseo/db";
 import {
@@ -46,12 +44,10 @@ import {
   Req,
   Res,
   UseGuards,
-  type OnModuleDestroy,
   type Provider
 } from "@nestjs/common";
 import { and, desc, eq, ne } from "@localseo/db/query";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { Queue } from "bullmq";
 import { BetterAuthService } from "../auth/better-auth/better-auth.service.js";
 import { BetterAuthGuard } from "../auth/guards/better-auth.guard.js";
 import { PermissionGuard } from "../auth/permissions/permission.guard.js";
@@ -63,6 +59,7 @@ import type {
   ProjectAccessContext,
   RequestWithAuth
 } from "../auth/types/authenticated-request.js";
+import { QueueProducerService } from "../queue-producer.js";
 import { DatabaseService } from "../database/database.service.js";
 import { GscOAuthStateStore, type GscOAuthNonceRecord } from "./gsc-oauth-state.store.js";
 import { CsrfGuard } from "../security/csrf/csrf.guard.js";
@@ -73,11 +70,9 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 type Db = DatabaseClient;
 type OptionalSearchConsole = SearchConsolePort | undefined;
 type OptionalTokenCipher = AesGcmTokenCipher | undefined;
-type OptionalQueue = Queue | undefined;
 
 const GSC_SEARCH_CONSOLE = Symbol("GSC_SEARCH_CONSOLE");
 const GSC_TOKEN_CIPHER = Symbol("GSC_TOKEN_CIPHER");
-const GSC_QUEUE = Symbol("GSC_QUEUE");
 
 const gscInfrastructureProviders: Provider[] = [
   {
@@ -102,24 +97,17 @@ const gscInfrastructureProviders: Provider[] = [
     provide: GSC_TOKEN_CIPHER,
     useFactory: (): OptionalTokenCipher =>
       env.GSC_TOKEN_ENCRYPTION_KEY ? new AesGcmTokenCipher(env.GSC_TOKEN_ENCRYPTION_KEY) : undefined
-  },
-  {
-    provide: GSC_QUEUE,
-    useFactory: (): OptionalQueue => {
-      const redisConnection = env.REDIS_URL ? createRedisConnection(env.REDIS_URL) : undefined;
-      return redisConnection ? new Queue("gsc-sync", { connection: redisConnection }) : undefined;
-    }
   }
 ];
 
 @Injectable()
-class GscService implements OnModuleDestroy {
+class GscService {
   private readonly logger = new Logger(GscService.name);
 
   constructor(
     @Inject(GSC_SEARCH_CONSOLE) private readonly searchConsole: OptionalSearchConsole,
     @Inject(GSC_TOKEN_CIPHER) private readonly tokenCipher: OptionalTokenCipher,
-    @Inject(GSC_QUEUE) private readonly gscQueue: OptionalQueue,
+    @Inject(QueueProducerService) private readonly queues: QueueProducerService,
     @Inject(DatabaseService)
     private readonly database: DatabaseService,
     @Inject(GscOAuthStateStore)
@@ -129,10 +117,6 @@ class GscService implements OnModuleDestroy {
     @Inject(ProjectMembershipService)
     private readonly memberships: ProjectMembershipService
   ) {}
-
-  async onModuleDestroy(): Promise<void> {
-    await this.gscQueue?.close();
-  }
 
   async getConnection(projectId: string): Promise<GscConnection> {
     if (!isPersistedProjectId(projectId)) {
@@ -351,7 +335,7 @@ class GscService implements OnModuleDestroy {
       return connectionRequired(projectId, "Reconnect Google Search Console before syncing performance data.");
     }
 
-    if (!this.gscQueue) {
+    if (!this.queues.hasQueue("gsc-sync")) {
       return connectionRequired(
         projectId,
         "GSC sync queue is not configured. REDIS_URL is required before sync jobs can be queued."
@@ -377,7 +361,6 @@ class GscService implements OnModuleDestroy {
     }
 
     const jobId = randomUUID();
-    const jobRunId = randomUUID();
     const job = QueueJobSchema.parse({
       jobId,
       projectId,
@@ -388,50 +371,34 @@ class GscService implements OnModuleDestroy {
       createdAt: new Date().toISOString()
     });
 
-    await db.insert(jobRuns).values({
-      id: jobRunId,
-      projectId,
-      externalJobId: jobId,
-      queueName: "gsc-sync",
-      type: "gsc_sync",
-      status: "queued",
-      inputRef: syncRun.id,
-      actorType: userId ? "user" : "system",
-      actorUserId: userId,
-      triggerSource: "user_action"
-    });
-
+    // Delivery and the job_runs audit row belong to the shared producer; this
+    // service keeps only what it owns, gscSyncRuns. The two used to be written
+    // here side by side against a queue this module built for itself, which
+    // made `sharedApiQueueNames` an incomplete account of what the API can
+    // enqueue and left a second BullMQ creation and shutdown path.
     try {
-      await this.gscQueue.add(
-        "gsc_sync",
-        {
+      await this.queues.enqueue({
+        queueName: "gsc-sync",
+        jobName: "gsc_sync",
+        jobId,
+        data: {
           projectId,
           syncRunId: syncRun.id,
-          jobRunId,
           triggeredByUserId: userId ?? null,
           triggerSource: "user_action"
         },
-        {
-          jobId,
-          attempts: 5,
-          backoff: {
-            type: "exponential",
-            delay: 1000
-          }
+        options: { attempts: 5, backoff: { type: "exponential", delay: 1000 } },
+        audit: {
+          projectId,
+          type: "gsc_sync",
+          inputRef: syncRun.id,
+          actorType: userId ? "user" : "system",
+          actorUserId: userId,
+          triggerSource: "user_action"
         }
-      );
+      });
     } catch (error) {
-      await db
-        .update(jobRuns)
-        .set({
-          status: "failed",
-          completedAt: new Date(),
-          updatedAt: new Date(),
-          failureJson: {
-            message: error instanceof Error ? error.message : "gsc_queue_add_failed"
-          }
-        })
-        .where(eq(jobRuns.id, jobRunId));
+      // The producer already marked its own job_run failed and committed it.
       await db
         .update(gscSyncRuns)
         .set({
@@ -439,7 +406,7 @@ class GscService implements OnModuleDestroy {
           completedAt: new Date(),
           updatedAt: new Date(),
           failureJson: {
-            message: "gsc_queue_add_failed"
+            message: error instanceof Error ? error.message : "gsc_queue_add_failed"
           }
         })
         .where(eq(gscSyncRuns.id, syncRun.id));

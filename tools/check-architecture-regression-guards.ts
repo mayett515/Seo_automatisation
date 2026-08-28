@@ -4969,27 +4969,18 @@ if (claudeRuleNames.length < expectedRuleCount) {
   });
 }
 
-// `sharedApiQueueNames` is read as the set of lanes the API enqueues into, and the
-// generated lane map projects it. That only holds while the shared producer is
-// the only place in the API that builds a queue. It was not: `gsc.module.ts`
-// constructs its own `new Queue("gsc-sync")` behind `POST .../gsc/sync`, so a
-// map column named "HTTP reachable" was false for that lane and stayed green.
-// The column now says what the list proves; this keeps the bypass count from
-// growing silently. A third entry here is a decision, not a detail.
+// `sharedApiQueueNames` is read as the set of lanes the API enqueues into, and
+// the generated lane map projects it. That only holds while the shared producer
+// is the only place in the API that builds a queue. It was not: gsc.module.ts
+// constructed its own, so a map column named "HTTP reachable" was false for
+// `gsc-sync` and stayed green. That module now enqueues through the producer
+// and the allowlist has one entry again.
 //
 // This matches one spelling, `new Queue(`. A wrapper, an alias or a generic
 // construction would pass it. It is a regression net against the mistake that
-// already happened, not a proof that the producer boundary is complete, and
-// it must not be cited as one.
-const QUEUE_CONSTRUCTION_ALLOWED = new Set([
-  "apps/api/src/queue-producer.ts",
-  // Known exception, recorded rather than hidden. Consolidating it onto the
-  // shared producer is deferred, not declined - it is the better architecture,
-  // but both sides record job runs, so it needs a database-backed integration
-  // proof first. This entry is therefore temporary by intent; the lane map and
-  // SCHEMA.md say the same.
-  "apps/api/src/modules/gsc.module.ts"
-]);
+// already happened, not a proof that the producer boundary is complete, and it
+// must not be cited as one.
+const QUEUE_CONSTRUCTION_ALLOWED = new Set(["apps/api/src/queue-producer.ts"]);
 
 function typeScriptFilesUnder(directory: string): string[] {
   const found: string[] = [];
