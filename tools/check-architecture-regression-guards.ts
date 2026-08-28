@@ -4969,6 +4969,67 @@ if (claudeRuleNames.length < expectedRuleCount) {
   });
 }
 
+// The same mirror problem one directory over, and it went unguarded while the
+// rule mirror above was watched. Every name in .claude/skills also exists in
+// .agents/skills, so the two trees carry a full set of paired copies; most
+// pairs are byte-identical and a few differ because the project adapted the
+// pack version. Both facts are fine. What is not fine is a difference nobody
+// declared: that is how a lesson lands in the tree one host reads and stays
+// out of the tree another reads, with every check green.
+//
+// A divergence is declared here with the reason it exists. This is not the
+// rules' byte-identity rule loosened - an undeclared difference still fails,
+// and a declaration that no longer describes a real difference fails too, so
+// the list cannot outlive what it excuses.
+const SKILL_MIRROR_DIVERGENCE: Record<string, string> = {
+  "anti-regression": "Project-adapted: carries this repository's gates, lanes, and proof commands.",
+  "repo-review": "Project-adapted: carries the modular-monolith layout and the ADR log location.",
+  "smoke-verify": "Project-adapted: carries the real start commands for this API, worker, and web app.",
+  "type-interview": "Project-adapted: carries the Drizzle and Zod ownership rules this repository settled on.",
+  "source-of-truth-audit":
+    "One line: the bundled scanner is invoked from the tree it sits in, so each copy names its own path."
+};
+
+const claudeSkillNames = readdirSync(".claude/skills").sort();
+const agentsSkillNames = readdirSync(".agents/skills").sort();
+
+// Only paired names are compared. `.agents/skills` deliberately holds project
+// skills with no Claude-side counterpart, so a one-sided name is not drift -
+// unlike the rules above, where a missing mirror means a host reads less.
+const pairedSkills = claudeSkillNames.filter((name) => agentsSkillNames.includes(name));
+
+for (const skill of pairedSkills) {
+  const claudeSkill = `.claude/skills/${skill}/SKILL.md`;
+  const agentsSkill = `.agents/skills/${skill}/SKILL.md`;
+  if (!existsSync(claudeSkill) || !existsSync(agentsSkill)) continue;
+
+  const differs = read(claudeSkill) !== read(agentsSkill);
+  const declared = skill in SKILL_MIRROR_DIVERGENCE;
+
+  if (differs && !declared) {
+    failures.push({
+      category: "agent-skill-layer",
+      message: `${agentsSkill}: differs from ${claudeSkill} and the difference is not declared. Claude and the hosts that read .agents/ would follow different instructions under one name. Sync the copies, or add an entry to SKILL_MIRROR_DIVERGENCE saying what differs and why.`
+    });
+  }
+
+  if (!differs && declared) {
+    failures.push({
+      category: "agent-skill-layer",
+      message: `${agentsSkill}: SKILL_MIRROR_DIVERGENCE excuses a difference from ${claudeSkill} that no longer exists. Remove the entry in the change that removed the difference; an excuse for nothing is how the list stops describing the tree.`
+    });
+  }
+}
+
+for (const declared of Object.keys(SKILL_MIRROR_DIVERGENCE)) {
+  if (!pairedSkills.includes(declared)) {
+    failures.push({
+      category: "agent-skill-layer",
+      message: `SKILL_MIRROR_DIVERGENCE names \`${declared}\`, which is not present in both skill trees. A declaration about a pair that does not exist proves nothing.`
+    });
+  }
+}
+
 // `sharedApiQueueNames` is read as the set of lanes the API enqueues into, and
 // the generated lane map projects it. That only holds while the shared producer
 // is the only place in the API that builds a queue. It was not: gsc.module.ts

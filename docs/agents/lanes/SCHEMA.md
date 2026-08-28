@@ -58,12 +58,12 @@ proof.
 The `state` field is an author's claim. The checker verifies a narrow part of
 it and nothing more; the rest is review judgment.
 
-| State                | What the author asserts                                                               | What the checker verifies                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `built`              | reachable and executable, with a fitting behavioral proof                             | the lane has a registered handler, and `proof` names a file on disk                                       |
-| `partial`            | executable, with a concrete named functional gap that `missing` describes             | the lane has a registered handler, and `missing` names at least one thing                                 |
-| `scaffold`           | not executable and unreachable from every enqueue path                                | the lane has no registered handler and is absent from `apiQueueNames`                                     |
-| `absent-by-decision` | deliberately not built, with a recorded decision and a recorded trigger to revisit it | the lane has no registered handler and is absent from `apiQueueNames`; `reason` and `trigger` are present |
+| State                | What the author asserts                                                               | What the checker verifies                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `built`              | reachable and executable, with a fitting behavioral proof                             | the lane has a registered handler, and `proof` names a file on disk                                             |
+| `partial`            | executable, with a concrete named functional gap that `missing` describes             | the lane has a registered handler, and `missing` names at least one thing                                       |
+| `scaffold`           | not executable and unreachable from every enqueue path                                | the lane has no registered handler and is absent from `sharedApiQueueNames`                                     |
+| `absent-by-decision` | deliberately not built, with a recorded decision and a recorded trigger to revisit it | the lane has no registered handler and is absent from `sharedApiQueueNames`; `reason` and `trigger` are present |
 
 Nothing in the right-hand column establishes that a lane works. A registered
 handler can still fail on every job, and a proof file that exists can still
@@ -147,11 +147,12 @@ field, never in a message.
 - `LANE_HANDLER_UNEXPECTED` — a `scaffold` or `absent-by-decision` leaf against
   a lane the dispatch registry does have a handler for.
 - `LANE_API_PRODUCER_ADMISSION_CONTRADICTION` — a `scaffold` or `absent-by-decision`
-  leaf claims the lane does not run, and `apiQueueNames` admits it, so the API
-  may enqueue into it. The predicate says nothing about handlers: a lane that is
+  leaf claims the lane does not run, and `sharedApiQueueNames` admits it, so the
+  shared producer may enqueue into it. The predicate says nothing about
+  handlers: a lane that is
   both registered and claimed non-running also produces
   `LANE_HANDLER_UNEXPECTED`, and both findings are collected.
-- `API_QUEUE_NOT_IN_REGISTRY` — `apiQueueNames` admitting a name `queueNames`
+- `API_QUEUE_NOT_IN_REGISTRY` — `sharedApiQueueNames` admitting a name `queueNames`
   does not declare. This is registry incoherence, not a reachability
   contradiction, so it carries its own code: a finding is named by what its
   source proves.
