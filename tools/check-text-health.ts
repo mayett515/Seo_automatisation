@@ -53,6 +53,7 @@ for (const file of requiredTextFiles) {
 }
 
 assertRuleDependencyGraphAcyclic();
+assertProgressIndexListsEveryEntry();
 
 if (failures.length > 0) {
   console.error("Text health check failed:");
@@ -63,6 +64,38 @@ if (failures.length > 0) {
 }
 
 console.log("Text health check passed.");
+
+/**
+ * The progress index carries a hand-written list beside the directory it
+ * indexes, which is the shape that drifts: twice now an entry was added and the
+ * list was not, so a reader scrolling it missed the newest round. The directory
+ * owns the set; this compares the list against it in both directions.
+ */
+function assertProgressIndexListsEveryEntry(): void {
+  const directory = "docs/progress";
+  const index = `${directory}/README.md`;
+  if (!existsSync(index)) {
+    return;
+  }
+
+  const source = readFileSync(index, "utf8");
+  const entries = readdirSync(directory)
+    .filter((name) => name.endsWith(".md") && name !== "README.md")
+    .sort();
+
+  for (const entry of entries) {
+    if (!source.includes(entry)) {
+      failures.push(`${index}: does not list ${entry}, which exists in ${directory}`);
+    }
+  }
+
+  for (const linked of source.matchAll(/\]\((\d{4}-\d{2}-\d{2}[A-Za-z0-9_-]*\.md)\)/gu)) {
+    const name = linked[1];
+    if (name !== undefined && !entries.includes(name)) {
+      failures.push(`${index}: links ${name}, which does not exist in ${directory}`);
+    }
+  }
+}
 
 function assertRuleDependencyGraphAcyclic(): void {
   const files = ruleRoots.flatMap((root) => (existsSync(root) ? markdownFiles(root) : []));
