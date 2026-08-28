@@ -60,6 +60,11 @@ Every mechanism here was watched failing before being trusted.
 - Path resolution and routing: `tools/agent-hooks/after-edit.test.ts`, including
   an assertion that the root is not the worker package.
 - Directory-as-proof: `tools/lane-inventory/core.test.ts`.
+- The three shell-emitted findings, named debt in the previous entry, now have
+  direct tests. The intake moved out of the checker into
+  `tools/lane-inventory/intake.ts` with the filesystem injected, so it can be
+  exercised without running the checker; `intake.test.ts` covers all three, and
+  removing each check in turn was observed turning two tests red.
 
 Gates on the final commit: `format:check`, `text:check`, 47 tools tests, tools
 typecheck, `lint` with 0 errors and 2 pre-existing TanStack warnings. No
@@ -84,13 +89,13 @@ are the only answer that does not rely on remembering.
 
 ## Open
 
-- Three shell-emitted findings (`LEAF_SHAPE_INVALID`,
-  `API_QUEUE_NOT_IN_REGISTRY`, `LEAF_DOMAIN_PARENT_MISSING`) still have no
-  direct boundary test. Named debt, unchanged from the previous entry.
-- `gsc.module.ts` builds its own queue instead of enqueuing through
-  `apps/api/src/queue-producer.ts`. Whether to move it is undecided; the
-  regression guard records the exception either way, and no name in the layer
-  claims otherwise.
+- **GSC enqueue-path consolidation.** `gsc.module.ts` builds its own queue
+  instead of enqueuing through `apps/api/src/queue-producer.ts`. Consolidating
+  is the better architecture and is deferred, not declined: both sides record
+  job runs, so it needs a database-backed integration proof. The seam is clean
+  - `GscService` keeps `gscSyncRuns`, the producer owns `jobRuns` and delivery -
+    so this is a slice, not a redesign. The contract fact is now named
+    `sharedApiQueueNames`, which is true before and after.
 - `main` is unprotected. Verified through the GitHub API in the previous round:
   no branch protection, no rulesets. Making `validate` a required check is the
   smallest step; `integration` only once it is confirmed to appear on every

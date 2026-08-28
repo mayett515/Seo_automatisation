@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 // never from source by regex.
 //
 // - `queueNames` is the code-owned lane list (packages/contracts).
-// - `apiQueueNames` is the runtime list of queues the API may enqueue into, so
+// - `sharedApiQueueNames` is the runtime list of queues the API may enqueue into, so
 //   the checker and the shared enqueue path have one source. It proves
 //   admission by that producer, not reachability over HTTP: a module that
 //   builds its own queue bypasses the list, and gsc.module.ts does.
@@ -13,10 +13,11 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 //   drift from the dispatch table without a compile error.
 //
 // A registry read that yields nothing fails the check, it does not silently pass.
-import { LaneLeafSchema, apiQueueNames, laneLeafFieldNames, queueNames } from "@localseo/contracts";
+import { sharedApiQueueNames, laneLeafFieldNames, queueNames } from "@localseo/contracts";
 
 import { lanesWithRegisteredHandler } from "../apps/worker/src/lane-handler-registration.js";
-import { checkLaneInventory, type Finding, type LeafFile } from "./lane-inventory/core.js";
+import { checkLaneInventory, type Finding } from "./lane-inventory/core.js";
+import { checkApiRegistryRelationship, checkDomainParents, loadLeaves } from "./lane-inventory/intake.js";
 
 const LANES_DIR = "docs/agents/lanes";
 const HANDLERS_DIR = "apps/worker/src/handlers";
@@ -26,112 +27,20 @@ function read(path: string): string {
   return readFileSync(path, "utf8");
 }
 
-// Front matter uses a small, fixed subset: scalars, quoted strings, and flat
-// lists. Parsed here, in the shell, because it is filesystem-shaped; the core
-// only ever sees leaves the contract schema has already accepted.
-function parseFrontMatter(source: string): Record<string, string> | undefined {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(source);
-  if (!match) return undefined;
-
-  const entries: Record<string, string> = {};
-  let key = "";
-  for (const line of (match[1] ?? "").split(/\r?\n/u)) {
-    const start = /^([a-z]+):\s*(.*)$/u.exec(line);
-    if (start) {
-      key = start[1] ?? "";
-      entries[key] = start[2] ?? "";
-      continue;
-    }
-    if (key) {
-      entries[key] = `${entries[key] ?? ""} ${line.trim()}`.trim();
-    }
-  }
-  return entries;
-}
-
-function parseList(raw: string): string[] {
-  const inner = raw.replace(/^\[/u, "").replace(/\]$/u, "").trim();
-  if (inner === "") return [];
-  return inner
-    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/u)
-    .map((item) => item.trim().replace(/^"/u, "").replace(/"$/u, ""))
-    .filter((item) => item !== "");
-}
-
-function parseScalar(raw: string): string {
-  return raw.trim().replace(/^"/u, "").replace(/"$/u, "");
-}
-
-/** `missing` is the only list-valued field; everything else stays a scalar. */
-function toRawLeaf(entries: Record<string, string>): Record<string, unknown> {
-  const raw: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(entries)) {
-    raw[key] = key === "missing" ? parseList(value) : parseScalar(value);
-  }
-  return raw;
-}
-
-function describeZodIssues(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
-  return error.issues
-    .map((issue) => `${issue.path.length === 0 ? "(leaf)" : issue.path.join(".")}: ${issue.message}`)
-    .join("; ");
-}
-
 function laneLeafFiles(): string[] {
   return readdirSync(HANDLERS_DIR)
     .filter((name) => name.endsWith(".lane.md"))
     .map((name) => `${HANDLERS_DIR}/${name}`);
 }
 
-function loadLeaves(findings: Finding[]): LeafFile[] {
-  const loaded: LeafFile[] = [];
-
-  for (const file of laneLeafFiles()) {
-    const entries = parseFrontMatter(read(file));
-    if (!entries) {
-      findings.push({ code: "LEAF_SHAPE_INVALID", message: `${file}: no front matter block` });
-      continue;
-    }
-
-    const parsed = LaneLeafSchema.safeParse(toRawLeaf(entries));
-    if (!parsed.success) {
-      findings.push({ code: "LEAF_SHAPE_INVALID", message: `${file}: ${describeZodIssues(parsed.error)}` });
-      continue;
-    }
-
-    loaded.push({ file, leaf: parsed.data });
-  }
-
-  return loaded;
-}
-
 function main(): void {
   const findings: Finding[] = [];
 
-  // Fail closed on the registry relationship: every queue the API admits must
-  // be one the code-owned queueNames declares, or the reachability facts below
-  // would be about a queue that does not exist.
-  const queueNameSet = new Set<string>(queueNames);
-  for (const admitted of apiQueueNames) {
-    if (!queueNameSet.has(admitted)) {
-      findings.push({
-        code: "API_QUEUE_NOT_IN_REGISTRY",
-        message: `apiQueueNames admits "${admitted}" which is not in queueNames`
-      });
-    }
-  }
+  findings.push(...checkApiRegistryRelationship(sharedApiQueueNames, queueNames));
 
-  const leaves = loadLeaves(findings);
+  const leaves = loadLeaves(laneLeafFiles(), read, findings);
 
-  // The domain parent must exist. Needs the fs, so it stays in the shell.
-  for (const { file, leaf } of leaves) {
-    if (!existsSync(`${LANES_DIR}/${leaf.domain}.md`)) {
-      findings.push({
-        code: "LEAF_DOMAIN_PARENT_MISSING",
-        message: `${file}: domain "${leaf.domain}" has no parent at ${LANES_DIR}/${leaf.domain}.md`
-      });
-    }
-  }
+  findings.push(...checkDomainParents(leaves, LANES_DIR, existsSync));
 
   const citing = [
     ...laneLeafFiles(),
@@ -145,7 +54,7 @@ function main(): void {
   const result = checkLaneInventory(
     {
       queueNames,
-      apiQueueNames,
+      sharedApiQueueNames,
       lanesWithRegisteredHandler: new Set<string>(lanesWithRegisteredHandler),
       leaves,
       mapFile: MAP_FILE,

@@ -58,18 +58,28 @@ export const queueNames = [
 
 export type QueueName = (typeof queueNames)[number];
 
-// The set of queues the API may enqueue into. A runtime value (not only a type)
-// so the lane-inventory checker can read it through a normal import and prove a
-// lane that cannot run is never reachable from an HTTP request. Kept here, next
-// to `queueNames`, because it must be importable without pulling in the NestJS
-// module that enqueues (`apps/api/src/queue-producer.ts`).
+// The set of queues the shared API producer admits. A runtime value (not only a
+// type) so the lane-inventory checker can read it through a normal import.
+// Kept here, next to `queueNames`, because it must be importable without
+// pulling in the NestJS module that enqueues
+// (`apps/api/src/queue-producer.ts`).
+//
+// This list used to be described as proving that a lane which cannot run is
+// never reachable from an HTTP request. It does not, and `gsc-sync` is the
+// counterexample: `apps/api/src/modules/gsc.module.ts` constructs its own queue
+// behind `POST /projects/:projectId/gsc/sync`, so that lane is reachable and
+// absent here. The name says `shared` for that reason. Consolidating the GSC
+// enqueue path onto this producer is deferred, not declined - it needs a
+// database-backed integration proof because both sides record job runs - and
+// `tools/check-architecture-regression-guards.ts` fails the build on any
+// further producer, so the exception cannot quietly become a pattern.
 //
 // `pre-audit` is deliberately absent: its worker handler does not exist, so
 // admitting it here would let an HTTP request enqueue a job nothing can
 // process. The leads module answers the pre-audit request honestly (dry_run)
 // instead. See apps/worker/src/handlers/pre-audit.lane.md for the recorded
 // reason and trigger.
-export const apiQueueNames = [
+export const sharedApiQueueNames = [
   "website-import",
   "opportunity-scout",
   "opportunity-research",
@@ -83,7 +93,7 @@ export const apiQueueNames = [
   "report"
 ] as const satisfies readonly QueueName[];
 
-export type ApiQueueName = (typeof apiQueueNames)[number];
+export type SharedApiQueueName = (typeof sharedApiQueueNames)[number];
 
 // Canonical job name for each queue. The worker routes a job when its queue
 // name OR its job name matches a lane, so each queue maps to one canonical job

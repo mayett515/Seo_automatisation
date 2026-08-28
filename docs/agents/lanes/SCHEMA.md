@@ -79,7 +79,7 @@ Each fact is named for what its source proves, and for nothing more.
 | Fact                          | Source                                                                    | What it establishes                                                                                                          |
 | ----------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `lanesWithRegisteredHandler`  | `apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler` | the lane has a handler in the dispatch registry — not that the handler succeeds                                              |
-| `admittedBySharedApiProducer` | `packages/contracts/src/jobs.ts:apiQueueNames`                            | the shared API producer admits the lane — not that any request enqueues, and not that the lane is unreachable by other means |
+| `admittedBySharedApiProducer` | `packages/contracts/src/jobs.ts:sharedApiQueueNames`                      | the shared API producer admits the lane — not that any request enqueues, and not that the lane is unreachable by other means |
 | proof existence               | the file system                                                           | the cited path is a file — not that its contents prove anything                                                              |
 
 `lanesWithRegisteredHandler` is trustworthy because it is not a description of
@@ -185,7 +185,7 @@ it does not, the rule stands as policy rather than as a claim about the code.
 These are not gaps to be closed quietly; they bound what any output of this
 system may be described as proving.
 
-- **Producer admission is not reachability.** `apiQueueNames` covers the shared producer in `apps/api/src/queue-producer.ts`. A module that constructs its own queue bypasses it, and `gsc.module.ts` does exactly that for `gsc-sync` behind `POST /projects/:projectId/gsc/sync` — so that lane is reachable over HTTP and absent from the list. A regression guard now fails the build on any new queue construction under `apps/api/src`, with that module recorded as the one existing exception; moving it onto the shared producer is an open slice.
+- **Producer admission is not reachability.** `apiQueueNames` covers the shared producer in `apps/api/src/queue-producer.ts`. A module that constructs its own queue bypasses it, and `gsc.module.ts` does exactly that for `gsc-sync` behind `POST /projects/:projectId/gsc/sync` — so that lane is reachable over HTTP and absent from the list. A regression guard now fails the build on any new queue construction under `apps/api/src`, with that module recorded as the one existing exception. Consolidating the GSC enqueue path onto the shared producer is **deferred, not declined**: it is the better architecture - one owner for API queue lifecycle, one `job_runs` and retry path, one BullMQ creation and shutdown path - but both sides record job runs today, so it needs a database-backed integration proof before it can be trusted. Until then the fact is named `sharedApiQueueNames`, which is true either way, and the guard stops the exception from becoming a pattern.
 - **Worker-internal producers are outside every list here.** Three are known — `apps/worker/src/work-recovery.ts`,
   `apps/worker/src/opportunity-research-scheduler.ts` and
   `apps/worker/src/media-storage-cleanup.ts` all enqueue — and none of them is

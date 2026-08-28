@@ -46,12 +46,12 @@ export type CheckInput = {
   readonly queueNames: readonly string[];
   /**
    * Queues the shared API producer admits
-   * (`packages/contracts/src/jobs.ts:apiQueueNames`). This proves admission by
+   * (`packages/contracts/src/jobs.ts:sharedApiQueueNames`). This proves admission by
    * that producer and nothing wider. It was read as the reachable-from-HTTP
    * fact until `gsc-sync` disproved it: gsc.module.ts constructs its own queue
    * behind an endpoint, so a lane can be reachable and absent from this list.
    */
-  readonly apiQueueNames: readonly string[];
+  readonly sharedApiQueueNames: readonly string[];
   /**
    * Lanes whose handler-registry entry carries a handler
    * (`apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler`, which the
@@ -97,7 +97,7 @@ function push(acc: Finding[], code: FindingCode, message: string): void {
 /** The code-owned facts the map projects alongside each leaf's own claims. */
 export type MapRegistries = {
   readonly lanesWithRegisteredHandler: ReadonlySet<string>;
-  readonly apiQueueNames: readonly string[];
+  readonly sharedApiQueueNames: readonly string[];
 };
 
 /**
@@ -141,12 +141,12 @@ export function buildMap(leaves: readonly LeafFile[], mapFile: string, registrie
       // Both are read from registries the checker already holds, so projecting
       // them adds no new place for the documentation to drift. The second
       // column was first called "HTTP reachable", which claimed more than
-      // `apiQueueNames` carries: gsc.module.ts builds its own queue and serves
+      // `sharedApiQueueNames` carries: gsc.module.ts builds its own queue and serves
       // POST /projects/:projectId/gsc/sync, so `gsc-sync` is reachable over
       // HTTP while absent from that list. The name now says what the source
       // proves; a regression guard keeps the bypass count from growing.
       const registered = registries.lanesWithRegisteredHandler.has(leaf.lane) ? "yes" : "no";
-      const reachable = registries.apiQueueNames.includes(leaf.lane) ? "yes" : "no";
+      const reachable = registries.sharedApiQueueNames.includes(leaf.lane) ? "yes" : "no";
       lines.push(`| \`${leaf.lane}\` | ${leaf.state} | ${registered} | ${reachable} | ${missing} | ${proof} |`);
     }
     lines.push("");
@@ -202,7 +202,7 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     }
 
     const hasRegisteredHandler = input.lanesWithRegisteredHandler.has(leaf.lane);
-    const admittedBySharedApiProducer = input.apiQueueNames.includes(leaf.lane);
+    const admittedBySharedApiProducer = input.sharedApiQueueNames.includes(leaf.lane);
     const runnableState = leaf.state === "built" || leaf.state === "partial";
 
     // A `built` leaf names a proof file. File existence only: this establishes
@@ -240,7 +240,7 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
       push(
         findings,
         "LANE_API_PRODUCER_ADMISSION_CONTRADICTION",
-        `${file}: state "${leaf.state}" claims the lane does not run, and apiQueueNames admits it, so the API may enqueue into it`
+        `${file}: state "${leaf.state}" claims the lane does not run, and sharedApiQueueNames admits it, so the API may enqueue into it`
       );
     }
   }
@@ -312,7 +312,7 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
 
   const map = buildMap(leaves, input.mapFile, {
     lanesWithRegisteredHandler: input.lanesWithRegisteredHandler,
-    apiQueueNames: input.apiQueueNames
+    sharedApiQueueNames: input.sharedApiQueueNames
   });
   // The generated map is never hand-written, so a drifted one is a finding.
   if (input.existingMap !== undefined && input.existingMap !== map) {

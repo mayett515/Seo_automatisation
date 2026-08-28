@@ -7,17 +7,21 @@ This project uses a native agent layer shared by Cursor, Codex, and Claude Code.
 
 ## Start here
 
-Three questions get confused with each other, so they are routed separately. A
+Four questions get confused with each other, so they are routed separately. A
 cold start on an unfamiliar machine took fourteen hops to find the second one.
 
-| Question                                    | Read                                                                                                                                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| What was this product meant to be?          | `local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/00-AI-INGESTION-GUIDE.md` — the original plan, written before implementation. Not a description of what is built. |
-| What does the product actually do today?    | `docs/architecture/app-blueprint.md` — the implemented loop.                                                                                                                         |
-| Which queue lanes exist, and in what state? | `docs/agents/lanes/generated-map.md` — generated from the leaves beside each handler, never hand-edited.                                                                             |
+| Question                                                | Read                                                                                                                                                                                                                                                |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What was this product meant to be?                      | `local-seo-product-knowledge-pack/local-seo-product-knowledge-pack/00-AI-INGESTION-GUIDE.md` — the original plan, written before implementation. Not a description of what is built.                                                                |
+| What does the product actually do today?                | `docs/architecture/app-blueprint.md` — the implemented loop.                                                                                                                                                                                        |
+| Which queue lanes exist, and in what state?             | `docs/agents/lanes/generated-map.md` — generated from the leaves beside each handler, never hand-edited.                                                                                                                                            |
+| Which real manual SEO workflow does this industrialize? | `../martines-dach-gebaeudeservice/Seo` — the customer site and the hand-run operation the product automates: workflows, keyword analyses, growth plan, customer reports, raw GSC exports. A read-only sibling checkout, not inside this repository. |
 
 The roadmap under `docs/architecture/` records how the second was reached; it is
-history, not current state.
+history, not current state. `../big-eater` is optional reference material - a
+frozen research clone at commit `508ab73`, useful when re-mining patterns and
+not part of any cold start; its own status sections are a snapshot and were
+never current.
 
 When they disagree, which one wins depends on the question. For what the
 system does right now, the code decides and the blueprint follows it. For what

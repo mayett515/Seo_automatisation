@@ -84,7 +84,7 @@ const schemaSource = [
 function baseInput(overrides: Partial<CheckInput> = {}): CheckInput {
   return {
     queueNames,
-    apiQueueNames: ["deploy", "report"],
+    sharedApiQueueNames: ["deploy", "report"],
     lanesWithRegisteredHandler: new Set(["deploy", "report"]),
     leaves: [built(), partial(), scaffold()],
     mapFile: "docs/agents/lanes/generated-map.md",
@@ -198,15 +198,15 @@ void describe("checkLaneInventory", () => {
     assert.equal(result.findings.filter((f) => f.code === "LANE_HANDLER_UNEXPECTED").length, 0);
   });
 
-  void it("fails a scaffold lane admitted to apiQueueNames (LANE_API_PRODUCER_ADMISSION_CONTRADICTION)", () => {
-    const result = run(baseInput({ apiQueueNames: ["deploy", "report", "pre-audit"] }));
+  void it("fails a scaffold lane admitted to sharedApiQueueNames (LANE_API_PRODUCER_ADMISSION_CONTRADICTION)", () => {
+    const result = run(baseInput({ sharedApiQueueNames: ["deploy", "report", "pre-audit"] }));
     assert.ok(result.findings.some((f) => f.code === "LANE_API_PRODUCER_ADMISSION_CONTRADICTION"));
   });
 
-  void it("fails an absent-by-decision lane admitted to apiQueueNames", () => {
+  void it("fails an absent-by-decision lane admitted to sharedApiQueueNames", () => {
     const result = run(
       baseInput({
-        apiQueueNames: ["deploy", "report", "pre-audit"],
+        sharedApiQueueNames: ["deploy", "report", "pre-audit"],
         leaves: [
           built(),
           partial(),
@@ -228,7 +228,7 @@ void describe("checkLaneInventory", () => {
     assert.ok(result.findings.some((f) => f.code === "LANE_API_PRODUCER_ADMISSION_CONTRADICTION"));
   });
 
-  void it("accepts a scaffold lane that is absent from apiQueueNames", () => {
+  void it("accepts a scaffold lane that is absent from sharedApiQueueNames", () => {
     const result = run(baseInput());
     assert.equal(result.findings.filter((f) => f.code === "LANE_API_PRODUCER_ADMISSION_CONTRADICTION").length, 0);
   });
@@ -331,7 +331,7 @@ void describe("hasExportedSymbol", () => {
     assert.ok(hasExportedSymbol("export const x = 1;", "x"));
     assert.ok(hasExportedSymbol("export async function routeJob() {}", "routeJob"));
     assert.ok(hasExportedSymbol("export class ReleaseExecutionCapability {}", "ReleaseExecutionCapability"));
-    assert.ok(hasExportedSymbol("export type ApiQueueName = void;", "ApiQueueName"));
+    assert.ok(hasExportedSymbol("export type SharedApiQueueName = void;", "SharedApiQueueName"));
   });
 
   void it("rejects a symbol that is not exported", () => {
@@ -348,7 +348,7 @@ void describe("buildMap", () => {
   void it("includes a review-starting-point disclaimer and no hand-written flow", () => {
     const map = buildMap([built()], "docs/agents/lanes/generated-map.md", {
       lanesWithRegisteredHandler: new Set(["deploy"]),
-      apiQueueNames: ["deploy"]
+      sharedApiQueueNames: ["deploy"]
     });
     assert.ok(map.includes("review starting"));
     assert.ok(!map.includes("flowchart"));
