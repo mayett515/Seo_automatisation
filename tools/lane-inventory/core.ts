@@ -75,20 +75,34 @@ export type AddressCheck = {
   readonly files: readonly string[];
   /** Reads a file to string; injected so the core stays free of fs. */
   readonly readFile: (path: string) => string;
-  /** Answers whether a cited path exists on disk. */
+  /** Answers whether a cited path exists on disk, as a file or a directory. */
   readonly pathExists: (path: string) => boolean;
+  /**
+   * Answers whether a path is a regular file. Separate from `pathExists`
+   * because a proof that resolves to a directory passed the existence check
+   * while the finding message said "is not a file on disk" - the name claimed
+   * more than the source carried, which is the exact defect this layer exists
+   * to catch, found here by a reviewer.
+   */
+  readonly pathIsFile: (path: string) => boolean;
 };
 
 function push(acc: Finding[], code: FindingCode, message: string): void {
   acc.push({ code, message });
 }
 
+/** The code-owned facts the map projects alongside each leaf's own claims. */
+export type MapRegistries = {
+  readonly lanesWithRegisteredHandler: ReadonlySet<string>;
+  readonly apiQueueNames: readonly string[];
+};
+
 /**
  * Build the generated map from leaves. The map is a summary, not a graph:
  * artifact edges were free strings and produced a false data-flow model, so
  * they are dropped rather than re-derived.
  */
-export function buildMap(leaves: readonly LeafFile[], mapFile: string): string {
+export function buildMap(leaves: readonly LeafFile[], mapFile: string, registries: MapRegistries): string {
   const byDomain = new Map<string, LaneLeaf[]>();
   for (const { leaf } of [...leaves].sort((left, right) => left.leaf.lane.localeCompare(right.leaf.lane))) {
     byDomain.set(leaf.domain, [...(byDomain.get(leaf.domain) ?? []), leaf]);
@@ -100,17 +114,31 @@ export function buildMap(leaves: readonly LeafFile[], mapFile: string): string {
     "Do not edit. Regenerate with `corepack pnpm exec tsx tools/check-lane-inventory.ts --write`.",
     'This file answers "what exists and in what state". It is a review starting',
     "point, not unquestionable truth: the reason and proof for each state live in",
-    "the leaf next to the handler named in the first column.",
+    "that lane's leaf, under apps/worker/src/handlers/. Handler registered and",
+    "HTTP reachable are read from the code; every other column is the leaf's own",
+    "claim about itself.",
     ""
   ];
 
   for (const domain of [...byDomain.keys()].sort()) {
     const domainLeaves = byDomain.get(domain) ?? [];
-    lines.push(`## ${domain}`, "", "| Lane | State | Missing | Proof |", "| --- | --- | --- | --- |");
+    lines.push(
+      `## ${domain}`,
+      "",
+      "| Lane | State | Handler registered | HTTP reachable | Missing | Proof |",
+      "| --- | --- | --- | --- | --- | --- |"
+    );
     for (const leaf of domainLeaves) {
       const missing = leaf.missing.length === 0 ? "-" : String(leaf.missing.length);
       const proof = leaf.proof === "" ? "-" : leaf.proof;
-      lines.push(`| \`${leaf.lane}\` | ${leaf.state} | ${missing} | ${proof} |`);
+      // Both of these are read from the registries the checker already holds.
+      // Without them a reader equates `built` with reachable from the API and
+      // counts one lane too many: `gsc-sync` has a handler and is deliberately
+      // not admitted. Projecting facts the checker owns adds no new place for
+      // the documentation to drift.
+      const registered = registries.lanesWithRegisteredHandler.has(leaf.lane) ? "yes" : "no";
+      const reachable = registries.apiQueueNames.includes(leaf.lane) ? "yes" : "no";
+      lines.push(`| \`${leaf.lane}\` | ${leaf.state} | ${registered} | ${reachable} | ${missing} | ${proof} |`);
     }
     lines.push("");
   }
@@ -168,9 +196,10 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     const reachableFromHttp = input.apiQueueNames.includes(leaf.lane);
     const runnableState = leaf.state === "built" || leaf.state === "partial";
 
-    // A `built` leaf names a proof file. Existence only: this establishes that
-    // the file is on disk, never that it proves the lane behaves correctly.
-    if (leaf.state === "built" && !address.pathExists(leaf.proof)) {
+    // A `built` leaf names a proof file. File existence only: this establishes
+    // that a regular file is on disk at that path, never that it proves the
+    // lane behaves correctly.
+    if (leaf.state === "built" && !address.pathIsFile(leaf.proof)) {
       push(findings, "LANE_PROOF_FILE_MISSING", `${file}: proof "${leaf.proof}" is not a file on disk`);
     }
 
@@ -272,7 +301,10 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     }
   }
 
-  const map = buildMap(leaves, input.mapFile);
+  const map = buildMap(leaves, input.mapFile, {
+    lanesWithRegisteredHandler: input.lanesWithRegisteredHandler,
+    apiQueueNames: input.apiQueueNames
+  });
   // The generated map is never hand-written, so a drifted one is a finding.
   if (input.existingMap !== undefined && input.existingMap !== map) {
     push(findings, "MAP_STALE", `${input.mapFile}: out of date; regenerate with --write`);

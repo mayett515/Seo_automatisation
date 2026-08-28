@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 
 // Every registry this checker reasons over is read through a normal import,
 // never from source by regex.
@@ -156,7 +156,9 @@ function main(): void {
     {
       files: citing,
       readFile: read,
-      pathExists: existsSync
+      pathExists: existsSync,
+      // A proof that resolves to a directory used to satisfy the file check.
+      pathIsFile: (path) => existsSync(path) && statSync(path).isFile()
     }
   );
 

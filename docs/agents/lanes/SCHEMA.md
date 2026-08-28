@@ -60,7 +60,7 @@ it and nothing more; the rest is review judgment.
 
 | State                | What the author asserts                                                               | What the checker verifies                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `built`              | reachable and executable, with a fitting behavioral proof                             | the lane has a registered handler, and `proof` names a path that exists on disk                           |
+| `built`              | reachable and executable, with a fitting behavioral proof                             | the lane has a registered handler, and `proof` names a file on disk                                       |
 | `partial`            | executable, with a concrete named functional gap that `missing` describes             | the lane has a registered handler, and `missing` names at least one thing                                 |
 | `scaffold`           | not executable and unreachable from every enqueue path                                | the lane has no registered handler and is absent from `apiQueueNames`                                     |
 | `absent-by-decision` | deliberately not built, with a recorded decision and a recorded trigger to revisit it | the lane has no registered handler and is absent from `apiQueueNames`; `reason` and `trigger` are present |

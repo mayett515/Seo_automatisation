@@ -95,7 +95,7 @@ function baseInput(overrides: Partial<CheckInput> = {}): CheckInput {
 }
 
 function noAddress() {
-  return { files: [], readFile: () => "", pathExists: () => true };
+  return { files: [], readFile: () => "", pathExists: () => true, pathIsFile: () => true };
 }
 
 function run(input: CheckInput) {
@@ -144,7 +144,8 @@ void describe("checkLaneInventory", () => {
     const result = checkLaneInventory(baseInput({ leaves: [built({ proof: "apps/missing.ts" })] }), {
       files: [],
       readFile: () => "",
-      pathExists: (path) => path !== "apps/missing.ts"
+      pathExists: (path) => path !== "apps/missing.ts",
+      pathIsFile: (path) => path !== "apps/missing.ts"
     });
     assert.ok(result.findings.some((f) => f.code === "LANE_PROOF_FILE_MISSING" && f.message.includes("missing.ts")));
   });
@@ -153,9 +154,23 @@ void describe("checkLaneInventory", () => {
     const result = checkLaneInventory(baseInput({ leaves: [built()] }), {
       files: [],
       readFile: () => "",
-      pathExists: (path) => path === "apps/worker/src/handlers/deploy.integration.ts"
+      pathExists: (path) => path === "apps/worker/src/handlers/deploy.integration.ts",
+      pathIsFile: (path) => path === "apps/worker/src/handlers/deploy.integration.ts"
     });
     assert.equal(result.findings.filter((f) => f.code === "LANE_PROOF_FILE_MISSING").length, 0);
+  });
+
+  void it("fails a built lane whose proof path is a directory, not a file", () => {
+    // The check ran on existence alone while its message said "is not a file on
+    // disk", so `proof: apps/worker/src/handlers` passed for all seventeen
+    // lanes. A reviewer found it by writing exactly that value.
+    const result = checkLaneInventory(baseInput({ leaves: [built({ proof: "apps/worker/src/handlers" })] }), {
+      files: [],
+      readFile: () => "",
+      pathExists: () => true,
+      pathIsFile: (path) => path !== "apps/worker/src/handlers"
+    });
+    assert.ok(result.findings.some((f) => f.code === "LANE_PROOF_FILE_MISSING" && f.message.includes("handlers")));
   });
 
   void it("fails a built lane with no registered handler (LANE_HANDLER_MISSING)", () => {
@@ -222,7 +237,8 @@ void describe("checkLaneInventory", () => {
     const result = checkLaneInventory(baseInput(), {
       files: ["docs/agents/lanes/website.md"],
       readFile: () => "### D3 - a rule\n\n_Mechanised at:_ the release domain owns this; see release.md D1\n",
-      pathExists: () => true
+      pathExists: () => true,
+      pathIsFile: () => true
     });
     assert.equal(result.findings.filter((f) => f.code === "MECHANISM_ADDRESS_MISSING").length, 1);
   });
@@ -234,7 +250,8 @@ void describe("checkLaneInventory", () => {
         path.endsWith("website.md")
           ? "_Mechanised at:_ apps/api/src/modules/projects.module.ts:ProjectsService - preview is noindex\n"
           : "export class ProjectsService {}",
-      pathExists: () => true
+      pathExists: () => true,
+      pathIsFile: () => true
     });
     assert.equal(result.findings.filter((f) => f.code === "MECHANISM_ADDRESS_MISSING").length, 0);
   });
@@ -243,7 +260,8 @@ void describe("checkLaneInventory", () => {
     const result = checkLaneInventory(baseInput(), {
       files: ["docs/agents/lanes/release.md"],
       readFile: () => "the owner is packages/nowhere/nope.ts:Something",
-      pathExists: () => false
+      pathExists: () => false,
+      pathIsFile: () => false
     });
     assert.ok(result.findings.some((f) => f.code === "ADDRESS_PATH_MISSING"));
   });
@@ -252,7 +270,8 @@ void describe("checkLaneInventory", () => {
     const result = checkLaneInventory(baseInput(), {
       files: ["docs/agents/lanes/release.md"],
       readFile: () => "the owner is packages/domain/src/index.ts:doesNotExist",
-      pathExists: (path) => path === "packages/domain/src/index.ts"
+      pathExists: (path) => path === "packages/domain/src/index.ts",
+      pathIsFile: (path) => path === "packages/domain/src/index.ts"
     });
     assert.ok(result.findings.some((f) => f.code === "ADDRESS_SYMBOL_MISSING" && f.message.includes("doesNotExist")));
   });
@@ -264,7 +283,8 @@ void describe("checkLaneInventory", () => {
         path === "docs/agents/lanes/release.md"
           ? "the owner is packages/domain/src/index.ts:deployStartingReleasePlanStatuses"
           : "export const deployStartingReleasePlanStatuses = [];",
-      pathExists: () => true
+      pathExists: () => true,
+      pathIsFile: () => true
     });
     assert.equal(
       result.findings.filter((f) => f.code === "ADDRESS_PATH_MISSING" || f.code === "ADDRESS_SYMBOL_MISSING").length,
@@ -326,7 +346,10 @@ void describe("hasExportedSymbol", () => {
 
 void describe("buildMap", () => {
   void it("includes a review-starting-point disclaimer and no hand-written flow", () => {
-    const map = buildMap([built()], "docs/agents/lanes/generated-map.md");
+    const map = buildMap([built()], "docs/agents/lanes/generated-map.md", {
+      lanesWithRegisteredHandler: new Set(["deploy"]),
+      apiQueueNames: ["deploy"]
+    });
     assert.ok(map.includes("review starting"));
     assert.ok(!map.includes("flowchart"));
   });
