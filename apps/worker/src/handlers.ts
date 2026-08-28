@@ -37,10 +37,9 @@ import {
 } from "@localseo/ai";
 import { parseAppEnv, type AppEnv } from "@localseo/config";
 import { createDatabaseClient } from "@localseo/db";
-import { secondaryJobNames, queueJobNames } from "@localseo/contracts";
+import { queueJobNames, queueNames, secondaryJobLanes, type QueueName } from "@localseo/contracts";
 import { UnrecoverableError, type Job } from "bullmq";
 import {
-  handleMediaProcessingJob,
   MediaProcessingConfigurationError,
   MediaProcessingEvidenceError,
   parseMediaProcessingJobData
@@ -48,31 +47,23 @@ import {
 import {
   DeployConfigurationError,
   DeployEvidenceError,
-  handleDeployJob,
   ManualReconciliationRequiredError,
   ProviderDeployTerminalStatusError,
   reconcilePendingDeployments
 } from "./handlers/deploy.js";
-import { handleGscSyncJob, isTerminalGscSyncFailure } from "./handlers/gsc-sync.js";
-import {
-  CustomerReportConfigurationError,
-  CustomerReportEvidenceError,
-  handleCustomerReportGenerationJob
-} from "./handlers/customer-report.js";
+import { isTerminalGscSyncFailure } from "./handlers/gsc-sync.js";
+import { CustomerReportConfigurationError, CustomerReportEvidenceError } from "./handlers/customer-report.js";
 import {
   CustomerReportHtmlConfigurationError,
   CustomerReportHtmlEvidenceError,
-  handleCustomerReportHtmlRenderJob,
   parseCustomerReportHtmlRenderJobData
 } from "./handlers/customer-report-html.js";
 import {
-  handleOpportunityScoutJob,
   OpportunityScoutConfigurationError,
   OpportunityScoutEvidenceError,
   OpportunityScoutWorkflowError
 } from "./handlers/opportunity-scout.js";
 import {
-  handleOpportunityResearchJob,
   createOpportunityResearchProviderAttemptGuard,
   OpportunityResearchConfigurationError,
   OpportunityResearchEvidenceError,
@@ -80,46 +71,30 @@ import {
   parseOpportunityResearchJobData
 } from "./handlers/opportunity-research.js";
 import {
-  handlePageProposalJob,
   PageProposalConfigurationError,
   PageProposalEvidenceError,
   PageProposalWorkflowError
 } from "./handlers/page-proposal.js";
 import {
-  handleSectionCopySuggestionJob,
   SectionCopySuggestionConfigurationError,
   SectionCopySuggestionEvidenceError,
   SectionCopySuggestionWorkflowError
 } from "./handlers/section-copy-suggestion.js";
 import {
-  handleRollbackJob,
   reconcilePendingRollbacks,
   RollbackConfigurationError,
   RollbackEvidenceError,
   RollbackProviderFailedError
 } from "./handlers/rollback.js";
 import {
-  handleReleaseVerificationJob,
   parseReleaseVerificationJobData,
   ReleaseVerificationConfigurationError,
   ReleaseVerificationEvidenceError
 } from "./handlers/release-verification.js";
-import {
-  handleSerpScoutJob,
-  SerpScoutConfigurationError,
-  SerpScoutEvidenceError,
-  SerpScoutTerminalError
-} from "./handlers/serp-scout.js";
-import {
-  handleTechnicalAuditJob,
-  TechnicalAuditConfigurationError,
-  TechnicalAuditEvidenceError
-} from "./handlers/technical-audit.js";
-import {
-  handleWebsiteImportJob,
-  WebsiteImportConfigurationError,
-  WebsiteImportEvidenceError
-} from "./handlers/website-import.js";
+import { SerpScoutConfigurationError, SerpScoutEvidenceError, SerpScoutTerminalError } from "./handlers/serp-scout.js";
+import { TechnicalAuditConfigurationError, TechnicalAuditEvidenceError } from "./handlers/technical-audit.js";
+import { WebsiteImportConfigurationError, WebsiteImportEvidenceError } from "./handlers/website-import.js";
+import { createHandlerRegistry } from "./handler-registry.js";
 import {
   isFinalJobAttempt,
   markJobRunCompleted,
@@ -165,6 +140,25 @@ const sharedSearchConsole = createSearchConsoleAdapter(env);
 const sharedTokenCipher = env.GSC_TOKEN_ENCRYPTION_KEY
   ? new AesGcmTokenCipher(env.GSC_TOKEN_ENCRYPTION_KEY)
   : undefined;
+
+// Built once, from the shared adapters above. `routeJob` reads this table and
+// nothing else, so the lane list in `lane-handler-registration.ts` describes the
+// dispatch that actually happens.
+const handlerRegistry = createHandlerRegistry({
+  dbHandle: sharedDbHandle,
+  siteHosting: sharedSiteHosting,
+  objectStorage: sharedObjectStorage,
+  crawler: sharedCrawler,
+  reasoning: sharedReasoning,
+  opportunityResearch: sharedOpportunityResearch,
+  serpScout: sharedSerpScout,
+  releaseVerification: sharedReleaseVerification,
+  searchConsole: sharedSearchConsole,
+  tokenCipher: sharedTokenCipher,
+  env,
+  heartbeatIntervalMs: env.OPPORTUNITY_RESEARCH_HEARTBEAT_MS,
+  reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
+});
 
 export async function handleJob(job: Job): Promise<Record<string, unknown>> {
   await markJobRunRunning(sharedDbHandle?.db, job);
@@ -267,78 +261,76 @@ export async function cleanMediaStorage(): Promise<MediaStorageCleanupResult> {
   });
 }
 
+// Both routing failures carry their dynamic parts as fields rather than in the
+// message, so the message stays stable for grouping and a caller reads the data
+// instead of parsing a string. Neither can be fixed by running the same job
+// again, which is why both are terminal.
+
+/** No lane owns this queue name or job name. */
+export class UnknownWorkerJobError extends Error {
+  readonly code = "UNKNOWN_WORKER_JOB";
+  readonly queueName: string;
+  readonly jobName: string;
+
+  constructor(queueName: string, jobName: string) {
+    super("Worker job resolves to no registered queue lane");
+    this.name = "UnknownWorkerJobError";
+    this.queueName = queueName;
+    this.jobName = jobName;
+  }
+}
+
+/** The lane is registered in `queueNames` and its registry entry is null. */
+export class LaneHandlerMissingError extends Error {
+  readonly code = "LANE_HANDLER_MISSING";
+  readonly lane: QueueName;
+  readonly jobName: string;
+
+  constructor(lane: QueueName, jobName: string) {
+    super("Registered queue has no handler");
+    this.name = "LaneHandlerMissingError";
+    this.lane = lane;
+    this.jobName = jobName;
+  }
+}
+
+// Job name -> lane, for jobs that arrive without a lane-shaped queue name. Both
+// the canonical job name of every lane and the secondary job names resolve here.
+const laneByJobName: Readonly<Record<string, QueueName>> = {
+  ...Object.fromEntries(queueNames.map((lane) => [queueJobNames[lane], lane] as const)),
+  ...secondaryJobLanes
+};
+
+function isQueueName(value: string): value is QueueName {
+  return (queueNames as readonly string[]).includes(value);
+}
+
+/**
+ * Resolve the lane a job belongs to. The queue name wins when it is a
+ * registered lane; otherwise the job name is looked up. This proves only which
+ * lane owns the job, never that the lane can run it.
+ */
+function resolveLane(job: Pick<Job, "queueName" | "name">): QueueName | undefined {
+  if (isQueueName(job.queueName)) {
+    return job.queueName;
+  }
+  return laneByJobName[job.name];
+}
+
 export async function routeJob(job: Job): Promise<Record<string, unknown>> {
-  if (job.queueName === "deploy" || job.name === queueJobNames.deploy) {
-    return handleDeployJob(job, sharedDbHandle, sharedSiteHosting, sharedObjectStorage);
+  const lane = resolveLane(job);
+
+  if (lane === undefined) {
+    throw new UnknownWorkerJobError(job.queueName, job.name);
   }
 
-  if (job.queueName === "rollback" || job.name === queueJobNames.rollback) {
-    return handleRollbackJob(job, sharedDbHandle, sharedSiteHosting);
+  const entry = handlerRegistry[lane];
+
+  if (entry === null) {
+    throw new LaneHandlerMissingError(lane, job.name);
   }
 
-  if (job.queueName === "website-import" || job.name === queueJobNames["website-import"]) {
-    return handleWebsiteImportJob(job, sharedDbHandle, sharedCrawler);
-  }
-
-  if (job.queueName === "opportunity-research" || job.name === queueJobNames["opportunity-research"]) {
-    return handleOpportunityResearchJob(job, sharedDbHandle, sharedOpportunityResearch, {
-      heartbeatIntervalMs: env.OPPORTUNITY_RESEARCH_HEARTBEAT_MS
-    });
-  }
-
-  if (job.queueName === "opportunity-scout" || job.name === queueJobNames["opportunity-scout"]) {
-    return handleOpportunityScoutJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
-      reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
-    });
-  }
-
-  if (job.name === secondaryJobNames.pageGeneration) {
-    return handleSectionCopySuggestionJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
-      reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
-    });
-  }
-
-  if (job.queueName === "page-generation" || job.name === queueJobNames["page-generation"]) {
-    return handlePageProposalJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
-      reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
-    });
-  }
-
-  if (job.queueName === "media-processing" || job.name === queueJobNames["media-processing"]) {
-    return handleMediaProcessingJob(job, sharedDbHandle, sharedObjectStorage);
-  }
-
-  if (job.queueName === "serp-scout" || job.name === queueJobNames["serp-scout"]) {
-    return handleSerpScoutJob(job, sharedDbHandle, sharedSerpScout);
-  }
-
-  if (job.queueName === "technical-audit" || job.name === queueJobNames["technical-audit"]) {
-    return handleTechnicalAuditJob(job, sharedDbHandle, sharedCrawler);
-  }
-
-  if (job.queueName === "gsc-sync" || job.name === queueJobNames["gsc-sync"]) {
-    return handleGscSyncJob(job, sharedDbHandle, env);
-  }
-
-  if (job.queueName === "release-verification" || job.name === queueJobNames["release-verification"]) {
-    return handleReleaseVerificationJob(job, sharedDbHandle, {
-      verification: sharedReleaseVerification,
-      searchConsole: sharedSearchConsole,
-      tokenCipher: sharedTokenCipher
-    });
-  }
-
-  if (job.name === secondaryJobNames.customerReportHtmlRender) {
-    return handleCustomerReportHtmlRenderJob(job, sharedDbHandle, sharedObjectStorage);
-  }
-
-  if (job.queueName === "report" || job.name === queueJobNames.report) {
-    return handleCustomerReportGenerationJob(job, sharedDbHandle, sharedReasoning, sharedObjectStorage, {
-      reasoningTimeoutMs: env.AI_REASONING_TIMEOUT_MS
-    });
-  }
-
-  throw new Error(`Worker job is not implemented: ${job.queueName}:${job.name}`);
+  return (entry.secondaries[job.name] ?? entry.primary).run(job);
 }
 
 export { classifyOpportunitySignals, parseGscSyncJobData } from "./handlers/gsc-sync.js";
@@ -356,6 +348,10 @@ export { parseCustomerReportHtmlRenderJobData };
 
 export function isTerminalWorkerError(error: unknown): boolean {
   return (
+    // Routing failures: the queue/job pair or the null registry entry is the
+    // same on every attempt, so a retry can only repeat the failure.
+    error instanceof UnknownWorkerJobError ||
+    error instanceof LaneHandlerMissingError ||
     error instanceof DeployConfigurationError ||
     error instanceof DeployEvidenceError ||
     error instanceof ProviderDeployTerminalStatusError ||

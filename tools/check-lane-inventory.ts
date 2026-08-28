@@ -1,13 +1,21 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 
-// The queue-name registry is read through a normal import, never from source by
-// regex. `queueNames` is the code-owned list (packages/contracts), and
-// `apiQueueNames` is the runtime list the API producer exports so the checker
-// and the enqueue path share one source. A registry read that yields nothing
-// fails the check, it does not silently pass.
-import { apiQueueNames, queueNames } from "@localseo/contracts";
+// Every registry this checker reasons over is read through a normal import,
+// never from source by regex.
+//
+// - `queueNames` is the code-owned lane list (packages/contracts).
+// - `apiQueueNames` is the runtime list of queues the API may enqueue into, so
+//   the checker and the enqueue path share one source. This is the
+//   reachable-from-HTTP fact and covers HTTP only.
+// - `lanesWithRegisteredHandler` is the list the worker's handler registry derives its
+//   type from, so it states which lanes have a registered handler and cannot
+//   drift from the dispatch table without a compile error.
+//
+// A registry read that yields nothing fails the check, it does not silently pass.
+import { LaneLeafSchema, apiQueueNames, laneLeafFieldNames, queueNames } from "@localseo/contracts";
 
-import { checkLaneInventory, LEAF_FIELDS, type Failure, type Leaf } from "./lane-inventory/core.js";
+import { lanesWithRegisteredHandler } from "../apps/worker/src/lane-handler-registration.js";
+import { checkLaneInventory, type Finding, type LeafFile } from "./lane-inventory/core.js";
 
 const LANES_DIR = "docs/agents/lanes";
 const HANDLERS_DIR = "apps/worker/src/handlers";
@@ -19,13 +27,10 @@ function read(path: string): string {
 
 // Front matter uses a small, fixed subset: scalars, quoted strings, and flat
 // lists. Parsed here, in the shell, because it is filesystem-shaped; the core
-// only ever sees parsed leaves.
-function parseFrontMatter(source: string, file: string, failures: Failure[]): Record<string, string> {
+// only ever sees leaves the contract schema has already accepted.
+function parseFrontMatter(source: string): Record<string, string> | undefined {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(source);
-  if (!match) {
-    failures.push({ check: "2-shape", message: `${file}: no front matter block` });
-    return {};
-  }
+  if (!match) return undefined;
 
   const entries: Record<string, string> = {};
   let key = "";
@@ -56,72 +61,79 @@ function parseScalar(raw: string): string {
   return raw.trim().replace(/^"/u, "").replace(/"$/u, "");
 }
 
-function loadLeaves(failures: Failure[]): Leaf[] {
+/** `missing` is the only list-valued field; everything else stays a scalar. */
+function toRawLeaf(entries: Record<string, string>): Record<string, unknown> {
+  const raw: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(entries)) {
+    raw[key] = key === "missing" ? parseList(value) : parseScalar(value);
+  }
+  return raw;
+}
+
+function describeZodIssues(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
+  return error.issues
+    .map((issue) => `${issue.path.length === 0 ? "(leaf)" : issue.path.join(".")}: ${issue.message}`)
+    .join("; ");
+}
+
+function laneLeafFiles(): string[] {
   return readdirSync(HANDLERS_DIR)
     .filter((name) => name.endsWith(".lane.md"))
-    .map((name) => {
-      const file = `${HANDLERS_DIR}/${name}`;
-      const fields = parseFrontMatter(read(file), file, failures);
+    .map((name) => `${HANDLERS_DIR}/${name}`);
+}
 
-      for (const field of LEAF_FIELDS) {
-        if (!(field in fields)) {
-          failures.push({ check: "2-shape", message: `${file}: missing field "${field}"` });
-        }
-      }
-      for (const field of Object.keys(fields)) {
-        if (!LEAF_FIELDS.includes(field as (typeof LEAF_FIELDS)[number])) {
-          failures.push({
-            check: "10-schema-drift",
-            message: `${file}: field "${field}" is not documented in SCHEMA.md`
-          });
-        }
-      }
+function loadLeaves(findings: Finding[]): LeafFile[] {
+  const loaded: LeafFile[] = [];
 
-      return {
-        file,
-        lane: parseScalar(fields.lane ?? ""),
-        domain: parseScalar(fields.domain ?? ""),
-        state: parseScalar(fields.state ?? ""),
-        missing: parseList(fields.missing ?? "[]"),
-        reason: parseScalar(fields.reason ?? ""),
-        trigger: parseScalar(fields.trigger ?? ""),
-        proof: parseScalar(fields.proof ?? "")
-      };
-    });
+  for (const file of laneLeafFiles()) {
+    const entries = parseFrontMatter(read(file));
+    if (!entries) {
+      findings.push({ code: "LEAF_SHAPE_INVALID", message: `${file}: no front matter block` });
+      continue;
+    }
+
+    const parsed = LaneLeafSchema.safeParse(toRawLeaf(entries));
+    if (!parsed.success) {
+      findings.push({ code: "LEAF_SHAPE_INVALID", message: `${file}: ${describeZodIssues(parsed.error)}` });
+      continue;
+    }
+
+    loaded.push({ file, leaf: parsed.data });
+  }
+
+  return loaded;
 }
 
 function main(): void {
-  const failures: Failure[] = [];
+  const findings: Finding[] = [];
 
   // Fail closed on the registry relationship: every queue the API admits must
-  // be one the code-owned queueNames declares, or the reachability check below
-  // would be reasoning about a queue that does not exist.
+  // be one the code-owned queueNames declares, or the reachability facts below
+  // would be about a queue that does not exist.
   const queueNameSet = new Set<string>(queueNames);
   for (const admitted of apiQueueNames) {
     if (!queueNameSet.has(admitted)) {
-      failures.push({
-        check: "1-registry",
+      findings.push({
+        code: "API_QUEUE_NOT_IN_REGISTRY",
         message: `apiQueueNames admits "${admitted}" which is not in queueNames`
       });
     }
   }
 
-  const leaves = loadLeaves(failures);
+  const leaves = loadLeaves(findings);
 
-  // 9. the domain parent must exist (needs the fs, so it stays in the shell).
-  for (const leaf of leaves) {
+  // The domain parent must exist. Needs the fs, so it stays in the shell.
+  for (const { file, leaf } of leaves) {
     if (!existsSync(`${LANES_DIR}/${leaf.domain}.md`)) {
-      failures.push({
-        check: "9-domain",
-        message: `${leaf.file}: domain "${leaf.domain}" has no parent at ${LANES_DIR}/${leaf.domain}.md`
+      findings.push({
+        code: "LEAF_DOMAIN_PARENT_MISSING",
+        message: `${file}: domain "${leaf.domain}" has no parent at ${LANES_DIR}/${leaf.domain}.md`
       });
     }
   }
 
   const citing = [
-    ...readdirSync(HANDLERS_DIR)
-      .filter((name) => name.endsWith(".lane.md"))
-      .map((name) => `${HANDLERS_DIR}/${name}`),
+    ...laneLeafFiles(),
     ...readdirSync(LANES_DIR)
       .filter((name) => name.endsWith(".md") && name !== "generated-map.md")
       .map((name) => `${LANES_DIR}/${name}`)
@@ -133,6 +145,7 @@ function main(): void {
     {
       queueNames,
       apiQueueNames,
+      lanesWithRegisteredHandler: new Set<string>(lanesWithRegisteredHandler),
       leaves,
       mapFile: MAP_FILE,
       // When writing, the current content on disk is irrelevant: the generated
@@ -147,8 +160,8 @@ function main(): void {
     }
   );
 
-  for (const failure of result.failures) {
-    failures.push(failure);
+  for (const finding of result.findings) {
+    findings.push(finding);
   }
 
   if (willWrite) {
@@ -156,15 +169,18 @@ function main(): void {
     console.log(`Lane map written to ${MAP_FILE}.`);
   }
 
-  if (failures.length > 0) {
-    console.error(`Lane inventory check failed with ${failures.length} problem(s):`);
-    for (const failure of failures) {
-      console.error(`- [${failure.check}] ${failure.message}`);
+  if (findings.length > 0) {
+    console.error(`Lane inventory check failed with ${findings.length} finding(s):`);
+    for (const finding of findings) {
+      console.error(`- [${finding.code}] ${finding.message}`);
     }
     process.exit(1);
   }
 
-  console.log(`Lane inventory check passed for ${queueNames.length} lanes.`);
+  console.log(
+    `Lane inventory check passed for ${queueNames.length} lanes ` +
+      `(${lanesWithRegisteredHandler.length} with a registered handler, ${laneLeafFieldNames.length} validated leaf fields).`
+  );
 }
 
 main();

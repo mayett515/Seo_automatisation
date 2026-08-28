@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Global, Inject, Injectable, Module, type OnModuleDestroy } from "@nestjs/common";
 import { createRedisConnection } from "@localseo/adapters";
 import { parseAppEnv } from "@localseo/config";
-import type { ApiQueueName, JobName, JobType } from "@localseo/contracts";
+import type { AcceptedJobName, ApiQueueName, JobType } from "@localseo/contracts";
 import { jobRuns, type DatabaseClient } from "@localseo/db";
 import { Queue, type JobsOptions } from "bullmq";
 import { and, eq, inArray, sql } from "@localseo/db/query";
@@ -22,9 +22,14 @@ type QueueAuditInput = {
   triggerSource?: string;
 };
 
-type EnqueueInput = {
-  queueName: ApiQueueName;
-  jobName: JobName;
+// Queue and job name are one choice, not two independent ones: a lane accepts
+// its canonical job plus any secondary bound to it, and nothing else. Pairing a
+// job name with a foreign queue is unwritable rather than merely unusual.
+type EnqueueTarget = {
+  [Lane in ApiQueueName]: { queueName: Lane; jobName: AcceptedJobName<Lane> };
+}[ApiQueueName];
+
+type EnqueueInput = EnqueueTarget & {
   jobId: string;
   data: Record<string, unknown>;
   options?: JobsOptions;

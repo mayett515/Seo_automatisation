@@ -62,6 +62,14 @@ valid outcome. Never refactor to prove a rule applies.
   Typecheck is not a behavioral test.
 - When the fitting proof cannot run, name the missing one and why. A cheaper
   green check never stands in for it.
+- Name a check or fact by what its source proves, never by what it is hoped
+  to mean: file existence is not validity, HTTP reachability is not
+  reachability, a registered handler is not a working one. A name that claims
+  more than its source carries becomes a false report the day someone trusts it.
+- A documented claim about system state must be comparable against something
+  the code owns: a registry, an export, the file system. A claim checked only
+  against another document stays green no matter what the code does - write
+  the binding, or mark the claim as unchecked policy.
 
 ## Host repo commands
 

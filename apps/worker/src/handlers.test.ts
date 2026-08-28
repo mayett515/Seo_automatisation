@@ -13,6 +13,7 @@ import {
   PageProposalJsonSchema,
   OpportunityScoutOutputSchema,
   type GscSearchAnalyticsRow,
+  secondaryJobNames,
   type OpportunityScoutOutput,
   type PageProposalJson,
   type SerpSnapshot
@@ -78,7 +79,9 @@ import {
   parseGscSyncJobData,
   parseReleaseVerificationJobData,
   routeJob,
-  toWorkerRethrowError
+  toWorkerRethrowError,
+  LaneHandlerMissingError,
+  UnknownWorkerJobError
 } from "./handlers.js";
 
 void describe("createObjectStorageAdapter", () => {
@@ -481,15 +484,82 @@ void describe("routeJob", () => {
     );
   });
 
-  void it("fails unknown jobs honestly instead of returning success metadata", async () => {
+  void it("fails a registered lane that has no handler with the fact, not an intent", async () => {
     await assert.rejects(
       routeJob({
-        id: "unknown-job-1",
+        id: "seo-qa-job-1",
         queueName: "seo-qa",
         name: "score",
         data: {}
       } as Job),
-      /Worker job is not implemented: seo-qa:score/u
+      (error: unknown) => {
+        assert.ok(error instanceof LaneHandlerMissingError);
+        assert.equal(error.code, "LANE_HANDLER_MISSING");
+        assert.equal(error.message, "Registered queue has no handler");
+        assert.equal(error.lane, "seo-qa");
+        assert.equal(error.jobName, "score");
+        assert.ok(isTerminalWorkerError(error), "a null registry entry cannot be fixed by retrying");
+        return true;
+      }
+    );
+  });
+
+  void it("resolves a secondary job name by its queue, not by the job name alone", async () => {
+    // The producer type makes this pairing unwritable, so it can only arrive
+    // from outside the type system. The lane decides: a section-copy job name
+    // on the deploy queue runs deploy's handler, never the section-copy one.
+    await assert.rejects(
+      routeJob({
+        id: "foreign-secondary-1",
+        queueName: "deploy",
+        name: secondaryJobNames.pageGeneration,
+        data: {
+          projectId: "project-1",
+          releasePlanId: "release-1",
+          deploymentKey: "release_plan:release-1"
+        }
+      } as Job),
+      /DATABASE_URL is required for deploy jobs/u
+    );
+  });
+
+  void it("fails a pre-audit job because the lane carries no registry entry", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "pre-audit-job-1",
+        queueName: "pre-audit",
+        name: "pre_audit",
+        data: {}
+      } as Job),
+      (error: unknown) => {
+        assert.ok(error instanceof LaneHandlerMissingError);
+        assert.equal(error.code, "LANE_HANDLER_MISSING");
+        assert.equal(error.message, "Registered queue has no handler");
+        assert.equal(error.lane, "pre-audit");
+        assert.equal(error.jobName, "pre_audit");
+        assert.ok(isTerminalWorkerError(error), "a null registry entry cannot be fixed by retrying");
+        return true;
+      }
+    );
+  });
+
+  void it("fails a job whose queue name and job name resolve to no lane", async () => {
+    await assert.rejects(
+      routeJob({
+        id: "unknown-job-1",
+        queueName: "not-a-queue",
+        name: "not-a-job",
+        data: {}
+      } as Job),
+      (error: unknown) => {
+        assert.ok(error instanceof UnknownWorkerJobError);
+        assert.equal(error.code, "UNKNOWN_WORKER_JOB");
+        assert.equal(error.message, "Worker job resolves to no registered queue lane");
+        assert.equal(error.queueName, "not-a-queue");
+        assert.equal(error.jobName, "not-a-job");
+        assert.ok(isTerminalWorkerError(error), "an unresolvable queue/job pair cannot be fixed by retrying");
+        return true;
+      }
     );
   });
 });

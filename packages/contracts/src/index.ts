@@ -4,6 +4,7 @@ export * from "./gsc.js";
 export * from "./website-import.js";
 export * from "./tracking.js";
 export * from "./jobs.js";
+export * from "./lane-inventory.js";
 export * from "./pages.js";
 export * from "./media.js";
 export * from "./releases.js";
