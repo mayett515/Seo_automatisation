@@ -12,8 +12,16 @@ proof: ""
 
 Nothing at runtime. The queue name is declared and a BullMQ worker is started
 for it (`apps/worker/src/main.ts`, the `queueNames.map` worker loop), but it is
-absent from `apiQueueNames`, so no HTTP path can reach it and no producer
-exists.
+absent from `sharedApiQueueNames`, so the shared API producer will not enqueue
+into it.
+
+That is the whole of what the registry proves. "No producer anywhere" is a
+wider claim and rests on a sweep rather than on a check: the literal
+`"analytics"` occurs only in the two registries and the canonical job-name map
+(`packages/contracts/src/jobs.ts`), in a test that names the lane unhandled,
+and in a lane-inventory fixture — at no enqueue site. A queue named through a
+variable would evade that sweep, so the claim is a reviewed observation, not a
+guarded fact.
 
 The work the plan gave this lane happens elsewhere: the tracking boundary
 accepts events and persists them directly, answering with an explicit
