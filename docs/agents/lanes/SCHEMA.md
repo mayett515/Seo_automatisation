@@ -76,11 +76,11 @@ reachable but lacks a test is a verification gap, not `partial`.
 
 Each fact is named for what its source proves, and for nothing more.
 
-| Fact                         | Source                                                                    | What it establishes                                                             |
-| ---------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `lanesWithRegisteredHandler` | `apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler` | the lane has a handler in the dispatch registry — not that the handler succeeds |
-| `reachableFromHttp`          | `packages/contracts/src/jobs.ts:apiQueueNames`                            | the API may enqueue into the lane — not that any request does, and HTTP only    |
-| proof existence              | the file system                                                           | the cited path is a file — not that its contents prove anything                 |
+| Fact                          | Source                                                                    | What it establishes                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `lanesWithRegisteredHandler`  | `apps/worker/src/lane-handler-registration.ts:lanesWithRegisteredHandler` | the lane has a handler in the dispatch registry — not that the handler succeeds                                              |
+| `admittedBySharedApiProducer` | `packages/contracts/src/jobs.ts:apiQueueNames`                            | the shared API producer admits the lane — not that any request enqueues, and not that the lane is unreachable by other means |
+| proof existence               | the file system                                                           | the cited path is a file — not that its contents prove anything                                                              |
 
 `lanesWithRegisteredHandler` is trustworthy because it is not a description of
 the dispatch table but its type source:
@@ -146,7 +146,7 @@ field, never in a message.
   dispatch registry has no handler for.
 - `LANE_HANDLER_UNEXPECTED` — a `scaffold` or `absent-by-decision` leaf against
   a lane the dispatch registry does have a handler for.
-- `LANE_HTTP_REACHABILITY_CONTRADICTION` — a `scaffold` or `absent-by-decision`
+- `LANE_API_PRODUCER_ADMISSION_CONTRADICTION` — a `scaffold` or `absent-by-decision`
   leaf claims the lane does not run, and `apiQueueNames` admits it, so the API
   may enqueue into it. The predicate says nothing about handlers: a lane that is
   both registered and claimed non-running also produces
@@ -171,7 +171,7 @@ field, never in a message.
 
 Every finding is collected; the checker never stops at the first.
 
-`LANE_HTTP_REACHABILITY_CONTRADICTION` is the one that would have caught the
+`LANE_API_PRODUCER_ADMISSION_CONTRADICTION` is the one that would have caught the
 `pre-audit` defect before three separate reviews had to find it by tracing
 execution. `MECHANISM_ADDRESS_MISSING` is the one that keeps a mechanisation
 claim from being satisfied by its own phrasing.
@@ -185,11 +185,11 @@ it does not, the rule stands as policy rather than as a claim about the code.
 These are not gaps to be closed quietly; they bound what any output of this
 system may be described as proving.
 
-- **Reachability covers HTTP only.** Worker-internal producers exist and are
-  known — `apps/worker/src/work-recovery.ts`,
+- **Producer admission is not reachability.** `apiQueueNames` covers the shared producer in `apps/api/src/queue-producer.ts`. A module that constructs its own queue bypasses it, and `gsc.module.ts` does exactly that for `gsc-sync` behind `POST /projects/:projectId/gsc/sync` — so that lane is reachable over HTTP and absent from the list. A regression guard now fails the build on any new queue construction under `apps/api/src`, with that module recorded as the one existing exception; moving it onto the shared producer is an open slice.
+- **Worker-internal producers are outside every list here.** Three are known — `apps/worker/src/work-recovery.ts`,
   `apps/worker/src/opportunity-research-scheduler.ts` and
   `apps/worker/src/media-storage-cleanup.ts` all enqueue — and none of them is
-  covered by `reachableFromHttp`. A future producer registry would only count if
+  covered by `admittedBySharedApiProducer`. A future producer registry would only count if
   producers actually enqueue through it; a list maintained beside them is not
   authoritative, because nothing forces a new producer to appear in it.
 - **A registered handler is not a working lane.** Membership in

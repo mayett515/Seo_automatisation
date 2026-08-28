@@ -4976,6 +4976,11 @@ if (claudeRuleNames.length < expectedRuleCount) {
 // map column named "HTTP reachable" was false for that lane and stayed green.
 // The column now says what the list proves; this keeps the bypass count from
 // growing silently. A third entry here is a decision, not a detail.
+//
+// This matches one spelling, `new Queue(`. A wrapper, an alias or a generic
+// construction would pass it. It is a regression net against the mistake that
+// already happened, not a proof that the producer boundary is complete, and
+// it must not be cited as one.
 const QUEUE_CONSTRUCTION_ALLOWED = new Set([
   "apps/api/src/queue-producer.ts",
   // Known exception, recorded rather than hidden: moving this onto the shared
@@ -5000,7 +5005,7 @@ for (const file of typeScriptFilesUnder("apps/api/src")) {
   if (QUEUE_CONSTRUCTION_ALLOWED.has(file)) continue;
   if (!/\bnew Queue\s*\(/u.test(read(file))) continue;
   failures.push({
-    category: "queue-producer-boundary",
+    category: "queue-producer-regression",
     message: `${file}: constructs a queue outside the shared API producer, so apiQueueNames no longer describes what the API can enqueue into and the lane map inherits the error. Enqueue through apps/api/src/queue-producer.ts, or add this file to QUEUE_CONSTRUCTION_ALLOWED and say why in the lane documentation.`
   });
 }

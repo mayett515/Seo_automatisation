@@ -4,7 +4,7 @@
 //
 // Every fact this core reasons over is named for what its source proves, never
 // for what a reader might hope it proves. `lanesWithRegisteredHandler` says a
-// handler is registered, not that a job succeeds. `reachableFromHttp` says the
+// handler is registered, not that a job succeeds. `admittedBySharedApiProducer` says the
 // API may enqueue, not that anything does. Proof existence says a file is on
 // disk, not that its contents prove anything. Findings state facts; the reason
 // behind a fact lives in the leaf's `reason` field, never in a message here.
@@ -21,7 +21,7 @@ export type FindingCode =
   | "LANE_PROOF_FILE_MISSING"
   | "LANE_HANDLER_MISSING"
   | "LANE_HANDLER_UNEXPECTED"
-  | "LANE_HTTP_REACHABILITY_CONTRADICTION"
+  | "LANE_API_PRODUCER_ADMISSION_CONTRADICTION"
   | "API_QUEUE_NOT_IN_REGISTRY"
   | "MECHANISM_ADDRESS_MISSING"
   | "ADDRESS_PATH_MISSING"
@@ -45,8 +45,11 @@ export type CheckInput = {
   /** Runtime queue names from the code-owned registry (packages/contracts). */
   readonly queueNames: readonly string[];
   /**
-   * Queues the API may enqueue into (`packages/contracts/src/jobs.ts:apiQueueNames`).
-   * This is the reachable-from-HTTP fact, and it covers HTTP only.
+   * Queues the shared API producer admits
+   * (`packages/contracts/src/jobs.ts:apiQueueNames`). This proves admission by
+   * that producer and nothing wider. It was read as the reachable-from-HTTP
+   * fact until `gsc-sync` disproved it: gsc.module.ts constructs its own queue
+   * behind an endpoint, so a lane can be reachable and absent from this list.
    */
   readonly apiQueueNames: readonly string[];
   /**
@@ -199,7 +202,7 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     }
 
     const hasRegisteredHandler = input.lanesWithRegisteredHandler.has(leaf.lane);
-    const reachableFromHttp = input.apiQueueNames.includes(leaf.lane);
+    const admittedBySharedApiProducer = input.apiQueueNames.includes(leaf.lane);
     const runnableState = leaf.state === "built" || leaf.state === "partial";
 
     // A `built` leaf names a proof file. File existence only: this establishes
@@ -233,10 +236,10 @@ export function checkLaneInventory(input: CheckInput, address: AddressCheck): Ch
     // nothing about whether a handler exists - a lane that is both registered
     // and claimed non-running is reported separately by LANE_HANDLER_UNEXPECTED,
     // and both findings are collected.
-    if (!runnableState && reachableFromHttp) {
+    if (!runnableState && admittedBySharedApiProducer) {
       push(
         findings,
-        "LANE_HTTP_REACHABILITY_CONTRADICTION",
+        "LANE_API_PRODUCER_ADMISSION_CONTRADICTION",
         `${file}: state "${leaf.state}" claims the lane does not run, and apiQueueNames admits it, so the API may enqueue into it`
       );
     }

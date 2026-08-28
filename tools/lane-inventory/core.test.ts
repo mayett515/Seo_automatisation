@@ -198,9 +198,9 @@ void describe("checkLaneInventory", () => {
     assert.equal(result.findings.filter((f) => f.code === "LANE_HANDLER_UNEXPECTED").length, 0);
   });
 
-  void it("fails a scaffold lane admitted to apiQueueNames (LANE_HTTP_REACHABILITY_CONTRADICTION)", () => {
+  void it("fails a scaffold lane admitted to apiQueueNames (LANE_API_PRODUCER_ADMISSION_CONTRADICTION)", () => {
     const result = run(baseInput({ apiQueueNames: ["deploy", "report", "pre-audit"] }));
-    assert.ok(result.findings.some((f) => f.code === "LANE_HTTP_REACHABILITY_CONTRADICTION"));
+    assert.ok(result.findings.some((f) => f.code === "LANE_API_PRODUCER_ADMISSION_CONTRADICTION"));
   });
 
   void it("fails an absent-by-decision lane admitted to apiQueueNames", () => {
@@ -225,12 +225,12 @@ void describe("checkLaneInventory", () => {
         ]
       })
     );
-    assert.ok(result.findings.some((f) => f.code === "LANE_HTTP_REACHABILITY_CONTRADICTION"));
+    assert.ok(result.findings.some((f) => f.code === "LANE_API_PRODUCER_ADMISSION_CONTRADICTION"));
   });
 
   void it("accepts a scaffold lane that is absent from apiQueueNames", () => {
     const result = run(baseInput());
-    assert.equal(result.findings.filter((f) => f.code === "LANE_HTTP_REACHABILITY_CONTRADICTION").length, 0);
+    assert.equal(result.findings.filter((f) => f.code === "LANE_API_PRODUCER_ADMISSION_CONTRADICTION").length, 0);
   });
 
   void it("fails a mechanisation claim that names no address (MECHANISM_ADDRESS_MISSING)", () => {

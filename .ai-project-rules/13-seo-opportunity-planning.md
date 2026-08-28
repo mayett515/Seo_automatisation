@@ -149,11 +149,11 @@ THEN label it as a hypothesis until validated by service fit, keyword intent, co
 Useful external evidence map:
 
 ```text
-../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\README.md
-../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\02-growth-roadmap.md
-../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\03-keyword-map.md
-../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan\05-execution-backlog.md
-../martines-dach-gebaeudeservice/Seo/ungenutzte_potentiale\ungenutzte_potentiale.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/README.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/02-growth-roadmap.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/03-keyword-map.md
+../martines-dach-gebaeudeservice/Seo/future-seo-growth-plan/05-execution-backlog.md
+../martines-dach-gebaeudeservice/Seo/ungenutzte_potentiale/ungenutzte_potentiale.md
 ```
 
 Current reusable lesson: opportunity files explain the "why" behind targets, and automated GSC sync explains where Google is already testing the domain. Every app-generated page still needs its own evidence, page brief, quality gate, customer approval, deployment verification, and conservative reporting.

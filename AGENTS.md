@@ -17,8 +17,14 @@ cold start on an unfamiliar machine took fourteen hops to find the second one.
 | Which queue lanes exist, and in what state? | `docs/agents/lanes/generated-map.md` — generated from the leaves beside each handler, never hand-edited.                                                                             |
 
 The roadmap under `docs/architecture/` records how the second was reached; it is
-history, not current state. When these disagree, the code wins, then the
-blueprint, then the pack.
+history, not current state.
+
+When they disagree, which one wins depends on the question. For what the
+system does right now, the code decides and the blueprint follows it. For what
+the product was meant to do, the knowledge pack decides and the code does not
+overrule it - a divergence there is either a deliberate change, which belongs
+in an ADR, or a defect. Never let an implementation quietly redefine the
+intent it failed to meet.
 
 ## Shared native layer
 

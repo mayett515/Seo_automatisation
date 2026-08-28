@@ -137,7 +137,7 @@ This 38-rule file is an intentional guard exception: it is the single reusable a
 Use the Dachau clear-out workflow as a reference pattern when relevant:
 
 ```text
-../martines-dach-gebaeudeservice/Seo/workflow\entruempelung-dachau-workflow-2026-06-25.md
+../martines-dach-gebaeudeservice/Seo/workflow/entruempelung-dachau-workflow-2026-06-25.md
 ```
 
 That workflow demonstrates the expected loop: GSC signal -> dedicated local page -> hub role separation -> unique local sections -> LocalBusiness/Service/FAQPage schema -> internal links -> sitemap/redirect/noscript updates -> build/deploy/live checks -> GSC indexing sequence -> delayed customer-facing reporting until real proof exists.

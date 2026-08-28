@@ -5,8 +5,9 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 //
 // - `queueNames` is the code-owned lane list (packages/contracts).
 // - `apiQueueNames` is the runtime list of queues the API may enqueue into, so
-//   the checker and the enqueue path share one source. This is the
-//   reachable-from-HTTP fact and covers HTTP only.
+//   the checker and the shared enqueue path have one source. It proves
+//   admission by that producer, not reachability over HTTP: a module that
+//   builds its own queue bypasses the list, and gsc.module.ts does.
 // - `lanesWithRegisteredHandler` is the list the worker's handler registry derives its
 //   type from, so it states which lanes have a registered handler and cannot
 //   drift from the dispatch table without a compile error.
