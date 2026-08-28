@@ -2,7 +2,7 @@
 
 This folder records chronological project progress.
 
-Latest: [2026-08-25 - Rule-layer promotion, mirror parity, and one deploy owner](2026-08-25-rule-layer-and-mirrors.md).
+Latest: [2026-08-26 - The lane inventory, and the rule it kept breaking](2026-08-26-lane-inventory.md).
 
 Use this for "what changed when" and link to commits, reviews, and follow-up work. Use ADRs for "why we chose this direction."
 
@@ -63,3 +63,5 @@ Do not log every tiny edit. Commit history already covers that.
 - [2026-08-24.md](2026-08-24.md)
 - [2026-08-25.md](2026-08-25.md)
 - [2026-08-25-finding-fixes.md](2026-08-25-finding-fixes.md)
+- [2026-08-25-rule-layer-and-mirrors.md](2026-08-25-rule-layer-and-mirrors.md)
+- [2026-08-26-lane-inventory.md](2026-08-26-lane-inventory.md)
