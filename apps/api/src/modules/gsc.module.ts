@@ -101,7 +101,7 @@ const gscInfrastructureProviders: Provider[] = [
 ];
 
 @Injectable()
-class GscService {
+export class GscService {
   private readonly logger = new Logger(GscService.name);
 
   constructor(
