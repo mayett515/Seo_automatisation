@@ -71,7 +71,7 @@ export const AppEnvSchema = z
     RELEASE_BROWSER_VERIFICATION_ENABLED: BooleanEnvSchema,
     RELEASE_BROWSER_VERIFICATION_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
     RELEASE_BROWSER_VERIFICATION_EXECUTABLE_PATH: z.string().min(1).optional(),
-    AI_REASONING_PROVIDER: z.enum(["mock", "opencode_go"]).default("mock"),
+    AI_REASONING_PROVIDER: z.enum(["mock", "opencode_go", "deepseek"]).default("mock"),
     AI_REASONING_MODEL: z.string().min(1).default("glm-5.2"),
     AI_REASONING_OPENCODE_GO_API_KEY: z.string().min(1).optional(),
     AI_REASONING_OPENCODE_GO_ENDPOINT: z.string().url().default("https://opencode.ai/zen/go/v1/chat/completions"),

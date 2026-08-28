@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  DeepSeekReasoningAdapter,
   MockReasoningAdapter,
   MockSerpScoutAdapter,
   NotConfiguredReasoningAdapter,
@@ -570,7 +571,9 @@ void describe("createReasoningAdapter", () => {
       AI_REASONING_PROVIDER: "mock",
       AI_REASONING_MODEL: "glm-5.2",
       AI_REASONING_OPENCODE_GO_API_KEY: undefined,
-      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
+      DEEPSEEK_API_KEY: undefined,
+      DEEPSEEK_BASE_URL: "https://api.deepseek.com"
     });
 
     assert.ok(adapter instanceof MockReasoningAdapter);
@@ -581,7 +584,9 @@ void describe("createReasoningAdapter", () => {
       AI_REASONING_PROVIDER: "opencode_go",
       AI_REASONING_MODEL: "glm-5.2",
       AI_REASONING_OPENCODE_GO_API_KEY: undefined,
-      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
+      DEEPSEEK_API_KEY: undefined,
+      DEEPSEEK_BASE_URL: "https://api.deepseek.com"
     });
 
     assert.ok(adapter instanceof NotConfiguredReasoningAdapter);
@@ -592,10 +597,38 @@ void describe("createReasoningAdapter", () => {
       AI_REASONING_PROVIDER: "opencode_go",
       AI_REASONING_MODEL: "glm-5.2",
       AI_REASONING_OPENCODE_GO_API_KEY: "test-key",
-      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions"
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
+      DEEPSEEK_API_KEY: undefined,
+      DEEPSEEK_BASE_URL: "https://api.deepseek.com"
     });
 
     assert.ok(adapter instanceof OpenCodeGoReasoningAdapter);
+  });
+
+  void it("degrades to a not-configured adapter when DeepSeek is selected without a key", () => {
+    const adapter = createReasoningAdapter({
+      AI_REASONING_PROVIDER: "deepseek",
+      AI_REASONING_MODEL: "deepseek-v4-flash",
+      AI_REASONING_OPENCODE_GO_API_KEY: undefined,
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
+      DEEPSEEK_API_KEY: undefined,
+      DEEPSEEK_BASE_URL: "https://api.deepseek.com"
+    });
+
+    assert.ok(adapter instanceof NotConfiguredReasoningAdapter);
+  });
+
+  void it("creates the DeepSeek adapter only with explicit provider config", () => {
+    const adapter = createReasoningAdapter({
+      AI_REASONING_PROVIDER: "deepseek",
+      AI_REASONING_MODEL: "deepseek-v4-flash",
+      AI_REASONING_OPENCODE_GO_API_KEY: undefined,
+      AI_REASONING_OPENCODE_GO_ENDPOINT: "https://opencode.ai/zen/go/v1/chat/completions",
+      DEEPSEEK_API_KEY: "test-key",
+      DEEPSEEK_BASE_URL: "https://api.deepseek.com"
+    });
+
+    assert.ok(adapter instanceof DeepSeekReasoningAdapter);
   });
 });
 

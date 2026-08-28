@@ -11,6 +11,7 @@ import {
   NotConfiguredReasoningAdapter,
   NotConfiguredSiteHostingAdapter,
   OpenCodeGoReasoningAdapter,
+  DeepSeekReasoningAdapter,
   PlaywrightBrowserRuntimeVerifier,
   type CrawlerPort,
   type AiReasoningPort,
@@ -442,6 +443,8 @@ export function createReasoningAdapter(
     | "AI_REASONING_MODEL"
     | "AI_REASONING_OPENCODE_GO_API_KEY"
     | "AI_REASONING_OPENCODE_GO_ENDPOINT"
+    | "DEEPSEEK_API_KEY"
+    | "DEEPSEEK_BASE_URL"
   >
 ): AiReasoningPort {
   switch (input.AI_REASONING_PROVIDER) {
@@ -455,6 +458,15 @@ export function createReasoningAdapter(
         apiKey: input.AI_REASONING_OPENCODE_GO_API_KEY,
         model: input.AI_REASONING_MODEL,
         endpoint: input.AI_REASONING_OPENCODE_GO_ENDPOINT
+      });
+    case "deepseek":
+      if (!input.DEEPSEEK_API_KEY) {
+        return new NotConfiguredReasoningAdapter("DEEPSEEK_API_KEY is required.");
+      }
+      return new DeepSeekReasoningAdapter({
+        apiKey: input.DEEPSEEK_API_KEY,
+        model: input.AI_REASONING_MODEL,
+        baseUrl: input.DEEPSEEK_BASE_URL
       });
   }
 }

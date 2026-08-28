@@ -148,7 +148,7 @@ interface AiReasoningPort {
 type AiReasoningRunResult =
   | {
       ok: true;
-      provider: string; // "opencode_go" | "mock" — informational, not a contract enum
+      provider: string; // "deepseek" | "opencode_go" | "mock" — informational, not a contract enum
       model: string;
       outputJson: unknown; // UNTRUSTED. Zod parse happens in packages/ai.
       usage?: { inputTokens?: number; outputTokens?: number; costCents?: number };
@@ -206,13 +206,26 @@ OpenCodeGoReasoningAdapter
   returns untrusted outputJson only after the provider response is parseable JSON
 ```
 
+### Direct DeepSeek adapter
+
+```text
+DeepSeekReasoningAdapter
+  lives in packages/adapters
+  implements AiReasoningPort
+  calls https://api.deepseek.com/chat/completions (same DEEPSEEK_BASE_URL as Opportunity Research)
+  sends one JSON-only structured reasoning request with thinking disabled
+  returns untrusted outputJson only after the provider response is parseable JSON
+```
+
 Runtime selection is explicit:
 
 ```text
 AI_REASONING_PROVIDER=mock          default, local/test safe
 AI_REASONING_PROVIDER=opencode_go   requires AI_REASONING_OPENCODE_GO_API_KEY
+AI_REASONING_PROVIDER=deepseek      requires DEEPSEEK_API_KEY (shared with Opportunity Research)
 AI_REASONING_MODEL                  runtime-selected model id
 AI_REASONING_OPENCODE_GO_ENDPOINT   default OpenCode Go chat-completions endpoint
+DEEPSEEK_BASE_URL                   default https://api.deepseek.com
 AI_REASONING_TIMEOUT_MS             passed to runStructured
 ```
 
@@ -269,7 +282,7 @@ assistant content not JSON       -> output_not_json
 
 Provider response bodies are not persisted. Diagnostics keep only latency, finish reason, and a bounded safe reason code. The worker remains responsible for Zod parsing, deterministic QA, evidence resolution, scoring, and persistence.
 
-If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected Opportunity Scout, Page Proposal, or Section Copy run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
+If `AI_REASONING_PROVIDER=opencode_go` is selected without `AI_REASONING_OPENCODE_GO_API_KEY`, or `AI_REASONING_PROVIDER=deepseek` without `DEEPSEEK_API_KEY`, the worker composition root uses `NotConfiguredReasoningAdapter` instead of crashing the whole worker host. The affected Opportunity Scout, Page Proposal, or Section Copy run records `provider_not_configured` and fails terminally; deploy, rollback, GSC sync, and website-import workers keep booting.
 
 ### Page Studio section-copy reasoning
 

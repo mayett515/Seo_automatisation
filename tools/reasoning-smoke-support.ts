@@ -43,12 +43,21 @@ export async function loadReasoningSmokeEnvFile(path: string): Promise<void> {
 }
 
 export function assertOpenCodeGoSmokeConfiguration(): void {
-  if (process.env.AI_REASONING_PROVIDER !== "opencode_go") {
-    throw new Error("AI_REASONING_PROVIDER must be opencode_go for a real-provider smoke run.");
+  assertRealAiReasoningSmokeConfiguration();
+}
+
+export function assertRealAiReasoningSmokeConfiguration(): void {
+  const provider = process.env.AI_REASONING_PROVIDER;
+  if (provider !== "opencode_go" && provider !== "deepseek") {
+    throw new Error("AI_REASONING_PROVIDER must be opencode_go or deepseek for a real-provider smoke run.");
   }
 
-  if (!process.env.AI_REASONING_OPENCODE_GO_API_KEY) {
+  if (provider === "opencode_go" && !process.env.AI_REASONING_OPENCODE_GO_API_KEY) {
     throw new Error("AI_REASONING_OPENCODE_GO_API_KEY is required for a real-provider smoke run.");
+  }
+
+  if (provider === "deepseek" && !process.env.DEEPSEEK_API_KEY) {
+    throw new Error("DEEPSEEK_API_KEY is required for a real-provider smoke run.");
   }
 
   if (!process.env.AI_REASONING_MODEL) {
@@ -154,6 +163,7 @@ export function reasoningSmokeNumberAfter(args: readonly string[], flag: string)
 export function redactReasoningSmokeText(value: string): string {
   const secrets = [
     process.env.AI_REASONING_OPENCODE_GO_API_KEY,
+    process.env.DEEPSEEK_API_KEY,
     process.env.BETTER_AUTH_SECRET,
     process.env.GSC_TOKEN_ENCRYPTION_KEY,
     process.env.GSC_OAUTH_STATE_SECRET,

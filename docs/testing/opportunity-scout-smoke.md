@@ -9,13 +9,13 @@ API enqueue
 -> BullMQ opportunity-scout job
 -> worker
 -> AiReasoningPort
--> OpenCode Go adapter
+-> DeepSeek or OpenCode Go adapter
 -> Zod parse
 -> deterministic QA
 -> agent_runs terminal state
 ```
 
-The runner fails before enqueue unless `AI_REASONING_PROVIDER=opencode_go`, a model id, and an external API key are loaded. After the worker finishes, it also requires durable `agent_runs.provider = opencode_go` plus an evidence `input_ref`, so a differently configured worker cannot make a mock/not-configured run look like a real-provider smoke.
+The runner fails before enqueue unless `AI_REASONING_PROVIDER` is `deepseek` or `opencode_go`, a model id, and the matching API key are loaded. After the worker finishes, it also requires durable `agent_runs.provider` to be `deepseek` or `opencode_go` plus an evidence `input_ref`, so a differently configured worker cannot make a mock/not-configured run look like a real-provider smoke.
 
 The smoke does not require opportunities to persist. A run that reaches `output_not_json`, `output_schema_mismatch`, or
 `qa_rejected` can be a passing smoke when the failure is correctly classified, redacted, and visible in `agent_runs`.
@@ -26,7 +26,7 @@ The smoke does not require opportunities to persist. A run that reaches `output_
 2. Start Postgres and Redis.
 3. Apply current DB migrations.
 4. Start the API with local scaffold auth enabled.
-5. Start the worker with the OpenCode Go env file loaded.
+5. Start the worker with the DeepSeek or OpenCode Go env file loaded.
 
 Example env file location:
 
@@ -41,6 +41,16 @@ AI_REASONING_PROVIDER=opencode_go
 AI_REASONING_MODEL=deepseek-v4-flash
 AI_REASONING_OPENCODE_GO_API_KEY=...
 AI_REASONING_OPENCODE_GO_ENDPOINT=https://opencode.ai/zen/go/v1/chat/completions
+AI_REASONING_TIMEOUT_MS=120000
+```
+
+Direct DeepSeek (same `DEEPSEEK_API_KEY` as Opportunity Research):
+
+```text
+AI_REASONING_PROVIDER=deepseek
+AI_REASONING_MODEL=deepseek-v4-flash
+DEEPSEEK_API_KEY=...
+DEEPSEEK_BASE_URL=https://api.deepseek.com
 AI_REASONING_TIMEOUT_MS=120000
 ```
 
@@ -122,7 +132,7 @@ enqueue.jobId=...
 agent_run.status=running
 agent_run.status=succeeded
 agent_run.failureCode=
-agent_run.provider=opencode_go
+agent_run.provider=deepseek
 agent_run.model=deepseek-v4-flash
 agent_run.latencyMs=...
 agent_run.inputRef=...

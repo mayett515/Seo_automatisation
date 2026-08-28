@@ -48,6 +48,20 @@ void describe("AppEnvSchema", () => {
     assert.equal(env.AI_REASONING_TIMEOUT_MS, 45_000);
   });
 
+  void it("accepts explicit DeepSeek reasoning configuration", () => {
+    const env = parseAppEnv({
+      AI_REASONING_PROVIDER: "deepseek",
+      AI_REASONING_MODEL: "deepseek-v4-flash",
+      DEEPSEEK_API_KEY: "deepseek-key",
+      DEEPSEEK_BASE_URL: "https://api.deepseek.com"
+    });
+
+    assert.equal(env.AI_REASONING_PROVIDER, "deepseek");
+    assert.equal(env.AI_REASONING_MODEL, "deepseek-v4-flash");
+    assert.equal(env.DEEPSEEK_API_KEY, "deepseek-key");
+    assert.equal(env.DEEPSEEK_BASE_URL, "https://api.deepseek.com");
+  });
+
   void it("parses bounded work recovery settings", () => {
     const defaults = parseAppEnv({});
     assert.equal(defaults.WORK_RECOVERY_STALE_AFTER_MS, 15 * 60_000);

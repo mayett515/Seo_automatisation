@@ -103,8 +103,8 @@ function assertRealOpportunityScoutReasoningRun(run: ReasoningSmokeAgentRunRow):
     throw new Error(`Expected opportunity_scout, received ${run.task}.`);
   }
 
-  if (run.provider !== "opencode_go") {
-    throw new Error(`Expected the real OpenCode Go adapter, received ${run.provider ?? "no provider"}.`);
+  if (run.provider !== "opencode_go" && run.provider !== "deepseek") {
+    throw new Error(`Expected the real OpenCode Go or DeepSeek adapter, received ${run.provider ?? "no provider"}.`);
   }
 
   if (!run.inputRef) {

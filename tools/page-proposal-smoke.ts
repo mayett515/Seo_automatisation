@@ -234,8 +234,8 @@ function assertRealPageProposalReasoningRun(run: ReasoningSmokeAgentRunRow): voi
     throw new Error(`Expected page_brief_draft, received ${run.task}.`);
   }
 
-  if (run.provider !== "opencode_go") {
-    throw new Error(`Expected the real OpenCode Go adapter, received ${run.provider ?? "no provider"}.`);
+  if (run.provider !== "opencode_go" && run.provider !== "deepseek") {
+    throw new Error(`Expected the real OpenCode Go or DeepSeek adapter, received ${run.provider ?? "no provider"}.`);
   }
 
   if (!run.inputRef) {

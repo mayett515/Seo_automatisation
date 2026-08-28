@@ -7,6 +7,7 @@ void test("real-provider smoke configuration fails closed and redacts loaded sec
     provider: process.env.AI_REASONING_PROVIDER,
     model: process.env.AI_REASONING_MODEL,
     apiKey: process.env.AI_REASONING_OPENCODE_GO_API_KEY,
+    deepseekKey: process.env.DEEPSEEK_API_KEY,
     databaseUrl: process.env.DATABASE_URL
   };
 
@@ -14,7 +15,7 @@ void test("real-provider smoke configuration fails closed and redacts loaded sec
     process.env.AI_REASONING_PROVIDER = "mock";
     process.env.AI_REASONING_MODEL = "glm-5.2";
     process.env.AI_REASONING_OPENCODE_GO_API_KEY = "provider-secret";
-    assert.throws(() => assertOpenCodeGoSmokeConfiguration(), /must be opencode_go/u);
+    assert.throws(() => assertOpenCodeGoSmokeConfiguration(), /must be opencode_go or deepseek/u);
 
     process.env.AI_REASONING_PROVIDER = "opencode_go";
     delete process.env.AI_REASONING_OPENCODE_GO_API_KEY;
@@ -24,10 +25,18 @@ void test("real-provider smoke configuration fails closed and redacts loaded sec
     process.env.DATABASE_URL = "postgres://secret-database-url";
     assert.doesNotThrow(() => assertOpenCodeGoSmokeConfiguration());
     assert.equal(redactReasoningSmokeText("provider-secret postgres://secret-database-url"), "[redacted] [redacted]");
+
+    process.env.AI_REASONING_PROVIDER = "deepseek";
+    delete process.env.DEEPSEEK_API_KEY;
+    assert.throws(() => assertOpenCodeGoSmokeConfiguration(), /DEEPSEEK_API_KEY is required/u);
+    process.env.DEEPSEEK_API_KEY = "deepseek-secret";
+    assert.doesNotThrow(() => assertOpenCodeGoSmokeConfiguration());
+    assert.equal(redactReasoningSmokeText("deepseek-secret"), "[redacted]");
   } finally {
     restoreEnv("AI_REASONING_PROVIDER", previous.provider);
     restoreEnv("AI_REASONING_MODEL", previous.model);
     restoreEnv("AI_REASONING_OPENCODE_GO_API_KEY", previous.apiKey);
+    restoreEnv("DEEPSEEK_API_KEY", previous.deepseekKey);
     restoreEnv("DATABASE_URL", previous.databaseUrl);
   }
 });

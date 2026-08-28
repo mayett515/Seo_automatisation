@@ -32,6 +32,7 @@ export * from "./token-cipher.js";
 export * from "./mock-ai-reasoning.js";
 export * from "./mock-serp-scout.js";
 export * from "./opencode-go-reasoning.js";
+export * from "./deepseek-reasoning.js";
 
 export type DeployReleaseInput = {
   releasePlanId: string;

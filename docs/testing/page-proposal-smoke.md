@@ -9,7 +9,7 @@ API enqueue
 -> BullMQ page-generation job
 -> Page Proposal worker
 -> AiReasoningPort
--> OpenCode Go adapter
+-> DeepSeek or OpenCode Go adapter
 -> PageProposalJsonSchema
 -> deterministic proposal QA
 -> Page Registry validation
@@ -42,6 +42,16 @@ AI_REASONING_PROVIDER=opencode_go
 AI_REASONING_MODEL=glm-5.2
 AI_REASONING_OPENCODE_GO_API_KEY=...
 AI_REASONING_OPENCODE_GO_ENDPOINT=https://opencode.ai/zen/go/v1/chat/completions
+AI_REASONING_TIMEOUT_MS=120000
+```
+
+Direct DeepSeek:
+
+```text
+AI_REASONING_PROVIDER=deepseek
+AI_REASONING_MODEL=deepseek-v4-flash
+DEEPSEEK_API_KEY=...
+DEEPSEEK_BASE_URL=https://api.deepseek.com
 AI_REASONING_TIMEOUT_MS=120000
 ```
 
@@ -136,7 +146,7 @@ It never prints PageJson, the model prompt, the evidence packet, a provider resp
 The smoke passes when:
 
 - the durable run reaches `succeeded` or a correctly classified `failed` state;
-- `agent_runs.provider` is `opencode_go`, proving the worker did not use the mock/not-configured adapter;
+- `agent_runs.provider` is `deepseek` or `opencode_go`, proving the worker did not use the mock/not-configured adapter;
 - the evidence packet is referenced by `input_ref` rather than printed;
 - a failed run creates no proposal/version rows beyond the fixture baseline captured before enqueue;
 - a succeeded run has exactly one `draft` proposal and one `preview` version with no `approvedAt`;
